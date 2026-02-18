@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../providers/feed_provider.dart';
 import '../providers/settings_provider.dart';
+import '../providers/account_provider.dart';
 import '../widgets/post_card.dart';
 
 class OmniFeedScreen extends ConsumerWidget {
@@ -12,8 +13,9 @@ class OmniFeedScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final feed = ref.watch(feedProvider);
     final settings = ref.watch(settingsProvider);
+    final accounts = ref.watch(accountProvider);
 
-    if (!settings.isScrapingActive && feed.posts.isEmpty) {
+    if (accounts.isEmpty) {
       return const Center(
         child: Padding(
           padding: EdgeInsets.all(32),
@@ -28,7 +30,32 @@ class OmniFeedScreen extends ConsumerWidget {
               ),
               SizedBox(height: 8),
               Text(
-                'X / Bluesky タブでログインし、\n設定画面でスクレイピングを有効にしてください',
+                '「アカウント」タブで SNS アカウントを追加し、\n設定画面でフェッチを有効にしてください',
+                textAlign: TextAlign.center,
+                style: TextStyle(color: Colors.grey),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    if (!settings.isFetchingActive && feed.posts.isEmpty) {
+      return const Center(
+        child: Padding(
+          padding: EdgeInsets.all(32),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.rss_feed, size: 64, color: Colors.grey),
+              SizedBox(height: 16),
+              Text(
+                'Omni-Feed',
+                style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
+              ),
+              SizedBox(height: 8),
+              Text(
+                '設定画面でフェッチを有効にしてください',
                 textAlign: TextAlign.center,
                 style: TextStyle(color: Colors.grey),
               ),

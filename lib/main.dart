@@ -2,11 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'screens/home_screen.dart';
-import 'services/cookie_persistence_service.dart';
+import 'services/account_storage_service.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  await CookiePersistenceService.instance.restoreAll();
+  await AccountStorageService.instance.load();
   runApp(const ProviderScope(child: OmniVerseApp()));
 }
 

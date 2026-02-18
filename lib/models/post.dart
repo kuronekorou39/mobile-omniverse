@@ -9,6 +9,7 @@ class Post {
     required this.body,
     required this.timestamp,
     this.avatarUrl,
+    this.accountId,
   });
 
   final String id;
@@ -18,8 +19,10 @@ class Post {
   final String body;
   final DateTime timestamp;
   final String? avatarUrl;
+  final String? accountId;
 
-  factory Post.fromJson(Map<String, dynamic> json, SnsService source) {
+  factory Post.fromJson(Map<String, dynamic> json, SnsService source,
+      {String? accountId}) {
     return Post(
       id: json['id'] as String? ?? '${source.name}_${json.hashCode}',
       source: source,
@@ -29,6 +32,7 @@ class Post {
       timestamp: DateTime.tryParse(json['timestamp'] as String? ?? '') ??
           DateTime.now(),
       avatarUrl: json['avatarUrl'] as String?,
+      accountId: accountId,
     );
   }
 

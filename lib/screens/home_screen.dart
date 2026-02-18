@@ -1,8 +1,7 @@
 import 'package:flutter/material.dart';
 
-import '../models/sns_service.dart';
+import '../screens/accounts_screen.dart';
 import '../screens/omni_feed_screen.dart';
-import '../screens/webview_tab_screen.dart';
 import '../screens/settings_screen.dart';
 
 class HomeScreen extends StatefulWidget {
@@ -15,10 +14,9 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen> {
   int _currentIndex = 0;
 
-  final _pages = [
-    const OmniFeedScreen(),
-    const WebViewTabScreen(service: SnsService.x),
-    const WebViewTabScreen(service: SnsService.bluesky),
+  final _pages = const [
+    OmniFeedScreen(),
+    AccountsScreen(),
   ];
 
   @override
@@ -53,12 +51,8 @@ class _HomeScreenState extends State<HomeScreen> {
             label: 'Omni-Feed',
           ),
           NavigationDestination(
-            icon: Icon(Icons.close),
-            label: 'X',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.cloud),
-            label: 'Bluesky',
+            icon: Icon(Icons.people),
+            label: 'アカウント',
           ),
         ],
       ),

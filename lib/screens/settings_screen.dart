@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../models/sns_service.dart';
 import '../providers/settings_provider.dart';
 
 class SettingsScreen extends ConsumerWidget {
@@ -17,17 +16,17 @@ class SettingsScreen extends ConsumerWidget {
       body: ListView(
         children: [
           SwitchListTile(
-            title: const Text('スクレイピング'),
-            subtitle: Text(settings.isScrapingActive ? '実行中' : '停止中'),
-            value: settings.isScrapingActive,
-            onChanged: (_) => notifier.toggleScraping(),
+            title: const Text('タイムライン取得'),
+            subtitle: Text(settings.isFetchingActive ? '実行中' : '停止中'),
+            value: settings.isFetchingActive,
+            onChanged: (_) => notifier.toggleFetching(),
           ),
           const Divider(),
           ListTile(
-            title: const Text('スクレイピング間隔'),
-            subtitle: Text('${settings.scrapingIntervalSeconds} 秒'),
+            title: const Text('フェッチ間隔'),
+            subtitle: Text('${settings.fetchIntervalSeconds} 秒'),
             trailing: DropdownButton<int>(
-              value: settings.scrapingIntervalSeconds,
+              value: settings.fetchIntervalSeconds,
               items: const [
                 DropdownMenuItem(value: 30, child: Text('30秒')),
                 DropdownMenuItem(value: 60, child: Text('60秒')),
@@ -39,21 +38,6 @@ class SettingsScreen extends ConsumerWidget {
               },
             ),
           ),
-          const Divider(),
-          const Padding(
-            padding: EdgeInsets.all(16),
-            child: Text(
-              '有効なSNS',
-              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
-            ),
-          ),
-          for (final service in SnsService.values)
-            SwitchListTile(
-              title: Text(service.label),
-              subtitle: Text(service.domain),
-              value: settings.enabledServices.contains(service),
-              onChanged: (_) => notifier.toggleService(service),
-            ),
         ],
       ),
     );

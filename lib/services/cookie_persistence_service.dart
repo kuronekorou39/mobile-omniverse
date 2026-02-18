@@ -11,7 +11,9 @@ class CookiePersistenceService {
 
   static const _prefix = 'cookies_';
 
-  Future<void> saveCookies(SnsService service) async {
+  /// アカウント別に Cookie を保存
+  Future<void> saveCookiesForAccount(
+      String accountId, SnsService service) async {
     final cookieManager = CookieManager.instance();
     final cookies = await cookieManager.getCookies(
       url: WebUri('https://${service.domain}'),
@@ -27,12 +29,17 @@ class CookiePersistenceService {
         .toList();
 
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setString('$_prefix${service.name}', json.encode(cookieList));
+    await prefs.setString(
+      '$_prefix${accountId}',
+      json.encode(cookieList),
+    );
   }
 
-  Future<void> restoreCookies(SnsService service) async {
+  /// アカウント別の Cookie を復元
+  Future<void> restoreCookiesForAccount(
+      String accountId, SnsService service) async {
     final prefs = await SharedPreferences.getInstance();
-    final raw = prefs.getString('$_prefix${service.name}');
+    final raw = prefs.getString('$_prefix$accountId');
     if (raw == null) return;
 
     final cookieManager = CookieManager.instance();
@@ -50,15 +57,17 @@ class CookiePersistenceService {
     }
   }
 
-  Future<void> restoreAll() async {
-    for (final service in SnsService.values) {
-      await restoreCookies(service);
-    }
+  /// アカウントの Cookie を削除
+  Future<void> deleteCookiesForAccount(String accountId) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove('$_prefix$accountId');
   }
 
-  Future<void> saveAll() async {
-    for (final service in SnsService.values) {
-      await saveCookies(service);
-    }
+  /// ドメインの Cookie をクリア（ログイン用 WebView で使用）
+  Future<void> clearCookiesForDomain(SnsService service) async {
+    final cookieManager = CookieManager.instance();
+    await cookieManager.deleteCookies(
+      url: WebUri('https://${service.domain}'),
+    );
   }
 }

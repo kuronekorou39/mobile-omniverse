@@ -2,8 +2,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../models/post.dart';
 import '../models/sns_service.dart';
-import '../services/webview_manager.dart';
-import '../services/scraping_scheduler.dart';
+import '../services/timeline_fetch_scheduler.dart';
 
 class FeedState {
   const FeedState({
@@ -31,10 +30,10 @@ class FeedState {
 
 class FeedNotifier extends StateNotifier<FeedState> {
   FeedNotifier() : super(const FeedState()) {
-    WebViewManager.instance.onPostsScraped = _onPostsScraped;
+    TimelineFetchScheduler.instance.onPostsFetched = _onPostsFetched;
   }
 
-  void _onPostsScraped(List<Post> newPosts, SnsService source) {
+  void _onPostsFetched(List<Post> newPosts) {
     final existing = Map<String, Post>.fromEntries(
       state.posts.map((p) => MapEntry(p.id, p)),
     );
@@ -56,8 +55,7 @@ class FeedNotifier extends StateNotifier<FeedState> {
   Future<void> refresh() async {
     state = state.copyWith(isLoading: true, error: null);
     try {
-      await ScrapingScheduler.instance.scrapeNow();
-      // Posts will arrive via _onPostsScraped callback
+      await TimelineFetchScheduler.instance.fetchAll();
       state = state.copyWith(isLoading: false);
     } catch (e) {
       state = state.copyWith(isLoading: false, error: e.toString());

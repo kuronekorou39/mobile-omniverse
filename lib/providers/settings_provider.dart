@@ -1,29 +1,23 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../models/sns_service.dart';
-import '../services/scraping_scheduler.dart';
+import '../services/timeline_fetch_scheduler.dart';
 
 class SettingsState {
   const SettingsState({
-    this.scrapingIntervalSeconds = 60,
-    this.enabledServices = const {SnsService.x, SnsService.bluesky},
-    this.isScrapingActive = false,
+    this.fetchIntervalSeconds = 60,
+    this.isFetchingActive = false,
   });
 
-  final int scrapingIntervalSeconds;
-  final Set<SnsService> enabledServices;
-  final bool isScrapingActive;
+  final int fetchIntervalSeconds;
+  final bool isFetchingActive;
 
   SettingsState copyWith({
-    int? scrapingIntervalSeconds,
-    Set<SnsService>? enabledServices,
-    bool? isScrapingActive,
+    int? fetchIntervalSeconds,
+    bool? isFetchingActive,
   }) {
     return SettingsState(
-      scrapingIntervalSeconds:
-          scrapingIntervalSeconds ?? this.scrapingIntervalSeconds,
-      enabledServices: enabledServices ?? this.enabledServices,
-      isScrapingActive: isScrapingActive ?? this.isScrapingActive,
+      fetchIntervalSeconds: fetchIntervalSeconds ?? this.fetchIntervalSeconds,
+      isFetchingActive: isFetchingActive ?? this.isFetchingActive,
     );
   }
 }
@@ -31,44 +25,29 @@ class SettingsState {
 class SettingsNotifier extends StateNotifier<SettingsState> {
   SettingsNotifier() : super(const SettingsState());
 
-  final _scheduler = ScrapingScheduler.instance;
+  final _scheduler = TimelineFetchScheduler.instance;
 
   void setInterval(int seconds) {
-    state = state.copyWith(scrapingIntervalSeconds: seconds);
+    state = state.copyWith(fetchIntervalSeconds: seconds);
     _scheduler.setInterval(Duration(seconds: seconds));
   }
 
-  void toggleService(SnsService service) {
-    final updated = Set<SnsService>.from(state.enabledServices);
-    if (updated.contains(service)) {
-      updated.remove(service);
-      _scheduler.disableService(service);
-    } else {
-      updated.add(service);
-      _scheduler.enableService(service);
-    }
-    state = state.copyWith(enabledServices: updated);
-  }
-
-  void startScraping() {
-    for (final service in state.enabledServices) {
-      _scheduler.enableService(service);
-    }
-    _scheduler.setInterval(Duration(seconds: state.scrapingIntervalSeconds));
+  void startFetching() {
+    _scheduler.setInterval(Duration(seconds: state.fetchIntervalSeconds));
     _scheduler.start();
-    state = state.copyWith(isScrapingActive: true);
+    state = state.copyWith(isFetchingActive: true);
   }
 
-  void stopScraping() {
+  void stopFetching() {
     _scheduler.stop();
-    state = state.copyWith(isScrapingActive: false);
+    state = state.copyWith(isFetchingActive: false);
   }
 
-  void toggleScraping() {
-    if (state.isScrapingActive) {
-      stopScraping();
+  void toggleFetching() {
+    if (state.isFetchingActive) {
+      stopFetching();
     } else {
-      startScraping();
+      startFetching();
     }
   }
 }

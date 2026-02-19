@@ -113,6 +113,26 @@ class _LoginWebViewScreenState extends State<LoginWebViewScreen> {
   InAppWebViewController? _controller;
   double _progress = 0;
   bool _isExtracting = false;
+  bool _cookiesCleared = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _clearCookiesBeforeLogin();
+  }
+
+  /// ログイン前に該当ドメインの Cookie をクリア（他アカウントと干渉しないように）
+  Future<void> _clearCookiesBeforeLogin() async {
+    final cookieManager = CookieManager.instance();
+    // 全 Cookie を削除（ドメイン指定だとサブドメイン Cookie が残る場合がある）
+    await cookieManager.deleteAllCookies();
+    // WebView のキャッシュ・ストレージもクリア
+    await InAppWebViewController.clearAllCache();
+    debugPrint('[LoginWebView] All cookies and cache cleared');
+    if (mounted) {
+      setState(() => _cookiesCleared = true);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -153,8 +173,10 @@ class _LoginWebViewScreenState extends State<LoginWebViewScreen> {
             ],
           ),
           Expanded(
-            child: InAppWebView(
-              // 旧版と同じ: home URL を開く
+            child: !_cookiesCleared
+                ? const Center(child: CircularProgressIndicator())
+                : InAppWebView(
+              // Cookie クリア後にログインページを開く
               initialUrlRequest: URLRequest(
                 url: WebUri(widget.service.homeUrl),
               ),
@@ -317,9 +339,7 @@ class _LoginWebViewScreenState extends State<LoginWebViewScreen> {
     );
 
     // Cookie クリア (次回ログイン用)
-    await CookieManager.instance().deleteCookies(
-      url: WebUri('https://bsky.app'),
-    );
+    await CookieManager.instance().deleteAllCookies();
 
     if (mounted) Navigator.of(context).pop(loginResult);
   }
@@ -501,13 +521,8 @@ class _LoginWebViewScreenState extends State<LoginWebViewScreen> {
       avatarUrl: avatarUrl,
     );
 
-    // auth Cookie のみクリア (次回ログイン用にセッション Cookie は残す)
-    for (final name in ['auth_token', 'ct0']) {
-      await cookieManager.deleteCookie(
-        url: WebUri('https://x.com'),
-        name: name,
-      );
-    }
+    // 全 Cookie をクリア（次回ログイン時に別アカウントと干渉しないように）
+    await cookieManager.deleteAllCookies();
 
     if (mounted) Navigator.of(context).pop(loginResult);
   }

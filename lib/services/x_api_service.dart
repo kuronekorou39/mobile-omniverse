@@ -20,16 +20,29 @@ class XApiService {
   // NOTE: この値は X のデプロイにより変更される場合がある
   static const _homeLatestTimelineQueryId = 'BKB7oi212Fi7kQtCBGE4zA';
 
+  Map<String, String> _buildHeaders(XCredentials creds) => {
+        'Authorization': 'Bearer $_bearerToken',
+        'x-csrf-token': creds.ct0,
+        'Cookie': 'auth_token=${creds.authToken}; ct0=${creds.ct0}',
+        'Content-Type': 'application/json',
+        'User-Agent':
+            'Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36',
+        'x-twitter-active-user': 'yes',
+        'x-twitter-client-language': 'ja',
+      };
+
   /// タイムラインを取得
   Future<List<Post>> getTimeline(
     XCredentials creds, {
     String? accountId,
     int count = 20,
+    String? cursor,
   }) async {
     final variables = json.encode({
       'count': count,
       'includePromotedContent': false,
       'latestControlAvailable': true,
+      if (cursor != null) 'cursor': cursor,
     });
 
     final features = json.encode({
@@ -66,16 +79,7 @@ class XApiService {
       '&features=${Uri.encodeComponent(features)}',
     );
 
-    final response = await http.get(uri, headers: {
-      'Authorization': 'Bearer $_bearerToken',
-      'x-csrf-token': creds.ct0,
-      'Cookie': 'auth_token=${creds.authToken}; ct0=${creds.ct0}',
-      'Content-Type': 'application/json',
-      'User-Agent':
-          'Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36',
-      'x-twitter-active-user': 'yes',
-      'x-twitter-client-language': 'ja',
-    });
+    final response = await http.get(uri, headers: _buildHeaders(creds));
 
     if (response.statusCode == 401 || response.statusCode == 403) {
       throw XAuthException('Authentication failed: ${response.statusCode}');
@@ -90,6 +94,120 @@ class XApiService {
     final body = json.decode(response.body) as Map<String, dynamic>;
     debugPrint('[XApi] Response top keys: ${body.keys.toList()}');
     return _parseTimeline(body, accountId);
+  }
+
+  /// ツイート詳細 (リプライ含む) を取得
+  Future<List<Post>> getTweetDetail(
+    XCredentials creds,
+    String tweetId, {
+    String? accountId,
+  }) async {
+    const queryId = 'nBS-WpgA6ZG0CyNHD517JQ';
+    final variables = json.encode({
+      'focalTweetId': tweetId,
+      'with_rux_injections': false,
+      'includePromotedContent': false,
+      'withCommunity': true,
+      'withQuickPromoteEligibilityTweetFields': true,
+      'withBirdwatchNotes': true,
+      'withVoice': true,
+      'withV2Timeline': true,
+    });
+
+    final features = json.encode({
+      'rweb_tipjar_consumption_enabled': true,
+      'responsive_web_graphql_exclude_directive_enabled': true,
+      'verified_phone_label_enabled': false,
+      'creator_subscriptions_tweet_preview_api_enabled': true,
+      'responsive_web_graphql_timeline_navigation_enabled': true,
+      'responsive_web_graphql_skip_user_profile_image_extensions_enabled':
+          false,
+      'communities_web_enable_tweet_community_results_fetch': true,
+      'c9s_tweet_anatomy_moderator_badge_enabled': true,
+      'articles_preview_enabled': true,
+      'responsive_web_edit_tweet_api_enabled': true,
+      'graphql_is_translatable_rweb_tweet_is_translatable_enabled': true,
+      'view_counts_everywhere_api_enabled': true,
+      'longform_notetweets_consumption_enabled': true,
+      'responsive_web_twitter_article_tweet_consumption_enabled': true,
+      'tweet_awards_web_tipping_enabled': false,
+      'creator_subscriptions_quote_tweet_preview_enabled': false,
+      'freedom_of_speech_not_reach_fetch_enabled': true,
+      'standardized_nudges_misinfo': true,
+      'tweet_with_visibility_results_prefer_gql_limited_actions_policy_enabled':
+          true,
+      'rweb_video_timestamps_enabled': true,
+      'longform_notetweets_rich_text_read_enabled': true,
+      'longform_notetweets_inline_media_enabled': true,
+      'responsive_web_enhance_cards_enabled': false,
+    });
+
+    final uri = Uri.parse(
+      'https://x.com/i/api/graphql/$queryId/TweetDetail'
+      '?variables=${Uri.encodeComponent(variables)}'
+      '&features=${Uri.encodeComponent(features)}',
+    );
+
+    final response = await http.get(uri, headers: _buildHeaders(creds));
+
+    if (response.statusCode == 401 || response.statusCode == 403) {
+      throw XAuthException('Authentication failed: ${response.statusCode}');
+    }
+
+    if (response.statusCode != 200) {
+      throw XApiException('Failed to fetch tweet detail: ${response.statusCode}');
+    }
+
+    final body = json.decode(response.body) as Map<String, dynamic>;
+    return _parseTweetDetailResponse(body, accountId);
+  }
+
+  /// いいね
+  Future<bool> likeTweet(XCredentials creds, String tweetId) async {
+    const queryId = 'lI07N6OaLximaJrGcUmslA';
+    final uri = Uri.parse('https://x.com/i/api/graphql/$queryId/FavoriteTweet');
+    final response = await http.post(
+      uri,
+      headers: _buildHeaders(creds),
+      body: json.encode({'variables': {'tweet_id': tweetId}}),
+    );
+    return response.statusCode == 200;
+  }
+
+  /// いいね解除
+  Future<bool> unlikeTweet(XCredentials creds, String tweetId) async {
+    const queryId = 'ZYKSe-w7KEslx3JhSIk5LA';
+    final uri = Uri.parse('https://x.com/i/api/graphql/$queryId/UnfavoriteTweet');
+    final response = await http.post(
+      uri,
+      headers: _buildHeaders(creds),
+      body: json.encode({'variables': {'tweet_id': tweetId}}),
+    );
+    return response.statusCode == 200;
+  }
+
+  /// リツイート
+  Future<bool> retweet(XCredentials creds, String tweetId) async {
+    const queryId = 'ojPdsZsimiJrUGLR1sjUtA';
+    final uri = Uri.parse('https://x.com/i/api/graphql/$queryId/CreateRetweet');
+    final response = await http.post(
+      uri,
+      headers: _buildHeaders(creds),
+      body: json.encode({'variables': {'tweet_id': tweetId, 'dark_request': false}}),
+    );
+    return response.statusCode == 200;
+  }
+
+  /// リツイート解除
+  Future<bool> unretweet(XCredentials creds, String tweetId) async {
+    const queryId = 'iQtK4dl5hBmXewYZuEOKVw';
+    final uri = Uri.parse('https://x.com/i/api/graphql/$queryId/DeleteRetweet');
+    final response = await http.post(
+      uri,
+      headers: _buildHeaders(creds),
+      body: json.encode({'variables': {'source_tweet_id': tweetId, 'dark_request': false}}),
+    );
+    return response.statusCode == 200;
   }
 
   List<Post> _parseTimeline(Map<String, dynamic> body, String? accountId) {
@@ -169,6 +287,64 @@ class XApiService {
     return posts;
   }
 
+  List<Post> _parseTweetDetailResponse(
+      Map<String, dynamic> body, String? accountId) {
+    final posts = <Post>[];
+    try {
+      final instructions = _dig(body, [
+            'data',
+            'threaded_conversation_with_injections_v2',
+            'instructions',
+          ]) as List<dynamic>? ??
+          [];
+
+      for (final instruction in instructions) {
+        final map = instruction as Map<String, dynamic>;
+        if (map['type'] != 'TimelineAddEntries') continue;
+
+        final entries = map['entries'] as List<dynamic>? ?? [];
+        for (final entry in entries) {
+          final entryMap = entry as Map<String, dynamic>;
+          final content = entryMap['content'] as Map<String, dynamic>?;
+          if (content == null) continue;
+
+          final entryType = content['entryType'] as String?;
+          if (entryType == 'TimelineTimelineItem') {
+            final itemContent =
+                content['itemContent'] as Map<String, dynamic>?;
+            if (itemContent == null) continue;
+            final tweetResults =
+                itemContent['tweet_results'] as Map<String, dynamic>?;
+            if (tweetResults == null) continue;
+            final result = tweetResults['result'] as Map<String, dynamic>?;
+            if (result == null) continue;
+            final post = _parseTweet(result, accountId);
+            if (post != null) posts.add(post);
+          } else if (entryType == 'TimelineTimelineModule') {
+            // Conversation module (replies)
+            final items = content['items'] as List<dynamic>? ?? [];
+            for (final item in items) {
+              final itemMap = item as Map<String, dynamic>;
+              final itemContent =
+                  itemMap['item']?['itemContent'] as Map<String, dynamic>?;
+              if (itemContent == null) continue;
+              final tweetResults =
+                  itemContent['tweet_results'] as Map<String, dynamic>?;
+              if (tweetResults == null) continue;
+              final result = tweetResults['result'] as Map<String, dynamic>?;
+              if (result == null) continue;
+              final post = _parseTweet(result, accountId);
+              if (post != null) posts.add(post);
+            }
+          }
+        }
+      }
+    } catch (e) {
+      debugPrint('[XApi] Error parsing tweet detail: $e');
+    }
+    return posts;
+  }
+
   Post? _parseTweet(Map<String, dynamic> result, String? accountId) {
     try {
       // __typename が TweetWithVisibilityResults の場合
@@ -188,13 +364,84 @@ class XApiService {
       final userLegacy = userResult?['legacy'] as Map<String, dynamic>?;
 
       final tweetId = legacy['id_str'] as String? ?? '${result.hashCode}';
-      final fullText = legacy['full_text'] as String? ?? '';
+      var fullText = legacy['full_text'] as String? ?? '';
       final createdAt = legacy['created_at'] as String? ?? '';
 
       final username = userLegacy?['name'] as String? ?? '';
       final screenName = userLegacy?['screen_name'] as String? ?? '';
       final avatarUrl =
           userLegacy?['profile_image_url_https'] as String?;
+
+      // Engagement counts
+      final likeCount = legacy['favorite_count'] as int? ?? 0;
+      final repostCount = legacy['retweet_count'] as int? ?? 0;
+      final replyCount = legacy['reply_count'] as int? ?? 0;
+      final isLiked = legacy['favorited'] as bool? ?? false;
+      final isReposted = legacy['retweeted'] as bool? ?? false;
+
+      // Reply info
+      final inReplyToId = legacy['in_reply_to_status_id_str'] as String?;
+
+      // Media extraction
+      final imageUrls = <String>[];
+      String? videoUrl;
+      String? videoThumbnailUrl;
+
+      final extendedEntities =
+          legacy['extended_entities'] as Map<String, dynamic>?;
+      final mediaList =
+          extendedEntities?['media'] as List<dynamic>? ?? [];
+
+      for (final media in mediaList) {
+        final m = media as Map<String, dynamic>;
+        final type = m['type'] as String?;
+        if (type == 'photo') {
+          final url = m['media_url_https'] as String?;
+          if (url != null) imageUrls.add(url);
+        } else if (type == 'video' || type == 'animated_gif') {
+          videoThumbnailUrl = m['media_url_https'] as String?;
+          // Get highest bitrate video variant
+          final videoInfo = m['video_info'] as Map<String, dynamic>?;
+          final variants = videoInfo?['variants'] as List<dynamic>? ?? [];
+          int maxBitrate = -1;
+          for (final v in variants) {
+            final vm = v as Map<String, dynamic>;
+            final contentType = vm['content_type'] as String?;
+            if (contentType != 'video/mp4') continue;
+            final bitrate = vm['bitrate'] as int? ?? 0;
+            if (bitrate > maxBitrate) {
+              maxBitrate = bitrate;
+              videoUrl = vm['url'] as String?;
+            }
+          }
+        }
+      }
+
+      // t.co URL expansion
+      final entities = legacy['entities'] as Map<String, dynamic>?;
+      final urls = entities?['urls'] as List<dynamic>? ?? [];
+      for (final urlObj in urls) {
+        final u = urlObj as Map<String, dynamic>;
+        final shortUrl = u['url'] as String?;
+        final expandedUrl = u['expanded_url'] as String?;
+        if (shortUrl != null && expandedUrl != null) {
+          fullText = fullText.replaceAll(shortUrl, expandedUrl);
+        }
+      }
+
+      // Remove trailing media URLs from text (t.co links for images/videos)
+      for (final media in mediaList) {
+        final m = media as Map<String, dynamic>;
+        final mediaUrl = m['url'] as String?;
+        if (mediaUrl != null) {
+          fullText = fullText.replaceAll(mediaUrl, '').trimRight();
+        }
+      }
+
+      // Permalink
+      final permalink = screenName.isNotEmpty
+          ? 'https://x.com/$screenName/status/$tweetId'
+          : null;
 
       return Post(
         id: 'x_$tweetId',
@@ -205,6 +452,16 @@ class XApiService {
         timestamp: _parseTwitterDate(createdAt),
         avatarUrl: avatarUrl,
         accountId: accountId,
+        likeCount: likeCount,
+        repostCount: repostCount,
+        replyCount: replyCount,
+        isLiked: isLiked,
+        isReposted: isReposted,
+        imageUrls: imageUrls,
+        videoUrl: videoUrl,
+        videoThumbnailUrl: videoThumbnailUrl,
+        permalink: permalink,
+        inReplyToId: inReplyToId,
       );
     } catch (e) {
       debugPrint('[XApi] Error parsing tweet: $e');

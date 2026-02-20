@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import 'providers/settings_provider.dart';
 import 'screens/home_screen.dart';
 import 'services/account_storage_service.dart';
 
@@ -10,14 +11,17 @@ void main() async {
   runApp(const ProviderScope(child: OmniVerseApp()));
 }
 
-class OmniVerseApp extends StatelessWidget {
+class OmniVerseApp extends ConsumerWidget {
   const OmniVerseApp({super.key});
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final settings = ref.watch(settingsProvider);
+
     return MaterialApp(
       title: 'OmniVerse',
       debugShowCheckedModeBanner: false,
+      themeMode: settings.themeMode,
       theme: ThemeData(
         colorSchemeSeed: const Color(0xFF6750A4),
         useMaterial3: true,
@@ -28,6 +32,16 @@ class OmniVerseApp extends StatelessWidget {
         useMaterial3: true,
         brightness: Brightness.dark,
       ),
+      builder: (context, child) {
+        // Apply font scale from settings
+        final mediaQuery = MediaQuery.of(context);
+        return MediaQuery(
+          data: mediaQuery.copyWith(
+            textScaler: TextScaler.linear(settings.fontScale),
+          ),
+          child: child!,
+        );
+      },
       home: const HomeScreen(),
     );
   }

@@ -180,7 +180,6 @@ class _LoginWebViewScreenState extends State<LoginWebViewScreen> {
               initialUrlRequest: URLRequest(
                 url: WebUri(widget.service.homeUrl),
               ),
-              // 旧版と完全に同じ設定
               initialSettings: InAppWebViewSettings(
                 userAgent:
                     'Mozilla/5.0 (Linux; Android 14; Pixel 8) '
@@ -188,7 +187,37 @@ class _LoginWebViewScreenState extends State<LoginWebViewScreen> {
                     'Chrome/120.0.0.0 Mobile Safari/537.36',
                 javaScriptEnabled: true,
                 domStorageEnabled: true,
+                // Google OAuth などの外部ドメインリダイレクトを許可
+                useShouldOverrideUrlLoading: true,
+                // 3rd party cookies (Google OAuth に必要)
+                thirdPartyCookiesEnabled: true,
               ),
+              // Google OAuth リダイレクト等を適切に処理
+              shouldOverrideUrlLoading: (controller, navigationAction) async {
+                final url = navigationAction.request.url?.toString() ?? '';
+                // Google OAuth, Apple ID など外部認証プロバイダのドメインは許可
+                final allowedDomains = [
+                  'accounts.google.com',
+                  'accounts.youtube.com',
+                  'appleid.apple.com',
+                  'x.com',
+                  'twitter.com',
+                  'api.twitter.com',
+                  'bsky.app',
+                  'bsky.social',
+                ];
+                final uri = Uri.tryParse(url);
+                if (uri != null) {
+                  final host = uri.host;
+                  for (final domain in allowedDomains) {
+                    if (host == domain || host.endsWith('.$domain')) {
+                      return NavigationActionPolicy.ALLOW;
+                    }
+                  }
+                }
+                // その他の URL も基本的に許可（リダイレクトチェーンを壊さない）
+                return NavigationActionPolicy.ALLOW;
+              },
               // X の場合: fetch をインターセプトしてユーザー情報をキャプチャ
               initialUserScripts: widget.service == SnsService.x
                   ? UnmodifiableListView([
@@ -205,8 +234,21 @@ class _LoginWebViewScreenState extends State<LoginWebViewScreen> {
               onProgressChanged: (_, progress) {
                 setState(() => _progress = progress / 100);
               },
-              onLoadStop: (_, url) {
+              onLoadStop: (controller, url) {
                 debugPrint('[LoginWebView] onLoadStop: $url');
+                // Google OAuth 完了後に元のサイトに戻った場合を検出
+                final urlStr = url?.toString() ?? '';
+                if (urlStr.contains(widget.service.domain)) {
+                  debugPrint('[LoginWebView] Returned to ${widget.service.domain}');
+                }
+                // X の場合: fetch interceptor を再注入
+                // (Google OAuth リダイレクト後にスクリプトが消えることがある)
+                if (widget.service == SnsService.x &&
+                    urlStr.contains('x.com')) {
+                  controller.evaluateJavascript(
+                    source: _xFetchInterceptorScript,
+                  );
+                }
               },
             ),
           ),

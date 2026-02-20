@@ -171,6 +171,10 @@ class XApiService {
       headers: _buildHeaders(creds),
       body: json.encode({'variables': {'tweet_id': tweetId}}),
     );
+    debugPrint('[XApi] likeTweet $tweetId: ${response.statusCode}');
+    if (response.statusCode != 200) {
+      debugPrint('[XApi] likeTweet body: ${response.body}');
+    }
     return response.statusCode == 200;
   }
 
@@ -183,6 +187,10 @@ class XApiService {
       headers: _buildHeaders(creds),
       body: json.encode({'variables': {'tweet_id': tweetId}}),
     );
+    debugPrint('[XApi] unlikeTweet $tweetId: ${response.statusCode}');
+    if (response.statusCode != 200) {
+      debugPrint('[XApi] unlikeTweet body: ${response.body}');
+    }
     return response.statusCode == 200;
   }
 
@@ -195,6 +203,10 @@ class XApiService {
       headers: _buildHeaders(creds),
       body: json.encode({'variables': {'tweet_id': tweetId, 'dark_request': false}}),
     );
+    debugPrint('[XApi] retweet $tweetId: ${response.statusCode}');
+    if (response.statusCode != 200) {
+      debugPrint('[XApi] retweet body: ${response.body}');
+    }
     return response.statusCode == 200;
   }
 
@@ -207,6 +219,10 @@ class XApiService {
       headers: _buildHeaders(creds),
       body: json.encode({'variables': {'source_tweet_id': tweetId, 'dark_request': false}}),
     );
+    debugPrint('[XApi] unretweet $tweetId: ${response.statusCode}');
+    if (response.statusCode != 200) {
+      debugPrint('[XApi] unretweet body: ${response.body}');
+    }
     return response.statusCode == 200;
   }
 

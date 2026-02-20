@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:share_plus/share_plus.dart' as share_plus;
 
@@ -9,6 +10,8 @@ import '../services/account_storage_service.dart';
 import '../services/bluesky_api_service.dart';
 import '../services/x_api_service.dart';
 import '../widgets/post_card.dart';
+import '../widgets/post_media.dart';
+import '../widgets/sns_badge.dart';
 
 class PostDetailScreen extends ConsumerStatefulWidget {
   const PostDetailScreen({super.key, required this.post});
@@ -59,7 +62,6 @@ class _PostDetailScreenState extends ConsumerState<PostDetailScreen> {
         final rkey = widget.post.id.replaceFirst('bsky_', '');
         final did = account.blueskyCredentials.did;
         final postUri = 'at://$did/app.bsky.feed.post/$rkey';
-        // Try with author's DID from the URI
         posts = await BlueskyApiService.instance.getPostThread(
           account.blueskyCredentials,
           postUri,
@@ -189,7 +191,7 @@ class _PostDetailScreenState extends ConsumerState<PostDetailScreen> {
                 child: CircleAvatar(
                   radius: 24,
                   backgroundImage: post.avatarUrl != null
-                      ? NetworkImage(post.avatarUrl!)
+                      ? CachedNetworkImageProvider(post.avatarUrl!)
                       : null,
                   child: post.avatarUrl == null
                       ? Text(post.username.isNotEmpty
@@ -203,12 +205,21 @@ class _PostDetailScreenState extends ConsumerState<PostDetailScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
-                      post.username,
-                      style: const TextStyle(
-                        fontWeight: FontWeight.bold,
-                        fontSize: 16,
-                      ),
+                    Row(
+                      children: [
+                        Flexible(
+                          child: Text(
+                            post.username,
+                            style: const TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 16,
+                            ),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                        const SizedBox(width: 6),
+                        SnsBadge(service: post.source),
+                      ],
                     ),
                     Text(
                       post.handle,
@@ -224,17 +235,26 @@ class _PostDetailScreenState extends ConsumerState<PostDetailScreen> {
           ),
           const SizedBox(height: 16),
 
-          // Full text
-          SelectableText(
-            post.body,
+          // Full text with tappable links
+          LinkedText(
+            text: post.body,
             style: const TextStyle(fontSize: 16, height: 1.5),
+            selectable: true,
           ),
 
-          // Images
+          // Images (shared widget - not PostCard!)
           if (post.imageUrls.isNotEmpty) ...[
             const SizedBox(height: 12),
-            // Reuse PostCard image grid logic
-            PostCard(post: post),
+            PostImageGrid(imageUrls: post.imageUrls),
+          ],
+
+          // Video
+          if (post.videoUrl != null && post.videoThumbnailUrl != null) ...[
+            const SizedBox(height: 12),
+            PostVideoThumbnail(
+              videoUrl: post.videoUrl!,
+              thumbnailUrl: post.videoThumbnailUrl!,
+            ),
           ],
 
           const SizedBox(height: 12),

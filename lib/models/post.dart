@@ -20,6 +20,8 @@ class Post {
     this.videoThumbnailUrl,
     this.permalink,
     this.inReplyToId,
+    this.uri,
+    this.cid,
   });
 
   final String id;
@@ -46,6 +48,10 @@ class Post {
   // Metadata
   final String? permalink;
   final String? inReplyToId;
+
+  // Platform-specific identifiers (for API operations)
+  final String? uri; // Bluesky AT URI
+  final String? cid; // Bluesky CID
 
   factory Post.fromJson(Map<String, dynamic> json, SnsService source,
       {String? accountId}) {
@@ -88,6 +94,8 @@ class Post {
       videoThumbnailUrl: videoThumbnailUrl,
       permalink: permalink,
       inReplyToId: inReplyToId,
+      uri: uri,
+      cid: cid,
     );
   }
 

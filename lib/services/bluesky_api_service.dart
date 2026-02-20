@@ -238,6 +238,7 @@ class BlueskyApiService {
     final record = post['record'] as Map<String, dynamic>;
 
     final atUri = post['uri'] as String? ?? '';
+    final postCid = post['cid'] as String? ?? '';
     // AT URI format: at://did/app.bsky.feed.post/rkey
     final postId = atUri.isNotEmpty ? atUri.split('/').last : '${post.hashCode}';
 
@@ -297,6 +298,8 @@ class BlueskyApiService {
       videoThumbnailUrl: videoThumbnailUrl,
       permalink: permalink,
       inReplyToId: inReplyToUri,
+      uri: atUri,
+      cid: postCid,
     );
   }
 

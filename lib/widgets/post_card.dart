@@ -4,7 +4,7 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../models/post.dart';
 import '../services/account_storage_service.dart';
-import 'image_viewer.dart';
+import 'post_media.dart';
 import 'sns_badge.dart';
 
 class PostCard extends StatelessWidget {
@@ -63,18 +63,21 @@ class PostCard extends StatelessWidget {
               const SizedBox(height: 8),
 
               // Body text with tappable links
-              _buildBody(context),
+              LinkedText(text: post.body),
 
               // Images
               if (post.imageUrls.isNotEmpty) ...[
                 const SizedBox(height: 8),
-                _buildImageGrid(context),
+                PostImageGrid(imageUrls: post.imageUrls),
               ],
 
               // Video thumbnail
               if (post.videoUrl != null && post.videoThumbnailUrl != null) ...[
                 const SizedBox(height: 8),
-                _buildVideoThumbnail(context),
+                PostVideoThumbnail(
+                  videoUrl: post.videoUrl!,
+                  thumbnailUrl: post.videoThumbnailUrl!,
+                ),
               ],
 
               // Engagement row
@@ -169,226 +172,6 @@ class PostCard extends StatelessWidget {
     );
   }
 
-  Widget _buildBody(BuildContext context) {
-    final text = post.body;
-    if (text.isEmpty) return const SizedBox.shrink();
-
-    // Parse URLs in text for tappable links
-    final urlRegex = RegExp(r'https?://[^\s]+');
-    final matches = urlRegex.allMatches(text).toList();
-
-    if (matches.isEmpty) {
-      return SelectableText(
-        text,
-        style: Theme.of(context).textTheme.bodyMedium,
-      );
-    }
-
-    // Build rich text with tappable links
-    final spans = <InlineSpan>[];
-    int lastEnd = 0;
-
-    for (final match in matches) {
-      if (match.start > lastEnd) {
-        spans.add(TextSpan(text: text.substring(lastEnd, match.start)));
-      }
-      final url = match.group(0)!;
-      spans.add(
-        WidgetSpan(
-          child: GestureDetector(
-            onTap: () => _launchUrl(url),
-            child: Text(
-              url,
-              style: TextStyle(
-                color: Theme.of(context).colorScheme.primary,
-                decoration: TextDecoration.underline,
-              ),
-            ),
-          ),
-        ),
-      );
-      lastEnd = match.end;
-    }
-    if (lastEnd < text.length) {
-      spans.add(TextSpan(text: text.substring(lastEnd)));
-    }
-
-    return Text.rich(
-      TextSpan(
-        style: Theme.of(context).textTheme.bodyMedium,
-        children: spans,
-      ),
-    );
-  }
-
-  Widget _buildImageGrid(BuildContext context) {
-    final images = post.imageUrls;
-    final count = images.length.clamp(0, 4);
-
-    if (count == 1) {
-      return _buildSingleImage(context, images[0], 0);
-    }
-
-    if (count == 2) {
-      return Row(
-        children: [
-          Expanded(child: _buildGridImage(context, images[0], 0, borderRadius: const BorderRadius.only(topLeft: Radius.circular(8), bottomLeft: Radius.circular(8)))),
-          const SizedBox(width: 2),
-          Expanded(child: _buildGridImage(context, images[1], 1, borderRadius: const BorderRadius.only(topRight: Radius.circular(8), bottomRight: Radius.circular(8)))),
-        ],
-      );
-    }
-
-    if (count == 3) {
-      return Row(
-        children: [
-          Expanded(
-            child: _buildGridImage(context, images[0], 0,
-                height: 200,
-                borderRadius: const BorderRadius.only(
-                    topLeft: Radius.circular(8),
-                    bottomLeft: Radius.circular(8))),
-          ),
-          const SizedBox(width: 2),
-          Expanded(
-            child: Column(
-              children: [
-                _buildGridImage(context, images[1], 1,
-                    height: 99,
-                    borderRadius: const BorderRadius.only(
-                        topRight: Radius.circular(8))),
-                const SizedBox(height: 2),
-                _buildGridImage(context, images[2], 2,
-                    height: 99,
-                    borderRadius: const BorderRadius.only(
-                        bottomRight: Radius.circular(8))),
-              ],
-            ),
-          ),
-        ],
-      );
-    }
-
-    // 4 images
-    return Column(
-      children: [
-        Row(
-          children: [
-            Expanded(child: _buildGridImage(context, images[0], 0, height: 100, borderRadius: const BorderRadius.only(topLeft: Radius.circular(8)))),
-            const SizedBox(width: 2),
-            Expanded(child: _buildGridImage(context, images[1], 1, height: 100, borderRadius: const BorderRadius.only(topRight: Radius.circular(8)))),
-          ],
-        ),
-        const SizedBox(height: 2),
-        Row(
-          children: [
-            Expanded(child: _buildGridImage(context, images[2], 2, height: 100, borderRadius: const BorderRadius.only(bottomLeft: Radius.circular(8)))),
-            const SizedBox(width: 2),
-            Expanded(child: _buildGridImage(context, images[3], 3, height: 100, borderRadius: const BorderRadius.only(bottomRight: Radius.circular(8)))),
-          ],
-        ),
-      ],
-    );
-  }
-
-  Widget _buildSingleImage(BuildContext context, String url, int index) {
-    return GestureDetector(
-      onTap: () => _openImageViewer(context, index),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(8),
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxHeight: 300),
-          child: CachedNetworkImage(
-            imageUrl: url,
-            fit: BoxFit.cover,
-            width: double.infinity,
-            placeholder: (context, url) => Container(
-              height: 200,
-              color: Colors.grey[300],
-              child: const Center(child: CircularProgressIndicator(strokeWidth: 2)),
-            ),
-            errorWidget: (context, error, stackTrace) => Container(
-              height: 100,
-              color: Colors.grey[300],
-              child: const Icon(Icons.broken_image),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildGridImage(
-    BuildContext context,
-    String url,
-    int index, {
-    double? height,
-    BorderRadius? borderRadius,
-  }) {
-    return GestureDetector(
-      onTap: () => _openImageViewer(context, index),
-      child: ClipRRect(
-        borderRadius: borderRadius ?? BorderRadius.zero,
-        child: CachedNetworkImage(
-          imageUrl: url,
-          fit: BoxFit.cover,
-          height: height ?? 150,
-          width: double.infinity,
-          placeholder: (context, url) => Container(
-            height: height ?? 150,
-            color: Colors.grey[300],
-          ),
-          errorWidget: (context, error, stackTrace) => Container(
-            height: height ?? 150,
-            color: Colors.grey[300],
-            child: const Icon(Icons.broken_image, size: 20),
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildVideoThumbnail(BuildContext context) {
-    return GestureDetector(
-      onTap: () => _launchUrl(post.videoUrl!),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(8),
-        child: Stack(
-          alignment: Alignment.center,
-          children: [
-            CachedNetworkImage(
-              imageUrl: post.videoThumbnailUrl!,
-              fit: BoxFit.cover,
-              width: double.infinity,
-              height: 200,
-              placeholder: (context, url) => Container(
-                height: 200,
-                color: Colors.grey[300],
-              ),
-              errorWidget: (context, error, stackTrace) => Container(
-                height: 200,
-                color: Colors.grey[800],
-                child: const Icon(Icons.videocam, color: Colors.white54, size: 48),
-              ),
-            ),
-            Container(
-              padding: const EdgeInsets.all(12),
-              decoration: const BoxDecoration(
-                color: Colors.black54,
-                shape: BoxShape.circle,
-              ),
-              child: const Icon(
-                Icons.play_arrow,
-                color: Colors.white,
-                size: 32,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
   Widget _buildEngagementRow(BuildContext context) {
     final iconColor = Colors.grey[600];
     const iconSize = 18.0;
@@ -429,7 +212,12 @@ class PostCard extends StatelessWidget {
         IconButton(
           icon: Icon(Icons.share_outlined, size: iconSize, color: iconColor),
           onPressed: post.permalink != null
-              ? () => _launchUrl(post.permalink!)
+              ? () async {
+                  final uri = Uri.tryParse(post.permalink!);
+                  if (uri != null) {
+                    await launchUrl(uri, mode: LaunchMode.externalApplication);
+                  }
+                }
               : null,
           padding: EdgeInsets.zero,
           constraints: const BoxConstraints(),
@@ -437,24 +225,6 @@ class PostCard extends StatelessWidget {
         ),
       ],
     );
-  }
-
-  void _openImageViewer(BuildContext context, int index) {
-    Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (_) => ImageViewer(
-          imageUrls: post.imageUrls,
-          initialIndex: index,
-        ),
-      ),
-    );
-  }
-
-  Future<void> _launchUrl(String url) async {
-    final uri = Uri.tryParse(url);
-    if (uri != null) {
-      await launchUrl(uri, mode: LaunchMode.externalApplication);
-    }
   }
 }
 

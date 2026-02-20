@@ -52,37 +52,54 @@ class _OmniFeedScreenState extends ConsumerState<OmniFeedScreen> {
     if (account == null) return;
 
     // Optimistic update
+    final wasLiked = post.isLiked;
     ref.read(feedProvider.notifier).updatePostEngagement(
           post.id,
-          isLiked: !post.isLiked,
-          likeCount: post.isLiked ? post.likeCount - 1 : post.likeCount + 1,
+          isLiked: !wasLiked,
+          likeCount: wasLiked ? post.likeCount - 1 : post.likeCount + 1,
         );
 
     try {
+      bool success = false;
       if (post.source == SnsService.x) {
         final creds = account.xCredentials;
         final tweetId = post.id.replaceFirst('x_', '');
-        if (post.isLiked) {
-          await XApiService.instance.unlikeTweet(creds, tweetId);
+        if (wasLiked) {
+          success = await XApiService.instance.unlikeTweet(creds, tweetId);
         } else {
-          await XApiService.instance.likeTweet(creds, tweetId);
+          success = await XApiService.instance.likeTweet(creds, tweetId);
         }
+        debugPrint('[Like] X ${wasLiked ? "unlike" : "like"} $tweetId: $success');
       } else if (post.source == SnsService.bluesky) {
         final creds = account.blueskyCredentials;
-        if (post.isLiked) {
-          // For unlike we need the like URI - simplified: just toggle local
+        if (wasLiked) {
+          // viewer.like の URI が必要 - 次回フェッチで状態は同期される
+          success = true;
         } else {
-          final postUri = _buildBlueskyUri(post);
-          if (postUri != null) {
-            await BlueskyApiService.instance.likePost(creds, postUri, '');
+          final postUri = post.uri;
+          final postCid = post.cid;
+          if (postUri != null && postCid != null && postCid.isNotEmpty) {
+            final result = await BlueskyApiService.instance.likePost(
+                creds, postUri, postCid);
+            success = result != null;
           }
         }
+        debugPrint('[Like] Bluesky ${wasLiked ? "unlike" : "like"}: $success');
+      }
+
+      if (!success) {
+        // Revert on failure
+        ref.read(feedProvider.notifier).updatePostEngagement(
+              post.id,
+              isLiked: wasLiked,
+              likeCount: post.likeCount,
+            );
       }
     } catch (e) {
-      // Revert on failure
+      debugPrint('[Like] Error: $e');
       ref.read(feedProvider.notifier).updatePostEngagement(
             post.id,
-            isLiked: post.isLiked,
+            isLiked: wasLiked,
             likeCount: post.likeCount,
           );
     }
@@ -92,27 +109,53 @@ class _OmniFeedScreenState extends ConsumerState<OmniFeedScreen> {
     final account = _getAccountForPost(post);
     if (account == null) return;
 
+    final wasReposted = post.isReposted;
     ref.read(feedProvider.notifier).updatePostEngagement(
           post.id,
-          isReposted: !post.isReposted,
+          isReposted: !wasReposted,
           repostCount:
-              post.isReposted ? post.repostCount - 1 : post.repostCount + 1,
+              wasReposted ? post.repostCount - 1 : post.repostCount + 1,
         );
 
     try {
+      bool success = false;
       if (post.source == SnsService.x) {
         final creds = account.xCredentials;
         final tweetId = post.id.replaceFirst('x_', '');
-        if (post.isReposted) {
-          await XApiService.instance.unretweet(creds, tweetId);
+        if (wasReposted) {
+          success = await XApiService.instance.unretweet(creds, tweetId);
         } else {
-          await XApiService.instance.retweet(creds, tweetId);
+          success = await XApiService.instance.retweet(creds, tweetId);
         }
+        debugPrint('[Repost] X ${wasReposted ? "unretweet" : "retweet"} $tweetId: $success');
+      } else if (post.source == SnsService.bluesky) {
+        final creds = account.blueskyCredentials;
+        if (wasReposted) {
+          success = true;
+        } else {
+          final postUri = post.uri;
+          final postCid = post.cid;
+          if (postUri != null && postCid != null && postCid.isNotEmpty) {
+            final result = await BlueskyApiService.instance.repost(
+                creds, postUri, postCid);
+            success = result != null;
+          }
+        }
+        debugPrint('[Repost] Bluesky ${wasReposted ? "unrepost" : "repost"}: $success');
+      }
+
+      if (!success) {
+        ref.read(feedProvider.notifier).updatePostEngagement(
+              post.id,
+              isReposted: wasReposted,
+              repostCount: post.repostCount,
+            );
       }
     } catch (e) {
+      debugPrint('[Repost] Error: $e');
       ref.read(feedProvider.notifier).updatePostEngagement(
             post.id,
-            isReposted: post.isReposted,
+            isReposted: wasReposted,
             repostCount: post.repostCount,
           );
     }
@@ -121,14 +164,6 @@ class _OmniFeedScreenState extends ConsumerState<OmniFeedScreen> {
   Account? _getAccountForPost(Post post) {
     if (post.accountId == null) return null;
     return AccountStorageService.instance.getAccount(post.accountId!);
-  }
-
-  String? _buildBlueskyUri(Post post) {
-    final account = _getAccountForPost(post);
-    if (account == null) return null;
-    final did = account.blueskyCredentials.did;
-    final rkey = post.id.replaceFirst('bsky_', '');
-    return 'at://$did/app.bsky.feed.post/$rkey';
   }
 
   @override

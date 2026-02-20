@@ -55,20 +55,29 @@ class XCredentials {
   const XCredentials({
     required this.authToken,
     required this.ct0,
+    this.allCookies = '',
   });
 
   final String authToken;
   final String ct0;
+  /// WebView から取得した全 Cookie 文字列 (key=value; key=value; ...)
+  final String allCookies;
+
+  /// API リクエスト用の Cookie ヘッダー値
+  String get cookieHeader =>
+      allCookies.isNotEmpty ? allCookies : 'auth_token=$authToken; ct0=$ct0';
 
   Map<String, dynamic> toJson() => {
         'authToken': authToken,
         'ct0': ct0,
+        'allCookies': allCookies,
       };
 
   factory XCredentials.fromJson(Map<String, dynamic> json) {
     return XCredentials(
       authToken: json['authToken'] as String,
       ct0: json['ct0'] as String,
+      allCookies: json['allCookies'] as String? ?? '',
     );
   }
 }

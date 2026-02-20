@@ -431,8 +431,10 @@ class _LoginWebViewScreenState extends State<LoginWebViewScreen> {
     String? authToken;
     String? ct0;
     String? twid;
+    final cookieParts = <String>[];
 
     for (final cookie in cookies) {
+      cookieParts.add('${cookie.name}=${cookie.value}');
       if (cookie.name == 'auth_token') {
         authToken = cookie.value.toString();
       } else if (cookie.name == 'ct0') {
@@ -442,8 +444,9 @@ class _LoginWebViewScreenState extends State<LoginWebViewScreen> {
       }
     }
 
+    final allCookies = cookieParts.join('; ');
     debugPrint('[LoginWebView] X cookies: '
-        'auth_token=${authToken != null}, ct0=${ct0 != null}');
+        'auth_token=${authToken != null}, ct0=${ct0 != null}, total=${cookies.length}');
 
     if (authToken == null || ct0 == null) {
       if (mounted) {
@@ -455,7 +458,7 @@ class _LoginWebViewScreenState extends State<LoginWebViewScreen> {
       return;
     }
 
-    final creds = XCredentials(authToken: authToken, ct0: ct0);
+    final creds = XCredentials(authToken: authToken, ct0: ct0, allCookies: allCookies);
 
     // WebView 内の fetch でユーザー情報取得（全 Cookie が自動送信される）
     String displayName = 'X User';

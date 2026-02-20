@@ -20,14 +20,17 @@ class XApiService {
   // NOTE: この値は X のデプロイにより変更される場合がある
   static const _homeLatestTimelineQueryId = 'BKB7oi212Fi7kQtCBGE4zA';
 
-  Map<String, String> _buildHeaders(XCredentials creds) => {
+  Map<String, String> _buildHeaders(XCredentials creds, {bool form = false}) => {
         'Authorization': 'Bearer $_bearerToken',
         'x-csrf-token': creds.ct0,
-        'Cookie': 'auth_token=${creds.authToken}; ct0=${creds.ct0}',
-        'Content-Type': 'application/json',
+        'Cookie': creds.cookieHeader,
+        'Content-Type': form
+            ? 'application/x-www-form-urlencoded'
+            : 'application/json',
         'User-Agent':
             'Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36',
         'x-twitter-active-user': 'yes',
+        'x-twitter-auth-type': 'OAuth2Session',
         'x-twitter-client-language': 'ja',
       };
 
@@ -162,67 +165,102 @@ class XApiService {
     return _parseTweetDetailResponse(body, accountId);
   }
 
-  /// いいね
+  // ===== v1.1 REST API (GraphQL queryId は X デプロイで頻繁に変わるため不使用) =====
+
+  /// いいね (GraphQL)
   Future<bool> likeTweet(XCredentials creds, String tweetId) async {
-    const queryId = 'lI07N6OaLximaJrGcUmslA';
+    const queryId = 'lI07N6Otwv1PhnEgXILM7A';
     final uri = Uri.parse('https://x.com/i/api/graphql/$queryId/FavoriteTweet');
     final response = await http.post(
       uri,
       headers: _buildHeaders(creds),
-      body: json.encode({'variables': {'tweet_id': tweetId}}),
+      body: json.encode({
+        'variables': {'tweet_id': tweetId},
+        'queryId': queryId,
+      }),
     );
     debugPrint('[XApi] likeTweet $tweetId: ${response.statusCode}');
-    if (response.statusCode != 200) {
-      debugPrint('[XApi] likeTweet body: ${response.body}');
-    }
+    debugPrint('[XApi] likeTweet body: ${response.body.length > 200 ? response.body.substring(0, 200) : response.body}');
     return response.statusCode == 200;
   }
 
-  /// いいね解除
+  /// いいね解除 (GraphQL)
   Future<bool> unlikeTweet(XCredentials creds, String tweetId) async {
     const queryId = 'ZYKSe-w7KEslx3JhSIk5LA';
     final uri = Uri.parse('https://x.com/i/api/graphql/$queryId/UnfavoriteTweet');
     final response = await http.post(
       uri,
       headers: _buildHeaders(creds),
-      body: json.encode({'variables': {'tweet_id': tweetId}}),
+      body: json.encode({
+        'variables': {'tweet_id': tweetId},
+        'queryId': queryId,
+      }),
     );
     debugPrint('[XApi] unlikeTweet $tweetId: ${response.statusCode}');
-    if (response.statusCode != 200) {
-      debugPrint('[XApi] unlikeTweet body: ${response.body}');
-    }
+    debugPrint('[XApi] unlikeTweet body: ${response.body.length > 200 ? response.body.substring(0, 200) : response.body}');
     return response.statusCode == 200;
   }
 
-  /// リツイート
+  /// リツイート (GraphQL)
   Future<bool> retweet(XCredentials creds, String tweetId) async {
     const queryId = 'ojPdsZsimiJrUGLR1sjUtA';
     final uri = Uri.parse('https://x.com/i/api/graphql/$queryId/CreateRetweet');
     final response = await http.post(
       uri,
       headers: _buildHeaders(creds),
-      body: json.encode({'variables': {'tweet_id': tweetId, 'dark_request': false}}),
+      body: json.encode({
+        'variables': {'tweet_id': tweetId, 'dark_request': false},
+        'queryId': queryId,
+      }),
     );
     debugPrint('[XApi] retweet $tweetId: ${response.statusCode}');
-    if (response.statusCode != 200) {
-      debugPrint('[XApi] retweet body: ${response.body}');
+    debugPrint('[XApi] retweet body: ${response.body.length > 200 ? response.body.substring(0, 200) : response.body}');
+
+    // queryId が古い場合 (404) は v1.1 API にフォールバック
+    if (response.statusCode == 404) {
+      debugPrint('[XApi] retweet GraphQL 404, fallback to v1.1');
+      final v1Uri = Uri.parse('https://x.com/i/api/1.1/statuses/retweet/$tweetId.json');
+      final v1Response = await http.post(
+        v1Uri,
+        headers: _buildHeaders(creds, form: true),
+        body: 'id=$tweetId',
+      );
+      debugPrint('[XApi] retweet v1.1 $tweetId: ${v1Response.statusCode}');
+      debugPrint('[XApi] retweet v1.1 body: ${v1Response.body.length > 200 ? v1Response.body.substring(0, 200) : v1Response.body}');
+      return v1Response.statusCode == 200;
     }
+
     return response.statusCode == 200;
   }
 
-  /// リツイート解除
+  /// リツイート解除 (GraphQL)
   Future<bool> unretweet(XCredentials creds, String tweetId) async {
     const queryId = 'iQtK4dl5hBmXewYZuEOKVw';
     final uri = Uri.parse('https://x.com/i/api/graphql/$queryId/DeleteRetweet');
     final response = await http.post(
       uri,
       headers: _buildHeaders(creds),
-      body: json.encode({'variables': {'source_tweet_id': tweetId, 'dark_request': false}}),
+      body: json.encode({
+        'variables': {'source_tweet_id': tweetId, 'dark_request': false},
+        'queryId': queryId,
+      }),
     );
     debugPrint('[XApi] unretweet $tweetId: ${response.statusCode}');
-    if (response.statusCode != 200) {
-      debugPrint('[XApi] unretweet body: ${response.body}');
+    debugPrint('[XApi] unretweet body: ${response.body.length > 200 ? response.body.substring(0, 200) : response.body}');
+
+    // queryId が古い場合 (404) は v1.1 API にフォールバック
+    if (response.statusCode == 404) {
+      debugPrint('[XApi] unretweet GraphQL 404, fallback to v1.1');
+      final v1Uri = Uri.parse('https://x.com/i/api/1.1/statuses/unretweet/$tweetId.json');
+      final v1Response = await http.post(
+        v1Uri,
+        headers: _buildHeaders(creds, form: true),
+        body: 'id=$tweetId',
+      );
+      debugPrint('[XApi] unretweet v1.1 $tweetId: ${v1Response.statusCode}');
+      return v1Response.statusCode == 200;
     }
+
     return response.statusCode == 200;
   }
 

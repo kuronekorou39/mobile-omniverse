@@ -230,7 +230,24 @@ class BlueskyApiService {
   Post _parsePost(dynamic item, String? accountId) {
     final feedItem = item as Map<String, dynamic>;
     final post = feedItem['post'] as Map<String, dynamic>;
-    return _parsePostObject(post, accountId);
+    var parsed = _parsePostObject(post, accountId);
+
+    // リポスト検出: reason フィールド
+    final reason = feedItem['reason'] as Map<String, dynamic>?;
+    if (reason != null &&
+        reason['\$type'] == 'app.bsky.feed.defs#reasonRepost') {
+      final by = reason['by'] as Map<String, dynamic>?;
+      if (by != null) {
+        parsed = parsed.copyWith(
+          isRetweet: true,
+          retweetedByUsername:
+              by['displayName'] as String? ?? by['handle'] as String? ?? '',
+          retweetedByHandle: '@${by['handle'] as String? ?? ''}',
+        );
+      }
+    }
+
+    return parsed;
   }
 
   Post _parsePostObject(Map<String, dynamic> post, String? accountId) {
@@ -262,6 +279,7 @@ class BlueskyApiService {
     final imageUrls = <String>[];
     String? videoUrl;
     String? videoThumbnailUrl;
+    Post? quotedPost;
 
     final embed = post['embed'] as Map<String, dynamic>?;
     if (embed != null) {
@@ -269,6 +287,7 @@ class BlueskyApiService {
         videoUrl = v;
         videoThumbnailUrl = t;
       });
+      quotedPost = _extractQuotedPost(embed, accountId);
     }
 
     // Permalink
@@ -300,6 +319,7 @@ class BlueskyApiService {
       inReplyToId: inReplyToUri,
       uri: atUri,
       cid: postCid,
+      quotedPost: quotedPost,
     );
   }
 
@@ -338,6 +358,72 @@ class BlueskyApiService {
       final thumb = external_?['thumb'] as String?;
       if (thumb != null) imageUrls.add(thumb);
     }
+  }
+
+  /// 引用ポストを embed から抽出
+  Post? _extractQuotedPost(Map<String, dynamic> embed, String? accountId) {
+    final type = embed['\$type'] as String?;
+
+    Map<String, dynamic>? recordData;
+
+    if (type == 'app.bsky.embed.record#view') {
+      recordData = embed['record'] as Map<String, dynamic>?;
+    } else if (type == 'app.bsky.embed.recordWithMedia#view') {
+      final recordEmbed = embed['record'] as Map<String, dynamic>?;
+      recordData = recordEmbed?['record'] as Map<String, dynamic>?;
+    }
+
+    if (recordData == null) return null;
+
+    // record の $type が viewRecord でなければスキップ (blocked / notFound 等)
+    final recType = recordData['\$type'] as String?;
+    if (recType != 'app.bsky.embed.record#viewRecord') return null;
+
+    final qAuthor = recordData['author'] as Map<String, dynamic>?;
+    if (qAuthor == null) return null;
+
+    final qValue = recordData['value'] as Map<String, dynamic>? ?? {};
+    final qUri = recordData['uri'] as String? ?? '';
+    final qCid = recordData['cid'] as String? ?? '';
+    final qPostId = qUri.isNotEmpty ? qUri.split('/').last : '';
+    final qHandle = qAuthor['handle'] as String? ?? '';
+
+    // 引用先のメディア
+    final qImageUrls = <String>[];
+    String? qVideoUrl;
+    String? qVideoThumbnailUrl;
+    final qEmbeds = recordData['embeds'] as List<dynamic>?;
+    if (qEmbeds != null) {
+      for (final qe in qEmbeds) {
+        if (qe is Map<String, dynamic>) {
+          _extractMedia(qe, qImageUrls, (v, t) {
+            qVideoUrl = v;
+            qVideoThumbnailUrl = t;
+          });
+        }
+      }
+    }
+
+    return Post(
+      id: 'bsky_$qPostId',
+      source: SnsService.bluesky,
+      username: qAuthor['displayName'] as String? ?? qHandle,
+      handle: '@$qHandle',
+      body: qValue['text'] as String? ?? '',
+      timestamp: DateTime.tryParse(
+              qValue['createdAt'] as String? ?? '') ??
+          DateTime.now(),
+      avatarUrl: qAuthor['avatar'] as String?,
+      accountId: accountId,
+      imageUrls: qImageUrls,
+      videoUrl: qVideoUrl,
+      videoThumbnailUrl: qVideoThumbnailUrl,
+      permalink: qHandle.isNotEmpty && qPostId.isNotEmpty
+          ? 'https://bsky.app/profile/$qHandle/post/$qPostId'
+          : null,
+      uri: qUri,
+      cid: qCid,
+    );
   }
 
   /// セッションをリフレッシュ

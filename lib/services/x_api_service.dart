@@ -6,6 +6,7 @@ import 'package:http/http.dart' as http;
 import '../models/account.dart';
 import '../models/post.dart';
 import '../models/sns_service.dart';
+import 'x_webview_action_service.dart';
 
 class XApiService {
   XApiService._();
@@ -165,12 +166,20 @@ class XApiService {
     return _parseTweetDetailResponse(body, accountId);
   }
 
-  // ===== v1.1 REST API (GraphQL queryId は X デプロイで頻繁に変わるため不使用) =====
+  // ===== エンゲージメント API (GraphQL) =====
 
-  /// いいね (GraphQL)
-  Future<bool> likeTweet(XCredentials creds, String tweetId) async {
+  static String _snippet(String body) =>
+      body.length > 200 ? body.substring(0, 200) : body;
+
+  /// いいね
+  Future<bool> likeTweet(XCredentials creds, String tweetId) async =>
+      (await likeTweetWithDetail(creds, tweetId)).success;
+
+  Future<XApiResult> likeTweetWithDetail(
+      XCredentials creds, String tweetId) async {
     const queryId = 'lI07N6Otwv1PhnEgXILM7A';
-    final uri = Uri.parse('https://x.com/i/api/graphql/$queryId/FavoriteTweet');
+    final uri =
+        Uri.parse('https://x.com/i/api/graphql/$queryId/FavoriteTweet');
     final response = await http.post(
       uri,
       headers: _buildHeaders(creds),
@@ -180,14 +189,23 @@ class XApiService {
       }),
     );
     debugPrint('[XApi] likeTweet $tweetId: ${response.statusCode}');
-    debugPrint('[XApi] likeTweet body: ${response.body.length > 200 ? response.body.substring(0, 200) : response.body}');
-    return response.statusCode == 200;
+    debugPrint('[XApi] likeTweet body: ${_snippet(response.body)}');
+    return XApiResult(
+      success: response.statusCode == 200,
+      statusCode: response.statusCode,
+      bodySnippet: _snippet(response.body),
+    );
   }
 
-  /// いいね解除 (GraphQL)
-  Future<bool> unlikeTweet(XCredentials creds, String tweetId) async {
+  /// いいね解除
+  Future<bool> unlikeTweet(XCredentials creds, String tweetId) async =>
+      (await unlikeTweetWithDetail(creds, tweetId)).success;
+
+  Future<XApiResult> unlikeTweetWithDetail(
+      XCredentials creds, String tweetId) async {
     const queryId = 'ZYKSe-w7KEslx3JhSIk5LA';
-    final uri = Uri.parse('https://x.com/i/api/graphql/$queryId/UnfavoriteTweet');
+    final uri =
+        Uri.parse('https://x.com/i/api/graphql/$queryId/UnfavoriteTweet');
     final response = await http.post(
       uri,
       headers: _buildHeaders(creds),
@@ -197,71 +215,42 @@ class XApiService {
       }),
     );
     debugPrint('[XApi] unlikeTweet $tweetId: ${response.statusCode}');
-    debugPrint('[XApi] unlikeTweet body: ${response.body.length > 200 ? response.body.substring(0, 200) : response.body}');
-    return response.statusCode == 200;
+    debugPrint('[XApi] unlikeTweet body: ${_snippet(response.body)}');
+    return XApiResult(
+      success: response.statusCode == 200,
+      statusCode: response.statusCode,
+      bodySnippet: _snippet(response.body),
+    );
   }
 
-  /// リツイート (GraphQL)
-  Future<bool> retweet(XCredentials creds, String tweetId) async {
-    const queryId = 'ojPdsZsimiJrUGLR1sjUtA';
-    final uri = Uri.parse('https://x.com/i/api/graphql/$queryId/CreateRetweet');
-    final response = await http.post(
-      uri,
-      headers: _buildHeaders(creds),
-      body: json.encode({
-        'variables': {'tweet_id': tweetId, 'dark_request': false},
-        'queryId': queryId,
-      }),
+  /// リツイート (WebView 経由 - x-client-transaction-id 検証を回避)
+  Future<bool> retweet(XCredentials creds, String tweetId) async =>
+      (await retweetWithDetail(creds, tweetId)).success;
+
+  Future<XApiResult> retweetWithDetail(
+      XCredentials creds, String tweetId) async {
+    final result =
+        await XWebViewActionService.instance.retweet(creds, tweetId);
+    return XApiResult(
+      success: result.success,
+      statusCode: result.statusCode,
+      bodySnippet: _snippet(result.body),
     );
-    debugPrint('[XApi] retweet $tweetId: ${response.statusCode}');
-    debugPrint('[XApi] retweet body: ${response.body.length > 200 ? response.body.substring(0, 200) : response.body}');
-
-    // queryId が古い場合 (404) は v1.1 API にフォールバック
-    if (response.statusCode == 404) {
-      debugPrint('[XApi] retweet GraphQL 404, fallback to v1.1');
-      final v1Uri = Uri.parse('https://x.com/i/api/1.1/statuses/retweet/$tweetId.json');
-      final v1Response = await http.post(
-        v1Uri,
-        headers: _buildHeaders(creds, form: true),
-        body: 'id=$tweetId',
-      );
-      debugPrint('[XApi] retweet v1.1 $tweetId: ${v1Response.statusCode}');
-      debugPrint('[XApi] retweet v1.1 body: ${v1Response.body.length > 200 ? v1Response.body.substring(0, 200) : v1Response.body}');
-      return v1Response.statusCode == 200;
-    }
-
-    return response.statusCode == 200;
   }
 
-  /// リツイート解除 (GraphQL)
-  Future<bool> unretweet(XCredentials creds, String tweetId) async {
-    const queryId = 'iQtK4dl5hBmXewYZuEOKVw';
-    final uri = Uri.parse('https://x.com/i/api/graphql/$queryId/DeleteRetweet');
-    final response = await http.post(
-      uri,
-      headers: _buildHeaders(creds),
-      body: json.encode({
-        'variables': {'source_tweet_id': tweetId, 'dark_request': false},
-        'queryId': queryId,
-      }),
+  /// リツイート解除 (WebView 経由)
+  Future<bool> unretweet(XCredentials creds, String tweetId) async =>
+      (await unretweetWithDetail(creds, tweetId)).success;
+
+  Future<XApiResult> unretweetWithDetail(
+      XCredentials creds, String tweetId) async {
+    final result =
+        await XWebViewActionService.instance.unretweet(creds, tweetId);
+    return XApiResult(
+      success: result.success,
+      statusCode: result.statusCode,
+      bodySnippet: _snippet(result.body),
     );
-    debugPrint('[XApi] unretweet $tweetId: ${response.statusCode}');
-    debugPrint('[XApi] unretweet body: ${response.body.length > 200 ? response.body.substring(0, 200) : response.body}');
-
-    // queryId が古い場合 (404) は v1.1 API にフォールバック
-    if (response.statusCode == 404) {
-      debugPrint('[XApi] unretweet GraphQL 404, fallback to v1.1');
-      final v1Uri = Uri.parse('https://x.com/i/api/1.1/statuses/unretweet/$tweetId.json');
-      final v1Response = await http.post(
-        v1Uri,
-        headers: _buildHeaders(creds, form: true),
-        body: 'id=$tweetId',
-      );
-      debugPrint('[XApi] unretweet v1.1 $tweetId: ${v1Response.statusCode}');
-      return v1Response.statusCode == 200;
-    }
-
-    return response.statusCode == 200;
   }
 
   List<Post> _parseTimeline(Map<String, dynamic> body, String? accountId) {
@@ -417,12 +406,31 @@ class XApiService {
       final userResult = userResults?['result'] as Map<String, dynamic>?;
       final userLegacy = userResult?['legacy'] as Map<String, dynamic>?;
 
+      final username = userLegacy?['name'] as String? ?? '';
+      final screenName = userLegacy?['screen_name'] as String? ?? '';
+
+      // --- 通常RT検出: legacy.retweeted_status_result ---
+      final retweetedStatusResult =
+          legacy['retweeted_status_result'] as Map<String, dynamic>?;
+      if (retweetedStatusResult != null) {
+        final innerResult =
+            retweetedStatusResult['result'] as Map<String, dynamic>?;
+        if (innerResult != null) {
+          final originalPost = _parseTweet(innerResult, accountId);
+          if (originalPost != null) {
+            return originalPost.copyWith(
+              isRetweet: true,
+              retweetedByUsername: username,
+              retweetedByHandle: '@$screenName',
+            );
+          }
+        }
+      }
+
       final tweetId = legacy['id_str'] as String? ?? '${result.hashCode}';
       var fullText = legacy['full_text'] as String? ?? '';
       final createdAt = legacy['created_at'] as String? ?? '';
 
-      final username = userLegacy?['name'] as String? ?? '';
-      final screenName = userLegacy?['screen_name'] as String? ?? '';
       final avatarUrl =
           userLegacy?['profile_image_url_https'] as String?;
 
@@ -492,6 +500,25 @@ class XApiService {
         }
       }
 
+      // --- 引用RT検出: quoted_status_result ---
+      Post? quotedPost;
+      final quotedStatusResult =
+          tweetData['quoted_status_result'] as Map<String, dynamic>?;
+      if (quotedStatusResult != null) {
+        final quotedResult =
+            quotedStatusResult['result'] as Map<String, dynamic>?;
+        if (quotedResult != null) {
+          quotedPost = _parseTweet(quotedResult, accountId);
+        }
+      }
+
+      // Remove quote tweet URL from text (trailing https://x.com/.../status/...)
+      if (quotedPost != null) {
+        fullText = fullText
+            .replaceAll(RegExp(r'https?://(?:x|twitter)\.com/\S+/status/\S+$'), '')
+            .trimRight();
+      }
+
       // Permalink
       final permalink = screenName.isNotEmpty
           ? 'https://x.com/$screenName/status/$tweetId'
@@ -516,6 +543,7 @@ class XApiService {
         videoThumbnailUrl: videoThumbnailUrl,
         permalink: permalink,
         inReplyToId: inReplyToId,
+        quotedPost: quotedPost,
       );
     } catch (e) {
       debugPrint('[XApi] Error parsing tweet: $e');
@@ -558,6 +586,18 @@ class XApiService {
     }
     return current;
   }
+}
+
+class XApiResult {
+  const XApiResult({
+    required this.success,
+    required this.statusCode,
+    this.bodySnippet,
+  });
+
+  final bool success;
+  final int statusCode;
+  final String? bodySnippet;
 }
 
 class XApiException implements Exception {

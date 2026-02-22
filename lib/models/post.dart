@@ -22,6 +22,10 @@ class Post {
     this.inReplyToId,
     this.uri,
     this.cid,
+    this.isRetweet = false,
+    this.retweetedByUsername,
+    this.retweetedByHandle,
+    this.quotedPost,
   });
 
   final String id;
@@ -53,6 +57,12 @@ class Post {
   final String? uri; // Bluesky AT URI
   final String? cid; // Bluesky CID
 
+  // RT / Quote
+  final bool isRetweet;
+  final String? retweetedByUsername;
+  final String? retweetedByHandle;
+  final Post? quotedPost;
+
   factory Post.fromJson(Map<String, dynamic> json, SnsService source,
       {String? accountId}) {
     return Post(
@@ -74,6 +84,10 @@ class Post {
     int? repostCount,
     bool? isLiked,
     bool? isReposted,
+    bool? isRetweet,
+    String? retweetedByUsername,
+    String? retweetedByHandle,
+    Post? quotedPost,
   }) {
     return Post(
       id: id,
@@ -96,6 +110,10 @@ class Post {
       inReplyToId: inReplyToId,
       uri: uri,
       cid: cid,
+      isRetweet: isRetweet ?? this.isRetweet,
+      retweetedByUsername: retweetedByUsername ?? this.retweetedByUsername,
+      retweetedByHandle: retweetedByHandle ?? this.retweetedByHandle,
+      quotedPost: quotedPost ?? this.quotedPost,
     );
   }
 

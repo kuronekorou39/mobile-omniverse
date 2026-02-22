@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../models/activity_log.dart';
 import '../models/post.dart';
 import '../models/sns_service.dart';
+import '../providers/activity_log_provider.dart';
 import '../providers/feed_provider.dart';
 import '../providers/settings_provider.dart';
 import '../providers/account_provider.dart';
@@ -11,6 +13,7 @@ import '../services/bluesky_api_service.dart';
 import '../models/account.dart';
 import '../widgets/post_card.dart';
 import 'accounts_screen.dart';
+import 'activity_log_screen.dart';
 import 'settings_screen.dart';
 import 'post_detail_screen.dart';
 
@@ -51,8 +54,13 @@ class _OmniFeedScreenState extends ConsumerState<OmniFeedScreen> {
     final account = _getAccountForPost(post);
     if (account == null) return;
 
-    // Optimistic update
     final wasLiked = post.isLiked;
+    final action = wasLiked ? ActivityAction.unlike : ActivityAction.like;
+    final postSummary = post.body.length > 40
+        ? '${post.body.substring(0, 40)}...'
+        : post.body;
+
+    // Optimistic update
     ref.read(feedProvider.notifier).updatePostEngagement(
           post.id,
           isLiked: !wasLiked,
@@ -61,19 +69,21 @@ class _OmniFeedScreenState extends ConsumerState<OmniFeedScreen> {
 
     try {
       bool success = false;
+      int? statusCode;
+      String? responseSnippet;
+
       if (post.source == SnsService.x) {
         final creds = account.xCredentials;
         final tweetId = post.id.replaceFirst('x_', '');
-        if (wasLiked) {
-          success = await XApiService.instance.unlikeTweet(creds, tweetId);
-        } else {
-          success = await XApiService.instance.likeTweet(creds, tweetId);
-        }
-        debugPrint('[Like] X ${wasLiked ? "unlike" : "like"} $tweetId: $success');
+        final result = wasLiked
+            ? await XApiService.instance.unlikeTweetWithDetail(creds, tweetId)
+            : await XApiService.instance.likeTweetWithDetail(creds, tweetId);
+        success = result.success;
+        statusCode = result.statusCode;
+        responseSnippet = result.bodySnippet;
       } else if (post.source == SnsService.bluesky) {
         final creds = account.blueskyCredentials;
         if (wasLiked) {
-          // viewer.like の URI が必要 - 次回フェッチで状態は同期される
           success = true;
         } else {
           final postUri = post.uri;
@@ -84,11 +94,21 @@ class _OmniFeedScreenState extends ConsumerState<OmniFeedScreen> {
             success = result != null;
           }
         }
-        debugPrint('[Like] Bluesky ${wasLiked ? "unlike" : "like"}: $success');
       }
 
+      ref.read(activityLogProvider.notifier).logAction(
+            action: action,
+            platform: post.source,
+            accountHandle: account.handle,
+            accountId: account.id,
+            targetId: post.id,
+            targetSummary: postSummary,
+            success: success,
+            statusCode: statusCode,
+            responseSnippet: responseSnippet,
+          );
+
       if (!success) {
-        // Revert on failure
         ref.read(feedProvider.notifier).updatePostEngagement(
               post.id,
               isLiked: wasLiked,
@@ -96,7 +116,16 @@ class _OmniFeedScreenState extends ConsumerState<OmniFeedScreen> {
             );
       }
     } catch (e) {
-      debugPrint('[Like] Error: $e');
+      ref.read(activityLogProvider.notifier).logAction(
+            action: action,
+            platform: post.source,
+            accountHandle: account.handle,
+            accountId: account.id,
+            targetId: post.id,
+            targetSummary: postSummary,
+            success: false,
+            errorMessage: e.toString(),
+          );
       ref.read(feedProvider.notifier).updatePostEngagement(
             post.id,
             isLiked: wasLiked,
@@ -110,6 +139,12 @@ class _OmniFeedScreenState extends ConsumerState<OmniFeedScreen> {
     if (account == null) return;
 
     final wasReposted = post.isReposted;
+    final action =
+        wasReposted ? ActivityAction.unrepost : ActivityAction.repost;
+    final postSummary = post.body.length > 40
+        ? '${post.body.substring(0, 40)}...'
+        : post.body;
+
     ref.read(feedProvider.notifier).updatePostEngagement(
           post.id,
           isReposted: !wasReposted,
@@ -119,15 +154,18 @@ class _OmniFeedScreenState extends ConsumerState<OmniFeedScreen> {
 
     try {
       bool success = false;
+      int? statusCode;
+      String? responseSnippet;
+
       if (post.source == SnsService.x) {
         final creds = account.xCredentials;
         final tweetId = post.id.replaceFirst('x_', '');
-        if (wasReposted) {
-          success = await XApiService.instance.unretweet(creds, tweetId);
-        } else {
-          success = await XApiService.instance.retweet(creds, tweetId);
-        }
-        debugPrint('[Repost] X ${wasReposted ? "unretweet" : "retweet"} $tweetId: $success');
+        final result = wasReposted
+            ? await XApiService.instance.unretweetWithDetail(creds, tweetId)
+            : await XApiService.instance.retweetWithDetail(creds, tweetId);
+        success = result.success;
+        statusCode = result.statusCode;
+        responseSnippet = result.bodySnippet;
       } else if (post.source == SnsService.bluesky) {
         final creds = account.blueskyCredentials;
         if (wasReposted) {
@@ -141,8 +179,19 @@ class _OmniFeedScreenState extends ConsumerState<OmniFeedScreen> {
             success = result != null;
           }
         }
-        debugPrint('[Repost] Bluesky ${wasReposted ? "unrepost" : "repost"}: $success');
       }
+
+      ref.read(activityLogProvider.notifier).logAction(
+            action: action,
+            platform: post.source,
+            accountHandle: account.handle,
+            accountId: account.id,
+            targetId: post.id,
+            targetSummary: postSummary,
+            success: success,
+            statusCode: statusCode,
+            responseSnippet: responseSnippet,
+          );
 
       if (!success) {
         ref.read(feedProvider.notifier).updatePostEngagement(
@@ -152,7 +201,16 @@ class _OmniFeedScreenState extends ConsumerState<OmniFeedScreen> {
             );
       }
     } catch (e) {
-      debugPrint('[Repost] Error: $e');
+      ref.read(activityLogProvider.notifier).logAction(
+            action: action,
+            platform: post.source,
+            accountHandle: account.handle,
+            accountId: account.id,
+            targetId: post.id,
+            targetSummary: postSummary,
+            success: false,
+            errorMessage: e.toString(),
+          );
       ref.read(feedProvider.notifier).updatePostEngagement(
             post.id,
             isReposted: wasReposted,
@@ -194,6 +252,16 @@ class _OmniFeedScreenState extends ConsumerState<OmniFeedScreen> {
               },
             ),
             actions: [
+              IconButton(
+                icon: const Icon(Icons.receipt_long_outlined),
+                tooltip: 'ログ',
+                onPressed: () {
+                  Navigator.of(context).push(
+                    MaterialPageRoute(
+                        builder: (_) => const ActivityLogScreen()),
+                  );
+                },
+              ),
               IconButton(
                 icon: const Icon(Icons.settings_outlined),
                 tooltip: '設定',
@@ -350,8 +418,15 @@ class _OmniFeedScreenState extends ConsumerState<OmniFeedScreen> {
                         );
                       }
                       final post = feed.posts[index];
+                      String? accountHandle;
+                      if (post.accountId != null) {
+                        final account = AccountStorageService.instance
+                            .getAccount(post.accountId!);
+                        if (account != null) accountHandle = account.handle;
+                      }
                       return PostCard(
                         post: post,
+                        accountHandle: accountHandle,
                         onTap: () {
                           Navigator.of(context).push(
                             PageRouteBuilder(

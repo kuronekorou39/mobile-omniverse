@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'providers/settings_provider.dart';
-import 'screens/home_screen.dart';
+import 'screens/splash_screen.dart';
 import 'services/account_storage_service.dart';
 
 void main() async {
@@ -42,7 +42,7 @@ class OmniVerseApp extends ConsumerWidget {
           child: child!,
         );
       },
-      home: const HomeScreen(),
+      home: const SplashScreen(),
     );
   }
 }

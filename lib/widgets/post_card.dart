@@ -3,7 +3,6 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../models/post.dart';
-import '../services/account_storage_service.dart';
 import 'post_media.dart';
 import 'sns_badge.dart';
 
@@ -11,12 +10,14 @@ class PostCard extends StatelessWidget {
   const PostCard({
     super.key,
     required this.post,
+    this.accountHandle,
     this.onTap,
     this.onLike,
     this.onRepost,
   });
 
   final Post post;
+  final String? accountHandle;
   final VoidCallback? onTap;
   final VoidCallback? onLike;
   final VoidCallback? onRepost;
@@ -34,14 +35,6 @@ class PostCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
-
-    // Fetch account handle for display
-    String? accountHandle;
-    if (post.accountId != null) {
-      final account =
-          AccountStorageService.instance.getAccount(post.accountId!);
-      if (account != null) accountHandle = account.handle;
-    }
 
     return Card(
       margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),

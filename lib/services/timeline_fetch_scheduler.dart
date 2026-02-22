@@ -21,6 +21,10 @@ class TimelineFetchScheduler {
   /// 新しい投稿が取得されたときのコールバック
   void Function(List<Post> posts)? onPostsFetched;
 
+  /// TL 取得完了時のログコールバック (accountHandle, platform, success, postCount)
+  void Function(String accountHandle, SnsService platform, bool success,
+      int postCount, String? error)? onFetchLog;
+
   void setInterval(Duration interval) {
     _interval = interval;
     if (_isRunning) {
@@ -73,14 +77,19 @@ class TimelineFetchScheduler {
 
   Future<List<Post>> _fetchForAccount(Account account) async {
     try {
+      List<Post> posts;
       switch (account.service) {
         case SnsService.bluesky:
-          return await _fetchBluesky(account);
+          posts = await _fetchBluesky(account);
         case SnsService.x:
-          return await _fetchX(account);
+          posts = await _fetchX(account);
       }
+      onFetchLog?.call(
+          account.handle, account.service, true, posts.length, null);
+      return posts;
     } catch (e) {
       debugPrint('[Scheduler] Error fetching for ${account.handle}: $e');
+      onFetchLog?.call(account.handle, account.service, false, 0, '$e');
       return [];
     }
   }

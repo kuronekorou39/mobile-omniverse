@@ -1,7 +1,9 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../models/activity_log.dart';
 import '../models/post.dart';
 import '../models/sns_service.dart';
+import '../providers/activity_log_provider.dart';
 import '../services/timeline_fetch_scheduler.dart';
 
 class FeedState {
@@ -34,8 +36,23 @@ class FeedState {
 }
 
 class FeedNotifier extends StateNotifier<FeedState> {
-  FeedNotifier() : super(const FeedState()) {
+  FeedNotifier(this._logNotifier) : super(const FeedState()) {
     TimelineFetchScheduler.instance.onPostsFetched = _onPostsFetched;
+    TimelineFetchScheduler.instance.onFetchLog = _onFetchLog;
+  }
+
+  final ActivityLogNotifier? _logNotifier;
+
+  void _onFetchLog(String accountHandle, SnsService platform, bool success,
+      int postCount, String? error) {
+    _logNotifier?.logAction(
+      action: ActivityAction.timelineFetch,
+      platform: platform,
+      accountHandle: accountHandle,
+      success: success,
+      targetSummary: success ? '$postCount 件取得' : null,
+      errorMessage: error,
+    );
   }
 
   void _onPostsFetched(List<Post> newPosts) {
@@ -86,17 +103,15 @@ class FeedNotifier extends StateNotifier<FeedState> {
     int? likeCount,
     int? repostCount,
   }) {
-    final posts = state.posts.map((p) {
-      if (p.id == postId) {
-        return p.copyWith(
-          isLiked: isLiked,
-          isReposted: isReposted,
-          likeCount: likeCount,
-          repostCount: repostCount,
-        );
-      }
-      return p;
-    }).toList();
+    final idx = state.posts.indexWhere((p) => p.id == postId);
+    if (idx == -1) return;
+    final posts = List<Post>.of(state.posts);
+    posts[idx] = posts[idx].copyWith(
+      isLiked: isLiked,
+      isReposted: isReposted,
+      likeCount: likeCount,
+      repostCount: repostCount,
+    );
     state = state.copyWith(posts: posts);
   }
 
@@ -110,5 +125,8 @@ class FeedNotifier extends StateNotifier<FeedState> {
 }
 
 final feedProvider = StateNotifierProvider<FeedNotifier, FeedState>(
-  (ref) => FeedNotifier(),
+  (ref) {
+    final logNotifier = ref.read(activityLogProvider.notifier);
+    return FeedNotifier(logNotifier);
+  },
 );

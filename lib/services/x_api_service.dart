@@ -6,6 +6,7 @@ import 'package:http/http.dart' as http;
 import '../models/account.dart';
 import '../models/post.dart';
 import '../models/sns_service.dart';
+import 'x_query_id_service.dart';
 
 class XApiService {
   XApiService._();
@@ -15,10 +16,6 @@ class XApiService {
   static const _bearerToken =
       'AAAAAAAAAAAAAAAAAAAAANRILgAAAAAAnNwIzUejRCOuH5E6I8xnZz4puTs'
       '%3D1Zv7ttfk8LF81IUq16cHjhLTvJu4FA33AGWWjCpTnA';
-
-  // HomeLatestTimeline (Following) の GraphQL queryId
-  // NOTE: この値は X のデプロイにより変更される場合がある
-  static const _homeLatestTimelineQueryId = 'BKB7oi212Fi7kQtCBGE4zA';
 
   Map<String, String> _buildHeaders(XCredentials creds, {bool form = false}) => {
         'Authorization': 'Bearer $_bearerToken',
@@ -34,6 +31,53 @@ class XApiService {
         'x-twitter-client-language': 'ja',
       };
 
+  // ===== queryId 404 リトライラッパー =====
+
+  /// GET 系 API (throw するもの) の 404 リトライラッパー
+  Future<T> _withQueryIdRetry<T>(
+    XCredentials creds,
+    String operationName,
+    Future<T> Function(String queryId) action,
+  ) async {
+    final queryId = XQueryIdService.instance.getQueryId(operationName);
+    try {
+      return await action(queryId);
+    } on XApiException catch (e) {
+      if (e.statusCode == 404) {
+        debugPrint('[XApi] 404 detected for $operationName, refreshing queryIds...');
+        final count = await XQueryIdService.instance.forceRefresh(creds);
+        debugPrint('[XApi] Refreshed $count queryIds');
+        final newQueryId = XQueryIdService.instance.getQueryId(operationName);
+        if (newQueryId != queryId) {
+          debugPrint('[XApi] Retrying $operationName with new queryId: $newQueryId');
+          return await action(newQueryId);
+        }
+      }
+      rethrow;
+    }
+  }
+
+  /// Mutation 系 API (XApiResult を返すもの) の 404 リトライラッパー
+  Future<XApiResult> _mutationWithRetry(
+    XCredentials creds,
+    String operationName,
+    Future<XApiResult> Function(String queryId) action,
+  ) async {
+    final queryId = XQueryIdService.instance.getQueryId(operationName);
+    final result = await action(queryId);
+    if (result.statusCode == 404) {
+      debugPrint('[XApi] 404 detected for $operationName, refreshing queryIds...');
+      final count = await XQueryIdService.instance.forceRefresh(creds);
+      debugPrint('[XApi] Refreshed $count queryIds');
+      final newQueryId = XQueryIdService.instance.getQueryId(operationName);
+      if (newQueryId != queryId) {
+        debugPrint('[XApi] Retrying $operationName with new queryId: $newQueryId');
+        return await action(newQueryId);
+      }
+    }
+    return result;
+  }
+
   /// タイムラインを取得
   Future<List<Post>> getTimeline(
     XCredentials creds, {
@@ -41,62 +85,65 @@ class XApiService {
     int count = 20,
     String? cursor,
   }) async {
-    final variables = json.encode({
-      'count': count,
-      'includePromotedContent': false,
-      'latestControlAvailable': true,
-      if (cursor != null) 'cursor': cursor,
-    });
+    return _withQueryIdRetry(creds, 'HomeLatestTimeline', (queryId) async {
+      final variables = json.encode({
+        'count': count,
+        'includePromotedContent': false,
+        'latestControlAvailable': true,
+        if (cursor != null) 'cursor': cursor,
+      });
 
-    final features = json.encode({
-      'rweb_tipjar_consumption_enabled': true,
-      'responsive_web_graphql_exclude_directive_enabled': true,
-      'verified_phone_label_enabled': false,
-      'creator_subscriptions_tweet_preview_api_enabled': true,
-      'responsive_web_graphql_timeline_navigation_enabled': true,
-      'responsive_web_graphql_skip_user_profile_image_extensions_enabled':
-          false,
-      'communities_web_enable_tweet_community_results_fetch': true,
-      'c9s_tweet_anatomy_moderator_badge_enabled': true,
-      'articles_preview_enabled': true,
-      'responsive_web_edit_tweet_api_enabled': true,
-      'graphql_is_translatable_rweb_tweet_is_translatable_enabled': true,
-      'view_counts_everywhere_api_enabled': true,
-      'longform_notetweets_consumption_enabled': true,
-      'responsive_web_twitter_article_tweet_consumption_enabled': true,
-      'tweet_awards_web_tipping_enabled': false,
-      'creator_subscriptions_quote_tweet_preview_enabled': false,
-      'freedom_of_speech_not_reach_fetch_enabled': true,
-      'standardized_nudges_misinfo': true,
-      'tweet_with_visibility_results_prefer_gql_limited_actions_policy_enabled':
-          true,
-      'rweb_video_timestamps_enabled': true,
-      'longform_notetweets_rich_text_read_enabled': true,
-      'longform_notetweets_inline_media_enabled': true,
-      'responsive_web_enhance_cards_enabled': false,
-    });
+      final features = json.encode({
+        'rweb_tipjar_consumption_enabled': true,
+        'responsive_web_graphql_exclude_directive_enabled': true,
+        'verified_phone_label_enabled': false,
+        'creator_subscriptions_tweet_preview_api_enabled': true,
+        'responsive_web_graphql_timeline_navigation_enabled': true,
+        'responsive_web_graphql_skip_user_profile_image_extensions_enabled':
+            false,
+        'communities_web_enable_tweet_community_results_fetch': true,
+        'c9s_tweet_anatomy_moderator_badge_enabled': true,
+        'articles_preview_enabled': true,
+        'responsive_web_edit_tweet_api_enabled': true,
+        'graphql_is_translatable_rweb_tweet_is_translatable_enabled': true,
+        'view_counts_everywhere_api_enabled': true,
+        'longform_notetweets_consumption_enabled': true,
+        'responsive_web_twitter_article_tweet_consumption_enabled': true,
+        'tweet_awards_web_tipping_enabled': false,
+        'creator_subscriptions_quote_tweet_preview_enabled': false,
+        'freedom_of_speech_not_reach_fetch_enabled': true,
+        'standardized_nudges_misinfo': true,
+        'tweet_with_visibility_results_prefer_gql_limited_actions_policy_enabled':
+            true,
+        'rweb_video_timestamps_enabled': true,
+        'longform_notetweets_rich_text_read_enabled': true,
+        'longform_notetweets_inline_media_enabled': true,
+        'responsive_web_enhance_cards_enabled': false,
+      });
 
-    final uri = Uri.parse(
-      'https://x.com/i/api/graphql/$_homeLatestTimelineQueryId/HomeLatestTimeline'
-      '?variables=${Uri.encodeComponent(variables)}'
-      '&features=${Uri.encodeComponent(features)}',
-    );
-
-    final response = await http.get(uri, headers: _buildHeaders(creds));
-
-    if (response.statusCode == 401 || response.statusCode == 403) {
-      throw XAuthException('Authentication failed: ${response.statusCode}');
-    }
-
-    if (response.statusCode != 200) {
-      throw XApiException(
-        'Failed to fetch timeline: ${response.statusCode}',
+      final uri = Uri.parse(
+        'https://x.com/i/api/graphql/$queryId/HomeLatestTimeline'
+        '?variables=${Uri.encodeComponent(variables)}'
+        '&features=${Uri.encodeComponent(features)}',
       );
-    }
 
-    final body = json.decode(response.body) as Map<String, dynamic>;
-    debugPrint('[XApi] Response top keys: ${body.keys.toList()}');
-    return _parseTimeline(body, accountId);
+      final response = await http.get(uri, headers: _buildHeaders(creds));
+
+      if (response.statusCode == 401 || response.statusCode == 403) {
+        throw XAuthException('Authentication failed: ${response.statusCode}');
+      }
+
+      if (response.statusCode != 200) {
+        throw XApiException(
+          'Failed to fetch timeline: ${response.statusCode}',
+          statusCode: response.statusCode,
+        );
+      }
+
+      final body = json.decode(response.body) as Map<String, dynamic>;
+      debugPrint('[XApi] Response top keys: ${body.keys.toList()}');
+      return _parseTimeline(body, accountId);
+    });
   }
 
   /// ツイート詳細 (リプライ含む) を取得
@@ -105,64 +152,68 @@ class XApiService {
     String tweetId, {
     String? accountId,
   }) async {
-    const queryId = 'nBS-WpgA6ZG0CyNHD517JQ';
-    final variables = json.encode({
-      'focalTweetId': tweetId,
-      'with_rux_injections': false,
-      'includePromotedContent': false,
-      'withCommunity': true,
-      'withQuickPromoteEligibilityTweetFields': true,
-      'withBirdwatchNotes': true,
-      'withVoice': true,
-      'withV2Timeline': true,
+    return _withQueryIdRetry(creds, 'TweetDetail', (queryId) async {
+      final variables = json.encode({
+        'focalTweetId': tweetId,
+        'with_rux_injections': false,
+        'includePromotedContent': false,
+        'withCommunity': true,
+        'withQuickPromoteEligibilityTweetFields': true,
+        'withBirdwatchNotes': true,
+        'withVoice': true,
+        'withV2Timeline': true,
+      });
+
+      final features = json.encode({
+        'rweb_tipjar_consumption_enabled': true,
+        'responsive_web_graphql_exclude_directive_enabled': true,
+        'verified_phone_label_enabled': false,
+        'creator_subscriptions_tweet_preview_api_enabled': true,
+        'responsive_web_graphql_timeline_navigation_enabled': true,
+        'responsive_web_graphql_skip_user_profile_image_extensions_enabled':
+            false,
+        'communities_web_enable_tweet_community_results_fetch': true,
+        'c9s_tweet_anatomy_moderator_badge_enabled': true,
+        'articles_preview_enabled': true,
+        'responsive_web_edit_tweet_api_enabled': true,
+        'graphql_is_translatable_rweb_tweet_is_translatable_enabled': true,
+        'view_counts_everywhere_api_enabled': true,
+        'longform_notetweets_consumption_enabled': true,
+        'responsive_web_twitter_article_tweet_consumption_enabled': true,
+        'tweet_awards_web_tipping_enabled': false,
+        'creator_subscriptions_quote_tweet_preview_enabled': false,
+        'freedom_of_speech_not_reach_fetch_enabled': true,
+        'standardized_nudges_misinfo': true,
+        'tweet_with_visibility_results_prefer_gql_limited_actions_policy_enabled':
+            true,
+        'rweb_video_timestamps_enabled': true,
+        'longform_notetweets_rich_text_read_enabled': true,
+        'longform_notetweets_inline_media_enabled': true,
+        'responsive_web_enhance_cards_enabled': false,
+      });
+
+      final uri = Uri.parse(
+        'https://x.com/i/api/graphql/$queryId/TweetDetail'
+        '?variables=${Uri.encodeComponent(variables)}'
+        '&features=${Uri.encodeComponent(features)}',
+      );
+
+      final response = await http.get(uri, headers: _buildHeaders(creds));
+
+      if (response.statusCode == 401 || response.statusCode == 403) {
+        throw XAuthException('Authentication failed: ${response.statusCode}');
+      }
+
+      if (response.statusCode != 200) {
+        throw XApiException(
+          'Failed to fetch tweet detail: ${response.statusCode}',
+          statusCode: response.statusCode,
+        );
+      }
+
+      final body = json.decode(response.body) as Map<String, dynamic>;
+      return _parseTweetDetailResponse(body, accountId);
     });
-
-    final features = json.encode({
-      'rweb_tipjar_consumption_enabled': true,
-      'responsive_web_graphql_exclude_directive_enabled': true,
-      'verified_phone_label_enabled': false,
-      'creator_subscriptions_tweet_preview_api_enabled': true,
-      'responsive_web_graphql_timeline_navigation_enabled': true,
-      'responsive_web_graphql_skip_user_profile_image_extensions_enabled':
-          false,
-      'communities_web_enable_tweet_community_results_fetch': true,
-      'c9s_tweet_anatomy_moderator_badge_enabled': true,
-      'articles_preview_enabled': true,
-      'responsive_web_edit_tweet_api_enabled': true,
-      'graphql_is_translatable_rweb_tweet_is_translatable_enabled': true,
-      'view_counts_everywhere_api_enabled': true,
-      'longform_notetweets_consumption_enabled': true,
-      'responsive_web_twitter_article_tweet_consumption_enabled': true,
-      'tweet_awards_web_tipping_enabled': false,
-      'creator_subscriptions_quote_tweet_preview_enabled': false,
-      'freedom_of_speech_not_reach_fetch_enabled': true,
-      'standardized_nudges_misinfo': true,
-      'tweet_with_visibility_results_prefer_gql_limited_actions_policy_enabled':
-          true,
-      'rweb_video_timestamps_enabled': true,
-      'longform_notetweets_rich_text_read_enabled': true,
-      'longform_notetweets_inline_media_enabled': true,
-      'responsive_web_enhance_cards_enabled': false,
-    });
-
-    final uri = Uri.parse(
-      'https://x.com/i/api/graphql/$queryId/TweetDetail'
-      '?variables=${Uri.encodeComponent(variables)}'
-      '&features=${Uri.encodeComponent(features)}',
-    );
-
-    final response = await http.get(uri, headers: _buildHeaders(creds));
-
-    if (response.statusCode == 401 || response.statusCode == 403) {
-      throw XAuthException('Authentication failed: ${response.statusCode}');
-    }
-
-    if (response.statusCode != 200) {
-      throw XApiException('Failed to fetch tweet detail: ${response.statusCode}');
-    }
-
-    final body = json.decode(response.body) as Map<String, dynamic>;
-    return _parseTweetDetailResponse(body, accountId);
   }
 
   // ===== エンゲージメント API (GraphQL) =====
@@ -176,24 +227,25 @@ class XApiService {
 
   Future<XApiResult> likeTweetWithDetail(
       XCredentials creds, String tweetId) async {
-    const queryId = 'lI07N6Otwv1PhnEgXILM7A';
-    final uri =
-        Uri.parse('https://x.com/i/api/graphql/$queryId/FavoriteTweet');
-    final response = await http.post(
-      uri,
-      headers: _buildHeaders(creds),
-      body: json.encode({
-        'variables': {'tweet_id': tweetId},
-        'queryId': queryId,
-      }),
-    );
-    debugPrint('[XApi] likeTweet $tweetId: ${response.statusCode}');
-    debugPrint('[XApi] likeTweet body: ${_snippet(response.body)}');
-    return XApiResult(
-      success: response.statusCode == 200,
-      statusCode: response.statusCode,
-      bodySnippet: _snippet(response.body),
-    );
+    return _mutationWithRetry(creds, 'FavoriteTweet', (queryId) async {
+      final uri =
+          Uri.parse('https://x.com/i/api/graphql/$queryId/FavoriteTweet');
+      final response = await http.post(
+        uri,
+        headers: _buildHeaders(creds),
+        body: json.encode({
+          'variables': {'tweet_id': tweetId},
+          'queryId': queryId,
+        }),
+      );
+      debugPrint('[XApi] likeTweet $tweetId: ${response.statusCode}');
+      debugPrint('[XApi] likeTweet body: ${_snippet(response.body)}');
+      return XApiResult(
+        success: response.statusCode == 200,
+        statusCode: response.statusCode,
+        bodySnippet: _snippet(response.body),
+      );
+    });
   }
 
   /// いいね解除
@@ -202,24 +254,25 @@ class XApiService {
 
   Future<XApiResult> unlikeTweetWithDetail(
       XCredentials creds, String tweetId) async {
-    const queryId = 'ZYKSe-w7KEslx3JhSIk5LA';
-    final uri =
-        Uri.parse('https://x.com/i/api/graphql/$queryId/UnfavoriteTweet');
-    final response = await http.post(
-      uri,
-      headers: _buildHeaders(creds),
-      body: json.encode({
-        'variables': {'tweet_id': tweetId},
-        'queryId': queryId,
-      }),
-    );
-    debugPrint('[XApi] unlikeTweet $tweetId: ${response.statusCode}');
-    debugPrint('[XApi] unlikeTweet body: ${_snippet(response.body)}');
-    return XApiResult(
-      success: response.statusCode == 200,
-      statusCode: response.statusCode,
-      bodySnippet: _snippet(response.body),
-    );
+    return _mutationWithRetry(creds, 'UnfavoriteTweet', (queryId) async {
+      final uri =
+          Uri.parse('https://x.com/i/api/graphql/$queryId/UnfavoriteTweet');
+      final response = await http.post(
+        uri,
+        headers: _buildHeaders(creds),
+        body: json.encode({
+          'variables': {'tweet_id': tweetId},
+          'queryId': queryId,
+        }),
+      );
+      debugPrint('[XApi] unlikeTweet $tweetId: ${response.statusCode}');
+      debugPrint('[XApi] unlikeTweet body: ${_snippet(response.body)}');
+      return XApiResult(
+        success: response.statusCode == 200,
+        statusCode: response.statusCode,
+        bodySnippet: _snippet(response.body),
+      );
+    });
   }
 
   /// リツイート
@@ -228,24 +281,25 @@ class XApiService {
 
   Future<XApiResult> retweetWithDetail(
       XCredentials creds, String tweetId) async {
-    const queryId = 'ojPdsZsimiJrUGLR1sjUtA';
-    final uri =
-        Uri.parse('https://x.com/i/api/graphql/$queryId/CreateRetweet');
-    final response = await http.post(
-      uri,
-      headers: _buildHeaders(creds),
-      body: json.encode({
-        'variables': {'tweet_id': tweetId, 'dark_request': false},
-        'queryId': queryId,
-      }),
-    );
-    debugPrint('[XApi] retweet $tweetId: ${response.statusCode}');
-    debugPrint('[XApi] retweet body: ${_snippet(response.body)}');
-    return XApiResult(
-      success: response.statusCode == 200,
-      statusCode: response.statusCode,
-      bodySnippet: _snippet(response.body),
-    );
+    return _mutationWithRetry(creds, 'CreateRetweet', (queryId) async {
+      final uri =
+          Uri.parse('https://x.com/i/api/graphql/$queryId/CreateRetweet');
+      final response = await http.post(
+        uri,
+        headers: _buildHeaders(creds),
+        body: json.encode({
+          'variables': {'tweet_id': tweetId, 'dark_request': false},
+          'queryId': queryId,
+        }),
+      );
+      debugPrint('[XApi] retweet $tweetId: ${response.statusCode}');
+      debugPrint('[XApi] retweet body: ${_snippet(response.body)}');
+      return XApiResult(
+        success: response.statusCode == 200,
+        statusCode: response.statusCode,
+        bodySnippet: _snippet(response.body),
+      );
+    });
   }
 
   /// リツイート解除
@@ -254,24 +308,25 @@ class XApiService {
 
   Future<XApiResult> unretweetWithDetail(
       XCredentials creds, String tweetId) async {
-    const queryId = 'iQtK4dl5hBmXewYZuEOKVw';
-    final uri =
-        Uri.parse('https://x.com/i/api/graphql/$queryId/DeleteRetweet');
-    final response = await http.post(
-      uri,
-      headers: _buildHeaders(creds),
-      body: json.encode({
-        'variables': {'source_tweet_id': tweetId, 'dark_request': false},
-        'queryId': queryId,
-      }),
-    );
-    debugPrint('[XApi] unretweet $tweetId: ${response.statusCode}');
-    debugPrint('[XApi] unretweet body: ${_snippet(response.body)}');
-    return XApiResult(
-      success: response.statusCode == 200,
-      statusCode: response.statusCode,
-      bodySnippet: _snippet(response.body),
-    );
+    return _mutationWithRetry(creds, 'DeleteRetweet', (queryId) async {
+      final uri =
+          Uri.parse('https://x.com/i/api/graphql/$queryId/DeleteRetweet');
+      final response = await http.post(
+        uri,
+        headers: _buildHeaders(creds),
+        body: json.encode({
+          'variables': {'source_tweet_id': tweetId, 'dark_request': false},
+          'queryId': queryId,
+        }),
+      );
+      debugPrint('[XApi] unretweet $tweetId: ${response.statusCode}');
+      debugPrint('[XApi] unretweet body: ${_snippet(response.body)}');
+      return XApiResult(
+        success: response.statusCode == 200,
+        statusCode: response.statusCode,
+        bodySnippet: _snippet(response.body),
+      );
+    });
   }
 
   List<Post> _parseTimeline(Map<String, dynamic> body, String? accountId) {
@@ -622,8 +677,9 @@ class XApiResult {
 }
 
 class XApiException implements Exception {
-  XApiException(this.message);
+  XApiException(this.message, {this.statusCode});
   final String message;
+  final int? statusCode;
   @override
   String toString() => 'XApiException: $message';
 }

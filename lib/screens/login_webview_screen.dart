@@ -8,6 +8,7 @@ import 'package:http/http.dart' as http;
 
 import '../models/account.dart';
 import '../models/sns_service.dart';
+import '../services/x_query_id_service.dart';
 
 /// ログイン完了時に返す認証情報
 class LoginResult {
@@ -482,7 +483,7 @@ class _LoginWebViewScreenState extends State<LoginWebViewScreen> {
             try {
               var userId = userId_;
               var ct0 = ct0_;
-              var queryId = "tD8zKvQzwY3kdx5yz6YmOw";
+              var queryId = "${XQueryIdService.instance.getQueryId('UserByRestId')}";
               var variables = JSON.stringify({userId: userId, withSafetyModeUserFields: true});
               var features = JSON.stringify({
                 hidden_profile_subscriptions_enabled: true,

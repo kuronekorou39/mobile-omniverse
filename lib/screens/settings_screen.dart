@@ -1,13 +1,84 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 
+import '../models/account.dart';
+import '../models/sns_service.dart';
 import '../providers/settings_provider.dart';
+import '../services/account_storage_service.dart';
+import '../services/app_update_service.dart';
+import '../services/x_query_id_service.dart';
+import '../widgets/update_dialog.dart';
 
-class SettingsScreen extends ConsumerWidget {
+class SettingsScreen extends ConsumerStatefulWidget {
   const SettingsScreen({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<SettingsScreen> createState() => _SettingsScreenState();
+}
+
+class _SettingsScreenState extends ConsumerState<SettingsScreen> {
+  String _version = '...';
+
+  @override
+  void initState() {
+    super.initState();
+    _loadVersion();
+  }
+
+  Future<void> _loadVersion() async {
+    final info = await PackageInfo.fromPlatform();
+    if (mounted) {
+      setState(() => _version = info.version);
+    }
+  }
+
+  Future<void> _checkForUpdate() async {
+    final info = await AppUpdateService.instance.checkForUpdate();
+    if (!mounted) return;
+    if (info != null) {
+      showUpdateDialog(context, info);
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('最新バージョンです')),
+      );
+    }
+  }
+
+  Future<void> _refreshQueryIds() async {
+    // X アカウントの credentials を取得
+    XCredentials? creds;
+    for (final account in AccountStorageService.instance.accounts) {
+      if (account.service == SnsService.x && account.isEnabled) {
+        creds = account.xCredentials;
+        break;
+      }
+    }
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('queryId を更新中...')),
+    );
+
+    final count = await XQueryIdService.instance.forceRefresh(creds);
+
+    if (!mounted) return;
+
+    final ids = XQueryIdService.instance.currentIds;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('queryId 更新完了: $count 件取得'),
+        duration: const Duration(seconds: 3),
+      ),
+    );
+
+    // デバッグログに現在の queryId を出力
+    for (final entry in ids.entries) {
+      debugPrint('[Settings] ${entry.key}: ${entry.value}');
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final settings = ref.watch(settingsProvider);
     final notifier = ref.read(settingsProvider.notifier);
 
@@ -96,9 +167,29 @@ class SettingsScreen extends ConsumerWidget {
 
           // About section
           const _SectionHeader(title: 'アプリ情報'),
-          const ListTile(
-            title: Text('バージョン'),
-            trailing: Text('1.0.0'),
+          ListTile(
+            title: const Text('バージョン'),
+            trailing: Text(_version),
+          ),
+          ListTile(
+            leading: const Icon(Icons.system_update),
+            title: const Text('アップデート確認'),
+            onTap: _checkForUpdate,
+          ),
+
+          const Divider(),
+
+          // Debug section
+          const _SectionHeader(title: 'デバッグ'),
+          ListTile(
+            leading: const Icon(Icons.refresh),
+            title: const Text('queryId 更新'),
+            subtitle: Text(
+              XQueryIdService.instance.lastRefreshTime != null
+                  ? '最終更新: ${_formatTime(XQueryIdService.instance.lastRefreshTime!)}'
+                  : '未更新',
+            ),
+            onTap: _refreshQueryIds,
           ),
         ],
       ),
@@ -111,6 +202,10 @@ class SettingsScreen extends ConsumerWidget {
       ThemeMode.light => 'ライト',
       ThemeMode.dark => 'ダーク',
     };
+  }
+
+  String _formatTime(DateTime dt) {
+    return '${dt.month}/${dt.day} ${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}';
   }
 }
 

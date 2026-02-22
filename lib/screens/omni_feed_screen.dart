@@ -10,8 +10,10 @@ import '../providers/account_provider.dart';
 import '../services/account_storage_service.dart';
 import '../services/x_api_service.dart';
 import '../services/bluesky_api_service.dart';
+import '../services/app_update_service.dart';
 import '../models/account.dart';
 import '../widgets/post_card.dart';
+import '../widgets/update_dialog.dart';
 import 'accounts_screen.dart';
 import 'activity_log_screen.dart';
 import 'settings_screen.dart';
@@ -31,6 +33,14 @@ class _OmniFeedScreenState extends ConsumerState<OmniFeedScreen> {
   void initState() {
     super.initState();
     _scrollController.addListener(_onScroll);
+    WidgetsBinding.instance.addPostFrameCallback((_) => _checkForUpdate());
+  }
+
+  Future<void> _checkForUpdate() async {
+    final info = await AppUpdateService.instance.checkForUpdate();
+    if (info != null && mounted) {
+      showUpdateDialog(context, info);
+    }
   }
 
   @override

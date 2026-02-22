@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 
 import '../models/sns_service.dart';
+import '../utils/image_headers.dart';
 import '../widgets/sns_badge.dart';
 
 class UserProfileScreen extends StatelessWidget {
@@ -31,7 +32,7 @@ class UserProfileScreen extends StatelessWidget {
           CircleAvatar(
             radius: 48,
             backgroundImage: avatarUrl != null
-                ? CachedNetworkImageProvider(avatarUrl!)
+                ? CachedNetworkImageProvider(avatarUrl!, headers: kImageHeaders)
                 : null,
             child: avatarUrl == null
                 ? Text(

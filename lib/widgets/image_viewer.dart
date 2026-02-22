@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 
+import '../utils/image_headers.dart';
+
 /// Full-screen image viewer with swipe-to-dismiss
 class ImageViewer extends StatefulWidget {
   const ImageViewer({
@@ -56,6 +58,7 @@ class _ImageViewerState extends State<ImageViewer> {
             child: Center(
               child: CachedNetworkImage(
                 imageUrl: widget.imageUrls[index],
+                httpHeaders: kImageHeaders,
                 fit: BoxFit.contain,
                 placeholder: (context, url) =>
                     const Center(child: CircularProgressIndicator()),

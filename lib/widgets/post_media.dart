@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../utils/image_headers.dart';
 import 'image_viewer.dart';
 
 /// 投稿本文のリンク付きテキストを構築する共有ウィジェット
@@ -178,6 +179,7 @@ class PostImageGrid extends StatelessWidget {
           constraints: const BoxConstraints(maxHeight: 300),
           child: CachedNetworkImage(
             imageUrl: url,
+            httpHeaders: kImageHeaders,
             fit: BoxFit.cover,
             width: double.infinity,
             placeholder: (context, url) => Container(
@@ -266,6 +268,7 @@ class PostVideoThumbnail extends StatelessWidget {
           children: [
             CachedNetworkImage(
               imageUrl: thumbnailUrl,
+              httpHeaders: kImageHeaders,
               fit: BoxFit.cover,
               width: double.infinity,
               height: 200,

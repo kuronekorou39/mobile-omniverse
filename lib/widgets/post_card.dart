@@ -3,6 +3,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../models/post.dart';
+import '../utils/image_headers.dart';
 import 'post_media.dart';
 import 'sns_badge.dart';
 
@@ -134,20 +135,42 @@ class PostCard extends StatelessWidget {
           // Quoted post header
           Row(
             children: [
-              CircleAvatar(
-                radius: 10,
-                backgroundImage: quoted.avatarUrl != null
-                    ? CachedNetworkImageProvider(quoted.avatarUrl!)
-                    : null,
-                child: quoted.avatarUrl == null
-                    ? Text(
+              quoted.avatarUrl != null
+                  ? CachedNetworkImage(
+                      imageUrl: quoted.avatarUrl!,
+                      httpHeaders: kImageHeaders,
+                      imageBuilder: (context, imageProvider) => CircleAvatar(
+                        radius: 10,
+                        backgroundImage: imageProvider,
+                      ),
+                      placeholder: (context, url) => CircleAvatar(
+                        radius: 10,
+                        child: Text(
+                          quoted.username.isNotEmpty
+                              ? quoted.username[0].toUpperCase()
+                              : '?',
+                          style: const TextStyle(fontSize: 10),
+                        ),
+                      ),
+                      errorWidget: (context, url, error) => CircleAvatar(
+                        radius: 10,
+                        child: Text(
+                          quoted.username.isNotEmpty
+                              ? quoted.username[0].toUpperCase()
+                              : '?',
+                          style: const TextStyle(fontSize: 10),
+                        ),
+                      ),
+                    )
+                  : CircleAvatar(
+                      radius: 10,
+                      child: Text(
                         quoted.username.isNotEmpty
                             ? quoted.username[0].toUpperCase()
                             : '?',
                         style: const TextStyle(fontSize: 10),
-                      )
-                    : null,
-              ),
+                      ),
+                    ),
               const SizedBox(width: 6),
               Flexible(
                 child: Text(
@@ -203,19 +226,39 @@ class PostCard extends StatelessWidget {
         // Avatar
         Hero(
           tag: 'avatar_${post.id}',
-          child: CircleAvatar(
-            radius: 20,
-            backgroundImage: post.avatarUrl != null
-                ? CachedNetworkImageProvider(post.avatarUrl!)
-                : null,
-            child: post.avatarUrl == null
-                ? Text(
+          child: post.avatarUrl != null
+              ? CachedNetworkImage(
+                  imageUrl: post.avatarUrl!,
+                  httpHeaders: kImageHeaders,
+                  imageBuilder: (context, imageProvider) => CircleAvatar(
+                    radius: 20,
+                    backgroundImage: imageProvider,
+                  ),
+                  placeholder: (context, url) => CircleAvatar(
+                    radius: 20,
+                    child: Text(
+                      post.username.isNotEmpty
+                          ? post.username[0].toUpperCase()
+                          : '?',
+                    ),
+                  ),
+                  errorWidget: (context, url, error) => CircleAvatar(
+                    radius: 20,
+                    child: Text(
+                      post.username.isNotEmpty
+                          ? post.username[0].toUpperCase()
+                          : '?',
+                    ),
+                  ),
+                )
+              : CircleAvatar(
+                  radius: 20,
+                  child: Text(
                     post.username.isNotEmpty
                         ? post.username[0].toUpperCase()
                         : '?',
-                  )
-                : null,
-          ),
+                  ),
+                ),
         ),
         const SizedBox(width: 8),
         Expanded(

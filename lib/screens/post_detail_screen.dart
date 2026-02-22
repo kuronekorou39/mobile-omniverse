@@ -3,6 +3,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:share_plus/share_plus.dart' as share_plus;
 
+import '../utils/image_headers.dart';
 import '../models/account.dart';
 import '../models/post.dart';
 import '../models/sns_service.dart';
@@ -191,7 +192,7 @@ class _PostDetailScreenState extends ConsumerState<PostDetailScreen> {
                 child: CircleAvatar(
                   radius: 24,
                   backgroundImage: post.avatarUrl != null
-                      ? CachedNetworkImageProvider(post.avatarUrl!)
+                      ? CachedNetworkImageProvider(post.avatarUrl!, headers: kImageHeaders)
                       : null,
                   child: post.avatarUrl == null
                       ? Text(post.username.isNotEmpty

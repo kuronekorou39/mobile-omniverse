@@ -6,7 +6,6 @@ import 'package:http/http.dart' as http;
 import '../models/account.dart';
 import '../models/post.dart';
 import '../models/sns_service.dart';
-import 'x_webview_action_service.dart';
 
 class XApiService {
   XApiService._();
@@ -223,33 +222,55 @@ class XApiService {
     );
   }
 
-  /// リツイート (WebView 経由 - x-client-transaction-id 検証を回避)
+  /// リツイート
   Future<bool> retweet(XCredentials creds, String tweetId) async =>
       (await retweetWithDetail(creds, tweetId)).success;
 
   Future<XApiResult> retweetWithDetail(
       XCredentials creds, String tweetId) async {
-    final result =
-        await XWebViewActionService.instance.retweet(creds, tweetId);
+    const queryId = 'ojPdsZsimiJrUGLR1sjUtA';
+    final uri =
+        Uri.parse('https://x.com/i/api/graphql/$queryId/CreateRetweet');
+    final response = await http.post(
+      uri,
+      headers: _buildHeaders(creds),
+      body: json.encode({
+        'variables': {'tweet_id': tweetId, 'dark_request': false},
+        'queryId': queryId,
+      }),
+    );
+    debugPrint('[XApi] retweet $tweetId: ${response.statusCode}');
+    debugPrint('[XApi] retweet body: ${_snippet(response.body)}');
     return XApiResult(
-      success: result.success,
-      statusCode: result.statusCode,
-      bodySnippet: _snippet(result.body),
+      success: response.statusCode == 200,
+      statusCode: response.statusCode,
+      bodySnippet: _snippet(response.body),
     );
   }
 
-  /// リツイート解除 (WebView 経由)
+  /// リツイート解除
   Future<bool> unretweet(XCredentials creds, String tweetId) async =>
       (await unretweetWithDetail(creds, tweetId)).success;
 
   Future<XApiResult> unretweetWithDetail(
       XCredentials creds, String tweetId) async {
-    final result =
-        await XWebViewActionService.instance.unretweet(creds, tweetId);
+    const queryId = 'iQtK4dl5hBmXewYZuEOKVw';
+    final uri =
+        Uri.parse('https://x.com/i/api/graphql/$queryId/DeleteRetweet');
+    final response = await http.post(
+      uri,
+      headers: _buildHeaders(creds),
+      body: json.encode({
+        'variables': {'source_tweet_id': tweetId, 'dark_request': false},
+        'queryId': queryId,
+      }),
+    );
+    debugPrint('[XApi] unretweet $tweetId: ${response.statusCode}');
+    debugPrint('[XApi] unretweet body: ${_snippet(response.body)}');
     return XApiResult(
-      success: result.success,
-      statusCode: result.statusCode,
-      bodySnippet: _snippet(result.body),
+      success: response.statusCode == 200,
+      statusCode: response.statusCode,
+      bodySnippet: _snippet(response.body),
     );
   }
 

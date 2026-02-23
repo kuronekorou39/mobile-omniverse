@@ -183,6 +183,16 @@ class XQueryIdService {
     return refreshQueryIds(creds);
   }
 
+  /// キャッシュを全消去してデフォルト値に戻す
+  Future<void> clearCache() async {
+    _cached.clear();
+    _lastRefresh = null;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove(_prefsKey);
+    await prefs.remove(_lastRefreshKey);
+    debugPrint('[XQueryId] Cache cleared, using defaults');
+  }
+
   /// 現在のキャッシュ状態を取得 (デバッグ用)
   Map<String, String> get currentIds => Map.unmodifiable({
         for (final op in _defaults.keys) op: getQueryId(op),

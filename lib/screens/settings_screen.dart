@@ -20,6 +20,9 @@ class SettingsScreen extends ConsumerStatefulWidget {
 class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   String _version = '...';
 
+  bool get _hasXAccount => AccountStorageService.instance.accounts
+      .any((a) => a.service == SnsService.x && a.isEnabled);
+
   @override
   void initState() {
     super.initState();
@@ -206,11 +209,27 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             leading: const Icon(Icons.refresh),
             title: const Text('queryId 更新'),
             subtitle: Text(
-              XQueryIdService.instance.lastRefreshTime != null
-                  ? '最終更新: ${_formatTime(XQueryIdService.instance.lastRefreshTime!)}'
-                  : '未更新',
+              _hasXAccount
+                  ? (XQueryIdService.instance.lastRefreshTime != null
+                      ? '最終更新: ${_formatTime(XQueryIdService.instance.lastRefreshTime!)}'
+                      : '未更新')
+                  : 'X アカウントが必要です',
             ),
-            onTap: _refreshQueryIds,
+            onTap: _hasXAccount ? _refreshQueryIds : null,
+          ),
+          ListTile(
+            leading: const Icon(Icons.delete_outline),
+            title: const Text('queryId キャッシュ消去'),
+            subtitle: const Text('デフォルト値に戻します'),
+            onTap: () async {
+              await XQueryIdService.instance.clearCache();
+              if (mounted) {
+                setState(() {});
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('queryId キャッシュを消去しました')),
+                );
+              }
+            },
           ),
         ],
       ),

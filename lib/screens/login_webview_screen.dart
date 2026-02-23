@@ -557,6 +557,29 @@ class _LoginWebViewScreenState extends State<LoginWebViewScreen> {
       debugPrint('[LoginWebView] No twid/controller, cannot get user info');
     }
 
+    // UserByRestId が失敗した場合、fetch interceptor で捕捉したデータにフォールバック
+    if (handle == '@user' && _controller != null) {
+      try {
+        final captured = await _controller!.evaluateJavascript(
+          source: 'JSON.stringify(window.__xCapturedUser)',
+        );
+        if (captured != null && captured != 'null') {
+          final data = json.decode(captured.toString()) as Map<String, dynamic>;
+          final sn = data['screenName'] as String?;
+          final name = data['name'] as String?;
+          final av = data['avatar'] as String?;
+          if (sn != null && sn.isNotEmpty) {
+            handle = '@$sn';
+            displayName = (name != null && name.isNotEmpty) ? name : sn;
+          }
+          if (av != null && av.isNotEmpty) avatarUrl = av;
+          debugPrint('[LoginWebView] X user from interceptor: $handle ($displayName)');
+        }
+      } catch (e) {
+        debugPrint('[LoginWebView] Error reading interceptor data: $e');
+      }
+    }
+
     debugPrint('[LoginWebView] X login: $handle ($displayName)');
 
     final loginResult = LoginResult(

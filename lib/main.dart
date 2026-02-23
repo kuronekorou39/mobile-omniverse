@@ -4,12 +4,14 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'providers/settings_provider.dart';
 import 'screens/splash_screen.dart';
 import 'services/account_storage_service.dart';
+import 'services/bookmark_service.dart';
 import 'services/x_query_id_service.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await AccountStorageService.instance.load();
   await XQueryIdService.instance.init();
+  await BookmarkService.instance.init();
   runApp(const ProviderScope(child: OmniVerseApp()));
 }
 

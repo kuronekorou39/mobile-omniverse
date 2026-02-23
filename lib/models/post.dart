@@ -117,6 +117,72 @@ class Post {
     );
   }
 
+  Map<String, dynamic> toJson() => {
+        'id': id,
+        'source': source.name,
+        'username': username,
+        'handle': handle,
+        'body': body,
+        'timestamp': timestamp.toIso8601String(),
+        'avatarUrl': avatarUrl,
+        'accountId': accountId,
+        'likeCount': likeCount,
+        'replyCount': replyCount,
+        'repostCount': repostCount,
+        'isLiked': isLiked,
+        'isReposted': isReposted,
+        'imageUrls': imageUrls,
+        'videoUrl': videoUrl,
+        'videoThumbnailUrl': videoThumbnailUrl,
+        'permalink': permalink,
+        'inReplyToId': inReplyToId,
+        'uri': uri,
+        'cid': cid,
+        'isRetweet': isRetweet,
+        'retweetedByUsername': retweetedByUsername,
+        'retweetedByHandle': retweetedByHandle,
+        if (quotedPost != null) 'quotedPost': quotedPost!.toJson(),
+      };
+
+  factory Post.fromCache(Map<String, dynamic> json) {
+    final source = SnsService.values.firstWhere(
+      (s) => s.name == json['source'],
+      orElse: () => SnsService.x,
+    );
+    return Post(
+      id: json['id'] as String,
+      source: source,
+      username: json['username'] as String? ?? '',
+      handle: json['handle'] as String? ?? '',
+      body: json['body'] as String? ?? '',
+      timestamp: DateTime.tryParse(json['timestamp'] as String? ?? '') ??
+          DateTime.now(),
+      avatarUrl: json['avatarUrl'] as String?,
+      accountId: json['accountId'] as String?,
+      likeCount: json['likeCount'] as int? ?? 0,
+      replyCount: json['replyCount'] as int? ?? 0,
+      repostCount: json['repostCount'] as int? ?? 0,
+      isLiked: json['isLiked'] as bool? ?? false,
+      isReposted: json['isReposted'] as bool? ?? false,
+      imageUrls: (json['imageUrls'] as List<dynamic>?)
+              ?.map((e) => e as String)
+              .toList() ??
+          const [],
+      videoUrl: json['videoUrl'] as String?,
+      videoThumbnailUrl: json['videoThumbnailUrl'] as String?,
+      permalink: json['permalink'] as String?,
+      inReplyToId: json['inReplyToId'] as String?,
+      uri: json['uri'] as String?,
+      cid: json['cid'] as String?,
+      isRetweet: json['isRetweet'] as bool? ?? false,
+      retweetedByUsername: json['retweetedByUsername'] as String?,
+      retweetedByHandle: json['retweetedByHandle'] as String?,
+      quotedPost: json['quotedPost'] != null
+          ? Post.fromCache(json['quotedPost'] as Map<String, dynamic>)
+          : null,
+    );
+  }
+
   @override
   bool operator ==(Object other) =>
       identical(this, other) || other is Post && id == other.id;

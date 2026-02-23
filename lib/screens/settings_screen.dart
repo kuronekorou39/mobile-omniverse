@@ -137,6 +137,17 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
 
           const Divider(),
 
+          // Engagement section
+          const _SectionHeader(title: 'エンゲージメント'),
+          SwitchListTile(
+            title: const Text('アカウント選択モーダル'),
+            subtitle: const Text('いいね/RT 時にアカウントを選択する'),
+            value: settings.showAccountPickerOnEngagement,
+            onChanged: (value) => notifier.setShowAccountPicker(value),
+          ),
+
+          const Divider(),
+
           // Appearance section
           const _SectionHeader(title: '外観'),
           ListTile(
@@ -186,6 +197,31 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
               ],
             ),
           ),
+
+          const Divider(),
+
+          // RT filter per account
+          const _SectionHeader(title: 'RT/リポスト フィルタ'),
+          ...AccountStorageService.instance.accounts.map((account) {
+            final isHidden = settings.hideRetweetsAccountIds.contains(account.id);
+            return SwitchListTile(
+              title: Text(account.displayName),
+              subtitle: Text(
+                '${account.handle} (${account.service.name.toUpperCase()})',
+              ),
+              secondary: Icon(
+                account.service == SnsService.x ? Icons.close : Icons.cloud,
+                size: 20,
+              ),
+              value: isHidden,
+              onChanged: (_) => notifier.toggleHideRetweets(account.id),
+            );
+          }),
+          if (AccountStorageService.instance.accounts.isEmpty)
+            const ListTile(
+              title: Text('アカウントがありません'),
+              subtitle: Text('アカウントを追加すると、ここで RT 非表示を設定できます'),
+            ),
 
           const Divider(),
 

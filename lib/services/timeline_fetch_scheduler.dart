@@ -25,6 +25,12 @@ class TimelineFetchScheduler {
   void Function(String accountHandle, SnsService platform, bool success,
       int postCount, String? error)? onFetchLog;
 
+  /// Bluesky トークンリフレッシュ通知コールバック
+  void Function(String accountHandle, bool success)? onTokenRefresh;
+
+  /// Bluesky トークンリフレッシュ完全失敗時（再ログイン必要）
+  void Function(String accountId, String accountHandle)? onTokenExpired;
+
   void setInterval(Duration interval) {
     _interval = interval;
     if (_isRunning) {
@@ -96,19 +102,28 @@ class TimelineFetchScheduler {
 
   Future<List<Post>> _fetchBluesky(Account account) async {
     final creds = account.blueskyCredentials;
-    final result = await BlueskyApiService.instance.getTimelineWithRefresh(
-      creds,
-      accountId: account.id,
-    );
+    try {
+      final result = await BlueskyApiService.instance.getTimelineWithRefresh(
+        creds,
+        accountId: account.id,
+      );
 
-    // トークンが更新された場合はストレージに保存
-    if (result.updatedCreds != null) {
-      final updated = account.copyWith(credentials: result.updatedCreds);
-      await AccountStorageService.instance.updateAccount(updated);
-      debugPrint('[Scheduler] Updated credentials for ${account.handle}');
+      // トークンが更新された場合はストレージに保存
+      if (result.updatedCreds != null) {
+        final updated = account.copyWith(credentials: result.updatedCreds);
+        await AccountStorageService.instance.updateAccount(updated);
+        debugPrint('[Scheduler] Updated credentials for ${account.handle}');
+        onTokenRefresh?.call(account.handle, true);
+      }
+
+      return result.posts;
+    } on BlueskyAuthException {
+      // refreshJwt も期限切れ → 再ログインが必要
+      debugPrint('[Scheduler] Token fully expired for ${account.handle}');
+      onTokenRefresh?.call(account.handle, false);
+      onTokenExpired?.call(account.id, account.handle);
+      rethrow;
     }
-
-    return result.posts;
   }
 
   Future<List<Post>> _fetchX(Account account) async {

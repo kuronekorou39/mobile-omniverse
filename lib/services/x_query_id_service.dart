@@ -25,6 +25,7 @@ class XQueryIdService {
     'CreateRetweet': 'ojPdsZsimiJrUGLR1sjUtA',
     'DeleteRetweet': 'iQtK4dl5hBmXewYZuEOKVw',
     'UserByRestId': 'tD8zKvQzwY3kdx5yz6YmOw',
+    'CreateTweet': 'a1p9RWpkYKBjWv_I3WzS-A',
   };
 
   final Map<String, String> _cached = {};

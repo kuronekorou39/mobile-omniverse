@@ -4,6 +4,7 @@ import '../models/activity_log.dart';
 import '../models/post.dart';
 import '../models/sns_service.dart';
 import '../providers/activity_log_provider.dart';
+import '../services/timeline_cache_service.dart';
 import '../services/timeline_fetch_scheduler.dart';
 
 class FeedState {
@@ -39,6 +40,22 @@ class FeedNotifier extends StateNotifier<FeedState> {
   FeedNotifier(this._logNotifier) : super(const FeedState()) {
     TimelineFetchScheduler.instance.onPostsFetched = _onPostsFetched;
     TimelineFetchScheduler.instance.onFetchLog = _onFetchLog;
+    TimelineFetchScheduler.instance.onTokenExpired = _onTokenExpired;
+    _loadCachedTimeline();
+  }
+
+  /// トークン期限切れアカウントの通知用 (accountId, handle)
+  void Function(String accountId, String handle)? onTokenExpired;
+
+  void _onTokenExpired(String accountId, String handle) {
+    onTokenExpired?.call(accountId, handle);
+  }
+
+  Future<void> _loadCachedTimeline() async {
+    final cached = await TimelineCacheService.instance.loadCachedTimeline();
+    if (cached.isNotEmpty && state.posts.isEmpty) {
+      state = state.copyWith(posts: cached);
+    }
   }
 
   final ActivityLogNotifier? _logNotifier;
@@ -80,6 +97,9 @@ class FeedNotifier extends StateNotifier<FeedState> {
       ..sort((a, b) => b.timestamp.compareTo(a.timestamp));
 
     state = state.copyWith(posts: sorted, isLoading: false, clearError: true);
+
+    // バックグラウンドでキャッシュ保存
+    TimelineCacheService.instance.saveTimeline(sorted);
   }
 
   List<Post> postsForService(SnsService service) {

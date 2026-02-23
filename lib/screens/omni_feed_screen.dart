@@ -12,10 +12,13 @@ import '../services/x_api_service.dart';
 import '../services/bluesky_api_service.dart';
 import '../services/app_update_service.dart';
 import '../models/account.dart';
+import '../widgets/account_picker_modal.dart';
 import '../widgets/post_card.dart';
 import '../widgets/update_dialog.dart';
 import 'accounts_screen.dart';
 import 'activity_log_screen.dart';
+import 'bookmarks_screen.dart';
+import 'compose_screen.dart';
 import 'settings_screen.dart';
 import 'post_detail_screen.dart';
 
@@ -33,7 +36,27 @@ class _OmniFeedScreenState extends ConsumerState<OmniFeedScreen> {
   void initState() {
     super.initState();
     _scrollController.addListener(_onScroll);
-    WidgetsBinding.instance.addPostFrameCallback((_) => _checkForUpdate());
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _checkForUpdate();
+      // トークン期限切れ通知を設定
+      ref.read(feedProvider.notifier).onTokenExpired = (accountId, handle) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('$handle のトークンが期限切れです。再ログインしてください'),
+            duration: const Duration(seconds: 5),
+            action: SnackBarAction(
+              label: 'アカウント',
+              onPressed: () {
+                Navigator.of(context).push(
+                  MaterialPageRoute(builder: (_) => const AccountsScreen()),
+                );
+              },
+            ),
+          ),
+        );
+      };
+    });
   }
 
   Future<void> _checkForUpdate() async {
@@ -60,8 +83,21 @@ class _OmniFeedScreenState extends ConsumerState<OmniFeedScreen> {
     }
   }
 
+  Future<Account?> _resolveAccount(Post post, String actionLabel) async {
+    final settings = ref.read(settingsProvider);
+    if (settings.showAccountPickerOnEngagement) {
+      final picked = await showAccountPickerModal(
+        context,
+        service: post.source,
+        actionLabel: actionLabel,
+      );
+      return picked;
+    }
+    return _getAccountForPost(post);
+  }
+
   Future<void> _handleLike(Post post) async {
-    final account = _getAccountForPost(post);
+    final account = await _resolveAccount(post, 'いいね');
     if (account == null) return;
 
     final wasLiked = post.isLiked;
@@ -145,7 +181,7 @@ class _OmniFeedScreenState extends ConsumerState<OmniFeedScreen> {
   }
 
   Future<void> _handleRepost(Post post) async {
-    final account = _getAccountForPost(post);
+    final account = await _resolveAccount(post, 'リポスト');
     if (account == null) return;
 
     final wasReposted = post.isReposted;
@@ -263,6 +299,16 @@ class _OmniFeedScreenState extends ConsumerState<OmniFeedScreen> {
             ),
             actions: [
               IconButton(
+                icon: const Icon(Icons.bookmark_outline),
+                tooltip: 'ブックマーク',
+                onPressed: () {
+                  Navigator.of(context).push(
+                    MaterialPageRoute(
+                        builder: (_) => const BookmarksScreen()),
+                  );
+                },
+              ),
+              IconButton(
                 icon: const Icon(Icons.receipt_long_outlined),
                 tooltip: 'ログ',
                 onPressed: () {
@@ -287,10 +333,13 @@ class _OmniFeedScreenState extends ConsumerState<OmniFeedScreen> {
         body: _buildBody(context, feed, settings, accounts),
       ),
       floatingActionButton: FloatingActionButton(
-        onPressed: () {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('投稿機能は今後実装予定です')),
+        onPressed: () async {
+          final posted = await Navigator.of(context).push<bool>(
+            MaterialPageRoute(builder: (_) => const ComposeScreen()),
           );
+          if (posted == true) {
+            ref.read(feedProvider.notifier).refresh();
+          }
         },
         child: const Icon(Icons.edit),
       ),
@@ -416,10 +465,21 @@ class _OmniFeedScreenState extends ConsumerState<OmniFeedScreen> {
                       ),
                     ],
                   )
-                : ListView.builder(
-                    itemCount: feed.posts.length + (feed.isLoadingMore ? 1 : 0),
+                : Builder(builder: (context) {
+                    // RT 非表示フィルタ適用
+                    final hideRtIds = settings.hideRetweetsAccountIds;
+                    final filteredPosts = hideRtIds.isEmpty
+                        ? feed.posts
+                        : feed.posts.where((p) =>
+                            !p.isRetweet ||
+                            p.accountId == null ||
+                            !hideRtIds.contains(p.accountId)).toList();
+
+                    return ListView.builder(
+                    cacheExtent: 500,
+                    itemCount: filteredPosts.length + (feed.isLoadingMore ? 1 : 0),
                     itemBuilder: (context, index) {
-                      if (index >= feed.posts.length) {
+                      if (index >= filteredPosts.length) {
                         return const Padding(
                           padding: EdgeInsets.all(16),
                           child: Center(
@@ -427,14 +487,17 @@ class _OmniFeedScreenState extends ConsumerState<OmniFeedScreen> {
                           ),
                         );
                       }
-                      final post = feed.posts[index];
+                      final post = filteredPosts[index];
                       String? accountHandle;
                       if (post.accountId != null) {
                         final account = AccountStorageService.instance
                             .getAccount(post.accountId!);
                         if (account != null) accountHandle = account.handle;
                       }
-                      return PostCard(
+                      return _AnimatedPostCard(
+                        key: ValueKey(post.id),
+                        index: index,
+                        child: PostCard(
                         post: post,
                         accountHandle: accountHandle,
                         onTap: () {
@@ -459,11 +522,73 @@ class _OmniFeedScreenState extends ConsumerState<OmniFeedScreen> {
                         },
                         onLike: () => _handleLike(post),
                         onRepost: () => _handleRepost(post),
+                      ),
                       );
                     },
-                  ),
+                  );
+                  }),
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// 投稿カードのスライドイン + フェードインアニメーション
+class _AnimatedPostCard extends StatefulWidget {
+  const _AnimatedPostCard({
+    super.key,
+    required this.index,
+    required this.child,
+  });
+
+  final int index;
+  final Widget child;
+
+  @override
+  State<_AnimatedPostCard> createState() => _AnimatedPostCardState();
+}
+
+class _AnimatedPostCardState extends State<_AnimatedPostCard>
+    with SingleTickerProviderStateMixin {
+  late AnimationController _controller;
+  late Animation<Offset> _slideAnimation;
+  late Animation<double> _fadeAnimation;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      duration: const Duration(milliseconds: 300),
+      vsync: this,
+    );
+    _slideAnimation = Tween<Offset>(
+      begin: const Offset(0.05, 0),
+      end: Offset.zero,
+    ).animate(CurvedAnimation(parent: _controller, curve: Curves.easeOut));
+    _fadeAnimation = Tween<double>(begin: 0.0, end: 1.0)
+        .animate(CurvedAnimation(parent: _controller, curve: Curves.easeOut));
+
+    // 少しずらして開始（最初の10件のみ）
+    final delay = widget.index < 10 ? widget.index * 30 : 0;
+    Future.delayed(Duration(milliseconds: delay), () {
+      if (mounted) _controller.forward();
+    });
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return SlideTransition(
+      position: _slideAnimation,
+      child: FadeTransition(
+        opacity: _fadeAnimation,
+        child: widget.child,
       ),
     );
   }

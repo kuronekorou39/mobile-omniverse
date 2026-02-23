@@ -227,6 +227,118 @@ class BlueskyApiService {
     return response.statusCode == 200;
   }
 
+  /// 投稿を作成
+  Future<bool> createPost(BlueskyCredentials creds, String text) async {
+    final uri = Uri.parse(
+      '${creds.pdsUrl}/xrpc/com.atproto.repo.createRecord',
+    );
+    final response = await http.post(
+      uri,
+      headers: {
+        'Authorization': 'Bearer ${creds.accessJwt}',
+        'Content-Type': 'application/json',
+      },
+      body: json.encode({
+        'repo': creds.did,
+        'collection': 'app.bsky.feed.post',
+        'record': {
+          '\$type': 'app.bsky.feed.post',
+          'text': text,
+          'createdAt': DateTime.now().toUtc().toIso8601String(),
+        },
+      }),
+    );
+    debugPrint('[BlueskyApi] createPost: ${response.statusCode}');
+    return response.statusCode == 200;
+  }
+
+  /// ユーザープロフィールを取得
+  Future<Map<String, dynamic>?> getProfile(
+    BlueskyCredentials creds,
+    String actor,
+  ) async {
+    final uri = Uri.parse(
+      '${creds.pdsUrl}/xrpc/app.bsky.actor.getProfile'
+      '?actor=${Uri.encodeComponent(actor)}',
+    );
+    final response = await http.get(uri, headers: {
+      'Authorization': 'Bearer ${creds.accessJwt}',
+      'Accept': 'application/json',
+    });
+    if (response.statusCode != 200) return null;
+    return json.decode(response.body) as Map<String, dynamic>;
+  }
+
+  /// ユーザーのタイムラインを取得
+  Future<List<Post>> getAuthorFeed(
+    BlueskyCredentials creds,
+    String actor, {
+    String? accountId,
+    int limit = 30,
+  }) async {
+    final uri = Uri.parse(
+      '${creds.pdsUrl}/xrpc/app.bsky.feed.getAuthorFeed'
+      '?actor=${Uri.encodeComponent(actor)}&limit=$limit',
+    );
+    final response = await http.get(uri, headers: {
+      'Authorization': 'Bearer ${creds.accessJwt}',
+      'Accept': 'application/json',
+    });
+    if (response.statusCode != 200) return [];
+    final body = json.decode(response.body) as Map<String, dynamic>;
+    final feed = body['feed'] as List<dynamic>? ?? [];
+    return feed.map((item) => _parsePost(item, accountId)).toList();
+  }
+
+  /// フォロー
+  Future<String?> follow(BlueskyCredentials creds, String did) async {
+    final uri = Uri.parse(
+      '${creds.pdsUrl}/xrpc/com.atproto.repo.createRecord',
+    );
+    final response = await http.post(
+      uri,
+      headers: {
+        'Authorization': 'Bearer ${creds.accessJwt}',
+        'Content-Type': 'application/json',
+      },
+      body: json.encode({
+        'repo': creds.did,
+        'collection': 'app.bsky.graph.follow',
+        'record': {
+          '\$type': 'app.bsky.graph.follow',
+          'subject': did,
+          'createdAt': DateTime.now().toUtc().toIso8601String(),
+        },
+      }),
+    );
+    if (response.statusCode == 200) {
+      final body = json.decode(response.body) as Map<String, dynamic>;
+      return body['uri'] as String?;
+    }
+    return null;
+  }
+
+  /// フォロー解除
+  Future<bool> unfollow(BlueskyCredentials creds, String followUri) async {
+    final rkey = followUri.split('/').last;
+    final uri = Uri.parse(
+      '${creds.pdsUrl}/xrpc/com.atproto.repo.deleteRecord',
+    );
+    final response = await http.post(
+      uri,
+      headers: {
+        'Authorization': 'Bearer ${creds.accessJwt}',
+        'Content-Type': 'application/json',
+      },
+      body: json.encode({
+        'repo': creds.did,
+        'collection': 'app.bsky.graph.follow',
+        'rkey': rkey,
+      }),
+    );
+    return response.statusCode == 200;
+  }
+
   Post _parsePost(dynamic item, String? accountId) {
     final feedItem = item as Map<String, dynamic>;
     final post = feedItem['post'] as Map<String, dynamic>;

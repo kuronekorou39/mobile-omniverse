@@ -9,6 +9,7 @@ import '../models/post.dart';
 import '../models/sns_service.dart';
 import '../services/account_storage_service.dart';
 import '../services/bluesky_api_service.dart';
+import '../services/bookmark_service.dart';
 import '../services/x_api_service.dart';
 import '../widgets/post_card.dart';
 import '../widgets/post_media.dart';
@@ -59,10 +60,9 @@ class _PostDetailScreenState extends ConsumerState<PostDetailScreen> {
           accountId: account.id,
         );
       } else {
-        // Bluesky
-        final rkey = widget.post.id.replaceFirst('bsky_', '');
-        final did = account.blueskyCredentials.did;
-        final postUri = 'at://$did/app.bsky.feed.post/$rkey';
+        // Bluesky - Post.uri に投稿者の DID を含む正しい AT URI が格納されている
+        final postUri = widget.post.uri ??
+            'at://${account.blueskyCredentials.did}/app.bsky.feed.post/${widget.post.id.replaceFirst('bsky_', '')}';
         posts = await BlueskyApiService.instance.getPostThread(
           account.blueskyCredentials,
           postUri,
@@ -98,6 +98,17 @@ class _PostDetailScreenState extends ConsumerState<PostDetailScreen> {
       appBar: AppBar(
         title: const Text('投稿詳細'),
         actions: [
+          IconButton(
+            icon: Icon(
+              BookmarkService.instance.isBookmarked(widget.post.id)
+                  ? Icons.bookmark
+                  : Icons.bookmark_outline,
+            ),
+            onPressed: () async {
+              await BookmarkService.instance.toggle(widget.post);
+              setState(() {});
+            },
+          ),
           if (widget.post.permalink != null)
             IconButton(
               icon: const Icon(Icons.share_outlined),

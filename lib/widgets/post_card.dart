@@ -3,6 +3,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../models/post.dart';
+import '../screens/user_profile_screen.dart';
 import '../utils/image_headers.dart';
 import 'post_media.dart';
 import 'sns_badge.dart';
@@ -223,8 +224,10 @@ class PostCard extends StatelessWidget {
   Widget _buildHeader(BuildContext context, String? accountHandle) {
     return Row(
       children: [
-        // Avatar
-        Hero(
+        // Avatar (タップでプロフィール画面へ)
+        GestureDetector(
+          onTap: () => navigateToUserProfile(context, post: post),
+          child: Hero(
           tag: 'avatar_${post.id}',
           child: post.avatarUrl != null
               ? CachedNetworkImage(
@@ -259,6 +262,7 @@ class PostCard extends StatelessWidget {
                         : '?',
                   ),
                 ),
+        ),
         ),
         const SizedBox(width: 8),
         Expanded(
@@ -378,7 +382,7 @@ class PostCard extends StatelessWidget {
   }
 }
 
-class _EngagementButton extends StatelessWidget {
+class _EngagementButton extends StatefulWidget {
   const _EngagementButton({
     required this.icon,
     required this.count,
@@ -398,21 +402,63 @@ class _EngagementButton extends StatelessWidget {
   final bool isActive;
 
   @override
+  State<_EngagementButton> createState() => _EngagementButtonState();
+}
+
+class _EngagementButtonState extends State<_EngagementButton>
+    with SingleTickerProviderStateMixin {
+  late AnimationController _controller;
+  late Animation<double> _scaleAnimation;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      duration: const Duration(milliseconds: 300),
+      vsync: this,
+    );
+    _scaleAnimation = TweenSequence<double>([
+      TweenSequenceItem(tween: Tween(begin: 1.0, end: 1.4), weight: 40),
+      TweenSequenceItem(tween: Tween(begin: 1.4, end: 0.9), weight: 30),
+      TweenSequenceItem(tween: Tween(begin: 0.9, end: 1.0), weight: 30),
+    ]).animate(CurvedAnimation(parent: _controller, curve: Curves.easeOut));
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  void _handleTap() {
+    if (widget.onTap == null) return;
+    _controller.forward(from: 0);
+    widget.onTap!();
+  }
+
+  @override
   Widget build(BuildContext context) {
     return InkWell(
       borderRadius: BorderRadius.circular(20),
-      onTap: onTap,
+      onTap: widget.onTap != null ? _handleTap : null,
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(icon, size: iconSize, color: color),
-            if (count > 0) ...[
+            AnimatedBuilder(
+              animation: _scaleAnimation,
+              builder: (context, child) => Transform.scale(
+                scale: _scaleAnimation.value,
+                child: child,
+              ),
+              child: Icon(widget.icon, size: widget.iconSize, color: widget.color),
+            ),
+            if (widget.count > 0) ...[
               const SizedBox(width: 4),
               Text(
-                _formatCount(count),
-                style: TextStyle(color: color, fontSize: fontSize),
+                _formatCount(widget.count),
+                style: TextStyle(color: widget.color, fontSize: widget.fontSize),
               ),
             ],
           ],

@@ -57,26 +57,10 @@ class XApiService {
     }
   }
 
-  /// Mutation 系 API (XApiResult を返すもの) の 404 リトライラッパー
-  Future<XApiResult> _mutationWithRetry(
-    XCredentials creds,
-    String operationName,
-    Future<XApiResult> Function(String queryId) action,
-  ) async {
-    final queryId = XQueryIdService.instance.getQueryId(operationName);
-    final result = await action(queryId);
-    if (result.statusCode == 404) {
-      debugPrint('[XApi] 404 detected for $operationName, refreshing queryIds...');
-      final count = await XQueryIdService.instance.forceRefresh(creds);
-      debugPrint('[XApi] Refreshed $count queryIds');
-      final newQueryId = XQueryIdService.instance.getQueryId(operationName);
-      if (newQueryId != queryId) {
-        debugPrint('[XApi] Retrying $operationName with new queryId: $newQueryId');
-        return await action(newQueryId);
-      }
-    }
-    return result;
-  }
+  /// Mutation 系は queryId を動的に取得するだけ (404 リトライしない)
+  /// mutation の 404 はアカウント制限や削除済みツイート等が多いため
+  String _getMutationQueryId(String operationName) =>
+      XQueryIdService.instance.getQueryId(operationName);
 
   /// タイムラインを取得
   Future<List<Post>> getTimeline(
@@ -227,25 +211,24 @@ class XApiService {
 
   Future<XApiResult> likeTweetWithDetail(
       XCredentials creds, String tweetId) async {
-    return _mutationWithRetry(creds, 'FavoriteTweet', (queryId) async {
-      final uri =
-          Uri.parse('https://x.com/i/api/graphql/$queryId/FavoriteTweet');
-      final response = await http.post(
-        uri,
-        headers: _buildHeaders(creds),
-        body: json.encode({
-          'variables': {'tweet_id': tweetId},
-          'queryId': queryId,
-        }),
-      );
-      debugPrint('[XApi] likeTweet $tweetId: ${response.statusCode}');
-      debugPrint('[XApi] likeTweet body: ${_snippet(response.body)}');
-      return XApiResult(
-        success: response.statusCode == 200,
-        statusCode: response.statusCode,
-        bodySnippet: _snippet(response.body),
-      );
-    });
+    final queryId = _getMutationQueryId('FavoriteTweet');
+    final uri =
+        Uri.parse('https://x.com/i/api/graphql/$queryId/FavoriteTweet');
+    final response = await http.post(
+      uri,
+      headers: _buildHeaders(creds),
+      body: json.encode({
+        'variables': {'tweet_id': tweetId},
+        'queryId': queryId,
+      }),
+    );
+    debugPrint('[XApi] likeTweet $tweetId: ${response.statusCode}');
+    debugPrint('[XApi] likeTweet body: ${_snippet(response.body)}');
+    return XApiResult(
+      success: response.statusCode == 200,
+      statusCode: response.statusCode,
+      bodySnippet: _snippet(response.body),
+    );
   }
 
   /// いいね解除
@@ -254,25 +237,24 @@ class XApiService {
 
   Future<XApiResult> unlikeTweetWithDetail(
       XCredentials creds, String tweetId) async {
-    return _mutationWithRetry(creds, 'UnfavoriteTweet', (queryId) async {
-      final uri =
-          Uri.parse('https://x.com/i/api/graphql/$queryId/UnfavoriteTweet');
-      final response = await http.post(
-        uri,
-        headers: _buildHeaders(creds),
-        body: json.encode({
-          'variables': {'tweet_id': tweetId},
-          'queryId': queryId,
-        }),
-      );
-      debugPrint('[XApi] unlikeTweet $tweetId: ${response.statusCode}');
-      debugPrint('[XApi] unlikeTweet body: ${_snippet(response.body)}');
-      return XApiResult(
-        success: response.statusCode == 200,
-        statusCode: response.statusCode,
-        bodySnippet: _snippet(response.body),
-      );
-    });
+    final queryId = _getMutationQueryId('UnfavoriteTweet');
+    final uri =
+        Uri.parse('https://x.com/i/api/graphql/$queryId/UnfavoriteTweet');
+    final response = await http.post(
+      uri,
+      headers: _buildHeaders(creds),
+      body: json.encode({
+        'variables': {'tweet_id': tweetId},
+        'queryId': queryId,
+      }),
+    );
+    debugPrint('[XApi] unlikeTweet $tweetId: ${response.statusCode}');
+    debugPrint('[XApi] unlikeTweet body: ${_snippet(response.body)}');
+    return XApiResult(
+      success: response.statusCode == 200,
+      statusCode: response.statusCode,
+      bodySnippet: _snippet(response.body),
+    );
   }
 
   /// リツイート
@@ -281,25 +263,24 @@ class XApiService {
 
   Future<XApiResult> retweetWithDetail(
       XCredentials creds, String tweetId) async {
-    return _mutationWithRetry(creds, 'CreateRetweet', (queryId) async {
-      final uri =
-          Uri.parse('https://x.com/i/api/graphql/$queryId/CreateRetweet');
-      final response = await http.post(
-        uri,
-        headers: _buildHeaders(creds),
-        body: json.encode({
-          'variables': {'tweet_id': tweetId, 'dark_request': false},
-          'queryId': queryId,
-        }),
-      );
-      debugPrint('[XApi] retweet $tweetId: ${response.statusCode}');
-      debugPrint('[XApi] retweet body: ${_snippet(response.body)}');
-      return XApiResult(
-        success: response.statusCode == 200,
-        statusCode: response.statusCode,
-        bodySnippet: _snippet(response.body),
-      );
-    });
+    final queryId = _getMutationQueryId('CreateRetweet');
+    final uri =
+        Uri.parse('https://x.com/i/api/graphql/$queryId/CreateRetweet');
+    final response = await http.post(
+      uri,
+      headers: _buildHeaders(creds),
+      body: json.encode({
+        'variables': {'tweet_id': tweetId, 'dark_request': false},
+        'queryId': queryId,
+      }),
+    );
+    debugPrint('[XApi] retweet $tweetId: ${response.statusCode}');
+    debugPrint('[XApi] retweet body: ${_snippet(response.body)}');
+    return XApiResult(
+      success: response.statusCode == 200,
+      statusCode: response.statusCode,
+      bodySnippet: _snippet(response.body),
+    );
   }
 
   /// リツイート解除
@@ -308,25 +289,24 @@ class XApiService {
 
   Future<XApiResult> unretweetWithDetail(
       XCredentials creds, String tweetId) async {
-    return _mutationWithRetry(creds, 'DeleteRetweet', (queryId) async {
-      final uri =
-          Uri.parse('https://x.com/i/api/graphql/$queryId/DeleteRetweet');
-      final response = await http.post(
-        uri,
-        headers: _buildHeaders(creds),
-        body: json.encode({
-          'variables': {'source_tweet_id': tweetId, 'dark_request': false},
-          'queryId': queryId,
-        }),
-      );
-      debugPrint('[XApi] unretweet $tweetId: ${response.statusCode}');
-      debugPrint('[XApi] unretweet body: ${_snippet(response.body)}');
-      return XApiResult(
-        success: response.statusCode == 200,
-        statusCode: response.statusCode,
-        bodySnippet: _snippet(response.body),
-      );
-    });
+    final queryId = _getMutationQueryId('DeleteRetweet');
+    final uri =
+        Uri.parse('https://x.com/i/api/graphql/$queryId/DeleteRetweet');
+    final response = await http.post(
+      uri,
+      headers: _buildHeaders(creds),
+      body: json.encode({
+        'variables': {'source_tweet_id': tweetId, 'dark_request': false},
+        'queryId': queryId,
+      }),
+    );
+    debugPrint('[XApi] unretweet $tweetId: ${response.statusCode}');
+    debugPrint('[XApi] unretweet body: ${_snippet(response.body)}');
+    return XApiResult(
+      success: response.statusCode == 200,
+      statusCode: response.statusCode,
+      bodySnippet: _snippet(response.body),
+    );
   }
 
   List<Post> _parseTimeline(Map<String, dynamic> body, String? accountId) {

@@ -55,6 +55,9 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       }
     }
 
+    // リフレッシュ前の値を記録
+    final before = Map<String, String>.from(XQueryIdService.instance.currentIds);
+
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(content: Text('queryId を更新中...')),
     );
@@ -63,18 +66,36 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
 
     if (!mounted) return;
 
-    final ids = XQueryIdService.instance.currentIds;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('queryId 更新完了: $count 件取得'),
-        duration: const Duration(seconds: 3),
+    final after = XQueryIdService.instance.currentIds;
+
+    // 前後の差分を作成
+    final lines = <String>[];
+    for (final op in after.keys) {
+      final b = before[op] ?? '(なし)';
+      final a = after[op]!;
+      final changed = b != a ? ' *' : '';
+      lines.add('$op:\n  $b → $a$changed');
+    }
+
+    // ダイアログで表示
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('queryId 更新結果 ($count 件変更)'),
+        content: SingleChildScrollView(
+          child: Text(
+            lines.join('\n\n'),
+            style: const TextStyle(fontSize: 12, fontFamily: 'monospace'),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('OK'),
+          ),
+        ],
       ),
     );
-
-    // デバッグログに現在の queryId を出力
-    for (final entry in ids.entries) {
-      debugPrint('[Settings] ${entry.key}: ${entry.value}');
-    }
   }
 
   @override

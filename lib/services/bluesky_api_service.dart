@@ -261,11 +261,16 @@ class BlueskyApiService {
       '${creds.pdsUrl}/xrpc/app.bsky.actor.getProfile'
       '?actor=${Uri.encodeComponent(actor)}',
     );
+    debugPrint('[BlueskyApi] getProfile: actor=$actor, url=$uri');
     final response = await http.get(uri, headers: {
       'Authorization': 'Bearer ${creds.accessJwt}',
       'Accept': 'application/json',
     });
-    if (response.statusCode != 200) return null;
+    debugPrint('[BlueskyApi] getProfile: status=${response.statusCode}');
+    if (response.statusCode != 200) {
+      debugPrint('[BlueskyApi] getProfile error body: ${response.body.length > 200 ? response.body.substring(0, 200) : response.body}');
+      return null;
+    }
     return json.decode(response.body) as Map<String, dynamic>;
   }
 
@@ -280,11 +285,18 @@ class BlueskyApiService {
       '${creds.pdsUrl}/xrpc/app.bsky.feed.getAuthorFeed'
       '?actor=${Uri.encodeComponent(actor)}&limit=$limit',
     );
+    debugPrint('[BlueskyApi] getAuthorFeed: actor=$actor, url=$uri');
     final response = await http.get(uri, headers: {
       'Authorization': 'Bearer ${creds.accessJwt}',
       'Accept': 'application/json',
     });
-    if (response.statusCode != 200) return [];
+    debugPrint('[BlueskyApi] getAuthorFeed: status=${response.statusCode}');
+    if (response.statusCode != 200) {
+      debugPrint('[BlueskyApi] getAuthorFeed error body: ${response.body.length > 200 ? response.body.substring(0, 200) : response.body}');
+      throw BlueskyApiException(
+        'Failed to fetch author feed: ${response.statusCode}',
+      );
+    }
     final body = json.decode(response.body) as Map<String, dynamic>;
     final feed = body['feed'] as List<dynamic>? ?? [];
     return feed.map((item) => _parsePost(item, accountId)).toList();

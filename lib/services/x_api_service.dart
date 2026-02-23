@@ -456,6 +456,14 @@ class XApiService {
         final entries = map['entries'] as List<dynamic>? ?? [];
         for (final entry in entries) {
           final entryMap = entry as Map<String, dynamic>;
+          final entryId = entryMap['entryId'] as String? ?? '';
+
+          // リプライと元ツイートのみ。関連ツイート・おすすめ等を除外
+          if (!entryId.startsWith('tweet-') &&
+              !entryId.startsWith('conversationthread-')) {
+            continue;
+          }
+
           final content = entryMap['content'] as Map<String, dynamic>?;
           if (content == null) continue;
 

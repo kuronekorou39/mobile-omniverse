@@ -42,6 +42,8 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
   bool _isLoadingPosts = true;
   bool _isFollowLoading = false;
   List<Post> _posts = [];
+  String? _profileError;
+  String? _postsError;
 
   Account? get _account {
     if (widget.accountId == null) return null;
@@ -58,9 +60,15 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
   Future<void> _loadProfile() async {
     final account = _account;
     if (account == null) {
-      setState(() => _isLoadingProfile = false);
+      debugPrint('[UserProfile] _loadProfile: account is null (accountId=${widget.accountId})');
+      setState(() {
+        _isLoadingProfile = false;
+        _profileError = 'アカウント情報が見つかりません';
+      });
       return;
     }
+
+    debugPrint('[UserProfile] _loadProfile: service=${account.service}, handle=${widget.handle}');
 
     try {
       if (account.service == SnsService.bluesky) {
@@ -78,11 +86,14 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
             _followUri = viewer?['following'] as String?;
             _isFollowing = _followUri != null;
           });
+        } else if (mounted) {
+          setState(() => _profileError = 'プロフィールを取得できませんでした');
         }
       }
       // X のプロフィール API は未実装（GraphQL UserByScreenName が必要）
     } catch (e) {
       debugPrint('[UserProfile] Error loading profile: $e');
+      if (mounted) setState(() => _profileError = '$e');
     }
 
     if (mounted) setState(() => _isLoadingProfile = false);
@@ -91,22 +102,39 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
   Future<void> _loadPosts() async {
     final account = _account;
     if (account == null) {
-      setState(() => _isLoadingPosts = false);
+      setState(() {
+        _isLoadingPosts = false;
+        _postsError = 'アカウント情報が見つかりません';
+      });
       return;
     }
 
     try {
       if (account.service == SnsService.bluesky) {
         final actor = widget.handle.replaceFirst('@', '');
-        _posts = await BlueskyApiService.instance.getAuthorFeed(
+        final posts = await BlueskyApiService.instance.getAuthorFeed(
           account.blueskyCredentials,
           actor,
           accountId: account.id,
         );
+        if (mounted) {
+          setState(() {
+            _posts = posts;
+            _isLoadingPosts = false;
+          });
+          return;
+        }
       }
       // X のユーザー TL は未実装
     } catch (e) {
       debugPrint('[UserProfile] Error loading posts: $e');
+      if (mounted) {
+        setState(() {
+          _postsError = '$e';
+          _isLoadingPosts = false;
+        });
+        return;
+      }
     }
 
     if (mounted) setState(() => _isLoadingPosts = false);
@@ -174,6 +202,37 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
             if (_isLoadingPosts)
               const SliverFillRemaining(
                 child: Center(child: CircularProgressIndicator()),
+              )
+            else if (_postsError != null)
+              SliverFillRemaining(
+                child: Center(
+                  child: Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(Icons.error_outline, color: Colors.red, size: 32),
+                        const SizedBox(height: 8),
+                        Text(
+                          _postsError!,
+                          textAlign: TextAlign.center,
+                          style: const TextStyle(color: Colors.red, fontSize: 13),
+                        ),
+                        const SizedBox(height: 12),
+                        OutlinedButton(
+                          onPressed: () {
+                            setState(() {
+                              _postsError = null;
+                              _isLoadingPosts = true;
+                            });
+                            _loadPosts();
+                          },
+                          child: const Text('リトライ'),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
               )
             else if (_posts.isEmpty)
               const SliverFillRemaining(
@@ -304,6 +363,14 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
                 height: 16,
                 child: CircularProgressIndicator(strokeWidth: 2),
               ),
+            ),
+          ],
+
+          if (_profileError != null) ...[
+            const SizedBox(height: 8),
+            Text(
+              _profileError!,
+              style: const TextStyle(color: Colors.red, fontSize: 12),
             ),
           ],
         ],

@@ -61,7 +61,19 @@ class FeedNotifier extends StateNotifier<FeedState> {
     );
 
     for (final post in newPosts) {
-      existing[post.id] = post;
+      final old = existing[post.id];
+      if (old != null && post.username.isEmpty && old.username.isNotEmpty) {
+        // ユーザー情報が欠けた投稿で正常なデータを上書きしない
+        // エンゲージメント数のみ更新
+        existing[post.id] = old.copyWith(
+          isLiked: post.isLiked,
+          isReposted: post.isReposted,
+          likeCount: post.likeCount,
+          repostCount: post.repostCount,
+        );
+      } else {
+        existing[post.id] = post;
+      }
     }
 
     final sorted = existing.values.toList()

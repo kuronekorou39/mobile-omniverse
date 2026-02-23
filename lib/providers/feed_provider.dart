@@ -73,47 +73,33 @@ class FeedNotifier extends StateNotifier<FeedState> {
   }
 
   void _onPostsFetched(List<Post> newPosts) {
-    final existingIds = <String>{};
-    final existingMap = <String, Post>{};
-    for (final p in state.posts) {
-      existingIds.add(p.id);
-      existingMap[p.id] = p;
-    }
-
-    final trulyNew = <Post>[];
+    final existing = Map<String, Post>.fromEntries(
+      state.posts.map((p) => MapEntry(p.id, p)),
+    );
 
     for (final post in newPosts) {
-      final old = existingMap[post.id];
-      if (old != null) {
-        // 既存投稿: エンゲージメントを更新（順序は保持）
-        if (post.username.isEmpty && old.username.isNotEmpty) {
-          existingMap[post.id] = old.copyWith(
-            isLiked: post.isLiked,
-            isReposted: post.isReposted,
-            likeCount: post.likeCount,
-            repostCount: post.repostCount,
-          );
-        } else {
-          existingMap[post.id] = post;
-        }
+      final old = existing[post.id];
+      if (old != null && post.username.isEmpty && old.username.isNotEmpty) {
+        // ユーザー情報が欠けた投稿で正常なデータを上書きしない
+        existing[post.id] = old.copyWith(
+          isLiked: post.isLiked,
+          isReposted: post.isReposted,
+          likeCount: post.likeCount,
+          repostCount: post.repostCount,
+        );
       } else {
-        trulyNew.add(post);
+        existing[post.id] = post;
       }
     }
 
-    // 既存投稿を元の順序のまま更新
-    final updatedExisting = state.posts
-        .map((p) => existingMap[p.id] ?? p)
-        .toList();
+    // 常に時系列順にソート
+    final sorted = existing.values.toList()
+      ..sort((a, b) => b.timestamp.compareTo(a.timestamp));
 
-    // 新規投稿のみタイムスタンプ順にソートして先頭に追加
-    trulyNew.sort((a, b) => b.timestamp.compareTo(a.timestamp));
-    final combined = [...trulyNew, ...updatedExisting];
-
-    state = state.copyWith(posts: combined, isLoading: false, clearError: true);
+    state = state.copyWith(posts: sorted, isLoading: false, clearError: true);
 
     // バックグラウンドでキャッシュ保存
-    TimelineCacheService.instance.saveTimeline(combined);
+    TimelineCacheService.instance.saveTimeline(sorted);
   }
 
   List<Post> postsForService(SnsService service) {

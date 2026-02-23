@@ -454,6 +454,7 @@ class _OmniFeedScreenState extends ConsumerState<OmniFeedScreen> {
           Expanded(
             child: feed.posts.isEmpty
                 ? ListView(
+                    padding: EdgeInsets.zero,
                     children: const [
                       SizedBox(height: 100),
                       Center(
@@ -476,6 +477,7 @@ class _OmniFeedScreenState extends ConsumerState<OmniFeedScreen> {
                             !hideRtIds.contains(p.accountId)).toList();
 
                     return ListView.builder(
+                    padding: EdgeInsets.zero,
                     cacheExtent: 500,
                     itemCount: filteredPosts.length + (feed.isLoadingMore ? 1 : 0),
                     itemBuilder: (context, index) {

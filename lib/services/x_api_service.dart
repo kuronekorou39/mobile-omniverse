@@ -411,6 +411,14 @@ class XApiService {
         final entries = map['entries'] as List<dynamic>? ?? [];
         for (final entry in entries) {
           final entryMap = entry as Map<String, dynamic>;
+
+          // 広告・プロモーションを除外
+          final entryId = entryMap['entryId'] as String? ?? '';
+          if (entryId.startsWith('promoted-') ||
+              entryId.startsWith('promotedTweet-')) {
+            continue;
+          }
+
           final content = entryMap['content'] as Map<String, dynamic>?;
           if (content == null) continue;
 
@@ -419,6 +427,9 @@ class XApiService {
 
           final itemContent = content['itemContent'] as Map<String, dynamic>?;
           if (itemContent == null) continue;
+
+          // promotedMetadata があれば広告なのでスキップ
+          if (itemContent.containsKey('promotedMetadata')) continue;
 
           final tweetResults =
               itemContent['tweet_results'] as Map<String, dynamic>?;

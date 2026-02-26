@@ -29,6 +29,9 @@ class XQueryIdService {
     'CreateRetweet': 'ojPdsZsimiJrUGLR1sjUtA',
     'DeleteRetweet': 'iQtK4dl5hBmXewYZuEOKVw',
     'UserByRestId': 'tD8zKvQzwY3kdx5yz6YmOw',
+    'UserByScreenName': 'xmU_MTpREJBz1I14LU744A',
+    'UserTweets': 'E3opETHurmVJflFsUBVuUQ',
+    'UserMedia': 'dexO_2tohK86JDlXOGVk-w',
     'CreateTweet': 'a1p9RWpkYKBjWv_I3WzS-A',
   };
 

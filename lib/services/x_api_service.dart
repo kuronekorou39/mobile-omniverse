@@ -313,6 +313,219 @@ class XApiService {
     );
   }
 
+  /// ユーザープロフィール取得 (UserByScreenName)
+  Future<Map<String, dynamic>?> getUserProfile(
+    XCredentials creds,
+    String screenName,
+  ) async {
+    return _withQueryIdRetry(creds, 'UserByScreenName', (queryId) async {
+      final variables = json.encode({
+        'screen_name': screenName,
+        'withSafetyModeUserFields': true,
+      });
+
+      final features = json.encode({
+        'hidden_profile_subscriptions_enabled': true,
+        'rweb_tipjar_consumption_enabled': true,
+        'responsive_web_graphql_exclude_directive_enabled': true,
+        'verified_phone_label_enabled': false,
+        'subscriptions_verification_info_is_identity_verified_enabled': true,
+        'subscriptions_verification_info_verified_since_enabled': true,
+        'highlights_tweets_tab_ui_enabled': true,
+        'responsive_web_twitter_article_notes_tab_enabled': true,
+        'subscriptions_feature_can_gift_premium': true,
+        'creator_subscriptions_tweet_preview_api_enabled': true,
+        'responsive_web_graphql_skip_user_profile_image_extensions_enabled': false,
+        'responsive_web_graphql_timeline_navigation_enabled': true,
+      });
+
+      final uri = Uri.parse(
+        'https://x.com/i/api/graphql/$queryId/UserByScreenName'
+        '?variables=${Uri.encodeComponent(variables)}'
+        '&features=${Uri.encodeComponent(features)}',
+      );
+
+      final response = await (httpClientOverride ?? http.Client())
+          .get(uri, headers: _buildHeaders(creds));
+
+      if (response.statusCode == 401 || response.statusCode == 403) {
+        throw XAuthException('Authentication failed: ${response.statusCode}');
+      }
+      if (response.statusCode != 200) {
+        throw XApiException(
+          'Failed to fetch user profile: ${response.statusCode}',
+          statusCode: response.statusCode,
+        );
+      }
+
+      final body = json.decode(response.body) as Map<String, dynamic>;
+      final userResult = dig(body, ['data', 'user', 'result']) as Map<String, dynamic>?;
+      if (userResult == null) return null;
+
+      final legacy = userResult['legacy'] as Map<String, dynamic>?;
+      if (legacy == null) return null;
+
+      final isFollowing = legacy['following'] as bool? ?? false;
+
+      return {
+        'rest_id': userResult['rest_id'] as String?,
+        'name': legacy['name'] as String?,
+        'screen_name': legacy['screen_name'] as String?,
+        'description': legacy['description'] as String?,
+        'followers_count': legacy['followers_count'] as int? ?? 0,
+        'friends_count': legacy['friends_count'] as int? ?? 0,
+        'statuses_count': legacy['statuses_count'] as int? ?? 0,
+        'profile_image_url_https': legacy['profile_image_url_https'] as String?,
+        'is_following': isFollowing,
+      };
+    });
+  }
+
+  /// ユーザーの投稿一覧取得 (UserTweets)
+  Future<List<Post>> getUserTimeline(
+    XCredentials creds,
+    String userId, {
+    String? accountId,
+    int count = 20,
+  }) async {
+    return _withQueryIdRetry(creds, 'UserTweets', (queryId) async {
+      final variables = json.encode({
+        'userId': userId,
+        'count': count,
+        'includePromotedContent': false,
+        'withQuickPromoteEligibilityTweetFields': true,
+        'withVoice': true,
+        'withV2Timeline': true,
+      });
+
+      final features = json.encode({
+        'rweb_tipjar_consumption_enabled': true,
+        'responsive_web_graphql_exclude_directive_enabled': true,
+        'verified_phone_label_enabled': false,
+        'creator_subscriptions_tweet_preview_api_enabled': true,
+        'responsive_web_graphql_timeline_navigation_enabled': true,
+        'responsive_web_graphql_skip_user_profile_image_extensions_enabled': false,
+        'communities_web_enable_tweet_community_results_fetch': true,
+        'c9s_tweet_anatomy_moderator_badge_enabled': true,
+        'articles_preview_enabled': true,
+        'responsive_web_edit_tweet_api_enabled': true,
+        'graphql_is_translatable_rweb_tweet_is_translatable_enabled': true,
+        'view_counts_everywhere_api_enabled': true,
+        'longform_notetweets_consumption_enabled': true,
+        'responsive_web_twitter_article_tweet_consumption_enabled': true,
+        'tweet_awards_web_tipping_enabled': false,
+        'creator_subscriptions_quote_tweet_preview_enabled': false,
+        'freedom_of_speech_not_reach_fetch_enabled': true,
+        'standardized_nudges_misinfo': true,
+        'tweet_with_visibility_results_prefer_gql_limited_actions_policy_enabled': true,
+        'rweb_video_timestamps_enabled': true,
+        'longform_notetweets_rich_text_read_enabled': true,
+        'longform_notetweets_inline_media_enabled': true,
+        'responsive_web_enhance_cards_enabled': false,
+      });
+
+      final uri = Uri.parse(
+        'https://x.com/i/api/graphql/$queryId/UserTweets'
+        '?variables=${Uri.encodeComponent(variables)}'
+        '&features=${Uri.encodeComponent(features)}',
+      );
+
+      final response = await (httpClientOverride ?? http.Client())
+          .get(uri, headers: _buildHeaders(creds));
+
+      if (response.statusCode == 401 || response.statusCode == 403) {
+        throw XAuthException('Authentication failed: ${response.statusCode}');
+      }
+      if (response.statusCode != 200) {
+        throw XApiException(
+          'Failed to fetch user timeline: ${response.statusCode}',
+          statusCode: response.statusCode,
+        );
+      }
+
+      final body = json.decode(response.body) as Map<String, dynamic>;
+      return _parseUserTimeline(body, accountId);
+    });
+  }
+
+  /// UserTweets レスポンスをパース
+  List<Post> _parseUserTimeline(Map<String, dynamic> body, String? accountId) {
+    final posts = <Post>[];
+    try {
+      final instructions = dig(body, [
+            'data',
+            'user',
+            'result',
+            'timeline_v2',
+            'timeline',
+            'instructions',
+          ]) as List<dynamic>? ??
+          [];
+
+      for (final instruction in instructions) {
+        final map = instruction as Map<String, dynamic>;
+        if (map['type'] != 'TimelineAddEntries') continue;
+
+        final entries = map['entries'] as List<dynamic>? ?? [];
+        for (final entry in entries) {
+          final entryMap = entry as Map<String, dynamic>;
+
+          final entryId = entryMap['entryId'] as String? ?? '';
+          if (entryId.startsWith('promoted-') ||
+              entryId.startsWith('promotedTweet-')) {
+            continue;
+          }
+
+          final content = entryMap['content'] as Map<String, dynamic>?;
+          if (content == null) continue;
+
+          final entryType = content['entryType'] as String?;
+          if (entryType != 'TimelineTimelineItem') continue;
+
+          final itemContent =
+              content['itemContent'] as Map<String, dynamic>?;
+          if (itemContent == null) continue;
+          if (itemContent.containsKey('promotedMetadata')) continue;
+
+          final tweetResults =
+              itemContent['tweet_results'] as Map<String, dynamic>?;
+          if (tweetResults == null) continue;
+
+          final result = tweetResults['result'] as Map<String, dynamic>?;
+          if (result == null) continue;
+
+          final post = parseTweet(result, accountId);
+          if (post != null) posts.add(post);
+        }
+      }
+    } catch (e) {
+      debugPrint('[XApi] Error parsing user timeline: $e');
+    }
+    return posts;
+  }
+
+  /// フォロー (REST API)
+  Future<bool> followUser(XCredentials creds, String userId) async {
+    final response = await (httpClientOverride ?? http.Client()).post(
+      Uri.parse('https://x.com/i/api/1.1/friendships/create.json'),
+      headers: _buildHeaders(creds, form: true),
+      body: 'user_id=$userId',
+    );
+    debugPrint('[XApi] followUser $userId: ${response.statusCode}');
+    return response.statusCode == 200;
+  }
+
+  /// フォロー解除 (REST API)
+  Future<bool> unfollowUser(XCredentials creds, String userId) async {
+    final response = await (httpClientOverride ?? http.Client()).post(
+      Uri.parse('https://x.com/i/api/1.1/friendships/destroy.json'),
+      headers: _buildHeaders(creds, form: true),
+      body: 'user_id=$userId',
+    );
+    debugPrint('[XApi] unfollowUser $userId: ${response.statusCode}');
+    return response.statusCode == 200;
+  }
+
   /// ツイートを投稿
   Future<XApiResult> createTweet(XCredentials creds, String text) async {
     final queryId = _getMutationQueryId('CreateTweet');

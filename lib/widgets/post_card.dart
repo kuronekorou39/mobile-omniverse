@@ -3,6 +3,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../models/post.dart';
+import '../screens/post_detail_screen.dart';
 import '../screens/user_profile_screen.dart';
 import '../utils/image_headers.dart';
 import 'post_media.dart';
@@ -84,7 +85,16 @@ class PostCard extends StatelessWidget {
               // Quoted post card
               if (post.quotedPost != null) ...[
                 const SizedBox(height: 8),
-                _buildQuotedPostCard(context, post.quotedPost!),
+                GestureDetector(
+                  onTap: () {
+                    Navigator.of(context).push(
+                      MaterialPageRoute(
+                        builder: (_) => PostDetailScreen(post: post.quotedPost!),
+                      ),
+                    );
+                  },
+                  child: _buildQuotedPostCard(context, post.quotedPost!),
+                ),
               ],
 
               // Engagement row

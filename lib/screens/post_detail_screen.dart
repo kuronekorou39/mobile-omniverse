@@ -269,6 +269,22 @@ class _PostDetailScreenState extends ConsumerState<PostDetailScreen> {
             ),
           ],
 
+          // Quoted post
+          if (post.quotedPost != null) ...[
+            const SizedBox(height: 12),
+            GestureDetector(
+              onTap: () {
+                Navigator.of(context).push(
+                  MaterialPageRoute(
+                    builder: (_) =>
+                        PostDetailScreen(post: post.quotedPost!),
+                  ),
+                );
+              },
+              child: _buildQuotedPost(context, post.quotedPost!),
+            ),
+          ],
+
           const SizedBox(height: 12),
 
           // Timestamp
@@ -308,6 +324,81 @@ class _PostDetailScreenState extends ConsumerState<PostDetailScreen> {
         const SizedBox(width: 4),
         Text(label, style: TextStyle(color: Colors.grey[600], fontSize: 13)),
       ],
+    );
+  }
+
+  Widget _buildQuotedPost(BuildContext context, Post quoted) {
+    final colorScheme = Theme.of(context).colorScheme;
+    return Container(
+      decoration: BoxDecoration(
+        border: Border.all(
+          color: colorScheme.outlineVariant.withValues(alpha: 0.5),
+        ),
+        borderRadius: BorderRadius.circular(10),
+      ),
+      padding: const EdgeInsets.all(10),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              CircleAvatar(
+                radius: 12,
+                backgroundImage: quoted.avatarUrl != null
+                    ? CachedNetworkImageProvider(quoted.avatarUrl!,
+                        headers: kImageHeaders)
+                    : null,
+                child: quoted.avatarUrl == null
+                    ? Text(
+                        quoted.username.isNotEmpty
+                            ? quoted.username[0].toUpperCase()
+                            : '?',
+                        style: const TextStyle(fontSize: 10),
+                      )
+                    : null,
+              ),
+              const SizedBox(width: 6),
+              Flexible(
+                child: Text(
+                  quoted.username,
+                  style: const TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 13,
+                  ),
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              const SizedBox(width: 4),
+              Flexible(
+                child: Text(
+                  quoted.handle,
+                  style: TextStyle(color: Colors.grey[600], fontSize: 12),
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              const SizedBox(width: 4),
+              SnsBadge(service: quoted.source),
+            ],
+          ),
+          if (quoted.body.isNotEmpty) ...[
+            const SizedBox(height: 6),
+            LinkedText(
+              text: quoted.body,
+              style: const TextStyle(fontSize: 14, height: 1.4),
+            ),
+          ],
+          if (quoted.imageUrls.isNotEmpty) ...[
+            const SizedBox(height: 6),
+            ClipRRect(
+              borderRadius: BorderRadius.circular(6),
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxHeight: 150),
+                child: PostImageGrid(imageUrls: quoted.imageUrls),
+              ),
+            ),
+          ],
+        ],
+      ),
     );
   }
 

@@ -66,6 +66,17 @@ class XApiService {
   String _getMutationQueryId(String operationName) =>
       XQueryIdService.instance.getQueryId(operationName);
 
+  /// ユーザー系 API の 404 リトライラッパー
+  /// forceRefresh は行わず、キャッシュ済み queryId のみで動作する
+  /// (タイムライン用 queryId を巻き込まない)
+  Future<T> _withQueryIdOnly<T>(
+    String operationName,
+    Future<T> Function(String queryId) action,
+  ) async {
+    final queryId = XQueryIdService.instance.getQueryId(operationName);
+    return await action(queryId);
+  }
+
   /// タイムラインを取得
   Future<List<Post>> getTimeline(
     XCredentials creds, {
@@ -314,11 +325,12 @@ class XApiService {
   }
 
   /// ユーザープロフィール取得 (UserByScreenName)
+  /// タイムライン系 queryId に副作用を与えないため forceRefresh は行わない
   Future<Map<String, dynamic>?> getUserProfile(
     XCredentials creds,
     String screenName,
   ) async {
-    return _withQueryIdRetry(creds, 'UserByScreenName', (queryId) async {
+    return _withQueryIdOnly('UserByScreenName', (queryId) async {
       final variables = json.encode({
         'screen_name': screenName,
         'withSafetyModeUserFields': true,
@@ -359,16 +371,36 @@ class XApiService {
       }
 
       final body = json.decode(response.body) as Map<String, dynamic>;
-      final userResult = dig(body, ['data', 'user', 'result']) as Map<String, dynamic>?;
-      if (userResult == null) return null;
 
+      // 複数のレスポンスパスを試行
+      var userResult = dig(body, ['data', 'user', 'result']) as Map<String, dynamic>?;
+      userResult ??= dig(body, ['data', 'user_result', 'result']) as Map<String, dynamic>?;
+
+      if (userResult == null) {
+        debugPrint('[XApi] getUserProfile: userResult is null, data keys: ${(body['data'] as Map<String, dynamic>?)?.keys.toList()}');
+        return null;
+      }
+
+      // ユーザー結果がラッパー型の場合
+      final userTypeName = userResult['__typename'] as String?;
+      if (userTypeName != null && userTypeName != 'User' && userResult['user'] != null) {
+        userResult = userResult['user'] as Map<String, dynamic>?;
+        if (userResult == null) return null;
+      }
+
+      final restId = userResult['rest_id'] as String?;
       final legacy = userResult['legacy'] as Map<String, dynamic>?;
-      if (legacy == null) return null;
+
+      if (legacy == null) {
+        debugPrint('[XApi] getUserProfile: legacy is null, returning rest_id only');
+        // legacy がなくても rest_id だけ返す（投稿一覧の取得に必要）
+        return {'rest_id': restId};
+      }
 
       final isFollowing = legacy['following'] as bool? ?? false;
 
       return {
-        'rest_id': userResult['rest_id'] as String?,
+        'rest_id': restId,
         'name': legacy['name'] as String?,
         'screen_name': legacy['screen_name'] as String?,
         'description': legacy['description'] as String?,
@@ -382,13 +414,14 @@ class XApiService {
   }
 
   /// ユーザーの投稿一覧取得 (UserTweets)
+  /// タイムライン系 queryId に副作用を与えないため forceRefresh は行わない
   Future<List<Post>> getUserTimeline(
     XCredentials creds,
     String userId, {
     String? accountId,
     int count = 20,
   }) async {
-    return _withQueryIdRetry(creds, 'UserTweets', (queryId) async {
+    return _withQueryIdOnly('UserTweets', (queryId) async {
       final variables = json.encode({
         'userId': userId,
         'count': count,
@@ -750,7 +783,14 @@ class XApiService {
       final core = tweetData['core'] as Map<String, dynamic>?;
       final userResults =
           core?['user_results'] as Map<String, dynamic>?;
-      final userResult = userResults?['result'] as Map<String, dynamic>?;
+      var userResult = userResults?['result'] as Map<String, dynamic>?;
+
+      // ユーザー結果がラッパー型の場合 (User 以外の __typename)
+      final userTypeName = userResult?['__typename'] as String?;
+      if (userTypeName != null && userTypeName != 'User' && userResult?['user'] != null) {
+        userResult = userResult!['user'] as Map<String, dynamic>?;
+      }
+
       final userLegacy = userResult?['legacy'] as Map<String, dynamic>?;
 
       final username = userLegacy?['name'] as String? ?? '';

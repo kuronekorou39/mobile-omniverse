@@ -112,19 +112,24 @@ class _UserProfileScreenState extends State<UserProfileScreen>
         }
       } else if (account.service == SnsService.x) {
         final screenName = widget.handle.replaceFirst('@', '');
-        final profile = await XApiService.instance
-            .getUserProfile(account.xCredentials, screenName);
-        if (profile != null && mounted) {
-          setState(() {
-            _xRestId = profile['rest_id'] as String?;
-            _bio = profile['description'] as String?;
-            _followersCount = profile['followers_count'] as int?;
-            _followingCount = profile['friends_count'] as int?;
-            _postsCount = profile['statuses_count'] as int?;
-            _isFollowing = profile['is_following'] as bool? ?? false;
-          });
-        } else if (mounted) {
-          setState(() => _profileError = 'プロフィールを取得できませんでした');
+        try {
+          final profile = await XApiService.instance
+              .getUserProfile(account.xCredentials, screenName);
+          if (profile != null && mounted) {
+            setState(() {
+              _xRestId = profile['rest_id'] as String?;
+              _bio = profile['description'] as String?;
+              _followersCount = profile['followers_count'] as int?;
+              _followingCount = profile['friends_count'] as int?;
+              _postsCount = profile['statuses_count'] as int?;
+              _isFollowing = profile['is_following'] as bool? ?? false;
+            });
+          } else if (mounted) {
+            setState(() => _profileError = 'プロフィールを取得できませんでした');
+          }
+        } on XApiException catch (e) {
+          debugPrint('[UserProfile] XApiException loading profile: $e');
+          if (mounted) setState(() => _profileError = '$e');
         }
       }
     } catch (e) {

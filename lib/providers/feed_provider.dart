@@ -72,6 +72,11 @@ class FeedNotifier extends StateNotifier<FeedState> {
     );
   }
 
+  /// ユーザー情報が欠けているかを判定
+  static bool _isUserDataMissing(Post post) {
+    return post.username.isEmpty || post.handle == '@';
+  }
+
   void _onPostsFetched(List<Post> newPosts) {
     final existing = Map<String, Post>.fromEntries(
       state.posts.map((p) => MapEntry(p.id, p)),
@@ -79,8 +84,18 @@ class FeedNotifier extends StateNotifier<FeedState> {
 
     for (final post in newPosts) {
       final old = existing[post.id];
-      if (old != null && post.username.isEmpty && old.username.isNotEmpty) {
+      if (old != null && _isUserDataMissing(post) && !_isUserDataMissing(old)) {
         // ユーザー情報が欠けた投稿で正常なデータを上書きしない
+        existing[post.id] = old.copyWith(
+          isLiked: post.isLiked,
+          isReposted: post.isReposted,
+          likeCount: post.likeCount,
+          repostCount: post.repostCount,
+        );
+      } else if (old != null && post.isRetweet && !_isUserDataMissing(old) &&
+                 old.retweetedByUsername != null && old.retweetedByUsername!.isNotEmpty &&
+                 (post.retweetedByUsername == null || post.retweetedByUsername!.isEmpty)) {
+        // RT投稿: 元ツイートのユーザー情報は有効だがリツイーターの情報が欠けている場合も保護
         existing[post.id] = old.copyWith(
           isLiked: post.isLiked,
           isReposted: post.isReposted,

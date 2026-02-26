@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter/widgets.dart' show visibleForTesting;
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -11,6 +12,9 @@ import '../models/account.dart';
 class XQueryIdService {
   XQueryIdService._();
   static final instance = XQueryIdService._();
+
+  @visibleForTesting
+  http.Client? httpClientOverride;
 
   static const _prefsKey = 'x_query_ids';
   static const _lastRefreshKey = 'x_query_ids_last_refresh';
@@ -84,7 +88,8 @@ class XQueryIdService {
         headers['Cookie'] = creds.cookieHeader;
       }
 
-      final htmlResponse = await http.get(
+      final client = httpClientOverride ?? http.Client();
+      final htmlResponse = await client.get(
         Uri.parse('https://x.com/home'),
         headers: headers,
       );
@@ -116,7 +121,7 @@ class XQueryIdService {
         if (found.length >= targetOps.length) break;
 
         try {
-          final jsResponse = await http.get(
+          final jsResponse = await client.get(
             Uri.parse(url),
             headers: {
               'User-Agent': headers['User-Agent']!,

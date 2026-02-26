@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/widgets.dart' show visibleForTesting;
 
 import 'package:http/http.dart' as http;
 
@@ -11,6 +12,9 @@ import 'x_query_id_service.dart';
 class XApiService {
   XApiService._();
   static final instance = XApiService._();
+
+  @visibleForTesting
+  http.Client? httpClientOverride;
 
   // X の公開 Bearer Token (Web クライアント用)
   static const _bearerToken =
@@ -111,7 +115,7 @@ class XApiService {
         '&features=${Uri.encodeComponent(features)}',
       );
 
-      final response = await http.get(uri, headers: _buildHeaders(creds));
+      final response = await (httpClientOverride ?? http.Client()).get(uri, headers: _buildHeaders(creds));
 
       if (response.statusCode == 401 || response.statusCode == 403) {
         throw XAuthException('Authentication failed: ${response.statusCode}');
@@ -126,7 +130,7 @@ class XApiService {
 
       final body = json.decode(response.body) as Map<String, dynamic>;
       debugPrint('[XApi] Response top keys: ${body.keys.toList()}');
-      return _parseTimeline(body, accountId);
+      return parseTimeline(body, accountId);
     });
   }
 
@@ -182,7 +186,7 @@ class XApiService {
         '&features=${Uri.encodeComponent(features)}',
       );
 
-      final response = await http.get(uri, headers: _buildHeaders(creds));
+      final response = await (httpClientOverride ?? http.Client()).get(uri, headers: _buildHeaders(creds));
 
       if (response.statusCode == 401 || response.statusCode == 403) {
         throw XAuthException('Authentication failed: ${response.statusCode}');
@@ -196,7 +200,7 @@ class XApiService {
       }
 
       final body = json.decode(response.body) as Map<String, dynamic>;
-      return _parseTweetDetailResponse(body, accountId);
+      return parseTweetDetailResponse(body, accountId);
     });
   }
 
@@ -214,7 +218,7 @@ class XApiService {
     final queryId = _getMutationQueryId('FavoriteTweet');
     final uri =
         Uri.parse('https://x.com/i/api/graphql/$queryId/FavoriteTweet');
-    final response = await http.post(
+    final response = await (httpClientOverride ?? http.Client()).post(
       uri,
       headers: _buildHeaders(creds),
       body: json.encode({
@@ -240,7 +244,7 @@ class XApiService {
     final queryId = _getMutationQueryId('UnfavoriteTweet');
     final uri =
         Uri.parse('https://x.com/i/api/graphql/$queryId/UnfavoriteTweet');
-    final response = await http.post(
+    final response = await (httpClientOverride ?? http.Client()).post(
       uri,
       headers: _buildHeaders(creds),
       body: json.encode({
@@ -266,7 +270,7 @@ class XApiService {
     final queryId = _getMutationQueryId('CreateRetweet');
     final uri =
         Uri.parse('https://x.com/i/api/graphql/$queryId/CreateRetweet');
-    final response = await http.post(
+    final response = await (httpClientOverride ?? http.Client()).post(
       uri,
       headers: _buildHeaders(creds),
       body: json.encode({
@@ -292,7 +296,7 @@ class XApiService {
     final queryId = _getMutationQueryId('DeleteRetweet');
     final uri =
         Uri.parse('https://x.com/i/api/graphql/$queryId/DeleteRetweet');
-    final response = await http.post(
+    final response = await (httpClientOverride ?? http.Client()).post(
       uri,
       headers: _buildHeaders(creds),
       body: json.encode({
@@ -314,7 +318,7 @@ class XApiService {
     final queryId = _getMutationQueryId('CreateTweet');
     final uri =
         Uri.parse('https://x.com/i/api/graphql/$queryId/CreateTweet');
-    final response = await http.post(
+    final response = await (httpClientOverride ?? http.Client()).post(
       uri,
       headers: _buildHeaders(creds),
       body: json.encode({
@@ -361,12 +365,13 @@ class XApiService {
     );
   }
 
-  List<Post> _parseTimeline(Map<String, dynamic> body, String? accountId) {
+  @visibleForTesting
+  List<Post> parseTimeline(Map<String, dynamic> body, String? accountId) {
     final posts = <Post>[];
 
     try {
       // HomeTimeline / HomeLatestTimeline 両方のパスを試す
-      var instructions = _dig(body, [
+      var instructions = dig(body, [
             'data',
             'home',
             'home_timeline_urt',
@@ -374,7 +379,7 @@ class XApiService {
           ]) as List<dynamic>?;
 
       // HomeLatestTimeline の別パス候補
-      instructions ??= _dig(body, [
+      instructions ??= dig(body, [
             'data',
             'home_latest',
             'home_latest_timeline_urt',
@@ -382,7 +387,7 @@ class XApiService {
           ]) as List<dynamic>?;
 
       // さらに別パス (latest_timeline)
-      instructions ??= _dig(body, [
+      instructions ??= dig(body, [
             'data',
             'home',
             'latest_timeline',
@@ -438,7 +443,7 @@ class XApiService {
           final result = tweetResults['result'] as Map<String, dynamic>?;
           if (result == null) continue;
 
-          final post = _parseTweet(result, accountId);
+          final post = parseTweet(result, accountId);
           if (post != null) posts.add(post);
         }
       }
@@ -449,11 +454,12 @@ class XApiService {
     return posts;
   }
 
-  List<Post> _parseTweetDetailResponse(
+  @visibleForTesting
+  List<Post> parseTweetDetailResponse(
       Map<String, dynamic> body, String? accountId) {
     final posts = <Post>[];
     try {
-      final instructions = _dig(body, [
+      final instructions = dig(body, [
             'data',
             'threaded_conversation_with_injections_v2',
             'instructions',
@@ -488,7 +494,7 @@ class XApiService {
             if (tweetResults == null) continue;
             final result = tweetResults['result'] as Map<String, dynamic>?;
             if (result == null) continue;
-            final post = _parseTweet(result, accountId);
+            final post = parseTweet(result, accountId);
             if (post != null) posts.add(post);
           } else if (entryType == 'TimelineTimelineModule') {
             // Conversation module (replies)
@@ -503,7 +509,7 @@ class XApiService {
               if (tweetResults == null) continue;
               final result = tweetResults['result'] as Map<String, dynamic>?;
               if (result == null) continue;
-              final post = _parseTweet(result, accountId);
+              final post = parseTweet(result, accountId);
               if (post != null) posts.add(post);
             }
           }
@@ -515,7 +521,8 @@ class XApiService {
     return posts;
   }
 
-  Post? _parseTweet(Map<String, dynamic> result, String? accountId) {
+  @visibleForTesting
+  Post? parseTweet(Map<String, dynamic> result, String? accountId) {
     try {
       // __typename が TweetWithVisibilityResults の場合
       final typeName = result['__typename'] as String?;
@@ -543,7 +550,7 @@ class XApiService {
         final innerResult =
             retweetedStatusResult['result'] as Map<String, dynamic>?;
         if (innerResult != null) {
-          final originalPost = _parseTweet(innerResult, accountId);
+          final originalPost = parseTweet(innerResult, accountId);
           if (originalPost != null) {
             return originalPost.copyWith(
               isRetweet: true,
@@ -635,7 +642,7 @@ class XApiService {
         final quotedResult =
             quotedStatusResult['result'] as Map<String, dynamic>?;
         if (quotedResult != null) {
-          quotedPost = _parseTweet(quotedResult, accountId);
+          quotedPost = parseTweet(quotedResult, accountId);
         }
       }
 
@@ -657,7 +664,7 @@ class XApiService {
         username: username,
         handle: '@$screenName',
         body: fullText,
-        timestamp: _parseTwitterDate(createdAt),
+        timestamp: parseTwitterDate(createdAt),
         avatarUrl: avatarUrl,
         accountId: accountId,
         likeCount: likeCount,
@@ -679,7 +686,8 @@ class XApiService {
   }
 
   /// Twitter の日付フォーマット "Wed Oct 10 20:19:24 +0000 2018" をパース
-  DateTime _parseTwitterDate(String dateStr) {
+  @visibleForTesting
+  DateTime parseTwitterDate(String dateStr) {
     try {
       // "Wed Oct 10 20:19:24 +0000 2018"
       final parts = dateStr.split(' ');
@@ -702,7 +710,8 @@ class XApiService {
     }
   }
 
-  dynamic _dig(Map<String, dynamic> map, List<String> keys) {
+  @visibleForTesting
+  dynamic dig(Map<String, dynamic> map, List<String> keys) {
     dynamic current = map;
     for (final key in keys) {
       if (current is Map<String, dynamic>) {

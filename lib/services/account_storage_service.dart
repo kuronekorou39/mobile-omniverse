@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter/widgets.dart' show visibleForTesting;
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -89,5 +90,10 @@ class AccountStorageService {
     } catch (_) {
       return null;
     }
+  }
+
+  @visibleForTesting
+  void setAccountsForTest(List<Account> accounts) {
+    _accounts = List.of(accounts);
   }
 }

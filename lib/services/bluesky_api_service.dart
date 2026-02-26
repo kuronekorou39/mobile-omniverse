@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/widgets.dart' show visibleForTesting;
 
 import 'package:http/http.dart' as http;
 
@@ -10,6 +11,9 @@ import '../models/sns_service.dart';
 class BlueskyApiService {
   BlueskyApiService._();
   static final instance = BlueskyApiService._();
+
+  @visibleForTesting
+  http.Client? httpClientOverride;
 
   /// タイムラインを取得
   Future<List<Post>> getTimeline(
@@ -23,7 +27,7 @@ class BlueskyApiService {
 
     final uri = Uri.parse(url);
 
-    final response = await http.get(uri, headers: {
+    final response = await (httpClientOverride ?? http.Client()).get(uri, headers: {
       'Authorization': 'Bearer ${creds.accessJwt}',
       'Accept': 'application/json',
     });
@@ -54,7 +58,7 @@ class BlueskyApiService {
     final body = json.decode(response.body) as Map<String, dynamic>;
     final feed = body['feed'] as List<dynamic>? ?? [];
 
-    return feed.map((item) => _parsePost(item, accountId)).toList();
+    return feed.map((item) => parsePost(item, accountId)).toList();
   }
 
   /// 投稿スレッド取得
@@ -68,7 +72,7 @@ class BlueskyApiService {
       '?uri=${Uri.encodeComponent(postUri)}&depth=10',
     );
 
-    final response = await http.get(uri, headers: {
+    final response = await (httpClientOverride ?? http.Client()).get(uri, headers: {
       'Authorization': 'Bearer ${creds.accessJwt}',
       'Accept': 'application/json',
     });
@@ -88,22 +92,23 @@ class BlueskyApiService {
     if (thread == null) return [];
 
     final posts = <Post>[];
-    _flattenThread(thread, posts, accountId);
+    flattenThread(thread, posts, accountId);
     return posts;
   }
 
-  void _flattenThread(
+  @visibleForTesting
+  void flattenThread(
       Map<String, dynamic> thread, List<Post> posts, String? accountId) {
     // Parent chain
     final parent = thread['parent'] as Map<String, dynamic>?;
     if (parent != null && parent['\$type'] == 'app.bsky.feed.defs#threadViewPost') {
-      _flattenThread(parent, posts, accountId);
+      flattenThread(parent, posts, accountId);
     }
 
     // Current post
     final post = thread['post'] as Map<String, dynamic>?;
     if (post != null) {
-      posts.add(_parsePostObject(post, accountId));
+      posts.add(parsePostObject(post, accountId));
     }
 
     // Replies
@@ -114,7 +119,7 @@ class BlueskyApiService {
         if (replyMap['\$type'] == 'app.bsky.feed.defs#threadViewPost') {
           final replyPost = replyMap['post'] as Map<String, dynamic>?;
           if (replyPost != null) {
-            posts.add(_parsePostObject(replyPost, accountId));
+            posts.add(parsePostObject(replyPost, accountId));
           }
         }
       }
@@ -130,7 +135,7 @@ class BlueskyApiService {
     final uri = Uri.parse(
       '${creds.pdsUrl}/xrpc/com.atproto.repo.createRecord',
     );
-    final response = await http.post(
+    final response = await (httpClientOverride ?? http.Client()).post(
       uri,
       headers: {
         'Authorization': 'Bearer ${creds.accessJwt}',
@@ -159,7 +164,7 @@ class BlueskyApiService {
     final uri = Uri.parse(
       '${creds.pdsUrl}/xrpc/com.atproto.repo.deleteRecord',
     );
-    final response = await http.post(
+    final response = await (httpClientOverride ?? http.Client()).post(
       uri,
       headers: {
         'Authorization': 'Bearer ${creds.accessJwt}',
@@ -183,7 +188,7 @@ class BlueskyApiService {
     final uri = Uri.parse(
       '${creds.pdsUrl}/xrpc/com.atproto.repo.createRecord',
     );
-    final response = await http.post(
+    final response = await (httpClientOverride ?? http.Client()).post(
       uri,
       headers: {
         'Authorization': 'Bearer ${creds.accessJwt}',
@@ -212,7 +217,7 @@ class BlueskyApiService {
     final uri = Uri.parse(
       '${creds.pdsUrl}/xrpc/com.atproto.repo.deleteRecord',
     );
-    final response = await http.post(
+    final response = await (httpClientOverride ?? http.Client()).post(
       uri,
       headers: {
         'Authorization': 'Bearer ${creds.accessJwt}',
@@ -232,7 +237,7 @@ class BlueskyApiService {
     final uri = Uri.parse(
       '${creds.pdsUrl}/xrpc/com.atproto.repo.createRecord',
     );
-    final response = await http.post(
+    final response = await (httpClientOverride ?? http.Client()).post(
       uri,
       headers: {
         'Authorization': 'Bearer ${creds.accessJwt}',
@@ -262,7 +267,7 @@ class BlueskyApiService {
       '?actor=${Uri.encodeComponent(actor)}',
     );
     debugPrint('[BlueskyApi] getProfile: actor=$actor, url=$uri');
-    final response = await http.get(uri, headers: {
+    final response = await (httpClientOverride ?? http.Client()).get(uri, headers: {
       'Authorization': 'Bearer ${creds.accessJwt}',
       'Accept': 'application/json',
     });
@@ -286,7 +291,7 @@ class BlueskyApiService {
       '?actor=${Uri.encodeComponent(actor)}&limit=$limit',
     );
     debugPrint('[BlueskyApi] getAuthorFeed: actor=$actor, url=$uri');
-    final response = await http.get(uri, headers: {
+    final response = await (httpClientOverride ?? http.Client()).get(uri, headers: {
       'Authorization': 'Bearer ${creds.accessJwt}',
       'Accept': 'application/json',
     });
@@ -299,7 +304,7 @@ class BlueskyApiService {
     }
     final body = json.decode(response.body) as Map<String, dynamic>;
     final feed = body['feed'] as List<dynamic>? ?? [];
-    return feed.map((item) => _parsePost(item, accountId)).toList();
+    return feed.map((item) => parsePost(item, accountId)).toList();
   }
 
   /// フォロー
@@ -307,7 +312,7 @@ class BlueskyApiService {
     final uri = Uri.parse(
       '${creds.pdsUrl}/xrpc/com.atproto.repo.createRecord',
     );
-    final response = await http.post(
+    final response = await (httpClientOverride ?? http.Client()).post(
       uri,
       headers: {
         'Authorization': 'Bearer ${creds.accessJwt}',
@@ -336,7 +341,7 @@ class BlueskyApiService {
     final uri = Uri.parse(
       '${creds.pdsUrl}/xrpc/com.atproto.repo.deleteRecord',
     );
-    final response = await http.post(
+    final response = await (httpClientOverride ?? http.Client()).post(
       uri,
       headers: {
         'Authorization': 'Bearer ${creds.accessJwt}',
@@ -351,10 +356,11 @@ class BlueskyApiService {
     return response.statusCode == 200;
   }
 
-  Post _parsePost(dynamic item, String? accountId) {
+  @visibleForTesting
+  Post parsePost(dynamic item, String? accountId) {
     final feedItem = item as Map<String, dynamic>;
     final post = feedItem['post'] as Map<String, dynamic>;
-    var parsed = _parsePostObject(post, accountId);
+    var parsed = parsePostObject(post, accountId);
 
     // リポスト検出: reason フィールド
     final reason = feedItem['reason'] as Map<String, dynamic>?;
@@ -374,7 +380,8 @@ class BlueskyApiService {
     return parsed;
   }
 
-  Post _parsePostObject(Map<String, dynamic> post, String? accountId) {
+  @visibleForTesting
+  Post parsePostObject(Map<String, dynamic> post, String? accountId) {
     final author = post['author'] as Map<String, dynamic>;
     final record = post['record'] as Map<String, dynamic>;
 
@@ -407,11 +414,11 @@ class BlueskyApiService {
 
     final embed = post['embed'] as Map<String, dynamic>?;
     if (embed != null) {
-      _extractMedia(embed, imageUrls, (v, t) {
+      extractMedia(embed, imageUrls, (v, t) {
         videoUrl = v;
         videoThumbnailUrl = t;
       });
-      quotedPost = _extractQuotedPost(embed, accountId);
+      quotedPost = extractQuotedPost(embed, accountId);
     }
 
     // Permalink
@@ -447,7 +454,8 @@ class BlueskyApiService {
     );
   }
 
-  void _extractMedia(
+  @visibleForTesting
+  void extractMedia(
     Map<String, dynamic> embed,
     List<String> imageUrls,
     void Function(String? videoUrl, String? thumbnail) onVideo,
@@ -474,7 +482,7 @@ class BlueskyApiService {
       // Embed with media (quote + media)
       final media = embed['media'] as Map<String, dynamic>?;
       if (media != null) {
-        _extractMedia(media, imageUrls, onVideo);
+        extractMedia(media, imageUrls, onVideo);
       }
     } else if (type == 'app.bsky.embed.external#view') {
       // External link with thumbnail
@@ -485,7 +493,8 @@ class BlueskyApiService {
   }
 
   /// 引用ポストを embed から抽出
-  Post? _extractQuotedPost(Map<String, dynamic> embed, String? accountId) {
+  @visibleForTesting
+  Post? extractQuotedPost(Map<String, dynamic> embed, String? accountId) {
     final type = embed['\$type'] as String?;
 
     Map<String, dynamic>? recordData;
@@ -520,7 +529,7 @@ class BlueskyApiService {
     if (qEmbeds != null) {
       for (final qe in qEmbeds) {
         if (qe is Map<String, dynamic>) {
-          _extractMedia(qe, qImageUrls, (v, t) {
+          extractMedia(qe, qImageUrls, (v, t) {
             qVideoUrl = v;
             qVideoThumbnailUrl = t;
           });

@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter/widgets.dart' show visibleForTesting;
 import 'package:http/http.dart' as http;
 import 'package:package_info_plus/package_info_plus.dart';
 
@@ -8,6 +9,9 @@ import 'package:package_info_plus/package_info_plus.dart';
 class AppUpdateService {
   AppUpdateService._();
   static final instance = AppUpdateService._();
+
+  @visibleForTesting
+  http.Client? httpClientOverride;
 
   static const _owner = 'kuronekorou39';
   static const _repo = 'mobile-omniverse';
@@ -21,7 +25,7 @@ class AppUpdateService {
 
       debugPrint('[AppUpdate] Current version: $currentVersion');
 
-      final response = await http.get(
+      final response = await (httpClientOverride ?? http.Client()).get(
         Uri.parse(
           'https://api.github.com/repos/$_owner/$_repo/releases/latest',
         ),
@@ -49,7 +53,7 @@ class AppUpdateService {
 
       debugPrint('[AppUpdate] Latest release: $latestVersion');
 
-      if (!_isNewer(latestVersion, currentVersion)) {
+      if (!isNewer(latestVersion, currentVersion)) {
         debugPrint('[AppUpdate] Already up to date');
         return null;
       }
@@ -80,7 +84,8 @@ class AppUpdateService {
   }
 
   /// semver 比較: version が current より新しいか
-  bool _isNewer(String version, String current) {
+  @visibleForTesting
+  bool isNewer(String version, String current) {
     try {
       final vParts = version.split('.').map(int.parse).toList();
       final cParts = current.split('.').map(int.parse).toList();

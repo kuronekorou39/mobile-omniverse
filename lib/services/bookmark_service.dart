@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter/widgets.dart' show visibleForTesting;
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/post.dart';
@@ -19,6 +20,8 @@ class BookmarkService {
 
   /// 初期化: SharedPreferences からブックマークをロード
   Future<void> init() async {
+    _bookmarks = [];
+    _bookmarkedIds.clear();
     try {
       final prefs = await SharedPreferences.getInstance();
       final raw = prefs.getString(_key);
@@ -33,6 +36,13 @@ class BookmarkService {
     } catch (e) {
       debugPrint('[Bookmark] Error loading: $e');
     }
+  }
+
+  /// テスト用: 内部状態をクリア
+  @visibleForTesting
+  void resetForTest() {
+    _bookmarks = [];
+    _bookmarkedIds.clear();
   }
 
   bool isBookmarked(String postId) => _bookmarkedIds.contains(postId);

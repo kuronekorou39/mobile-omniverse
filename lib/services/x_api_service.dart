@@ -38,12 +38,13 @@ class XApiService {
   // ===== queryId 404 リトライラッパー =====
 
   /// GET 系 API (throw するもの) の 404 リトライラッパー
+  /// queryId はアカウント別に管理 — 他アカウントに影響しない
   Future<T> _withQueryIdRetry<T>(
     XCredentials creds,
     String operationName,
     Future<T> Function(String queryId) action,
   ) async {
-    final queryId = XQueryIdService.instance.getQueryId(operationName);
+    final queryId = XQueryIdService.instance.getQueryId(operationName, creds: creds);
     try {
       return await action(queryId);
     } on XApiException catch (e) {
@@ -51,7 +52,7 @@ class XApiService {
         debugPrint('[XApi] 404 detected for $operationName, refreshing queryIds...');
         final count = await XQueryIdService.instance.forceRefresh(creds);
         debugPrint('[XApi] Refreshed $count queryIds');
-        final newQueryId = XQueryIdService.instance.getQueryId(operationName);
+        final newQueryId = XQueryIdService.instance.getQueryId(operationName, creds: creds);
         if (newQueryId != queryId) {
           debugPrint('[XApi] Retrying $operationName with new queryId: $newQueryId');
           return await action(newQueryId);
@@ -63,17 +64,16 @@ class XApiService {
 
   /// Mutation 系は queryId を動的に取得するだけ (404 リトライしない)
   /// mutation の 404 はアカウント制限や削除済みツイート等が多いため
-  String _getMutationQueryId(String operationName) =>
-      XQueryIdService.instance.getQueryId(operationName);
+  String _getMutationQueryId(String operationName, XCredentials creds) =>
+      XQueryIdService.instance.getQueryId(operationName, creds: creds);
 
-  /// ユーザー系 API の 404 リトライラッパー
-  /// forceRefresh は行わず、キャッシュ済み queryId のみで動作する
-  /// (タイムライン用 queryId を巻き込まない)
+  /// ユーザー系 API の queryId 取得 (forceRefresh なし)
   Future<T> _withQueryIdOnly<T>(
     String operationName,
+    XCredentials creds,
     Future<T> Function(String queryId) action,
   ) async {
-    final queryId = XQueryIdService.instance.getQueryId(operationName);
+    final queryId = XQueryIdService.instance.getQueryId(operationName, creds: creds);
     return await action(queryId);
   }
 
@@ -226,7 +226,7 @@ class XApiService {
 
   Future<XApiResult> likeTweetWithDetail(
       XCredentials creds, String tweetId) async {
-    final queryId = _getMutationQueryId('FavoriteTweet');
+    final queryId = _getMutationQueryId('FavoriteTweet', creds);
     final uri =
         Uri.parse('https://x.com/i/api/graphql/$queryId/FavoriteTweet');
     final response = await (httpClientOverride ?? http.Client()).post(
@@ -252,7 +252,7 @@ class XApiService {
 
   Future<XApiResult> unlikeTweetWithDetail(
       XCredentials creds, String tweetId) async {
-    final queryId = _getMutationQueryId('UnfavoriteTweet');
+    final queryId = _getMutationQueryId('UnfavoriteTweet', creds);
     final uri =
         Uri.parse('https://x.com/i/api/graphql/$queryId/UnfavoriteTweet');
     final response = await (httpClientOverride ?? http.Client()).post(
@@ -278,7 +278,7 @@ class XApiService {
 
   Future<XApiResult> retweetWithDetail(
       XCredentials creds, String tweetId) async {
-    final queryId = _getMutationQueryId('CreateRetweet');
+    final queryId = _getMutationQueryId('CreateRetweet', creds);
     final uri =
         Uri.parse('https://x.com/i/api/graphql/$queryId/CreateRetweet');
     final response = await (httpClientOverride ?? http.Client()).post(
@@ -304,7 +304,7 @@ class XApiService {
 
   Future<XApiResult> unretweetWithDetail(
       XCredentials creds, String tweetId) async {
-    final queryId = _getMutationQueryId('DeleteRetweet');
+    final queryId = _getMutationQueryId('DeleteRetweet', creds);
     final uri =
         Uri.parse('https://x.com/i/api/graphql/$queryId/DeleteRetweet');
     final response = await (httpClientOverride ?? http.Client()).post(
@@ -330,7 +330,7 @@ class XApiService {
     XCredentials creds,
     String screenName,
   ) async {
-    return _withQueryIdOnly('UserByScreenName', (queryId) async {
+    return _withQueryIdOnly('UserByScreenName', creds, (queryId) async {
       final variables = json.encode({
         'screen_name': screenName,
         'withSafetyModeUserFields': true,
@@ -421,7 +421,7 @@ class XApiService {
     String? accountId,
     int count = 20,
   }) async {
-    return _withQueryIdOnly('UserTweets', (queryId) async {
+    return _withQueryIdOnly('UserTweets', creds, (queryId) async {
       final variables = json.encode({
         'userId': userId,
         'count': count,
@@ -561,7 +561,7 @@ class XApiService {
 
   /// ツイートを投稿
   Future<XApiResult> createTweet(XCredentials creds, String text) async {
-    final queryId = _getMutationQueryId('CreateTweet');
+    final queryId = _getMutationQueryId('CreateTweet', creds);
     final uri =
         Uri.parse('https://x.com/i/api/graphql/$queryId/CreateTweet');
     final response = await (httpClientOverride ?? http.Client()).post(

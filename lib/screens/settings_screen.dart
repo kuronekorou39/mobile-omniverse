@@ -59,7 +59,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     }
 
     // リフレッシュ前の値を記録
-    final before = Map<String, String>.from(XQueryIdService.instance.currentIds);
+    final before = Map<String, String>.from(XQueryIdService.instance.currentIds(creds: creds));
 
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(content: Text('queryId を更新中...')),
@@ -69,7 +69,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
 
     if (!mounted) return;
 
-    final after = XQueryIdService.instance.currentIds;
+    final after = XQueryIdService.instance.currentIds(creds: creds);
 
     // 前後の差分を作成
     final lines = <String>[];
@@ -246,8 +246,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             title: const Text('queryId 更新'),
             subtitle: Text(
               _hasXAccount
-                  ? (XQueryIdService.instance.lastRefreshTime != null
-                      ? '最終更新: ${_formatTime(XQueryIdService.instance.lastRefreshTime!)}'
+                  ? (XQueryIdService.instance.lastRefreshTime() != null
+                      ? '最終更新: ${_formatTime(XQueryIdService.instance.lastRefreshTime()!)}'
                       : '未更新')
                   : 'X アカウントが必要です',
             ),

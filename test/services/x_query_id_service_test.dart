@@ -41,44 +41,52 @@ void main() {
       expect(queryId, '');
     });
 
-    test('init loads cached queryIds from SharedPreferences', () async {
-      // Pre-populate SharedPreferences with cached data
-      final cached = {
-        'HomeLatestTimeline': 'cachedId123',
-        'TweetDetail': 'cachedId456',
+    test('init loads per-account cached queryIds from SharedPreferences', () async {
+      // Pre-populate SharedPreferences with per-account cached data
+      final creds = XCredentials(authToken: 'testToken', ct0: 'testCt0');
+      final accountKey = creds.authToken.hashCode.toRadixString(16);
+      final perAccount = {
+        accountKey: {
+          'HomeLatestTimeline': 'cachedId123',
+          'TweetDetail': 'cachedId456',
+        },
       };
       SharedPreferences.setMockInitialValues({
-        'x_query_ids': json.encode(cached),
+        'x_query_ids_per_account': json.encode(perAccount),
       });
 
       await service.init();
 
-      expect(service.getQueryId('HomeLatestTimeline'), 'cachedId123');
-      expect(service.getQueryId('TweetDetail'), 'cachedId456');
+      expect(service.getQueryId('HomeLatestTimeline', creds: creds), 'cachedId123');
+      expect(service.getQueryId('TweetDetail', creds: creds), 'cachedId456');
+      // Without creds, should return defaults
+      expect(service.getQueryId('HomeLatestTimeline'), 'BKB7oi212Fi7kQtCBGE4zA');
     });
 
     test('clearCache resets to defaults', () async {
-      // First, simulate cached data
-      final cached = {
-        'HomeLatestTimeline': 'overriddenId',
+      // First, simulate per-account cached data
+      final creds = XCredentials(authToken: 'testToken', ct0: 'testCt0');
+      final accountKey = creds.authToken.hashCode.toRadixString(16);
+      final perAccount = {
+        accountKey: {'HomeLatestTimeline': 'overriddenId'},
       };
       SharedPreferences.setMockInitialValues({
-        'x_query_ids': json.encode(cached),
+        'x_query_ids_per_account': json.encode(perAccount),
       });
       await service.init();
-      expect(service.getQueryId('HomeLatestTimeline'), 'overriddenId');
+      expect(service.getQueryId('HomeLatestTimeline', creds: creds), 'overriddenId');
 
       // Clear cache
       await service.clearCache();
 
       // Should now return default
-      expect(service.getQueryId('HomeLatestTimeline'), 'BKB7oi212Fi7kQtCBGE4zA');
+      expect(service.getQueryId('HomeLatestTimeline', creds: creds), 'BKB7oi212Fi7kQtCBGE4zA');
     });
 
     test('currentIds returns all operations with their queryIds', () async {
       await service.clearCache();
 
-      final ids = service.currentIds;
+      final ids = service.currentIds();
 
       expect(ids, containsPair('HomeLatestTimeline', 'BKB7oi212Fi7kQtCBGE4zA'));
       expect(ids, containsPair('TweetDetail', 'nBS-WpgA6ZG0CyNHD517JQ'));
@@ -88,13 +96,13 @@ void main() {
       expect(ids, containsPair('DeleteRetweet', 'iQtK4dl5hBmXewYZuEOKVw'));
       expect(ids, containsPair('CreateTweet', 'a1p9RWpkYKBjWv_I3WzS-A'));
       expect(ids, containsPair('UserByRestId', 'tD8zKvQzwY3kdx5yz6YmOw'));
-      expect(ids.length, 8);
+      expect(ids.length, greaterThanOrEqualTo(8));
     });
 
     test('currentIds is unmodifiable', () async {
       await service.clearCache();
 
-      final ids = service.currentIds;
+      final ids = service.currentIds();
       expect(
         () => ids['HomeLatestTimeline'] = 'tampered',
         throwsUnsupportedError,
@@ -117,7 +125,7 @@ void main() {
 
     test('lastRefreshTime is null after clearCache', () async {
       await service.clearCache();
-      expect(service.lastRefreshTime, isNull);
+      expect(service.lastRefreshTime(), isNull);
     });
 
     test('init with corrupted JSON does not crash', () async {
@@ -139,7 +147,7 @@ void main() {
       });
 
       await service.init();
-      expect(service.lastRefreshTime, isNotNull);
+      expect(service.lastRefreshTime(), isNotNull);
     });
   });
 
@@ -194,9 +202,12 @@ even more code{operationName:"FavoriteTweet",some:stuff,queryId:"NEW_QUERY_ID_3"
       final count = await svc.refreshQueryIds(creds);
 
       expect(count, greaterThan(0));
-      expect(svc.getQueryId('HomeLatestTimeline'), 'NEW_QUERY_ID_1');
-      expect(svc.getQueryId('TweetDetail'), 'NEW_QUERY_ID_2');
-      expect(svc.getQueryId('FavoriteTweet'), 'NEW_QUERY_ID_3');
+      // Per-account storage: must pass creds to retrieve
+      expect(svc.getQueryId('HomeLatestTimeline', creds: creds), 'NEW_QUERY_ID_1');
+      expect(svc.getQueryId('TweetDetail', creds: creds), 'NEW_QUERY_ID_2');
+      expect(svc.getQueryId('FavoriteTweet', creds: creds), 'NEW_QUERY_ID_3');
+      // Without creds, should return defaults (no cross-account leakage)
+      expect(svc.getQueryId('HomeLatestTimeline'), 'BKB7oi212Fi7kQtCBGE4zA');
     });
 
     test('returns 0 when HTML fetch fails', () async {

@@ -67,16 +67,6 @@ class XApiService {
   String _getMutationQueryId(String operationName, XCredentials creds) =>
       XQueryIdService.instance.getQueryId(operationName, creds: creds);
 
-  /// ユーザー系 API の queryId 取得 (forceRefresh なし)
-  Future<T> _withQueryIdOnly<T>(
-    String operationName,
-    XCredentials creds,
-    Future<T> Function(String queryId) action,
-  ) async {
-    final queryId = XQueryIdService.instance.getQueryId(operationName, creds: creds);
-    return await action(queryId);
-  }
-
   /// タイムラインを取得
   Future<List<Post>> getTimeline(
     XCredentials creds, {
@@ -325,12 +315,12 @@ class XApiService {
   }
 
   /// ユーザープロフィール取得 (UserByScreenName)
-  /// タイムライン系 queryId に副作用を与えないため forceRefresh は行わない
+  /// GET 系なので 404 時に queryId リフレッシュ＆リトライする
   Future<Map<String, dynamic>?> getUserProfile(
     XCredentials creds,
     String screenName,
   ) async {
-    return _withQueryIdOnly('UserByScreenName', creds, (queryId) async {
+    return _withQueryIdRetry(creds, 'UserByScreenName', (queryId) async {
       final variables = json.encode({
         'screen_name': screenName,
         'withSafetyModeUserFields': true,
@@ -414,14 +404,14 @@ class XApiService {
   }
 
   /// ユーザーの投稿一覧取得 (UserTweets)
-  /// タイムライン系 queryId に副作用を与えないため forceRefresh は行わない
+  /// GET 系なので 404 時に queryId リフレッシュ＆リトライする
   Future<List<Post>> getUserTimeline(
     XCredentials creds,
     String userId, {
     String? accountId,
     int count = 20,
   }) async {
-    return _withQueryIdOnly('UserTweets', creds, (queryId) async {
+    return _withQueryIdRetry(creds, 'UserTweets', (queryId) async {
       final variables = json.encode({
         'userId': userId,
         'count': count,

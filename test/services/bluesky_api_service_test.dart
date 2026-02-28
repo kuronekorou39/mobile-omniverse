@@ -668,9 +668,9 @@ void main() {
       );
       service.httpClientOverride = client;
 
-      final posts = await service.getTimeline(creds);
-      expect(posts, isNotEmpty);
-      expect(posts.first.source, SnsService.bluesky);
+      final result = await service.getTimeline(creds);
+      expect(result.posts, isNotEmpty);
+      expect(result.posts.first.source, SnsService.bluesky);
     });
 
     test('throws BlueskyAuthException on 401', () async {
@@ -746,8 +746,8 @@ void main() {
       );
       service.httpClientOverride = client;
 
-      final posts = await service.getTimeline(creds, cursor: 'abc123');
-      expect(posts, isNotEmpty);
+      final result = await service.getTimeline(creds, cursor: 'abc123');
+      expect(result.posts, isNotEmpty);
     });
 
     test('empty feed returns empty list', () async {
@@ -758,8 +758,8 @@ void main() {
       );
       service.httpClientOverride = client;
 
-      final posts = await service.getTimeline(creds);
-      expect(posts, isEmpty);
+      final result = await service.getTimeline(creds);
+      expect(result.posts, isEmpty);
     });
   });
 

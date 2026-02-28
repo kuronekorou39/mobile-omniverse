@@ -123,6 +123,7 @@ class FeedNotifier extends StateNotifier<FeedState> {
 
   Future<void> refresh() async {
     state = state.copyWith(isLoading: true, clearError: true);
+    TimelineFetchScheduler.instance.resetCursors();
     try {
       await TimelineFetchScheduler.instance.fetchAll();
       state = state.copyWith(isLoading: false);
@@ -135,8 +136,7 @@ class FeedNotifier extends StateNotifier<FeedState> {
     if (state.isLoadingMore || state.isLoading) return;
     state = state.copyWith(isLoadingMore: true);
     try {
-      // Scheduler handles pagination internally
-      await TimelineFetchScheduler.instance.fetchAll();
+      await TimelineFetchScheduler.instance.fetchMore();
       state = state.copyWith(isLoadingMore: false);
     } catch (e) {
       state = state.copyWith(isLoadingMore: false, error: e.toString());

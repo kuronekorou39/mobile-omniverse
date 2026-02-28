@@ -94,7 +94,7 @@ class XApiService {
       XQueryIdService.instance.getQueryId(operationName, creds: creds);
 
   /// タイムラインを取得
-  Future<List<Post>> getTimeline(
+  Future<({List<Post> posts, String? cursor})> getTimeline(
     XCredentials creds, {
     String? accountId,
     int count = 20,
@@ -157,7 +157,7 @@ class XApiService {
 
       final body = json.decode(response.body) as Map<String, dynamic>;
       debugPrint('[XApi] Response top keys: ${body.keys.toList()}');
-      return parseTimeline(body, accountId);
+      return parseTimelineWithCursor(body, accountId);
     });
   }
 
@@ -671,7 +671,13 @@ class XApiService {
 
   @visibleForTesting
   List<Post> parseTimeline(Map<String, dynamic> body, String? accountId) {
+    return parseTimelineWithCursor(body, accountId).posts;
+  }
+
+  ({List<Post> posts, String? cursor}) parseTimelineWithCursor(
+      Map<String, dynamic> body, String? accountId) {
     final posts = <Post>[];
+    String? nextCursor;
 
     try {
       // HomeTimeline / HomeLatestTimeline 両方のパスを試す
@@ -728,10 +734,25 @@ class XApiService {
             continue;
           }
 
+          // カーソルエントリからページネーション情報を抽出
+          if (entryId.startsWith('cursor-bottom-')) {
+            final content = entryMap['content'] as Map<String, dynamic>?;
+            final value = content?['value'] as String?;
+            if (value != null) nextCursor = value;
+            continue;
+          }
+
           final content = entryMap['content'] as Map<String, dynamic>?;
           if (content == null) continue;
 
           final entryType = content['entryType'] as String?;
+          if (entryType == 'TimelineTimelineCursor') {
+            final cursorType = content['cursorType'] as String?;
+            if (cursorType == 'Bottom') {
+              nextCursor = content['value'] as String?;
+            }
+            continue;
+          }
           if (entryType != 'TimelineTimelineItem') continue;
 
           final itemContent = content['itemContent'] as Map<String, dynamic>?;
@@ -755,7 +776,7 @@ class XApiService {
       debugPrint('[XApi] Error parsing timeline: $e');
     }
 
-    return posts;
+    return (posts: posts, cursor: nextCursor);
   }
 
   @visibleForTesting

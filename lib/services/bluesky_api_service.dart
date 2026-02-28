@@ -16,7 +16,7 @@ class BlueskyApiService {
   http.Client? httpClientOverride;
 
   /// タイムラインを取得
-  Future<List<Post>> getTimeline(
+  Future<({List<Post> posts, String? cursor})> getTimeline(
     BlueskyCredentials creds, {
     String? accountId,
     int limit = 30,
@@ -57,8 +57,10 @@ class BlueskyApiService {
 
     final body = json.decode(response.body) as Map<String, dynamic>;
     final feed = body['feed'] as List<dynamic>? ?? [];
+    final nextCursor = body['cursor'] as String?;
 
-    return feed.map((item) => parsePost(item, accountId)).toList();
+    final posts = feed.map((item) => parsePost(item, accountId)).toList();
+    return (posts: posts, cursor: nextCursor);
   }
 
   /// 投稿スレッド取得
@@ -594,20 +596,20 @@ class BlueskyApiService {
   }
 
   /// タイムライン取得 (トークン期限切れ時は自動リフレッシュ)
-  Future<({List<Post> posts, BlueskyCredentials? updatedCreds})>
+  Future<({List<Post> posts, String? cursor, BlueskyCredentials? updatedCreds})>
       getTimelineWithRefresh(
     BlueskyCredentials creds, {
     String? accountId,
     String? cursor,
   }) async {
     try {
-      final posts = await getTimeline(creds, accountId: accountId, cursor: cursor);
-      return (posts: posts, updatedCreds: null);
+      final result = await getTimeline(creds, accountId: accountId, cursor: cursor);
+      return (posts: result.posts, cursor: result.cursor, updatedCreds: null);
     } on BlueskyAuthException {
       debugPrint('[BlueskyApi] Token expired, refreshing...');
       final newCreds = await refreshSession(creds);
-      final posts = await getTimeline(newCreds, accountId: accountId, cursor: cursor);
-      return (posts: posts, updatedCreds: newCreds);
+      final result = await getTimeline(newCreds, accountId: accountId, cursor: cursor);
+      return (posts: result.posts, cursor: result.cursor, updatedCreds: newCreds);
     }
   }
 }

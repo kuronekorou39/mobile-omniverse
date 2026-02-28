@@ -901,10 +901,10 @@ void main() {
       );
       service.httpClientOverride = client;
 
-      final posts = await service.getTimeline(creds);
-      expect(posts, isNotEmpty);
-      expect(posts.first.id, 'x_ht1');
-      expect(posts.first.body, 'Timeline tweet');
+      final result = await service.getTimeline(creds);
+      expect(result.posts, isNotEmpty);
+      expect(result.posts.first.id, 'x_ht1');
+      expect(result.posts.first.body, 'Timeline tweet');
     });
 
     test('throws XAuthException on 401', () async {
@@ -951,8 +951,8 @@ void main() {
       );
       service.httpClientOverride = client;
 
-      final posts = await service.getTimeline(creds, accountId: 'my_acc');
-      expect(posts.first.accountId, 'my_acc');
+      final result = await service.getTimeline(creds, accountId: 'my_acc');
+      expect(result.posts.first.accountId, 'my_acc');
     });
   });
 

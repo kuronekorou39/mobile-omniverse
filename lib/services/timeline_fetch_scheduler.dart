@@ -18,6 +18,9 @@ class TimelineFetchScheduler {
 
   bool get isRunning => _isRunning;
 
+  /// アカウント別のカーソル管理
+  final Map<String, String?> _cursors = {};
+
   /// 新しい投稿が取得されたときのコールバック
   void Function(List<Post> posts)? onPostsFetched;
 
@@ -55,7 +58,12 @@ class TimelineFetchScheduler {
     debugPrint('[Scheduler] Stopped');
   }
 
-  /// 全有効アカウントのタイムラインを並列取得
+  /// カーソルをリセット (Pull-to-refresh 時)
+  void resetCursors() {
+    _cursors.clear();
+  }
+
+  /// 全有効アカウントのタイムラインを並列取得 (最新)
   Future<void> fetchAll() async {
     final accounts = AccountStorageService.instance.accounts
         .where((a) => a.isEnabled)
@@ -69,6 +77,29 @@ class TimelineFetchScheduler {
     debugPrint('[Scheduler] Fetching timelines for ${accounts.length} accounts');
 
     final futures = accounts.map((account) => _fetchForAccount(account));
+    final results = await Future.wait(futures, eagerError: false);
+
+    final allPosts = <Post>[];
+    for (final posts in results) {
+      allPosts.addAll(posts);
+    }
+
+    if (allPosts.isNotEmpty) {
+      onPostsFetched?.call(allPosts);
+    }
+  }
+
+  /// 全有効アカウントの過去の投稿を並列取得 (カーソルベース)
+  Future<void> fetchMore() async {
+    final accounts = AccountStorageService.instance.accounts
+        .where((a) => a.isEnabled)
+        .toList();
+
+    if (accounts.isEmpty) return;
+
+    debugPrint('[Scheduler] Fetching more for ${accounts.length} accounts');
+
+    final futures = accounts.map((account) => _fetchMoreForAccount(account));
     final results = await Future.wait(futures, eagerError: false);
 
     final allPosts = <Post>[];
@@ -100,12 +131,35 @@ class TimelineFetchScheduler {
     }
   }
 
-  Future<List<Post>> _fetchBluesky(Account account) async {
+  Future<List<Post>> _fetchMoreForAccount(Account account) async {
+    final cursor = _cursors[account.id];
+    if (cursor == null) {
+      debugPrint('[Scheduler] No cursor for ${account.handle}, skipping fetchMore');
+      return [];
+    }
+    try {
+      List<Post> posts;
+      switch (account.service) {
+        case SnsService.bluesky:
+          posts = await _fetchBluesky(account, cursor: cursor);
+        case SnsService.x:
+          posts = await _fetchX(account, cursor: cursor);
+      }
+      debugPrint('[Scheduler] fetchMore for ${account.handle}: ${posts.length} posts');
+      return posts;
+    } catch (e) {
+      debugPrint('[Scheduler] Error fetching more for ${account.handle}: $e');
+      return [];
+    }
+  }
+
+  Future<List<Post>> _fetchBluesky(Account account, {String? cursor}) async {
     final creds = account.blueskyCredentials;
     try {
       final result = await BlueskyApiService.instance.getTimelineWithRefresh(
         creds,
         accountId: account.id,
+        cursor: cursor,
       );
 
       // トークンが更新された場合はストレージに保存
@@ -114,6 +168,11 @@ class TimelineFetchScheduler {
         await AccountStorageService.instance.updateAccount(updated);
         debugPrint('[Scheduler] Updated credentials for ${account.handle}');
         onTokenRefresh?.call(account.handle, true);
+      }
+
+      // カーソルを保存
+      if (result.cursor != null) {
+        _cursors[account.id] = result.cursor;
       }
 
       return result.posts;
@@ -126,11 +185,19 @@ class TimelineFetchScheduler {
     }
   }
 
-  Future<List<Post>> _fetchX(Account account) async {
+  Future<List<Post>> _fetchX(Account account, {String? cursor}) async {
     final creds = account.xCredentials;
-    return await XApiService.instance.getTimeline(
+    final result = await XApiService.instance.getTimeline(
       creds,
       accountId: account.id,
+      cursor: cursor,
     );
+
+    // カーソルを保存
+    if (result.cursor != null) {
+      _cursors[account.id] = result.cursor;
+    }
+
+    return result.posts;
   }
 }

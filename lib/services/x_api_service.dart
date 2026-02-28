@@ -315,12 +315,13 @@ class XApiService {
   }
 
   /// ユーザープロフィール取得 (UserByScreenName)
-  /// GET 系なので 404 時に queryId リフレッシュ＆リトライする
+  /// 404 時はリフレッシュしない (TL取得のリトライで queryId が更新される)
   Future<Map<String, dynamic>?> getUserProfile(
     XCredentials creds,
     String screenName,
   ) async {
-    return _withQueryIdRetry(creds, 'UserByScreenName', (queryId) async {
+    final queryId = XQueryIdService.instance.getQueryId('UserByScreenName', creds: creds);
+    {
       final variables = json.encode({
         'screen_name': screenName,
         'withSafetyModeUserFields': true,
@@ -400,18 +401,19 @@ class XApiService {
         'profile_image_url_https': legacy['profile_image_url_https'] as String?,
         'is_following': isFollowing,
       };
-    });
+    }
   }
 
   /// ユーザーの投稿一覧取得 (UserTweets)
-  /// GET 系なので 404 時に queryId リフレッシュ＆リトライする
+  /// 404 時はリフレッシュしない (TL取得のリトライで queryId が更新される)
   Future<List<Post>> getUserTimeline(
     XCredentials creds,
     String userId, {
     String? accountId,
     int count = 20,
   }) async {
-    return _withQueryIdRetry(creds, 'UserTweets', (queryId) async {
+    final queryId = XQueryIdService.instance.getQueryId('UserTweets', creds: creds);
+    {
       final variables = json.encode({
         'userId': userId,
         'count': count,
@@ -468,22 +470,43 @@ class XApiService {
 
       final body = json.decode(response.body) as Map<String, dynamic>;
       return _parseUserTimeline(body, accountId);
-    });
+    }
   }
 
   /// UserTweets レスポンスをパース
   List<Post> _parseUserTimeline(Map<String, dynamic> body, String? accountId) {
     final posts = <Post>[];
     try {
-      final instructions = dig(body, [
+      // 複数のレスポンスパスを試行
+      var instructions = dig(body, [
             'data',
             'user',
             'result',
             'timeline_v2',
             'timeline',
             'instructions',
-          ]) as List<dynamic>? ??
-          [];
+          ]) as List<dynamic>?;
+      instructions ??= dig(body, [
+            'data',
+            'user_result',
+            'result',
+            'timeline_v2',
+            'timeline',
+            'instructions',
+          ]) as List<dynamic>?;
+      instructions ??= dig(body, [
+            'data',
+            'user',
+            'result',
+            'timeline',
+            'timeline',
+            'instructions',
+          ]) as List<dynamic>?;
+
+      if (instructions == null || instructions.isEmpty) {
+        debugPrint('[XApi] _parseUserTimeline: no instructions found, data keys: ${(body['data'] as Map<String, dynamic>?)?.keys.toList()}');
+        return posts;
+      }
 
       for (final instruction in instructions) {
         final map = instruction as Map<String, dynamic>;

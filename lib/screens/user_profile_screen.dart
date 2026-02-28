@@ -41,11 +41,8 @@ class _UserProfileScreenState extends ConsumerState<UserProfileScreen>
   int? _followersCount;
   int? _followingCount;
   int? _postsCount;
-  String? _followUri; // Bluesky: non-null = following
-  bool _isFollowing = false;
   bool _isLoadingProfile = true;
   bool _isLoadingPosts = true;
-  bool _isFollowLoading = false;
   List<Post> _posts = [];
   String? _profileError;
   String? _postsError;
@@ -128,9 +125,6 @@ class _UserProfileScreenState extends ConsumerState<UserProfileScreen>
             _followersCount = profile['followersCount'] as int?;
             _followingCount = profile['followsCount'] as int?;
             _postsCount = profile['postsCount'] as int?;
-            final viewer = profile['viewer'] as Map<String, dynamic>?;
-            _followUri = viewer?['following'] as String?;
-            _isFollowing = _followUri != null;
           });
           _logAction(ActivityAction.profileFetch, account, true,
               targetId: actor);
@@ -151,7 +145,6 @@ class _UserProfileScreenState extends ConsumerState<UserProfileScreen>
               _followersCount = profile['followers_count'] as int?;
               _followingCount = profile['friends_count'] as int?;
               _postsCount = profile['statuses_count'] as int?;
-              _isFollowing = profile['is_following'] as bool? ?? false;
             });
             _logAction(ActivityAction.profileFetch, account, true,
                 targetId: screenName);
@@ -237,87 +230,6 @@ class _UserProfileScreenState extends ConsumerState<UserProfileScreen>
     }
 
     if (mounted) setState(() => _isLoadingPosts = false);
-  }
-
-  Future<void> _toggleFollow() async {
-    final account = _account;
-    if (account == null) return;
-
-    final wasFollowing = _isFollowing;
-    final action = wasFollowing ? ActivityAction.unfollow : ActivityAction.follow;
-
-    setState(() => _isFollowLoading = true);
-
-    try {
-      if (account.service == SnsService.bluesky) {
-        if (wasFollowing && _followUri != null) {
-          final ok = await BlueskyApiService.instance
-              .unfollow(account.blueskyCredentials, _followUri!);
-          _logAction(action, account, ok,
-              targetId: widget.handle, targetSummary: widget.username);
-          if (ok && mounted) {
-            setState(() {
-              _isFollowing = false;
-              _followUri = null;
-              if (_followersCount != null) _followersCount = _followersCount! - 1;
-            });
-          }
-        } else {
-          final actor = widget.handle.replaceFirst('@', '');
-          final profile = await BlueskyApiService.instance
-              .getProfile(account.blueskyCredentials, actor);
-          final did = profile?['did'] as String?;
-          if (did != null) {
-            final uri = await BlueskyApiService.instance
-                .follow(account.blueskyCredentials, did);
-            final ok = uri != null;
-            _logAction(action, account, ok,
-                targetId: widget.handle, targetSummary: widget.username);
-            if (ok && mounted) {
-              setState(() {
-                _isFollowing = true;
-                _followUri = uri;
-                if (_followersCount != null) _followersCount = _followersCount! + 1;
-              });
-            }
-          } else {
-            _logAction(action, account, false,
-                targetId: widget.handle, error: 'DID取得失敗');
-          }
-        }
-      } else if (account.service == SnsService.x) {
-        if (_xRestId == null) return;
-        if (wasFollowing) {
-          final ok = await XApiService.instance
-              .unfollowUser(account.xCredentials, _xRestId!);
-          _logAction(action, account, ok,
-              targetId: widget.handle, targetSummary: widget.username);
-          if (ok && mounted) {
-            setState(() {
-              _isFollowing = false;
-              if (_followersCount != null) _followersCount = _followersCount! - 1;
-            });
-          }
-        } else {
-          final ok = await XApiService.instance
-              .followUser(account.xCredentials, _xRestId!);
-          _logAction(action, account, ok,
-              targetId: widget.handle, targetSummary: widget.username);
-          if (ok && mounted) {
-            setState(() {
-              _isFollowing = true;
-              if (_followersCount != null) _followersCount = _followersCount! + 1;
-            });
-          }
-        }
-      }
-    } catch (e) {
-      debugPrint('[UserProfile] Follow error: $e');
-      _logAction(action, account, false,
-          targetId: widget.handle, error: '$e');
-    }
-
-    if (mounted) setState(() => _isFollowLoading = false);
   }
 
   @override
@@ -442,23 +354,6 @@ class _UserProfileScreenState extends ConsumerState<UserProfileScreen>
                     : null,
               ),
               const Spacer(),
-              // フォローボタン (両サービス対応)
-              if (!_isLoadingProfile)
-                _isFollowLoading
-                    ? const SizedBox(
-                        width: 24,
-                        height: 24,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
-                    : _isFollowing
-                        ? OutlinedButton(
-                            onPressed: _toggleFollow,
-                            child: const Text('フォロー中'),
-                          )
-                        : FilledButton(
-                            onPressed: _toggleFollow,
-                            child: const Text('フォロー'),
-                          ),
             ],
           ),
           const SizedBox(height: 12),

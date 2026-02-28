@@ -169,14 +169,14 @@ void main() {
       expect(find.text('アカウント情報が見つかりません'), findsAtLeastNWidgets(1));
     });
 
-    testWidgets('shows follow button after profile load completes', (tester) async {
+    testWidgets('does not show follow button (removed for multi-account)', (tester) async {
       await tester.pumpWidget(
           buildUserProfileScreen(service: SnsService.x, accountId: null));
       await tester.pumpAndSettle();
 
-      // After profile load fails, _isLoadingProfile=false → follow button appears
-      expect(find.text('フォロー'), findsOneWidget);
-      expect(find.text('アカウント情報が見つかりません'), findsAtLeastNWidgets(1));
+      // Follow button removed — ambiguous with multiple accounts
+      expect(find.text('フォロー'), findsNothing);
+      expect(find.text('フォロー中'), findsNothing);
     });
 
     testWidgets('renders Scaffold', (tester) async {
@@ -294,9 +294,8 @@ void main() {
       expect(find.text('@styledhandle'), findsAtLeastNWidgets(1));
     });
 
-    testWidgets('X service without account does not show follow button',
+    testWidgets('X service does not show follow button',
         (tester) async {
-      // Use null accountId to avoid real HTTP calls
       await tester.pumpWidget(buildUserProfileScreen(
         accountId: null,
         service: SnsService.x,
@@ -305,9 +304,10 @@ void main() {
       ));
       await tester.pumpAndSettle();
 
-      // No account → profile error, follow button shown as 'フォロー'
-      // (profile load fails but _isLoadingProfile becomes false)
       expect(find.text('NoFollowUser'), findsOneWidget);
+      // Follow button removed for multi-account clarity
+      expect(find.text('フォロー'), findsNothing);
+      expect(find.text('フォロー中'), findsNothing);
     });
 
     testWidgets('Bluesky account without account shows error but no follow button',

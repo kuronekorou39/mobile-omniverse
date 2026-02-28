@@ -62,6 +62,32 @@ class XApiService {
     }
   }
 
+  /// GET 系 API の 404 リトライ (対象 operation の queryId のみ更新)
+  /// HomeLatestTimeline 等のTL用 queryId は変更しないため TL 汚染が起きない
+  Future<T> _withTargetedQueryIdRetry<T>(
+    XCredentials creds,
+    String operationName,
+    Future<T> Function(String queryId) action,
+  ) async {
+    final queryId = XQueryIdService.instance.getQueryId(operationName, creds: creds);
+    try {
+      return await action(queryId);
+    } on XApiException catch (e) {
+      if (e.statusCode == 404) {
+        debugPrint('[XApi] 404 for $operationName, targeted refresh...');
+        final count = await XQueryIdService.instance
+            .forceRefresh(creds, onlyUpdate: {operationName});
+        debugPrint('[XApi] Refreshed $count queryIds (targeted: $operationName)');
+        final newQueryId = XQueryIdService.instance.getQueryId(operationName, creds: creds);
+        if (newQueryId != queryId) {
+          debugPrint('[XApi] Retrying $operationName with new queryId: $newQueryId');
+          return await action(newQueryId);
+        }
+      }
+      rethrow;
+    }
+  }
+
   /// Mutation 系は queryId を動的に取得するだけ (404 リトライしない)
   /// mutation の 404 はアカウント制限や削除済みツイート等が多いため
   String _getMutationQueryId(String operationName, XCredentials creds) =>
@@ -315,13 +341,12 @@ class XApiService {
   }
 
   /// ユーザープロフィール取得 (UserByScreenName)
-  /// 404 時はリフレッシュしない (TL取得のリトライで queryId が更新される)
+  /// 404 時は UserByScreenName の queryId のみ更新してリトライ
   Future<Map<String, dynamic>?> getUserProfile(
     XCredentials creds,
     String screenName,
   ) async {
-    final queryId = XQueryIdService.instance.getQueryId('UserByScreenName', creds: creds);
-    {
+    return _withTargetedQueryIdRetry(creds, 'UserByScreenName', (queryId) async {
       final variables = json.encode({
         'screen_name': screenName,
         'withSafetyModeUserFields': true,
@@ -401,19 +426,18 @@ class XApiService {
         'profile_image_url_https': legacy['profile_image_url_https'] as String?,
         'is_following': isFollowing,
       };
-    }
+    });
   }
 
   /// ユーザーの投稿一覧取得 (UserTweets)
-  /// 404 時はリフレッシュしない (TL取得のリトライで queryId が更新される)
+  /// 404 時は UserTweets の queryId のみ更新してリトライ
   Future<List<Post>> getUserTimeline(
     XCredentials creds,
     String userId, {
     String? accountId,
     int count = 20,
   }) async {
-    final queryId = XQueryIdService.instance.getQueryId('UserTweets', creds: creds);
-    {
+    return _withTargetedQueryIdRetry(creds, 'UserTweets', (queryId) async {
       final variables = json.encode({
         'userId': userId,
         'count': count,
@@ -470,7 +494,7 @@ class XApiService {
 
       final body = json.decode(response.body) as Map<String, dynamic>;
       return _parseUserTimeline(body, accountId);
-    }
+    });
   }
 
   /// UserTweets レスポンスをパース

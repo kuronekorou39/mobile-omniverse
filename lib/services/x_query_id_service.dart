@@ -105,8 +105,9 @@ class XQueryIdService {
 
   /// x.com の JS バンドルから queryId を取得して更新
   /// [creds] は Cookie 認証に使用、結果はそのアカウント専用に保存
+  /// [onlyUpdate] を指定すると、そのオペレーションのみキャッシュ更新する
   /// Returns: 更新された operationName の数
-  Future<int> refreshQueryIds(XCredentials? creds) async {
+  Future<int> refreshQueryIds(XCredentials? creds, {Set<String>? onlyUpdate}) async {
     // アカウント別レート制限チェック
     if (creds != null) {
       final key = _accountKey(creds);
@@ -209,16 +210,24 @@ class XQueryIdService {
       debugPrint('[XQueryId] Found ${found.length} queryIds: ${found.keys.toList()}');
 
       if (found.isNotEmpty) {
-        if (creds != null) {
-          // アカウント専用に保存 (他アカウントに影響しない)
-          final key = _accountKey(creds);
-          _perAccount[key] ??= {};
-          _perAccount[key]!.addAll(found);
-          debugPrint('[XQueryId] Stored queryIds for account $key');
-        } else {
-          _cached.addAll(found);
+        // onlyUpdate が指定されている場合、対象オペレーションのみ更新
+        final toStore = onlyUpdate != null
+            ? Map.fromEntries(found.entries.where((e) => onlyUpdate.contains(e.key)))
+            : found;
+
+        if (toStore.isNotEmpty) {
+          if (creds != null) {
+            // アカウント専用に保存 (他アカウントに影響しない)
+            final key = _accountKey(creds);
+            _perAccount[key] ??= {};
+            _perAccount[key]!.addAll(toStore);
+            debugPrint('[XQueryId] Stored ${toStore.length} queryIds for account $key'
+                '${onlyUpdate != null ? ' (targeted: $onlyUpdate)' : ''}');
+          } else {
+            _cached.addAll(toStore);
+          }
+          await _saveToPrefs();
         }
-        await _saveToPrefs();
       }
 
       // アカウント別のレート制限を記録
@@ -249,13 +258,15 @@ class XQueryIdService {
   }
 
   /// 強制リフレッシュ (レート制限を無視)
-  Future<int> forceRefresh(XCredentials? creds) async {
+  /// [onlyUpdate] を指定すると、そのオペレーションの queryId のみ更新する
+  /// (他のオペレーション、特に HomeLatestTimeline を壊さない)
+  Future<int> forceRefresh(XCredentials? creds, {Set<String>? onlyUpdate}) async {
     if (creds != null) {
       _perAccountLastRefresh.remove(_accountKey(creds));
     } else {
       _lastRefresh = null;
     }
-    return refreshQueryIds(creds);
+    return refreshQueryIds(creds, onlyUpdate: onlyUpdate);
   }
 
   /// キャッシュを全消去してデフォルト値に戻す

@@ -29,6 +29,26 @@ void main() {
         final log = _makeLog(ActivityAction.timelineFetch);
         expect(log.actionLabel, 'TL取得');
       });
+
+      test('follow → フォロー', () {
+        final log = _makeLog(ActivityAction.follow);
+        expect(log.actionLabel, 'フォロー');
+      });
+
+      test('unfollow → フォロー解除', () {
+        final log = _makeLog(ActivityAction.unfollow);
+        expect(log.actionLabel, 'フォロー解除');
+      });
+
+      test('post → 投稿', () {
+        final log = _makeLog(ActivityAction.post);
+        expect(log.actionLabel, '投稿');
+      });
+
+      test('profileFetch → プロフィール取得', () {
+        final log = _makeLog(ActivityAction.profileFetch);
+        expect(log.actionLabel, 'プロフィール取得');
+      });
     });
 
     group('statusLabel', () {

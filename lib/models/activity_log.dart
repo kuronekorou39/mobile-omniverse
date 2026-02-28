@@ -6,7 +6,10 @@ enum ActivityAction {
   repost,
   unrepost,
   timelineFetch,
-  // 将来: follow, unfollow, post, delete, etc.
+  follow,
+  unfollow,
+  post,
+  profileFetch,
 }
 
 class ActivityLog {
@@ -49,6 +52,10 @@ class ActivityLog {
         ActivityAction.repost => 'リポスト',
         ActivityAction.unrepost => 'リポスト解除',
         ActivityAction.timelineFetch => 'TL取得',
+        ActivityAction.follow => 'フォロー',
+        ActivityAction.unfollow => 'フォロー解除',
+        ActivityAction.post => '投稿',
+        ActivityAction.profileFetch => 'プロフィール取得',
       };
 
   String get statusLabel => success ? 'OK' : 'FAIL';

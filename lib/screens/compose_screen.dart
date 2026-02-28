@@ -1,20 +1,23 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../models/account.dart';
+import '../models/activity_log.dart';
 import '../models/sns_service.dart';
+import '../providers/activity_log_provider.dart';
 import '../services/account_storage_service.dart';
 import '../services/bluesky_api_service.dart';
 import '../services/x_api_service.dart';
 import '../widgets/sns_badge.dart';
 
-class ComposeScreen extends StatefulWidget {
+class ComposeScreen extends ConsumerStatefulWidget {
   const ComposeScreen({super.key});
 
   @override
-  State<ComposeScreen> createState() => _ComposeScreenState();
+  ConsumerState<ComposeScreen> createState() => _ComposeScreenState();
 }
 
-class _ComposeScreenState extends State<ComposeScreen> {
+class _ComposeScreenState extends ConsumerState<ComposeScreen> {
   final _textController = TextEditingController();
   Account? _selectedAccount;
   bool _isPosting = false;
@@ -46,19 +49,36 @@ class _ComposeScreenState extends State<ComposeScreen> {
 
     setState(() => _isPosting = true);
 
+    final text = _textController.text.trim();
+    final account = _selectedAccount!;
+    final postSummary = text.length > 40 ? '${text.substring(0, 40)}...' : text;
+
     try {
       bool success = false;
-      final text = _textController.text.trim();
-      final account = _selectedAccount!;
+      int? statusCode;
+      String? responseSnippet;
 
       if (account.service == SnsService.x) {
         final result =
             await XApiService.instance.createTweet(account.xCredentials, text);
         success = result.success;
+        statusCode = result.statusCode;
+        responseSnippet = result.bodySnippet;
       } else {
         success = await BlueskyApiService.instance
             .createPost(account.blueskyCredentials, text);
       }
+
+      ref.read(activityLogProvider.notifier).logAction(
+        action: ActivityAction.post,
+        platform: account.service,
+        accountHandle: account.handle,
+        accountId: account.id,
+        targetSummary: postSummary,
+        success: success,
+        statusCode: statusCode,
+        responseSnippet: responseSnippet,
+      );
 
       if (!mounted) return;
 
@@ -74,6 +94,16 @@ class _ComposeScreenState extends State<ComposeScreen> {
         setState(() => _isPosting = false);
       }
     } catch (e) {
+      ref.read(activityLogProvider.notifier).logAction(
+        action: ActivityAction.post,
+        platform: account.service,
+        accountHandle: account.handle,
+        accountId: account.id,
+        targetSummary: postSummary,
+        success: false,
+        errorMessage: '$e',
+      );
+
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('エラー: $e')),

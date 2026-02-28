@@ -1,9 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../models/account.dart';
+import '../models/activity_log.dart';
 import '../models/post.dart';
 import '../models/sns_service.dart';
+import '../providers/activity_log_provider.dart';
 import '../services/account_storage_service.dart';
 import '../services/bluesky_api_service.dart';
 import '../services/x_api_service.dart';
@@ -12,7 +15,7 @@ import '../widgets/post_card.dart';
 import '../widgets/sns_badge.dart';
 import 'post_detail_screen.dart';
 
-class UserProfileScreen extends StatefulWidget {
+class UserProfileScreen extends ConsumerStatefulWidget {
   const UserProfileScreen({
     super.key,
     required this.username,
@@ -29,10 +32,10 @@ class UserProfileScreen extends StatefulWidget {
   final String? accountId;
 
   @override
-  State<UserProfileScreen> createState() => _UserProfileScreenState();
+  ConsumerState<UserProfileScreen> createState() => _UserProfileScreenState();
 }
 
-class _UserProfileScreenState extends State<UserProfileScreen>
+class _UserProfileScreenState extends ConsumerState<UserProfileScreen>
     with SingleTickerProviderStateMixin {
   String? _bio;
   int? _followersCount;
@@ -60,6 +63,28 @@ class _UserProfileScreenState extends State<UserProfileScreen>
   List<Post> get _mediaPosts => _posts
       .where((p) => p.imageUrls.isNotEmpty || p.videoUrl != null)
       .toList();
+
+  void _logAction(
+    ActivityAction action,
+    Account account,
+    bool success, {
+    String? targetId,
+    String? targetSummary,
+    String? error,
+    int? statusCode,
+  }) {
+    ref.read(activityLogProvider.notifier).logAction(
+      action: action,
+      platform: account.service,
+      accountHandle: account.handle,
+      accountId: account.id,
+      targetId: targetId,
+      targetSummary: targetSummary,
+      success: success,
+      statusCode: statusCode,
+      errorMessage: error,
+    );
+  }
 
   @override
   void initState() {
@@ -107,8 +132,12 @@ class _UserProfileScreenState extends State<UserProfileScreen>
             _followUri = viewer?['following'] as String?;
             _isFollowing = _followUri != null;
           });
+          _logAction(ActivityAction.profileFetch, account, true,
+              targetId: actor);
         } else if (mounted) {
           setState(() => _profileError = 'プロフィールを取得できませんでした');
+          _logAction(ActivityAction.profileFetch, account, false,
+              targetId: actor, error: 'プロフィールがnull');
         }
       } else if (account.service == SnsService.x) {
         final screenName = widget.handle.replaceFirst('@', '');
@@ -124,17 +153,25 @@ class _UserProfileScreenState extends State<UserProfileScreen>
               _postsCount = profile['statuses_count'] as int?;
               _isFollowing = profile['is_following'] as bool? ?? false;
             });
+            _logAction(ActivityAction.profileFetch, account, true,
+                targetId: screenName);
           } else if (mounted) {
             setState(() => _profileError = 'プロフィールを取得できませんでした');
+            _logAction(ActivityAction.profileFetch, account, false,
+                targetId: screenName, error: 'プロフィールがnull');
           }
         } on XApiException catch (e) {
           debugPrint('[UserProfile] XApiException loading profile: $e');
           if (mounted) setState(() => _profileError = '$e');
+          _logAction(ActivityAction.profileFetch, account, false,
+              targetId: screenName, error: '$e');
         }
       }
     } catch (e) {
       debugPrint('[UserProfile] Error loading profile: $e');
       if (mounted) setState(() => _profileError = '$e');
+      _logAction(ActivityAction.profileFetch, account, false,
+          error: '$e');
     }
 
     if (mounted) setState(() => _isLoadingProfile = false);
@@ -206,13 +243,18 @@ class _UserProfileScreenState extends State<UserProfileScreen>
     final account = _account;
     if (account == null) return;
 
+    final wasFollowing = _isFollowing;
+    final action = wasFollowing ? ActivityAction.unfollow : ActivityAction.follow;
+
     setState(() => _isFollowLoading = true);
 
     try {
       if (account.service == SnsService.bluesky) {
-        if (_isFollowing && _followUri != null) {
+        if (wasFollowing && _followUri != null) {
           final ok = await BlueskyApiService.instance
               .unfollow(account.blueskyCredentials, _followUri!);
+          _logAction(action, account, ok,
+              targetId: widget.handle, targetSummary: widget.username);
           if (ok && mounted) {
             setState(() {
               _isFollowing = false;
@@ -228,20 +270,28 @@ class _UserProfileScreenState extends State<UserProfileScreen>
           if (did != null) {
             final uri = await BlueskyApiService.instance
                 .follow(account.blueskyCredentials, did);
-            if (uri != null && mounted) {
+            final ok = uri != null;
+            _logAction(action, account, ok,
+                targetId: widget.handle, targetSummary: widget.username);
+            if (ok && mounted) {
               setState(() {
                 _isFollowing = true;
                 _followUri = uri;
                 if (_followersCount != null) _followersCount = _followersCount! + 1;
               });
             }
+          } else {
+            _logAction(action, account, false,
+                targetId: widget.handle, error: 'DID取得失敗');
           }
         }
       } else if (account.service == SnsService.x) {
         if (_xRestId == null) return;
-        if (_isFollowing) {
+        if (wasFollowing) {
           final ok = await XApiService.instance
               .unfollowUser(account.xCredentials, _xRestId!);
+          _logAction(action, account, ok,
+              targetId: widget.handle, targetSummary: widget.username);
           if (ok && mounted) {
             setState(() {
               _isFollowing = false;
@@ -251,6 +301,8 @@ class _UserProfileScreenState extends State<UserProfileScreen>
         } else {
           final ok = await XApiService.instance
               .followUser(account.xCredentials, _xRestId!);
+          _logAction(action, account, ok,
+              targetId: widget.handle, targetSummary: widget.username);
           if (ok && mounted) {
             setState(() {
               _isFollowing = true;
@@ -261,6 +313,8 @@ class _UserProfileScreenState extends State<UserProfileScreen>
       }
     } catch (e) {
       debugPrint('[UserProfile] Follow error: $e');
+      _logAction(action, account, false,
+          targetId: widget.handle, error: '$e');
     }
 
     if (mounted) setState(() => _isFollowLoading = false);

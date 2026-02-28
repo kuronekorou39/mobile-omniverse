@@ -990,8 +990,8 @@ void main() {
       );
       service.httpClientOverride = client;
 
-      final posts = await service.getAuthorFeed(creds, 'test.bsky.social');
-      expect(posts, isNotEmpty);
+      final result = await service.getAuthorFeed(creds, 'test.bsky.social');
+      expect(result.posts, isNotEmpty);
     });
 
     test('throws BlueskyApiException on non-200', () async {

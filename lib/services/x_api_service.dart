@@ -431,11 +431,13 @@ class XApiService {
 
   /// ユーザーの投稿一覧取得 (UserTweets)
   /// 404 時は UserTweets の queryId のみ更新してリトライ
-  Future<List<Post>> getUserTimeline(
+  /// Returns: ({posts, cursor}) — cursor は次ページ取得用
+  Future<({List<Post> posts, String? cursor})> getUserTimeline(
     XCredentials creds,
     String userId, {
     String? accountId,
     int count = 20,
+    String? cursor,
   }) async {
     return _withTargetedQueryIdRetry(creds, 'UserTweets', (queryId) async {
       final variables = json.encode({
@@ -445,6 +447,7 @@ class XApiService {
         'withQuickPromoteEligibilityTweetFields': true,
         'withVoice': true,
         'withV2Timeline': true,
+        if (cursor != null) 'cursor': cursor,
       });
 
       final features = json.encode({
@@ -497,9 +500,11 @@ class XApiService {
     });
   }
 
-  /// UserTweets レスポンスをパース
-  List<Post> _parseUserTimeline(Map<String, dynamic> body, String? accountId) {
+  /// UserTweets レスポンスをパース (カーソル付き)
+  ({List<Post> posts, String? cursor}) _parseUserTimeline(
+      Map<String, dynamic> body, String? accountId) {
     final posts = <Post>[];
+    String? nextCursor;
     try {
       // 複数のレスポンスパスを試行
       var instructions = dig(body, [
@@ -529,7 +534,7 @@ class XApiService {
 
       if (instructions == null || instructions.isEmpty) {
         debugPrint('[XApi] _parseUserTimeline: no instructions found, data keys: ${(body['data'] as Map<String, dynamic>?)?.keys.toList()}');
-        return posts;
+        return (posts: posts, cursor: null);
       }
 
       for (final instruction in instructions) {
@@ -546,10 +551,26 @@ class XApiService {
             continue;
           }
 
+          // カーソルエントリからページネーション情報を抽出
+          if (entryId.startsWith('cursor-bottom-')) {
+            final content = entryMap['content'] as Map<String, dynamic>?;
+            final value = content?['value'] as String?;
+            if (value != null) nextCursor = value;
+            continue;
+          }
+
           final content = entryMap['content'] as Map<String, dynamic>?;
           if (content == null) continue;
 
           final entryType = content['entryType'] as String?;
+          if (entryType == 'TimelineTimelineCursor') {
+            // 別形式のカーソル
+            final cursorType = content['cursorType'] as String?;
+            if (cursorType == 'Bottom') {
+              nextCursor = content['value'] as String?;
+            }
+            continue;
+          }
           if (entryType != 'TimelineTimelineItem') continue;
 
           final itemContent =
@@ -571,7 +592,7 @@ class XApiService {
     } catch (e) {
       debugPrint('[XApi] Error parsing user timeline: $e');
     }
-    return posts;
+    return (posts: posts, cursor: nextCursor);
   }
 
   /// フォロー (REST API)

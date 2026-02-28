@@ -280,17 +280,22 @@ class BlueskyApiService {
   }
 
   /// ユーザーのタイムラインを取得
-  Future<List<Post>> getAuthorFeed(
+  /// ユーザーの投稿一覧取得
+  /// Returns: ({posts, cursor}) — cursor は次ページ取得用
+  Future<({List<Post> posts, String? cursor})> getAuthorFeed(
     BlueskyCredentials creds,
     String actor, {
     String? accountId,
     int limit = 30,
+    String? cursor,
   }) async {
-    final uri = Uri.parse(
-      '${creds.pdsUrl}/xrpc/app.bsky.feed.getAuthorFeed'
-      '?actor=${Uri.encodeComponent(actor)}&limit=$limit',
-    );
-    debugPrint('[BlueskyApi] getAuthorFeed: actor=$actor, url=$uri');
+    var url = '${creds.pdsUrl}/xrpc/app.bsky.feed.getAuthorFeed'
+        '?actor=${Uri.encodeComponent(actor)}&limit=$limit';
+    if (cursor != null) {
+      url += '&cursor=${Uri.encodeComponent(cursor)}';
+    }
+    final uri = Uri.parse(url);
+    debugPrint('[BlueskyApi] getAuthorFeed: actor=$actor, cursor=$cursor');
     final response = await (httpClientOverride ?? http.Client()).get(uri, headers: {
       'Authorization': 'Bearer ${creds.accessJwt}',
       'Accept': 'application/json',
@@ -304,7 +309,9 @@ class BlueskyApiService {
     }
     final body = json.decode(response.body) as Map<String, dynamic>;
     final feed = body['feed'] as List<dynamic>? ?? [];
-    return feed.map((item) => parsePost(item, accountId)).toList();
+    final nextCursor = body['cursor'] as String?;
+    final posts = feed.map((item) => parsePost(item, accountId)).toList();
+    return (posts: posts, cursor: nextCursor);
   }
 
   /// フォロー

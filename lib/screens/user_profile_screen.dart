@@ -43,9 +43,12 @@ class _UserProfileScreenState extends ConsumerState<UserProfileScreen>
   int? _postsCount;
   bool _isLoadingProfile = true;
   bool _isLoadingPosts = true;
+  bool _isLoadingMore = false;
   List<Post> _posts = [];
   String? _profileError;
   String? _postsError;
+  String? _nextCursor;
+  bool _hasMore = true;
 
   // X 用
   String? _xRestId;
@@ -97,6 +100,10 @@ class _UserProfileScreenState extends ConsumerState<UserProfileScreen>
   }
 
   Future<void> _loadData() async {
+    setState(() {
+      _nextCursor = null;
+      _hasMore = true;
+    });
     await _loadProfile();
     if (mounted) _loadPosts();
   }
@@ -183,14 +190,16 @@ class _UserProfileScreenState extends ConsumerState<UserProfileScreen>
     try {
       if (account.service == SnsService.bluesky) {
         final actor = widget.handle.replaceFirst('@', '');
-        final posts = await BlueskyApiService.instance.getAuthorFeed(
+        final result = await BlueskyApiService.instance.getAuthorFeed(
           account.blueskyCredentials,
           actor,
           accountId: account.id,
         );
         if (mounted) {
           setState(() {
-            _posts = posts;
+            _posts = result.posts;
+            _nextCursor = result.cursor;
+            _hasMore = result.cursor != null;
             _isLoadingPosts = false;
           });
           return;
@@ -205,14 +214,16 @@ class _UserProfileScreenState extends ConsumerState<UserProfileScreen>
           }
           return;
         }
-        final posts = await XApiService.instance.getUserTimeline(
+        final result = await XApiService.instance.getUserTimeline(
           account.xCredentials,
           _xRestId!,
           accountId: account.id,
         );
         if (mounted) {
           setState(() {
-            _posts = posts;
+            _posts = result.posts;
+            _nextCursor = result.cursor;
+            _hasMore = result.cursor != null;
             _isLoadingPosts = false;
           });
           return;
@@ -230,6 +241,53 @@ class _UserProfileScreenState extends ConsumerState<UserProfileScreen>
     }
 
     if (mounted) setState(() => _isLoadingPosts = false);
+  }
+
+  Future<void> _loadMorePosts() async {
+    if (_isLoadingMore || !_hasMore || _nextCursor == null) return;
+    final account = _account;
+    if (account == null) return;
+
+    setState(() => _isLoadingMore = true);
+
+    try {
+      if (account.service == SnsService.bluesky) {
+        final actor = widget.handle.replaceFirst('@', '');
+        final result = await BlueskyApiService.instance.getAuthorFeed(
+          account.blueskyCredentials,
+          actor,
+          accountId: account.id,
+          cursor: _nextCursor,
+        );
+        if (mounted) {
+          setState(() {
+            _posts = [..._posts, ...result.posts];
+            _nextCursor = result.cursor;
+            _hasMore = result.cursor != null && result.posts.isNotEmpty;
+            _isLoadingMore = false;
+          });
+        }
+      } else if (account.service == SnsService.x) {
+        if (_xRestId == null) return;
+        final result = await XApiService.instance.getUserTimeline(
+          account.xCredentials,
+          _xRestId!,
+          accountId: account.id,
+          cursor: _nextCursor,
+        );
+        if (mounted) {
+          setState(() {
+            _posts = [..._posts, ...result.posts];
+            _nextCursor = result.cursor;
+            _hasMore = result.cursor != null && result.posts.isNotEmpty;
+            _isLoadingMore = false;
+          });
+        }
+      }
+    } catch (e) {
+      debugPrint('[UserProfile] Error loading more posts: $e');
+      if (mounted) setState(() => _isLoadingMore = false);
+    }
   }
 
   @override
@@ -259,15 +317,15 @@ class _UserProfileScreenState extends ConsumerState<UserProfileScreen>
           children: [
             // 投稿タブ
             _buildPostList(_posts),
-            // メディアタブ
-            _buildPostList(_mediaPosts),
+            // メディアタブ (ページネーションは投稿タブ側で処理)
+            _buildPostList(_mediaPosts, isMediaTab: true),
           ],
         ),
       ),
     );
   }
 
-  Widget _buildPostList(List<Post> posts) {
+  Widget _buildPostList(List<Post> posts, {bool isMediaTab = false}) {
     if (_isLoadingPosts) {
       return const Center(child: CircularProgressIndicator());
     }
@@ -310,23 +368,216 @@ class _UserProfileScreenState extends ConsumerState<UserProfileScreen>
       onRefresh: () async {
         await _loadData();
       },
-      child: ListView.builder(
-        itemCount: posts.length,
-        itemBuilder: (context, index) {
-          final post = posts[index];
-          return PostCard(
-            post: post,
-            onTap: () {
-              Navigator.of(context).push(
-                MaterialPageRoute(
-                  builder: (_) => PostDetailScreen(post: post),
+      child: NotificationListener<ScrollNotification>(
+        onNotification: (notification) {
+          if (!isMediaTab &&
+              notification is ScrollEndNotification &&
+              notification.metrics.pixels >=
+                  notification.metrics.maxScrollExtent - 200) {
+            _loadMorePosts();
+          }
+          return false;
+        },
+        child: ListView.builder(
+          itemCount: posts.length + (_hasMore && !isMediaTab ? 1 : 0),
+          itemBuilder: (context, index) {
+            if (index >= posts.length) {
+              // ローディングインジケータ
+              return Padding(
+                padding: const EdgeInsets.all(16),
+                child: Center(
+                  child: _isLoadingMore
+                      ? const SizedBox(
+                          width: 24,
+                          height: 24,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const SizedBox.shrink(),
                 ),
               );
-            },
-          );
-        },
+            }
+            final post = posts[index];
+            return PostCard(
+              post: post,
+              onTap: () {
+                Navigator.of(context).push(
+                  MaterialPageRoute(
+                    builder: (_) => PostDetailScreen(post: post),
+                  ),
+                );
+              },
+              onLike: () => _handleLike(post),
+              onRepost: () => _handleRepost(post),
+            );
+          },
+        ),
       ),
     );
+  }
+
+  // ===== エンゲージメント =====
+
+  void _updatePost(Post post, {bool? isLiked, int? likeCount, bool? isReposted, int? repostCount}) {
+    setState(() {
+      _posts = _posts.map((p) {
+        if (p.id != post.id) return p;
+        return p.copyWith(
+          isLiked: isLiked ?? p.isLiked,
+          likeCount: likeCount ?? p.likeCount,
+          isReposted: isReposted ?? p.isReposted,
+          repostCount: repostCount ?? p.repostCount,
+        );
+      }).toList();
+    });
+  }
+
+  Future<void> _handleLike(Post post) async {
+    final account = _account;
+    if (account == null) return;
+
+    final wasLiked = post.isLiked;
+    final action = wasLiked ? ActivityAction.unlike : ActivityAction.like;
+    final postSummary = post.body.length > 40
+        ? '${post.body.substring(0, 40)}...'
+        : post.body;
+
+    // Optimistic update
+    _updatePost(post,
+      isLiked: !wasLiked,
+      likeCount: wasLiked ? post.likeCount - 1 : post.likeCount + 1,
+    );
+
+    try {
+      bool success = false;
+      int? statusCode;
+      String? responseSnippet;
+
+      if (post.source == SnsService.x) {
+        final creds = account.xCredentials;
+        final tweetId = post.id.replaceFirst('x_', '');
+        final result = wasLiked
+            ? await XApiService.instance.unlikeTweetWithDetail(creds, tweetId)
+            : await XApiService.instance.likeTweetWithDetail(creds, tweetId);
+        success = result.success;
+        statusCode = result.statusCode;
+        responseSnippet = result.bodySnippet;
+      } else if (post.source == SnsService.bluesky) {
+        final creds = account.blueskyCredentials;
+        if (wasLiked) {
+          success = true;
+        } else {
+          final postUri = post.uri;
+          final postCid = post.cid;
+          if (postUri != null && postCid != null && postCid.isNotEmpty) {
+            final result = await BlueskyApiService.instance.likePost(
+                creds, postUri, postCid);
+            success = result != null;
+          }
+        }
+      }
+
+      ref.read(activityLogProvider.notifier).logAction(
+            action: action,
+            platform: post.source,
+            accountHandle: account.handle,
+            accountId: account.id,
+            targetId: post.id,
+            targetSummary: postSummary,
+            success: success,
+            statusCode: statusCode,
+            responseSnippet: responseSnippet,
+          );
+
+      if (!success) {
+        _updatePost(post, isLiked: wasLiked, likeCount: post.likeCount);
+      }
+    } catch (e) {
+      ref.read(activityLogProvider.notifier).logAction(
+            action: action,
+            platform: post.source,
+            accountHandle: account.handle,
+            accountId: account.id,
+            targetId: post.id,
+            targetSummary: postSummary,
+            success: false,
+            errorMessage: e.toString(),
+          );
+      _updatePost(post, isLiked: wasLiked, likeCount: post.likeCount);
+    }
+  }
+
+  Future<void> _handleRepost(Post post) async {
+    final account = _account;
+    if (account == null) return;
+
+    final wasReposted = post.isReposted;
+    final action = wasReposted ? ActivityAction.unrepost : ActivityAction.repost;
+    final postSummary = post.body.length > 40
+        ? '${post.body.substring(0, 40)}...'
+        : post.body;
+
+    _updatePost(post,
+      isReposted: !wasReposted,
+      repostCount: wasReposted ? post.repostCount - 1 : post.repostCount + 1,
+    );
+
+    try {
+      bool success = false;
+      int? statusCode;
+      String? responseSnippet;
+
+      if (post.source == SnsService.x) {
+        final creds = account.xCredentials;
+        final tweetId = post.id.replaceFirst('x_', '');
+        final result = wasReposted
+            ? await XApiService.instance.unretweetWithDetail(creds, tweetId)
+            : await XApiService.instance.retweetWithDetail(creds, tweetId);
+        success = result.success;
+        statusCode = result.statusCode;
+        responseSnippet = result.bodySnippet;
+      } else if (post.source == SnsService.bluesky) {
+        final creds = account.blueskyCredentials;
+        if (wasReposted) {
+          success = true;
+        } else {
+          final postUri = post.uri;
+          final postCid = post.cid;
+          if (postUri != null && postCid != null && postCid.isNotEmpty) {
+            final result = await BlueskyApiService.instance.repost(
+                creds, postUri, postCid);
+            success = result != null;
+          }
+        }
+      }
+
+      ref.read(activityLogProvider.notifier).logAction(
+            action: action,
+            platform: post.source,
+            accountHandle: account.handle,
+            accountId: account.id,
+            targetId: post.id,
+            targetSummary: postSummary,
+            success: success,
+            statusCode: statusCode,
+            responseSnippet: responseSnippet,
+          );
+
+      if (!success) {
+        _updatePost(post, isReposted: wasReposted, repostCount: post.repostCount);
+      }
+    } catch (e) {
+      ref.read(activityLogProvider.notifier).logAction(
+            action: action,
+            platform: post.source,
+            accountHandle: account.handle,
+            accountId: account.id,
+            targetId: post.id,
+            targetSummary: postSummary,
+            success: false,
+            errorMessage: e.toString(),
+          );
+      _updatePost(post, isReposted: wasReposted, repostCount: post.repostCount);
+    }
   }
 
   Widget _buildProfileHeader() {

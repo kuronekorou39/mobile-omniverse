@@ -314,30 +314,29 @@ class _OmniFeedScreenState extends ConsumerState<OmniFeedScreen> {
   }
 
   Future<void> _launchOverlay(FeedState feed) async {
-    final granted = await FlutterOverlayWindow.isPermissionGranted();
-    if (!granted) {
-      final result = await FlutterOverlayWindow.requestPermission();
-      if (result != true) return;
-    }
-
     final isActive = await FlutterOverlayWindow.isActive();
     if (isActive) {
       await FlutterOverlayWindow.closeOverlay();
       return;
     }
 
-    await FlutterOverlayWindow.showOverlay(
-      height: 450,
-      width: WindowSize.matchParent,
-      enableDrag: true,
-      overlayTitle: 'OmniVerse',
-      flag: OverlayFlag.defaultFlag,
-      positionGravity: PositionGravity.auto,
-    );
+    // 直接表示を試み、権限がなければ設定画面を開く
+    try {
+      await FlutterOverlayWindow.showOverlay(
+        height: 450,
+        width: WindowSize.matchParent,
+        enableDrag: true,
+        overlayTitle: 'OmniVerse',
+        flag: OverlayFlag.defaultFlag,
+        positionGravity: PositionGravity.auto,
+      );
 
-    // Send current posts to overlay
-    final posts = feed.posts.take(20).map((p) => p.toJson()).toList();
-    await FlutterOverlayWindow.shareData(jsonEncode(posts));
+      // Send current posts to overlay
+      final posts = feed.posts.take(20).map((p) => p.toJson()).toList();
+      await FlutterOverlayWindow.shareData(jsonEncode(posts));
+    } catch (_) {
+      await FlutterOverlayWindow.requestPermission();
+    }
   }
 
   Account? _getAccountForPost(Post post) {

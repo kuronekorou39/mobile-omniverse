@@ -322,6 +322,12 @@ class _OmniFeedScreenState extends ConsumerState<OmniFeedScreen> {
     final settings = ref.watch(settingsProvider);
     final accounts = ref.watch(accountProvider);
 
+    // 有効アカウントIDでフィルタ用
+    final enabledAccountIds = accounts
+        .where((a) => a.isEnabled)
+        .map((a) => a.id)
+        .toSet();
+
     // 新規投稿をアニメーション対象として検出
     final currentPostIds = feed.posts.map((p) => p.id).toSet();
     if (_prevPostIds.isNotEmpty) {
@@ -332,64 +338,73 @@ class _OmniFeedScreenState extends ConsumerState<OmniFeedScreen> {
     }
     _prevPostIds = currentPostIds;
 
-    return Scaffold(
-      body: NestedScrollView(
-        controller: _scrollController,
-        headerSliverBuilder: (context, innerBoxIsScrolled) => [
-          SliverAppBar(
-            floating: true,
-            snap: true,
-            title: const Text(
-              'OmniVerse',
-              style: TextStyle(fontWeight: FontWeight.bold),
-            ),
-            centerTitle: true,
-            leading: IconButton(
-              icon: const Icon(Icons.people_outline),
-              tooltip: 'アカウント',
+    Widget body = CustomScrollView(
+      controller: _scrollController,
+      physics: const AlwaysScrollableScrollPhysics(),
+      slivers: [
+        SliverAppBar(
+          floating: true,
+          snap: true,
+          title: const Text(
+            'OmniVerse',
+            style: TextStyle(fontWeight: FontWeight.bold),
+          ),
+          centerTitle: true,
+          leading: IconButton(
+            icon: const Icon(Icons.people_outline),
+            tooltip: 'アカウント',
+            onPressed: () {
+              Navigator.of(context).push(
+                MaterialPageRoute(builder: (_) => const AccountsScreen()),
+              );
+            },
+          ),
+          actions: [
+            if (settings.isFetchingActive)
+              _buildFetchIndicator(context, feed, settings),
+            IconButton(
+              icon: const Icon(Icons.bookmark_outline),
+              tooltip: 'ブックマーク',
               onPressed: () {
                 Navigator.of(context).push(
-                  MaterialPageRoute(builder: (_) => const AccountsScreen()),
+                  MaterialPageRoute(builder: (_) => const BookmarksScreen()),
                 );
               },
             ),
-            actions: [
-              // カウントダウンインジケータ + 待機件数バッジ
-              if (settings.isFetchingActive) _buildFetchIndicator(context, feed, settings),
-              IconButton(
-                icon: const Icon(Icons.bookmark_outline),
-                tooltip: 'ブックマーク',
-                onPressed: () {
-                  Navigator.of(context).push(
-                    MaterialPageRoute(
-                        builder: (_) => const BookmarksScreen()),
-                  );
-                },
-              ),
-              IconButton(
-                icon: const Icon(Icons.receipt_long_outlined),
-                tooltip: 'ログ',
-                onPressed: () {
-                  Navigator.of(context).push(
-                    MaterialPageRoute(
-                        builder: (_) => const ActivityLogScreen()),
-                  );
-                },
-              ),
-              IconButton(
-                icon: const Icon(Icons.settings_outlined),
-                tooltip: '設定',
-                onPressed: () {
-                  Navigator.of(context).push(
-                    MaterialPageRoute(builder: (_) => const SettingsScreen()),
-                  );
-                },
-              ),
-            ],
-          ),
-        ],
-        body: _buildBody(context, feed, settings, accounts),
-      ),
+            IconButton(
+              icon: const Icon(Icons.receipt_long_outlined),
+              tooltip: 'ログ',
+              onPressed: () {
+                Navigator.of(context).push(
+                  MaterialPageRoute(builder: (_) => const ActivityLogScreen()),
+                );
+              },
+            ),
+            IconButton(
+              icon: const Icon(Icons.settings_outlined),
+              tooltip: '設定',
+              onPressed: () {
+                Navigator.of(context).push(
+                  MaterialPageRoute(builder: (_) => const SettingsScreen()),
+                );
+              },
+            ),
+          ],
+        ),
+        ..._buildSliverBody(
+            context, feed, settings, accounts, enabledAccountIds),
+      ],
+    );
+
+    if (accounts.isNotEmpty) {
+      body = RefreshIndicator(
+        onRefresh: () => ref.read(feedProvider.notifier).refresh(),
+        child: body,
+      );
+    }
+
+    return Scaffold(
+      body: body,
       floatingActionButton: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
@@ -428,7 +443,8 @@ class _OmniFeedScreenState extends ConsumerState<OmniFeedScreen> {
     );
   }
 
-  Widget _buildFetchIndicator(BuildContext context, FeedState feed, SettingsState settings) {
+  Widget _buildFetchIndicator(
+      BuildContext context, FeedState feed, SettingsState settings) {
     final total = settings.fetchIntervalSeconds;
     final remaining = feed.isFetching ? 0 : _remainingSeconds.clamp(0, total);
     final progress = total > 0 ? remaining / total : 0.0;
@@ -446,7 +462,8 @@ class _OmniFeedScreenState extends ConsumerState<OmniFeedScreen> {
                 : CircularProgressIndicator(
                     value: progress,
                     strokeWidth: 2,
-                    backgroundColor: Theme.of(context).colorScheme.surfaceContainerHighest,
+                    backgroundColor:
+                        Theme.of(context).colorScheme.surfaceContainerHighest,
                   ),
           ),
           const SizedBox(width: 4),
@@ -474,203 +491,231 @@ class _OmniFeedScreenState extends ConsumerState<OmniFeedScreen> {
     );
   }
 
-  Widget _buildBody(
+  List<Widget> _buildSliverBody(
     BuildContext context,
     FeedState feed,
     SettingsState settings,
     List<Account> accounts,
+    Set<String> enabledAccountIds,
   ) {
     if (accounts.isEmpty) {
-      return Center(
-        child: Padding(
-          padding: const EdgeInsets.all(32),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(Icons.rss_feed, size: 64, color: Colors.grey[400]),
-              const SizedBox(height: 16),
-              const Text(
-                'OmniVerse',
-                style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
+      return [
+        SliverFillRemaining(
+          hasScrollBody: false,
+          child: Center(
+            child: Padding(
+              padding: const EdgeInsets.all(32),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.rss_feed, size: 64, color: Colors.grey[400]),
+                  const SizedBox(height: 16),
+                  const Text(
+                    'OmniVerse',
+                    style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
+                  ),
+                  const SizedBox(height: 8),
+                  const Text(
+                    'アカウントを追加してタイムラインを取得しましょう',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(color: Colors.grey),
+                  ),
+                  const SizedBox(height: 24),
+                  FilledButton.icon(
+                    onPressed: () {
+                      Navigator.of(context).push(
+                        MaterialPageRoute(
+                            builder: (_) => const AccountsScreen()),
+                      );
+                    },
+                    icon: const Icon(Icons.person_add),
+                    label: const Text('アカウント追加'),
+                  ),
+                ],
               ),
-              const SizedBox(height: 8),
-              const Text(
-                'アカウントを追加してタイムラインを取得しましょう',
-                textAlign: TextAlign.center,
-                style: TextStyle(color: Colors.grey),
-              ),
-              const SizedBox(height: 24),
-              FilledButton.icon(
-                onPressed: () {
-                  Navigator.of(context).push(
-                    MaterialPageRoute(builder: (_) => const AccountsScreen()),
-                  );
-                },
-                icon: const Icon(Icons.person_add),
-                label: const Text('アカウント追加'),
-              ),
-            ],
+            ),
           ),
         ),
-      );
+      ];
     }
 
     if (!settings.isFetchingActive && feed.posts.isEmpty) {
-      return Center(
-        child: Padding(
-          padding: const EdgeInsets.all(32),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(Icons.rss_feed, size: 64, color: Colors.grey[400]),
-              const SizedBox(height: 16),
-              const Text(
-                'OmniVerse',
-                style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
+      return [
+        SliverFillRemaining(
+          hasScrollBody: false,
+          child: Center(
+            child: Padding(
+              padding: const EdgeInsets.all(32),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.rss_feed, size: 64, color: Colors.grey[400]),
+                  const SizedBox(height: 16),
+                  const Text(
+                    'OmniVerse',
+                    style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
+                  ),
+                  const SizedBox(height: 8),
+                  const Text(
+                    '設定画面でフェッチを有効にしてください',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(color: Colors.grey),
+                  ),
+                  const SizedBox(height: 24),
+                  FilledButton.icon(
+                    onPressed: () {
+                      Navigator.of(context).push(
+                        MaterialPageRoute(
+                            builder: (_) => const SettingsScreen()),
+                      );
+                    },
+                    icon: const Icon(Icons.settings),
+                    label: const Text('設定を開く'),
+                  ),
+                ],
               ),
-              const SizedBox(height: 8),
-              const Text(
-                '設定画面でフェッチを有効にしてください',
-                textAlign: TextAlign.center,
-                style: TextStyle(color: Colors.grey),
-              ),
-              const SizedBox(height: 24),
-              FilledButton.icon(
-                onPressed: () {
-                  Navigator.of(context).push(
-                    MaterialPageRoute(builder: (_) => const SettingsScreen()),
-                  );
-                },
-                icon: const Icon(Icons.settings),
-                label: const Text('設定を開く'),
-              ),
-            ],
+            ),
           ),
         ),
-      );
+      ];
     }
 
     if (feed.isLoading && feed.posts.isEmpty) {
-      return const Center(child: CircularProgressIndicator());
+      return [
+        const SliverFillRemaining(
+          hasScrollBody: false,
+          child: Center(child: CircularProgressIndicator()),
+        ),
+      ];
     }
 
-    return RefreshIndicator(
-      onRefresh: () => ref.read(feedProvider.notifier).refresh(),
-      child: Column(
-        children: [
-          // Error banner
-          if (feed.error != null)
-            MaterialBanner(
-              content: Text(
-                feed.error!,
-                style: const TextStyle(fontSize: 13),
-              ),
-              leading: const Icon(Icons.error_outline, color: Colors.red),
-              actions: [
-                TextButton(
-                  onPressed: () => ref.read(feedProvider.notifier).refresh(),
-                  child: const Text('リトライ'),
-                ),
-                TextButton(
-                  onPressed: () =>
-                      ref.read(feedProvider.notifier).clearError(),
-                  child: const Text('閉じる'),
-                ),
-              ],
-            ),
-          // Post list
-          Expanded(
-            child: feed.posts.isEmpty
-                ? ListView(
-                    padding: EdgeInsets.zero,
-                    children: const [
-                      SizedBox(height: 100),
-                      Center(
-                        child: Text(
-                          '投稿が見つかりませんでした。\nしばらくお待ちください...',
-                          textAlign: TextAlign.center,
-                          style: TextStyle(color: Colors.grey),
-                        ),
-                      ),
-                    ],
-                  )
-                : Builder(builder: (context) {
-                    // RT 非表示フィルタ適用
-                    final hideRtIds = settings.hideRetweetsAccountIds;
-                    final filteredPosts = hideRtIds.isEmpty
-                        ? feed.posts
-                        : feed.posts.where((p) =>
-                            !p.isRetweet ||
-                            p.accountId == null ||
-                            !hideRtIds.contains(p.accountId)).toList();
+    // フィルタ適用
+    final hideRtIds = settings.hideRetweetsAccountIds;
+    var filteredPosts = feed.posts.toList();
 
-                    return ListView.builder(
-                    padding: EdgeInsets.zero,
-                    cacheExtent: 500,
-                    itemCount: filteredPosts.length + (feed.isLoadingMore ? 1 : 0),
-                    itemBuilder: (context, index) {
-                      if (index >= filteredPosts.length) {
-                        return const Padding(
-                          padding: EdgeInsets.all(16),
-                          child: Center(
-                            child: CircularProgressIndicator(strokeWidth: 2),
-                          ),
-                        );
-                      }
-                      final post = filteredPosts[index];
-                      String? accountHandle;
-                      if (post.accountId != null) {
-                        final account = AccountStorageService.instance
-                            .getAccount(post.accountId!);
-                        if (account != null) accountHandle = account.handle;
-                      }
-                      final postCard = PostCard(
-                        key: ValueKey(post.id),
-                        post: post,
-                        accountHandle: accountHandle,
-                        onTap: () {
-                          Navigator.of(context).push(
-                            PageRouteBuilder(
-                              pageBuilder: (context, anim1, anim2) =>
-                                  PostDetailScreen(post: post),
-                              transitionsBuilder: (context, animation, secondaryAnimation, child) {
-                                return SlideTransition(
-                                  position: Tween(
-                                    begin: const Offset(1, 0),
-                                    end: Offset.zero,
-                                  ).animate(CurvedAnimation(
-                                    parent: animation,
-                                    curve: Curves.easeOutCubic,
-                                  )),
-                                  child: child,
-                                );
-                              },
-                            ),
-                          );
-                        },
-                        onLike: () => _handleLike(post),
-                        onRepost: () => _handleRepost(post),
-                      );
+    // 無効アカウントの投稿を除外
+    if (enabledAccountIds.length < accounts.length) {
+      filteredPosts = filteredPosts
+          .where((p) =>
+              p.accountId == null || enabledAccountIds.contains(p.accountId))
+          .toList();
+    }
 
-                      if (_animatingPostIds.contains(post.id)) {
-                        return _AnimatedPostCard(
-                          key: ValueKey('anim_${post.id}'),
-                          onAnimationComplete: () {
-                            if (mounted) {
-                              setState(() => _animatingPostIds.remove(post.id));
-                            }
-                          },
-                          child: postCard,
-                        );
-                      }
-                      return postCard;
-                    },
-                  );
-                  }),
+    // RT 非表示フィルタ
+    if (hideRtIds.isNotEmpty) {
+      filteredPosts = filteredPosts
+          .where((p) =>
+              !p.isRetweet ||
+              p.accountId == null ||
+              !hideRtIds.contains(p.accountId))
+          .toList();
+    }
+
+    final slivers = <Widget>[];
+
+    // Error banner
+    if (feed.error != null) {
+      slivers.add(SliverToBoxAdapter(
+        child: MaterialBanner(
+          content: Text(
+            feed.error!,
+            style: const TextStyle(fontSize: 13),
           ),
-        ],
-      ),
-    );
+          leading: const Icon(Icons.error_outline, color: Colors.red),
+          actions: [
+            TextButton(
+              onPressed: () => ref.read(feedProvider.notifier).refresh(),
+              child: const Text('リトライ'),
+            ),
+            TextButton(
+              onPressed: () => ref.read(feedProvider.notifier).clearError(),
+              child: const Text('閉じる'),
+            ),
+          ],
+        ),
+      ));
+    }
+
+    // Post list
+    if (filteredPosts.isEmpty) {
+      slivers.add(
+        const SliverFillRemaining(
+          hasScrollBody: false,
+          child: Center(
+            child: Text(
+              '投稿が見つかりませんでした。\nしばらくお待ちください...',
+              textAlign: TextAlign.center,
+              style: TextStyle(color: Colors.grey),
+            ),
+          ),
+        ),
+      );
+    } else {
+      slivers.add(SliverList(
+        delegate: SliverChildBuilderDelegate(
+          (context, index) {
+            if (index >= filteredPosts.length) {
+              return const Padding(
+                padding: EdgeInsets.all(16),
+                child: Center(
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                ),
+              );
+            }
+            final post = filteredPosts[index];
+            String? accountHandle;
+            if (post.accountId != null) {
+              final account =
+                  AccountStorageService.instance.getAccount(post.accountId!);
+              if (account != null) accountHandle = account.handle;
+            }
+            final postCard = PostCard(
+              key: ValueKey(post.id),
+              post: post,
+              accountHandle: accountHandle,
+              onTap: () {
+                Navigator.of(context).push(
+                  PageRouteBuilder(
+                    pageBuilder: (context, anim1, anim2) =>
+                        PostDetailScreen(post: post),
+                    transitionsBuilder:
+                        (context, animation, secondaryAnimation, child) {
+                      return SlideTransition(
+                        position: Tween(
+                          begin: const Offset(1, 0),
+                          end: Offset.zero,
+                        ).animate(CurvedAnimation(
+                          parent: animation,
+                          curve: Curves.easeOutCubic,
+                        )),
+                        child: child,
+                      );
+                    },
+                  ),
+                );
+              },
+              onLike: () => _handleLike(post),
+              onRepost: () => _handleRepost(post),
+            );
+
+            if (_animatingPostIds.contains(post.id)) {
+              return _AnimatedPostCard(
+                key: ValueKey('anim_${post.id}'),
+                onAnimationComplete: () {
+                  _animatingPostIds.remove(post.id);
+                },
+                child: postCard,
+              );
+            }
+            return postCard;
+          },
+          childCount:
+              filteredPosts.length + (feed.isLoadingMore ? 1 : 0),
+        ),
+      ));
+    }
+
+    return slivers;
   }
 }
 
@@ -704,7 +749,8 @@ class _AnimatedPostCardState extends State<_AnimatedPostCard>
     _slideAnimation = Tween<Offset>(
       begin: const Offset(0, -0.5),
       end: Offset.zero,
-    ).animate(CurvedAnimation(parent: _controller, curve: Curves.easeOutCubic));
+    ).animate(
+        CurvedAnimation(parent: _controller, curve: Curves.easeOutCubic));
     _fadeAnimation = Tween<double>(begin: 0.0, end: 1.0)
         .animate(CurvedAnimation(parent: _controller, curve: Curves.easeOut));
     _controller.forward();

@@ -170,7 +170,7 @@ class FeedNotifier extends StateNotifier<FeedState> {
     final schedulerIntervalMs =
         TimelineFetchScheduler.instance.interval.inMilliseconds;
     final intervalMs =
-        (schedulerIntervalMs / _pendingQueue.length).round().clamp(300, 2000);
+        (schedulerIntervalMs / _pendingQueue.length).round().clamp(600, 3000);
     _dripTimer = Timer.periodic(Duration(milliseconds: intervalMs), (_) {
       _dripOne();
     });
@@ -203,18 +203,29 @@ class FeedNotifier extends StateNotifier<FeedState> {
 
     final post = _pendingQueue.removeAt(0);
 
-    final existing = Map<String, Post>.fromEntries(
-      state.posts.map((p) => MapEntry(p.id, p)),
-    );
-    existing[post.id] = post;
+    // 重複チェック
+    if (state.posts.any((p) => p.id == post.id)) {
+      state = state.copyWith(pendingCount: _pendingQueue.length);
+      return;
+    }
 
-    final sorted = existing.values.toList()
-      ..sort((a, b) => b.timestamp.compareTo(a.timestamp));
+    // ソート済みリストに二分探索で挿入（降順: 新しい順）
+    final posts = List<Post>.of(state.posts);
+    int lo = 0, hi = posts.length;
+    while (lo < hi) {
+      final mid = (lo + hi) ~/ 2;
+      if (posts[mid].timestamp.compareTo(post.timestamp) > 0) {
+        lo = mid + 1;
+      } else {
+        hi = mid;
+      }
+    }
+    posts.insert(lo, post);
 
-    state = state.copyWith(posts: sorted, pendingCount: _pendingQueue.length);
+    state = state.copyWith(posts: posts, pendingCount: _pendingQueue.length);
 
     // キャッシュ更新
-    TimelineCacheService.instance.saveTimeline(sorted);
+    TimelineCacheService.instance.saveTimeline(posts);
   }
 
   List<Post> postsForService(SnsService service) {

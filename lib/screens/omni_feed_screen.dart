@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/activity_log.dart';
@@ -35,10 +37,16 @@ class _OmniFeedScreenState extends ConsumerState<OmniFeedScreen> {
   /// 前回の投稿数（スクロール補正用）
   int _prevPostCount = 0;
 
+  /// カウントダウン用
+  Timer? _countdownTimer;
+  int _remainingSeconds = 0;
+  bool _wasFetching = false;
+
   @override
   void initState() {
     super.initState();
     _scrollController.addListener(_onScroll);
+    _startCountdownTimer();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _checkForUpdate();
       // トークン期限切れ通知を設定
@@ -62,6 +70,24 @@ class _OmniFeedScreenState extends ConsumerState<OmniFeedScreen> {
     });
   }
 
+  void _startCountdownTimer() {
+    _countdownTimer = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (!mounted) return;
+      final feed = ref.read(feedProvider);
+
+      // フェッチ完了時にカウントダウンをリセット
+      if (_wasFetching && !feed.isFetching) {
+        final interval = ref.read(settingsProvider).fetchIntervalSeconds;
+        setState(() => _remainingSeconds = interval);
+      }
+      _wasFetching = feed.isFetching;
+
+      if (!feed.isFetching && _remainingSeconds > 0) {
+        setState(() => _remainingSeconds--);
+      }
+    });
+  }
+
   Future<void> _checkForUpdate() async {
     final info = await AppUpdateService.instance.checkForUpdate();
     if (info != null && mounted) {
@@ -71,6 +97,7 @@ class _OmniFeedScreenState extends ConsumerState<OmniFeedScreen> {
 
   @override
   void dispose() {
+    _countdownTimer?.cancel();
     _scrollController.removeListener(_onScroll);
     _scrollController.dispose();
     super.dispose();
@@ -322,34 +349,8 @@ class _OmniFeedScreenState extends ConsumerState<OmniFeedScreen> {
               },
             ),
             actions: [
-              // フェッチインジケータ + 待機件数バッジ
-              if (feed.isFetching || feed.pendingCount > 0)
-                Padding(
-                  padding: const EdgeInsets.only(right: 4),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      if (feed.isFetching)
-                        const SizedBox(
-                          width: 16,
-                          height: 16,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        ),
-                      if (feed.pendingCount > 0)
-                        Padding(
-                          padding: const EdgeInsets.only(left: 4),
-                          child: Text(
-                            '+${feed.pendingCount}',
-                            style: TextStyle(
-                              fontSize: 12,
-                              color: Theme.of(context).colorScheme.primary,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                        ),
-                    ],
-                  ),
-                ),
+              // カウントダウンインジケータ + 待機件数バッジ
+              if (settings.isFetchingActive) _buildFetchIndicator(context, feed, settings),
               IconButton(
                 icon: const Icon(Icons.bookmark_outline),
                 tooltip: 'ブックマーク',
@@ -394,6 +395,52 @@ class _OmniFeedScreenState extends ConsumerState<OmniFeedScreen> {
           }
         },
         child: const Icon(Icons.edit),
+      ),
+    );
+  }
+
+  Widget _buildFetchIndicator(BuildContext context, FeedState feed, SettingsState settings) {
+    final total = settings.fetchIntervalSeconds;
+    final remaining = feed.isFetching ? 0 : _remainingSeconds.clamp(0, total);
+    final progress = total > 0 ? remaining / total : 0.0;
+
+    return Padding(
+      padding: const EdgeInsets.only(right: 4),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          SizedBox(
+            width: 18,
+            height: 18,
+            child: feed.isFetching
+                ? const CircularProgressIndicator(strokeWidth: 2)
+                : CircularProgressIndicator(
+                    value: progress,
+                    strokeWidth: 2,
+                    backgroundColor: Theme.of(context).colorScheme.surfaceContainerHighest,
+                  ),
+          ),
+          const SizedBox(width: 4),
+          Text(
+            feed.isFetching ? '...' : '$remaining/$total',
+            style: TextStyle(
+              fontSize: 11,
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
+            ),
+          ),
+          if (feed.pendingCount > 0)
+            Padding(
+              padding: const EdgeInsets.only(left: 4),
+              child: Text(
+                '+${feed.pendingCount}',
+                style: TextStyle(
+                  fontSize: 11,
+                  color: Theme.of(context).colorScheme.primary,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ),
+        ],
       ),
     );
   }

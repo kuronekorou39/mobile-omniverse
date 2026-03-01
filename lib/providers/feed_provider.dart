@@ -58,6 +58,7 @@ class FeedNotifier extends StateNotifier<FeedState> {
   final List<Post> _pendingQueue = [];
   Timer? _dripTimer;
   bool _bypassDrip = false;
+  bool _firstFetch = true;
 
   /// トークン期限切れアカウントの通知用 (accountId, handle)
   void Function(String accountId, String handle)? onTokenExpired;
@@ -132,9 +133,10 @@ class FeedNotifier extends StateNotifier<FeedState> {
       }
     }
 
-    // 初回ロード・手動リフレッシュ・loadMore 時はドリップせず即時反映
-    final shouldBypassDrip = _bypassDrip || state.posts.isEmpty;
+    // 初回ロード・手動リフレッシュ・loadMore・起動後初回フェッチはドリップせず即時反映
+    final shouldBypassDrip = _bypassDrip || _firstFetch || state.posts.isEmpty;
     _bypassDrip = false;
+    _firstFetch = false;
 
     if (shouldBypassDrip && newToQueue.isNotEmpty) {
       for (final post in newToQueue) {

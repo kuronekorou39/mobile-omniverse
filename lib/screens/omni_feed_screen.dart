@@ -314,13 +314,26 @@ class _OmniFeedScreenState extends ConsumerState<OmniFeedScreen> {
   }
 
   Future<void> _launchOverlay(FeedState feed) async {
-    final isActive = await FlutterOverlayWindow.isActive();
-    if (isActive) {
-      await FlutterOverlayWindow.closeOverlay();
+    final messenger = ScaffoldMessenger.of(context);
+
+    final granted = await FlutterOverlayWindow.isPermissionGranted();
+    if (!granted) {
+      messenger.showSnackBar(
+        const SnackBar(content: Text('権限未許可 → 設定画面を開きます')),
+      );
+      await FlutterOverlayWindow.requestPermission();
       return;
     }
 
-    // 直接表示を試み、権限がなければ設定画面を開く
+    final isActive = await FlutterOverlayWindow.isActive();
+    if (isActive) {
+      await FlutterOverlayWindow.closeOverlay();
+      messenger.showSnackBar(
+        const SnackBar(content: Text('オーバーレイを閉じました')),
+      );
+      return;
+    }
+
     try {
       await FlutterOverlayWindow.showOverlay(
         height: 450,
@@ -331,11 +344,16 @@ class _OmniFeedScreenState extends ConsumerState<OmniFeedScreen> {
         positionGravity: PositionGravity.auto,
       );
 
-      // Send current posts to overlay
       final posts = feed.posts.take(20).map((p) => p.toJson()).toList();
       await FlutterOverlayWindow.shareData(jsonEncode(posts));
-    } catch (_) {
-      await FlutterOverlayWindow.requestPermission();
+
+      messenger.showSnackBar(
+        const SnackBar(content: Text('オーバーレイを表示しました')),
+      );
+    } catch (e) {
+      messenger.showSnackBar(
+        SnackBar(content: Text('エラー: $e')),
+      );
     }
   }
 

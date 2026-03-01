@@ -32,6 +32,9 @@ class OmniFeedScreen extends ConsumerStatefulWidget {
 class _OmniFeedScreenState extends ConsumerState<OmniFeedScreen> {
   final _scrollController = ScrollController();
 
+  /// 前回の投稿数（スクロール補正用）
+  int _prevPostCount = 0;
+
   @override
   void initState() {
     super.initState();
@@ -276,6 +279,27 @@ class _OmniFeedScreenState extends ConsumerState<OmniFeedScreen> {
     final settings = ref.watch(settingsProvider);
     final accounts = ref.watch(accountProvider);
 
+    // スクロール位置保持: 新しい投稿が先頭に追加された場合の補正
+    final currentPostCount = feed.posts.length;
+    if (currentPostCount > _prevPostCount && _prevPostCount > 0) {
+      final added = currentPostCount - _prevPostCount;
+      if (_scrollController.hasClients) {
+        final offset = _scrollController.offset;
+        // トップ付近(50px以内)なら自動スクロール不要（自然に新投稿が見える）
+        // それ以外はスクロール位置を補正して表示がずれないようにする
+        if (offset > 50) {
+          const estimatedPostHeight = 120.0;
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (_scrollController.hasClients) {
+              _scrollController
+                  .jumpTo(offset + estimatedPostHeight * added);
+            }
+          });
+        }
+      }
+    }
+    _prevPostCount = currentPostCount;
+
     return Scaffold(
       body: NestedScrollView(
         controller: _scrollController,
@@ -298,6 +322,34 @@ class _OmniFeedScreenState extends ConsumerState<OmniFeedScreen> {
               },
             ),
             actions: [
+              // フェッチインジケータ + 待機件数バッジ
+              if (feed.isFetching || feed.pendingCount > 0)
+                Padding(
+                  padding: const EdgeInsets.only(right: 4),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      if (feed.isFetching)
+                        const SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        ),
+                      if (feed.pendingCount > 0)
+                        Padding(
+                          padding: const EdgeInsets.only(left: 4),
+                          child: Text(
+                            '+${feed.pendingCount}',
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: Theme.of(context).colorScheme.primary,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
               IconButton(
                 icon: const Icon(Icons.bookmark_outline),
                 tooltip: 'ブックマーク',

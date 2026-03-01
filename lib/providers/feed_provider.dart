@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../models/activity_log.dart';
@@ -12,18 +14,24 @@ class FeedState {
     this.posts = const [],
     this.isLoading = false,
     this.isLoadingMore = false,
+    this.isFetching = false,
+    this.pendingCount = 0,
     this.error,
   });
 
   final List<Post> posts;
   final bool isLoading;
   final bool isLoadingMore;
+  final bool isFetching;
+  final int pendingCount;
   final String? error;
 
   FeedState copyWith({
     List<Post>? posts,
     bool? isLoading,
     bool? isLoadingMore,
+    bool? isFetching,
+    int? pendingCount,
     String? error,
     bool clearError = false,
   }) {
@@ -31,6 +39,8 @@ class FeedState {
       posts: posts ?? this.posts,
       isLoading: isLoading ?? this.isLoading,
       isLoadingMore: isLoadingMore ?? this.isLoadingMore,
+      isFetching: isFetching ?? this.isFetching,
+      pendingCount: pendingCount ?? this.pendingCount,
       error: clearError ? null : (error ?? this.error),
     );
   }
@@ -39,10 +49,15 @@ class FeedState {
 class FeedNotifier extends StateNotifier<FeedState> {
   FeedNotifier(this._logNotifier) : super(const FeedState()) {
     TimelineFetchScheduler.instance.onPostsFetched = _onPostsFetched;
+    TimelineFetchScheduler.instance.onFetchStart = _onFetchStart;
     TimelineFetchScheduler.instance.onFetchLog = _onFetchLog;
     TimelineFetchScheduler.instance.onTokenExpired = _onTokenExpired;
     _loadCachedTimeline();
   }
+
+  final List<Post> _pendingQueue = [];
+  Timer? _dripTimer;
+  bool _bypassDrip = false;
 
   /// トークン期限切れアカウントの通知用 (accountId, handle)
   void Function(String accountId, String handle)? onTokenExpired;
@@ -77,15 +92,21 @@ class FeedNotifier extends StateNotifier<FeedState> {
     return post.username.isEmpty || post.handle == '@';
   }
 
+  void _onFetchStart() {
+    state = state.copyWith(isFetching: true);
+  }
+
   void _onPostsFetched(List<Post> newPosts) {
     final existing = Map<String, Post>.fromEntries(
       state.posts.map((p) => MapEntry(p.id, p)),
     );
 
+    final newToQueue = <Post>[];
+
     for (final post in newPosts) {
       final old = existing[post.id];
       if (old != null && _isUserDataMissing(post) && !_isUserDataMissing(old)) {
-        // ユーザー情報が欠けた投稿で正常なデータを上書きしない
+        // ユーザー情報が欠けた投稿で正常なデータを上書きしない — 即時更新
         existing[post.id] = old.copyWith(
           isLiked: post.isLiked,
           isReposted: post.isReposted,
@@ -95,25 +116,87 @@ class FeedNotifier extends StateNotifier<FeedState> {
       } else if (old != null && post.isRetweet && !_isUserDataMissing(old) &&
                  old.retweetedByUsername != null && old.retweetedByUsername!.isNotEmpty &&
                  (post.retweetedByUsername == null || post.retweetedByUsername!.isEmpty)) {
-        // RT投稿: 元ツイートのユーザー情報は有効だがリツイーターの情報が欠けている場合も保護
+        // RT投稿: リツイーター情報が欠けている場合も保護 — 即時更新
         existing[post.id] = old.copyWith(
           isLiked: post.isLiked,
           isReposted: post.isReposted,
           likeCount: post.likeCount,
           repostCount: post.repostCount,
         );
+      } else if (old != null) {
+        // 既存投稿の更新（エンゲージメント等）— 即時反映
+        existing[post.id] = post;
       } else {
+        // 新規投稿 — キューに追加
+        newToQueue.add(post);
+      }
+    }
+
+    // 初回ロード・手動リフレッシュ・loadMore 時はドリップせず即時反映
+    final shouldBypassDrip = _bypassDrip || state.posts.isEmpty;
+    _bypassDrip = false;
+
+    if (shouldBypassDrip && newToQueue.isNotEmpty) {
+      for (final post in newToQueue) {
         existing[post.id] = post;
       }
     }
 
-    // 常に時系列順にソート
+    // 既存投稿の即時更新を反映
+    final sorted = existing.values.toList()
+      ..sort((a, b) => b.timestamp.compareTo(a.timestamp));
+    state = state.copyWith(posts: sorted, isLoading: false, isFetching: false, clearError: true);
+
+    // 新規投稿をキューに追加（ドリップ対象の場合のみ）
+    if (!shouldBypassDrip && newToQueue.isNotEmpty) {
+      _pendingQueue.addAll(newToQueue);
+      state = state.copyWith(pendingCount: _pendingQueue.length);
+      _startDrip();
+    }
+
+    // バックグラウンドでキャッシュ保存
+    TimelineCacheService.instance.saveTimeline(sorted);
+  }
+
+  void _startDrip() {
+    _dripTimer?.cancel();
+    if (_pendingQueue.isEmpty) return;
+
+    // フェッチ間隔 ÷ キュー件数 (300ms〜2000ms)
+    final schedulerIntervalMs =
+        TimelineFetchScheduler.instance.interval.inMilliseconds;
+    final intervalMs =
+        (schedulerIntervalMs / _pendingQueue.length).round().clamp(300, 2000);
+    _dripTimer = Timer.periodic(Duration(milliseconds: intervalMs), (_) {
+      _dripOne();
+    });
+  }
+
+  void _dripOne() {
+    if (_pendingQueue.isEmpty) {
+      _dripTimer?.cancel();
+      _dripTimer = null;
+      return;
+    }
+    if (!mounted) {
+      _dripTimer?.cancel();
+      _dripTimer = null;
+      return;
+    }
+
+    final post = _pendingQueue.removeAt(0);
+
+    final existing = Map<String, Post>.fromEntries(
+      state.posts.map((p) => MapEntry(p.id, p)),
+    );
+    existing[post.id] = post;
+
     final sorted = existing.values.toList()
       ..sort((a, b) => b.timestamp.compareTo(a.timestamp));
 
-    state = state.copyWith(posts: sorted, isLoading: false, clearError: true);
+    state = state.copyWith(posts: sorted, pendingCount: _pendingQueue.length);
 
-    // バックグラウンドでキャッシュ保存
+    // キャッシュ更新
     TimelineCacheService.instance.saveTimeline(sorted);
   }
 
@@ -122,6 +205,7 @@ class FeedNotifier extends StateNotifier<FeedState> {
   }
 
   Future<void> refresh() async {
+    _bypassDrip = true;
     state = state.copyWith(isLoading: true, clearError: true);
     TimelineFetchScheduler.instance.resetCursors();
     try {
@@ -134,6 +218,7 @@ class FeedNotifier extends StateNotifier<FeedState> {
 
   Future<void> loadMore() async {
     if (state.isLoadingMore || state.isLoading) return;
+    _bypassDrip = true;
     state = state.copyWith(isLoadingMore: true);
     try {
       await TimelineFetchScheduler.instance.fetchMore();
@@ -168,6 +253,12 @@ class FeedNotifier extends StateNotifier<FeedState> {
 
   void clear() {
     state = const FeedState();
+  }
+
+  @override
+  void dispose() {
+    _dripTimer?.cancel();
+    super.dispose();
   }
 }
 

@@ -17,12 +17,16 @@ class TimelineFetchScheduler {
   bool _isRunning = false;
 
   bool get isRunning => _isRunning;
+  Duration get interval => _interval;
 
   /// アカウント別のカーソル管理
   final Map<String, String?> _cursors = {};
 
   /// 新しい投稿が取得されたときのコールバック
   void Function(List<Post> posts)? onPostsFetched;
+
+  /// フェッチ開始時のコールバック
+  void Function()? onFetchStart;
 
   /// TL 取得完了時のログコールバック (accountHandle, platform, success, postCount)
   void Function(String accountHandle, SnsService platform, bool success,
@@ -65,6 +69,8 @@ class TimelineFetchScheduler {
 
   /// 全有効アカウントのタイムラインを並列取得 (最新)
   Future<void> fetchAll() async {
+    onFetchStart?.call();
+
     final accounts = AccountStorageService.instance.accounts
         .where((a) => a.isEnabled)
         .toList();

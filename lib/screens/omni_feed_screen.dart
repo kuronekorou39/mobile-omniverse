@@ -34,8 +34,14 @@ class OmniFeedScreen extends ConsumerStatefulWidget {
 class _OmniFeedScreenState extends ConsumerState<OmniFeedScreen> {
   final _scrollController = ScrollController();
 
-  /// 前回の投稿数（スクロール補正用）
-  int _prevPostCount = 0;
+  /// スクロールトップボタン表示
+  bool _showScrollToTop = false;
+
+  /// アニメーション対象の投稿ID
+  final Set<String> _animatingPostIds = {};
+
+  /// 前回の投稿IDリスト（新規投稿検出用）
+  Set<String> _prevPostIds = {};
 
   /// カウントダウン用
   Timer? _countdownTimer;
@@ -110,6 +116,16 @@ class _OmniFeedScreenState extends ConsumerState<OmniFeedScreen> {
       if (!feed.isLoadingMore) {
         ref.read(feedProvider.notifier).loadMore();
       }
+    }
+
+    // スクロール位置をフィードに通知
+    final atTop = _scrollController.offset <= 50;
+    ref.read(feedProvider.notifier).setScrollAtTop(atTop);
+
+    // スクロールトップボタンの表示制御
+    final shouldShow = _scrollController.offset > 300;
+    if (shouldShow != _showScrollToTop) {
+      setState(() => _showScrollToTop = shouldShow);
     }
   }
 
@@ -306,26 +322,15 @@ class _OmniFeedScreenState extends ConsumerState<OmniFeedScreen> {
     final settings = ref.watch(settingsProvider);
     final accounts = ref.watch(accountProvider);
 
-    // スクロール位置保持: 新しい投稿が先頭に追加された場合の補正
-    final currentPostCount = feed.posts.length;
-    if (currentPostCount > _prevPostCount && _prevPostCount > 0) {
-      final added = currentPostCount - _prevPostCount;
-      if (_scrollController.hasClients) {
-        final offset = _scrollController.offset;
-        // トップ付近(50px以内)なら自動スクロール不要（自然に新投稿が見える）
-        // それ以外はスクロール位置を補正して表示がずれないようにする
-        if (offset > 50) {
-          const estimatedPostHeight = 120.0;
-          WidgetsBinding.instance.addPostFrameCallback((_) {
-            if (_scrollController.hasClients) {
-              _scrollController
-                  .jumpTo(offset + estimatedPostHeight * added);
-            }
-          });
-        }
+    // 新規投稿をアニメーション対象として検出
+    final currentPostIds = feed.posts.map((p) => p.id).toSet();
+    if (_prevPostIds.isNotEmpty) {
+      final newIds = currentPostIds.difference(_prevPostIds);
+      if (newIds.isNotEmpty) {
+        _animatingPostIds.addAll(newIds);
       }
     }
-    _prevPostCount = currentPostCount;
+    _prevPostIds = currentPostIds;
 
     return Scaffold(
       body: NestedScrollView(
@@ -385,16 +390,40 @@ class _OmniFeedScreenState extends ConsumerState<OmniFeedScreen> {
         ],
         body: _buildBody(context, feed, settings, accounts),
       ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: () async {
-          final posted = await Navigator.of(context).push<bool>(
-            MaterialPageRoute(builder: (_) => const ComposeScreen()),
-          );
-          if (posted == true) {
-            ref.read(feedProvider.notifier).refresh();
-          }
-        },
-        child: const Icon(Icons.edit),
+      floatingActionButton: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          AnimatedScale(
+            scale: _showScrollToTop ? 1.0 : 0.0,
+            duration: const Duration(milliseconds: 200),
+            child: _showScrollToTop
+                ? FloatingActionButton.small(
+                    heroTag: 'scrollTop',
+                    onPressed: () {
+                      _scrollController.animateTo(
+                        0,
+                        duration: const Duration(milliseconds: 400),
+                        curve: Curves.easeOutCubic,
+                      );
+                    },
+                    child: const Icon(Icons.arrow_upward),
+                  )
+                : const SizedBox.shrink(),
+          ),
+          if (_showScrollToTop) const SizedBox(height: 8),
+          FloatingActionButton(
+            heroTag: 'compose',
+            onPressed: () async {
+              final posted = await Navigator.of(context).push<bool>(
+                MaterialPageRoute(builder: (_) => const ComposeScreen()),
+              );
+              if (posted == true) {
+                ref.read(feedProvider.notifier).refresh();
+              }
+            },
+            child: const Icon(Icons.edit),
+          ),
+        ],
       ),
     );
   }
@@ -595,7 +624,7 @@ class _OmniFeedScreenState extends ConsumerState<OmniFeedScreen> {
                             .getAccount(post.accountId!);
                         if (account != null) accountHandle = account.handle;
                       }
-                      return PostCard(
+                      final postCard = PostCard(
                         key: ValueKey(post.id),
                         post: post,
                         accountHandle: accountHandle,
@@ -622,6 +651,19 @@ class _OmniFeedScreenState extends ConsumerState<OmniFeedScreen> {
                         onLike: () => _handleLike(post),
                         onRepost: () => _handleRepost(post),
                       );
+
+                      if (_animatingPostIds.contains(post.id)) {
+                        return _AnimatedPostCard(
+                          key: ValueKey('anim_${post.id}'),
+                          onAnimationComplete: () {
+                            if (mounted) {
+                              setState(() => _animatingPostIds.remove(post.id));
+                            }
+                          },
+                          child: postCard,
+                        );
+                      }
+                      return postCard;
                     },
                   );
                   }),
@@ -632,3 +674,61 @@ class _OmniFeedScreenState extends ConsumerState<OmniFeedScreen> {
   }
 }
 
+class _AnimatedPostCard extends StatefulWidget {
+  const _AnimatedPostCard({
+    super.key,
+    required this.child,
+    required this.onAnimationComplete,
+  });
+
+  final Widget child;
+  final VoidCallback onAnimationComplete;
+
+  @override
+  State<_AnimatedPostCard> createState() => _AnimatedPostCardState();
+}
+
+class _AnimatedPostCardState extends State<_AnimatedPostCard>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
+  late final Animation<Offset> _slideAnimation;
+  late final Animation<double> _fadeAnimation;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      duration: const Duration(milliseconds: 300),
+      vsync: this,
+    );
+    _slideAnimation = Tween<Offset>(
+      begin: const Offset(0, -0.5),
+      end: Offset.zero,
+    ).animate(CurvedAnimation(parent: _controller, curve: Curves.easeOutCubic));
+    _fadeAnimation = Tween<double>(begin: 0.0, end: 1.0)
+        .animate(CurvedAnimation(parent: _controller, curve: Curves.easeOut));
+    _controller.forward();
+    _controller.addStatusListener((status) {
+      if (status == AnimationStatus.completed) {
+        widget.onAnimationComplete();
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return SlideTransition(
+      position: _slideAnimation,
+      child: FadeTransition(
+        opacity: _fadeAnimation,
+        child: widget.child,
+      ),
+    );
+  }
+}

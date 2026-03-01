@@ -57,8 +57,10 @@ class FeedNotifier extends StateNotifier<FeedState> {
 
   final List<Post> _pendingQueue = [];
   Timer? _dripTimer;
+  Timer? _dripDelayTimer;
   bool _bypassDrip = false;
   bool _firstFetch = true;
+  bool _isAtTop = true;
 
   /// トークン期限切れアカウントの通知用 (accountId, handle)
   void Function(String accountId, String handle)? onTokenExpired;
@@ -174,12 +176,25 @@ class FeedNotifier extends StateNotifier<FeedState> {
     });
   }
 
+  void setScrollAtTop(bool atTop) {
+    _dripDelayTimer?.cancel();
+    if (atTop) {
+      // 少し待ってからドリップ再開
+      _dripDelayTimer = Timer(const Duration(milliseconds: 500), () {
+        _isAtTop = true;
+      });
+    } else {
+      _isAtTop = false;
+    }
+  }
+
   void _dripOne() {
     if (_pendingQueue.isEmpty) {
       _dripTimer?.cancel();
       _dripTimer = null;
       return;
     }
+    if (!_isAtTop) return; // トップにいないならスキップ
     if (!mounted) {
       _dripTimer?.cancel();
       _dripTimer = null;
@@ -260,6 +275,7 @@ class FeedNotifier extends StateNotifier<FeedState> {
   @override
   void dispose() {
     _dripTimer?.cancel();
+    _dripDelayTimer?.cancel();
     super.dispose();
   }
 }

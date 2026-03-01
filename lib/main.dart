@@ -2,10 +2,20 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'providers/settings_provider.dart';
+import 'screens/overlay_timeline_screen.dart';
 import 'screens/splash_screen.dart';
 import 'services/account_storage_service.dart';
 import 'services/bookmark_service.dart';
 import 'services/x_query_id_service.dart';
+
+@pragma("vm:entry-point")
+void overlayMain() {
+  WidgetsFlutterBinding.ensureInitialized();
+  runApp(const MaterialApp(
+    debugShowCheckedModeBanner: false,
+    home: OverlayTimelineScreen(),
+  ));
+}
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();

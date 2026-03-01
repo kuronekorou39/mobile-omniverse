@@ -1,5 +1,7 @@
 import 'dart:async';
+import 'dart:convert';
 
+import 'package:flutter_overlay_window/flutter_overlay_window.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../models/activity_log.dart';
@@ -90,6 +92,15 @@ class FeedNotifier extends StateNotifier<FeedState> {
     );
   }
 
+  Future<void> _syncToOverlay() async {
+    try {
+      final isActive = await FlutterOverlayWindow.isActive();
+      if (!isActive) return;
+      final posts = state.posts.take(20).map((p) => p.toJson()).toList();
+      await FlutterOverlayWindow.shareData(jsonEncode(posts));
+    } catch (_) {}
+  }
+
   /// ユーザー情報が欠けているかを判定
   static bool _isUserDataMissing(Post post) {
     return post.username.isEmpty || post.handle == '@';
@@ -160,6 +171,9 @@ class FeedNotifier extends StateNotifier<FeedState> {
 
     // バックグラウンドでキャッシュ保存
     TimelineCacheService.instance.saveTimeline(sorted);
+
+    // オーバーレイへ同期
+    _syncToOverlay();
   }
 
   void _startDrip() {
@@ -226,6 +240,9 @@ class FeedNotifier extends StateNotifier<FeedState> {
 
     // キャッシュ更新
     TimelineCacheService.instance.saveTimeline(posts);
+
+    // オーバーレイへ同期
+    _syncToOverlay();
   }
 
   List<Post> postsForService(SnsService service) {

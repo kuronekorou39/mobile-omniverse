@@ -1,6 +1,8 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:flutter/material.dart';
+import 'package:flutter_overlay_window/flutter_overlay_window.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/activity_log.dart';
 import '../models/post.dart';
@@ -311,6 +313,33 @@ class _OmniFeedScreenState extends ConsumerState<OmniFeedScreen> {
     }
   }
 
+  Future<void> _launchOverlay(FeedState feed) async {
+    final granted = await FlutterOverlayWindow.isPermissionGranted();
+    if (!granted) {
+      final result = await FlutterOverlayWindow.requestPermission();
+      if (result != true) return;
+    }
+
+    final isActive = await FlutterOverlayWindow.isActive();
+    if (isActive) {
+      await FlutterOverlayWindow.closeOverlay();
+      return;
+    }
+
+    await FlutterOverlayWindow.showOverlay(
+      height: 450,
+      width: WindowSize.matchParent,
+      enableDrag: true,
+      overlayTitle: 'OmniVerse',
+      flag: OverlayFlag.defaultFlag,
+      positionGravity: PositionGravity.auto,
+    );
+
+    // Send current posts to overlay
+    final posts = feed.posts.take(20).map((p) => p.toJson()).toList();
+    await FlutterOverlayWindow.shareData(jsonEncode(posts));
+  }
+
   Account? _getAccountForPost(Post post) {
     if (post.accountId == null) return null;
     return AccountStorageService.instance.getAccount(post.accountId!);
@@ -362,6 +391,11 @@ class _OmniFeedScreenState extends ConsumerState<OmniFeedScreen> {
           actions: [
             if (settings.isFetchingActive)
               _buildFetchIndicator(context, feed, settings),
+            IconButton(
+              icon: const Icon(Icons.picture_in_picture_alt),
+              tooltip: 'オーバーレイ',
+              onPressed: () => _launchOverlay(feed),
+            ),
             IconButton(
               icon: const Icon(Icons.bookmark_outline),
               tooltip: 'ブックマーク',

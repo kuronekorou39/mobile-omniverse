@@ -19,10 +19,16 @@ class _OverlayTimelineScreenState extends State<OverlayTimelineScreen> {
   List<Post> _posts = [];
   StreamSubscription? _subscription;
 
-  // Overlay position tracking (physical pixels)
-  double _posX = 0;
-  double _posY = 0;
+  // Drag: integer base position (dp) + fractional accumulator
+  int _baseX = 0;
+  int _baseY = 0;
+  double _accumX = 0;
+  double _accumY = 0;
   bool _posReady = false;
+
+  // Overlay size in dp (must match showOverlay call)
+  static const _overlayW = 360;
+  static const _overlayH = 700;
 
   @override
   void initState() {
@@ -46,11 +52,10 @@ class _OverlayTimelineScreenState extends State<OverlayTimelineScreen> {
   Future<void> _initPosition() async {
     try {
       final pos = await FlutterOverlayWindow.getOverlayPosition();
-      _posX = pos.x;
-      _posY = pos.y;
+      _baseX = pos.x.round();
+      _baseY = pos.y.round();
       _posReady = true;
     } catch (_) {
-      // Fallback: assume top-left
       _posReady = true;
     }
   }
@@ -73,13 +78,46 @@ class _OverlayTimelineScreenState extends State<OverlayTimelineScreen> {
     } catch (_) {}
   }
 
-  void _onHeaderPanUpdate(DragUpdateDetails details) {
+  void _onDragStart(DragStartDetails details) {
+    _accumX = 0;
+    _accumY = 0;
+  }
+
+  void _onDragUpdate(DragUpdateDetails details) {
     if (!_posReady) return;
-    _posX += details.delta.dx;
-    _posY += details.delta.dy;
+
+    _accumX += details.delta.dx;
+    _accumY += details.delta.dy;
+
+    // Screen bounds (dp)
+    final view = View.of(context);
+    final screenW = view.physicalSize.width / view.devicePixelRatio;
+    final screenH = view.physicalSize.height / view.devicePixelRatio;
+
+    var newX = _baseX + _accumX.round();
+    var newY = _baseY + _accumY.round();
+
+    // Clamp to screen edges
+    newX = newX.clamp(0, (screenW - _overlayW).toInt().clamp(0, 9999));
+    newY = newY.clamp(0, (screenH - _overlayH).toInt().clamp(0, 9999));
+
     FlutterOverlayWindow.moveOverlay(
-      OverlayPosition(_posX, _posY),
+      OverlayPosition(newX.toDouble(), newY.toDouble()),
     );
+  }
+
+  void _onDragEnd(DragEndDetails details) {
+    // Commit position
+    final view = View.of(context);
+    final screenW = view.physicalSize.width / view.devicePixelRatio;
+    final screenH = view.physicalSize.height / view.devicePixelRatio;
+
+    _baseX = (_baseX + _accumX.round())
+        .clamp(0, (screenW - _overlayW).toInt().clamp(0, 9999));
+    _baseY = (_baseY + _accumY.round())
+        .clamp(0, (screenH - _overlayH).toInt().clamp(0, 9999));
+    _accumX = 0;
+    _accumY = 0;
   }
 
   @override
@@ -98,7 +136,9 @@ class _OverlayTimelineScreenState extends State<OverlayTimelineScreen> {
             children: [
               // Header bar — drag to move
               GestureDetector(
-                onPanUpdate: _onHeaderPanUpdate,
+                onPanStart: _onDragStart,
+                onPanUpdate: _onDragUpdate,
+                onPanEnd: _onDragEnd,
                 child: Container(
                   padding:
                       const EdgeInsets.symmetric(horizontal: 8, vertical: 5),

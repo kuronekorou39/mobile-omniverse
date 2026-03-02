@@ -116,39 +116,45 @@ class _OverlayTimelineScreenState extends State<OverlayTimelineScreen> {
                     const SizedBox(width: 6),
                     // Move mode toggle (icon + label both tappable)
                     GestureDetector(
+                      behavior: HitTestBehavior.opaque,
                       onTap: _toggleMoveMode,
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(
-                            _moveMode ? Icons.lock_open : Icons.drag_indicator,
-                            color:
-                                _moveMode ? Colors.blue[300] : Colors.white70,
-                            size: 16,
-                          ),
-                          const SizedBox(width: 4),
-                          Text(
-                            _moveMode ? '移動モード' : '移動',
-                            style: TextStyle(
-                              color: _moveMode
-                                  ? Colors.blue[300]
-                                  : Colors.white54,
-                              fontSize: 9,
-                              fontWeight: _moveMode
-                                  ? FontWeight.bold
-                                  : FontWeight.normal,
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 4, vertical: 4),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(
+                              _moveMode ? Icons.lock_open : Icons.open_with,
+                              color:
+                                  _moveMode ? Colors.blue[300] : Colors.white70,
+                              size: 18,
                             ),
-                          ),
-                        ],
+                            const SizedBox(width: 3),
+                            Text(
+                              _moveMode ? '確定' : '移動',
+                              style: TextStyle(
+                                color: _moveMode
+                                    ? Colors.blue[300]
+                                    : Colors.white54,
+                                fontSize: 10,
+                                fontWeight: _moveMode
+                                    ? FontWeight.bold
+                                    : FontWeight.normal,
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
                     ),
-                    const SizedBox(width: 8),
+                    const SizedBox(width: 4),
                     // Size toggle
                     GestureDetector(
+                      behavior: HitTestBehavior.opaque,
                       onTap: _cycleSize,
                       child: Container(
                         padding: const EdgeInsets.symmetric(
-                            horizontal: 4, vertical: 1),
+                            horizontal: 6, vertical: 3),
                         decoration: BoxDecoration(
                           border: Border.all(color: Colors.white38, width: 0.5),
                           borderRadius: BorderRadius.circular(4),

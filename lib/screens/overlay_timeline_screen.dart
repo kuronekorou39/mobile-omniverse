@@ -89,37 +89,39 @@ class _OverlayTimelineScreenState extends State<OverlayTimelineScreen> {
     return Row(
       children: [
         SizedBox(
-          width: 32,
+          width: 24,
           child: Text(
             label,
-            style: const TextStyle(color: Colors.white60, fontSize: 11),
+            style: const TextStyle(color: Colors.white60, fontSize: 10),
           ),
         ),
         for (int i = 0; i < _labels.length; i++) ...[
-          if (i > 0) const SizedBox(width: 4),
-          GestureDetector(
-            behavior: HitTestBehavior.opaque,
-            onTap: () => onSelect(i),
-            child: Container(
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-              decoration: BoxDecoration(
-                color: i == current
-                    ? Colors.blue.withAlpha(60)
-                    : Colors.white.withAlpha(15),
-                border: Border.all(
-                  color: i == current ? Colors.blue : Colors.white24,
-                  width: i == current ? 1 : 0.5,
+          if (i > 0) const SizedBox(width: 3),
+          Expanded(
+            child: GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: () => onSelect(i),
+              child: Container(
+                padding: const EdgeInsets.symmetric(vertical: 4),
+                decoration: BoxDecoration(
+                  color: i == current
+                      ? Colors.blue.withAlpha(60)
+                      : Colors.white.withAlpha(15),
+                  border: Border.all(
+                    color: i == current ? Colors.blue : Colors.white24,
+                    width: i == current ? 1 : 0.5,
+                  ),
+                  borderRadius: BorderRadius.circular(6),
                 ),
-                borderRadius: BorderRadius.circular(6),
-              ),
-              child: Text(
-                _labels[i],
-                style: TextStyle(
-                  color: i == current ? Colors.blue[300] : Colors.white54,
-                  fontSize: 11,
-                  fontWeight:
-                      i == current ? FontWeight.bold : FontWeight.normal,
+                child: Text(
+                  _labels[i],
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    color: i == current ? Colors.blue[300] : Colors.white54,
+                    fontSize: 10,
+                    fontWeight:
+                        i == current ? FontWeight.bold : FontWeight.normal,
+                  ),
                 ),
               ),
             ),
@@ -133,40 +135,42 @@ class _OverlayTimelineScreenState extends State<OverlayTimelineScreen> {
     return Row(
       children: [
         const SizedBox(
-          width: 32,
+          width: 24,
           child: Text(
             '透過',
-            style: TextStyle(color: Colors.white60, fontSize: 11),
+            style: TextStyle(color: Colors.white60, fontSize: 10),
           ),
         ),
         for (int i = 0; i < _opacityLabels.length; i++) ...[
           if (i > 0) const SizedBox(width: 3),
-          GestureDetector(
-            behavior: HitTestBehavior.opaque,
-            onTap: () => setState(() => _opacityIndex = i),
-            child: Container(
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 6, vertical: 5),
-              decoration: BoxDecoration(
-                color: i == _opacityIndex
-                    ? Colors.blue.withAlpha(60)
-                    : Colors.white.withAlpha(15),
-                border: Border.all(
-                  color: i == _opacityIndex ? Colors.blue : Colors.white24,
-                  width: i == _opacityIndex ? 1 : 0.5,
-                ),
-                borderRadius: BorderRadius.circular(6),
-              ),
-              child: Text(
-                _opacityLabels[i],
-                style: TextStyle(
+          Expanded(
+            child: GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: () => setState(() => _opacityIndex = i),
+              child: Container(
+                padding: const EdgeInsets.symmetric(vertical: 4),
+                decoration: BoxDecoration(
                   color: i == _opacityIndex
-                      ? Colors.blue[300]
-                      : Colors.white54,
-                  fontSize: 10,
-                  fontWeight: i == _opacityIndex
-                      ? FontWeight.bold
-                      : FontWeight.normal,
+                      ? Colors.blue.withAlpha(60)
+                      : Colors.white.withAlpha(15),
+                  border: Border.all(
+                    color: i == _opacityIndex ? Colors.blue : Colors.white24,
+                    width: i == _opacityIndex ? 1 : 0.5,
+                  ),
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                child: Text(
+                  _opacityLabels[i],
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    color: i == _opacityIndex
+                        ? Colors.blue[300]
+                        : Colors.white54,
+                    fontSize: 9,
+                    fontWeight: i == _opacityIndex
+                        ? FontWeight.bold
+                        : FontWeight.normal,
+                  ),
                 ),
               ),
             ),
@@ -241,46 +245,45 @@ class _OverlayTimelineScreenState extends State<OverlayTimelineScreen> {
   }
 
   Widget _buildSettingsPanel() {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          // Drag hint
-          const Row(
-            mainAxisAlignment: MainAxisAlignment.center,
+    return Column(
+      children: [
+        Expanded(
+          child: ListView(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
             children: [
-              Icon(Icons.open_with, color: Colors.white24, size: 16),
-              SizedBox(width: 4),
-              Text(
-                'ドラッグで移動可能',
-                style: TextStyle(color: Colors.white30, fontSize: 10),
+              // Drag hint
+              const Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(Icons.open_with, color: Colors.white24, size: 14),
+                  SizedBox(width: 4),
+                  Text('ドラッグで移動可能',
+                      style: TextStyle(color: Colors.white30, fontSize: 9)),
+                ],
               ),
+              const SizedBox(height: 8),
+              _buildSizeSelector('横', _wIndex, _setWidth),
+              const SizedBox(height: 6),
+              _buildSizeSelector('縦', _hIndex, _setHeight),
+              const SizedBox(height: 6),
+              _buildOpacitySelector(),
+              const SizedBox(height: 8),
+              const Text('プレビュー',
+                  style: TextStyle(color: Colors.white38, fontSize: 9)),
+              const SizedBox(height: 4),
+              _buildPreview(),
             ],
           ),
-          const SizedBox(height: 10),
-          _buildSizeSelector('横幅', _wIndex, _setWidth),
-          const SizedBox(height: 8),
-          _buildSizeSelector('縦幅', _hIndex, _setHeight),
-          const SizedBox(height: 8),
-          _buildOpacitySelector(),
-          const SizedBox(height: 10),
-          // Preview
-          const Align(
-            alignment: Alignment.centerLeft,
-            child: Text('プレビュー',
-                style: TextStyle(color: Colors.white38, fontSize: 9)),
-          ),
-          const SizedBox(height: 4),
-          _buildPreview(),
-          const Spacer(),
-          // Done button
-          GestureDetector(
+        ),
+        // Done button pinned at bottom
+        Padding(
+          padding: const EdgeInsets.fromLTRB(10, 4, 10, 6),
+          child: GestureDetector(
             behavior: HitTestBehavior.opaque,
             onTap: _toggleSettings,
             child: Container(
               width: double.infinity,
-              padding: const EdgeInsets.symmetric(vertical: 8),
+              padding: const EdgeInsets.symmetric(vertical: 6),
               decoration: BoxDecoration(
                 color: Colors.blue.withAlpha(40),
                 border: Border.all(color: Colors.blue, width: 0.5),
@@ -291,14 +294,14 @@ class _OverlayTimelineScreenState extends State<OverlayTimelineScreen> {
                 textAlign: TextAlign.center,
                 style: TextStyle(
                   color: Colors.blue,
-                  fontSize: 12,
+                  fontSize: 11,
                   fontWeight: FontWeight.bold,
                 ),
               ),
             ),
           ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 

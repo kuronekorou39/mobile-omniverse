@@ -328,9 +328,6 @@ class _OmniFeedScreenState extends ConsumerState<OmniFeedScreen> {
     final isActive = await FlutterOverlayWindow.isActive();
     if (isActive) {
       await FlutterOverlayWindow.closeOverlay();
-      messenger.showSnackBar(
-        const SnackBar(content: Text('オーバーレイを閉じました')),
-      );
       return;
     }
 
@@ -347,12 +344,9 @@ class _OmniFeedScreenState extends ConsumerState<OmniFeedScreen> {
       final posts = feed.posts.take(20).map((p) => p.toJson()).toList();
       await FlutterOverlayWindow.shareData(jsonEncode(posts));
 
-      messenger.showSnackBar(
-        const SnackBar(content: Text('オーバーレイを表示しました')),
-      );
     } catch (e) {
       messenger.showSnackBar(
-        SnackBar(content: Text('エラー: $e')),
+        SnackBar(content: Text('オーバーレイエラー: $e')),
       );
     }
   }

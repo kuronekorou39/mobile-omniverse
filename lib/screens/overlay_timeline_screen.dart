@@ -19,13 +19,12 @@ class _OverlayTimelineScreenState extends State<OverlayTimelineScreen> {
   List<Post> _posts = [];
   StreamSubscription? _subscription;
   bool _moveMode = false;
-  int _sizeIndex = 0; // 0=S, 1=M, 2=L
+  int _wIndex = 0; // 0=S, 1=M, 2=L
+  int _hIndex = 0;
 
-  static const _sizes = [
-    (w: 180, h: 250, label: 'S'),
-    (w: 250, h: 400, label: 'M'),
-    (w: 360, h: 700, label: 'L'),
-  ];
+  static const _widths = [180, 250, 360];
+  static const _heights = [250, 400, 700];
+  static const _labels = ['S', 'M', 'L'];
 
   @override
   void initState() {
@@ -65,16 +64,23 @@ class _OverlayTimelineScreenState extends State<OverlayTimelineScreen> {
 
   Future<void> _toggleMoveMode() async {
     final newMode = !_moveMode;
-    final s = _sizes[_sizeIndex];
-    await FlutterOverlayWindow.resizeOverlay(s.w, s.h, newMode);
+    await FlutterOverlayWindow.resizeOverlay(
+        _widths[_wIndex], _heights[_hIndex], newMode);
     setState(() => _moveMode = newMode);
   }
 
-  Future<void> _cycleSize() async {
-    final next = (_sizeIndex + 1) % _sizes.length;
-    final s = _sizes[next];
-    await FlutterOverlayWindow.resizeOverlay(s.w, s.h, _moveMode);
-    setState(() => _sizeIndex = next);
+  Future<void> _cycleWidth() async {
+    final next = (_wIndex + 1) % _widths.length;
+    await FlutterOverlayWindow.resizeOverlay(
+        _widths[next], _heights[_hIndex], _moveMode);
+    setState(() => _wIndex = next);
+  }
+
+  Future<void> _cycleHeight() async {
+    final next = (_hIndex + 1) % _heights.length;
+    await FlutterOverlayWindow.resizeOverlay(
+        _widths[_wIndex], _heights[next], _moveMode);
+    setState(() => _hIndex = next);
   }
 
   @override
@@ -148,19 +154,41 @@ class _OverlayTimelineScreenState extends State<OverlayTimelineScreen> {
                       ),
                     ),
                     const SizedBox(width: 4),
-                    // Size toggle
+                    // Width toggle
                     GestureDetector(
                       behavior: HitTestBehavior.opaque,
-                      onTap: _cycleSize,
+                      onTap: _cycleWidth,
                       child: Container(
                         padding: const EdgeInsets.symmetric(
-                            horizontal: 6, vertical: 3),
+                            horizontal: 5, vertical: 3),
                         decoration: BoxDecoration(
                           border: Border.all(color: Colors.white38, width: 0.5),
                           borderRadius: BorderRadius.circular(4),
                         ),
                         child: Text(
-                          _sizes[_sizeIndex].label,
+                          '横${_labels[_wIndex]}',
+                          style: const TextStyle(
+                            color: Colors.white54,
+                            fontSize: 9,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 3),
+                    // Height toggle
+                    GestureDetector(
+                      behavior: HitTestBehavior.opaque,
+                      onTap: _cycleHeight,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 5, vertical: 3),
+                        decoration: BoxDecoration(
+                          border: Border.all(color: Colors.white38, width: 0.5),
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                        child: Text(
+                          '縦${_labels[_hIndex]}',
                           style: const TextStyle(
                             color: Colors.white54,
                             fontSize: 9,

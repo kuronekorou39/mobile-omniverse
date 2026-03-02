@@ -243,16 +243,34 @@ public class OverlayService extends Service implements View.OnTouchListener {
     private void resizeOverlay(int width, int height, boolean enableDrag, MethodChannel.Result result) {
         if (windowManager != null) {
             int margin = (int) (8 * mResources.getDisplayMetrics().density);
-            int maxW = szWindow.x - margin * 2;
-            int maxH = szWindow.y - margin * 2;
+            int screenW = szWindow.x;
+            int screenH = szWindow.y;
+            int maxW = screenW - margin * 2;
+            int maxH = screenH - margin * 2;
             WindowManager.LayoutParams params = (WindowManager.LayoutParams) flutterView.getLayoutParams();
             int newW = (width == -1999 || width == -1) ? -1 : dpToPx(width);
             int newH = (height != 1999 || height != -1) ? dpToPx(height) : height;
-            // Clamp to screen bounds with margin
+            // Clamp size to screen bounds with margin
             if (newW > 0) newW = Math.min(newW, maxW);
             if (newH > 0) newH = Math.min(newH, maxH);
             params.width = newW;
             params.height = newH;
+            // Clamp position so overlay stays on screen after resize
+            int overlayW = newW > 0 ? newW : screenW;
+            int overlayH = newH > 0 ? newH : screenH;
+            if (WindowSetup.gravity == Gravity.CENTER) {
+                int maxX = (screenW - overlayW) / 2 - margin;
+                int maxY = (screenH - overlayH) / 2 - margin;
+                if (maxX < 0) maxX = 0;
+                if (maxY < 0) maxY = 0;
+                params.x = Math.max(-maxX, Math.min(params.x, maxX));
+                params.y = Math.max(-maxY, Math.min(params.y, maxY));
+            } else {
+                int maxX = screenW - overlayW - margin;
+                int maxY = screenH - overlayH - margin;
+                params.x = Math.max(margin, Math.min(params.x, maxX));
+                params.y = Math.max(margin, Math.min(params.y, maxY));
+            }
             WindowSetup.enableDrag = enableDrag;
             windowManager.updateViewLayout(flutterView, params);
             result.success(true);

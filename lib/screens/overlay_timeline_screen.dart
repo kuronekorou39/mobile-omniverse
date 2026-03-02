@@ -18,9 +18,7 @@ class OverlayTimelineScreen extends StatefulWidget {
 class _OverlayTimelineScreenState extends State<OverlayTimelineScreen> {
   List<Post> _posts = [];
   StreamSubscription? _subscription;
-  double _dragStartX = 0;
-  double _dragStartY = 0;
-  bool _dragReady = false;
+  int _positionIndex = 0; // 0=top, 1=center, 2=bottom
 
   @override
   void initState() {
@@ -44,6 +42,26 @@ class _OverlayTimelineScreenState extends State<OverlayTimelineScreen> {
   void dispose() {
     _subscription?.cancel();
     super.dispose();
+  }
+
+  void _cyclePosition() {
+    setState(() {
+      _positionIndex = (_positionIndex + 1) % 3;
+    });
+    // Screen height approximation: move to top/center/bottom
+    final ratio = View.of(context).devicePixelRatio;
+    final screenH = View.of(context).physicalSize.height;
+    final overlayH = 700 * ratio;
+    final double y;
+    switch (_positionIndex) {
+      case 0:
+        y = 0; // top
+      case 1:
+        y = (screenH - overlayH) / 2; // center
+      default:
+        y = screenH - overlayH; // bottom
+    }
+    FlutterOverlayWindow.moveOverlay(OverlayPosition(0, y / ratio));
   }
 
   Future<void> _openMainApp() async {
@@ -72,78 +90,54 @@ class _OverlayTimelineScreenState extends State<OverlayTimelineScreen> {
           ),
           child: Column(
             children: [
-              // Header bar — drag to move overlay
-              GestureDetector(
-                onPanStart: (details) async {
-                  _dragReady = false;
-                  try {
-                    final pos =
-                        await FlutterOverlayWindow.getOverlayPosition();
-                    _dragStartX = pos.x;
-                    _dragStartY = pos.y;
-                    _dragReady = true;
-                  } catch (_) {}
-                },
-                onPanUpdate: (details) {
-                  if (!_dragReady) return;
-                  final ratio = View.of(context).devicePixelRatio;
-                  _dragStartX += details.delta.dx * ratio;
-                  _dragStartY += details.delta.dy * ratio;
-                  FlutterOverlayWindow.moveOverlay(OverlayPosition(
-                    _dragStartX,
-                    _dragStartY,
-                  ));
-                },
-                child: Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
-                  decoration: const BoxDecoration(
-                    color: Color(0xFF2C2C2E),
-                    borderRadius: BorderRadius.vertical(
-                      top: Radius.circular(12),
+              // Header bar
+              Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+                decoration: const BoxDecoration(
+                  color: Color(0xFF2C2C2E),
+                  borderRadius: BorderRadius.vertical(
+                    top: Radius.circular(12),
+                  ),
+                ),
+                child: Row(
+                  children: [
+                    GestureDetector(
+                      onTap: _openMainApp,
+                      child: const Icon(Icons.open_in_new,
+                          color: Colors.white70, size: 16),
                     ),
-                  ),
-                  child: Row(
-                    children: [
-                      GestureDetector(
-                        onTap: _openMainApp,
-                        child: const Icon(Icons.open_in_new,
-                            color: Colors.white70, size: 16),
+                    const SizedBox(width: 6),
+                    // Position toggle (top / center / bottom)
+                    GestureDetector(
+                      onTap: _cyclePosition,
+                      child: Icon(
+                        _positionIndex == 0
+                            ? Icons.vertical_align_top
+                            : _positionIndex == 1
+                                ? Icons.vertical_align_center
+                                : Icons.vertical_align_bottom,
+                        color: Colors.white70,
+                        size: 16,
                       ),
-                      const SizedBox(width: 4),
-                      // Drag handle indicator
-                      Expanded(
-                        child: Row(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Container(
-                              width: 32,
-                              height: 3,
-                              decoration: BoxDecoration(
-                                color: Colors.white30,
-                                borderRadius: BorderRadius.circular(2),
-                              ),
-                            ),
-                          ],
-                        ),
+                    ),
+                    const Spacer(),
+                    Text(
+                      '${_posts.length}件',
+                      style: const TextStyle(
+                        color: Colors.white54,
+                        fontSize: 9,
                       ),
-                      Text(
-                        '${_posts.length}件',
-                        style: const TextStyle(
-                          color: Colors.white54,
-                          fontSize: 9,
-                        ),
-                      ),
-                      const SizedBox(width: 6),
-                      GestureDetector(
-                        onTap: () async {
-                          await FlutterOverlayWindow.closeOverlay();
-                        },
-                        child: const Icon(Icons.close,
-                            color: Colors.white70, size: 16),
-                      ),
-                    ],
-                  ),
+                    ),
+                    const SizedBox(width: 6),
+                    GestureDetector(
+                      onTap: () async {
+                        await FlutterOverlayWindow.closeOverlay();
+                      },
+                      child: const Icon(Icons.close,
+                          color: Colors.white70, size: 16),
+                    ),
+                  ],
                 ),
               ),
               // Post list

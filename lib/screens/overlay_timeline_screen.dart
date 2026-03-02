@@ -75,9 +75,8 @@ class _OverlayTimelineScreenState extends State<OverlayTimelineScreen> {
 
   void _onHeaderPanUpdate(DragUpdateDetails details) {
     if (!_posReady) return;
-    final ratio = View.of(context).devicePixelRatio;
-    _posX += details.delta.dx * ratio;
-    _posY += details.delta.dy * ratio;
+    _posX += details.delta.dx;
+    _posY += details.delta.dy;
     FlutterOverlayWindow.moveOverlay(
       OverlayPosition(_posX, _posY),
     );

@@ -20,6 +20,7 @@ class _OverlayTimelineScreenState extends State<OverlayTimelineScreen> {
   StreamSubscription? _subscription;
   double _dragStartX = 0;
   double _dragStartY = 0;
+  bool _dragReady = false;
 
   @override
   void initState() {
@@ -74,16 +75,20 @@ class _OverlayTimelineScreenState extends State<OverlayTimelineScreen> {
               // Header bar — drag to move overlay
               GestureDetector(
                 onPanStart: (details) async {
+                  _dragReady = false;
                   try {
                     final pos =
                         await FlutterOverlayWindow.getOverlayPosition();
                     _dragStartX = pos.x;
                     _dragStartY = pos.y;
+                    _dragReady = true;
                   } catch (_) {}
                 },
                 onPanUpdate: (details) {
-                  _dragStartX += details.delta.dx;
-                  _dragStartY += details.delta.dy;
+                  if (!_dragReady) return;
+                  final ratio = View.of(context).devicePixelRatio;
+                  _dragStartX += details.delta.dx * ratio;
+                  _dragStartY += details.delta.dy * ratio;
                   FlutterOverlayWindow.moveOverlay(OverlayPosition(
                     _dragStartX,
                     _dragStartY,

@@ -333,8 +333,8 @@ class _OmniFeedScreenState extends ConsumerState<OmniFeedScreen> {
 
     try {
       await FlutterOverlayWindow.showOverlay(
-        height: 700,
-        width: 360,
+        height: 250,
+        width: 180,
         enableDrag: false,
         overlayTitle: 'OmniVerse',
         flag: OverlayFlag.focusPointer,

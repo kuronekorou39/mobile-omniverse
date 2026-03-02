@@ -19,12 +19,12 @@ class _OverlayTimelineScreenState extends State<OverlayTimelineScreen> {
   List<Post> _posts = [];
   StreamSubscription? _subscription;
   bool _moveMode = false;
-  int _sizeIndex = 1; // 0=S, 1=M, 2=L
+  int _sizeIndex = 0; // 0=S, 1=M, 2=L
 
   static const _sizes = [
-    (w: 280, h: 450, label: 'S'),
-    (w: 360, h: 700, label: 'M'),
-    (w: 420, h: 900, label: 'L'),
+    (w: 180, h: 250, label: 'S'),
+    (w: 250, h: 400, label: 'M'),
+    (w: 360, h: 700, label: 'L'),
   ];
 
   @override

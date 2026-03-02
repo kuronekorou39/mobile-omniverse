@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 
 import '../models/post.dart';
 import '../models/sns_service.dart';
-import 'sns_badge.dart';
 
 class OverlayPostCard extends StatelessWidget {
   const OverlayPostCard({super.key, required this.post});
@@ -20,26 +19,26 @@ class OverlayPostCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final sourceColor = post.source == SnsService.x
+        ? Colors.grey[600]!
+        : const Color(0xFF0085FF);
+
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Header row
+          // Header: avatar + name + timestamp
           Row(
             children: [
-              // Avatar (network image with initial fallback)
               CircleAvatar(
-                radius: 14,
-                backgroundColor: post.source == SnsService.x
-                    ? Colors.grey[700]
-                    : const Color(0xFF0085FF),
+                radius: 10,
+                backgroundColor: sourceColor,
                 backgroundImage: post.avatarUrl != null
                     ? NetworkImage(post.avatarUrl!)
                     : null,
-                onBackgroundImageError: post.avatarUrl != null
-                    ? (_, __) {}
-                    : null,
+                onBackgroundImageError:
+                    post.avatarUrl != null ? (_, __) {} : null,
                 child: post.avatarUrl == null
                     ? Text(
                         post.username.isNotEmpty
@@ -47,87 +46,78 @@ class OverlayPostCard extends StatelessWidget {
                             : '?',
                         style: const TextStyle(
                           color: Colors.white,
-                          fontSize: 12,
+                          fontSize: 8,
                           fontWeight: FontWeight.bold,
                         ),
                       )
                     : null,
               ),
-              const SizedBox(width: 6),
-              // Name + handle
+              const SizedBox(width: 4),
               Expanded(
-                child: Row(
-                  children: [
-                    Flexible(
-                      child: Text(
-                        post.username,
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontWeight: FontWeight.bold,
-                          fontSize: 12,
-                        ),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ),
-                    const SizedBox(width: 4),
-                    Text(
-                      post.handle,
-                      style: const TextStyle(
-                        color: Colors.white60,
-                        fontSize: 11,
-                      ),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ],
+                child: Text(
+                  post.username,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.bold,
+                    fontSize: 10,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              // SNS indicator (dot instead of badge to save space)
+              Container(
+                width: 6,
+                height: 6,
+                decoration: BoxDecoration(
+                  color: sourceColor,
+                  shape: BoxShape.circle,
                 ),
               ),
               const SizedBox(width: 4),
-              SnsBadge(service: post.source),
-              const SizedBox(width: 4),
               Text(
                 _formatTimestamp(post.timestamp),
-                style: const TextStyle(color: Colors.white38, fontSize: 11),
+                style: const TextStyle(color: Colors.white30, fontSize: 9),
               ),
             ],
           ),
           // Body
           Padding(
-            padding: const EdgeInsets.only(left: 34, top: 2, bottom: 2),
+            padding: const EdgeInsets.only(left: 24, top: 1, bottom: 1),
             child: Text(
               post.body,
-              maxLines: 3,
+              maxLines: 2,
               overflow: TextOverflow.ellipsis,
               style: const TextStyle(
-                color: Colors.white,
-                fontSize: 12,
+                color: Colors.white70,
+                fontSize: 10,
+                height: 1.3,
               ),
             ),
           ),
-          // Engagement counts
+          // Engagement (compact)
           Padding(
-            padding: const EdgeInsets.only(left: 34),
+            padding: const EdgeInsets.only(left: 24),
             child: Row(
               children: [
                 const Icon(Icons.favorite_border,
-                    size: 12, color: Colors.white38),
+                    size: 9, color: Colors.white24),
                 const SizedBox(width: 2),
                 Text(
                   '${post.likeCount}',
-                  style: const TextStyle(fontSize: 10, color: Colors.white38),
+                  style: const TextStyle(fontSize: 8, color: Colors.white24),
                 ),
-                const SizedBox(width: 12),
-                const Icon(Icons.repeat, size: 12, color: Colors.white38),
+                const SizedBox(width: 8),
+                const Icon(Icons.repeat, size: 9, color: Colors.white24),
                 const SizedBox(width: 2),
                 Text(
                   '${post.repostCount}',
-                  style: const TextStyle(fontSize: 10, color: Colors.white38),
+                  style: const TextStyle(fontSize: 8, color: Colors.white24),
                 ),
               ],
             ),
           ),
-          Divider(height: 8, thickness: 0.5, color: Colors.grey[700]),
+          Divider(height: 6, thickness: 0.3, color: Colors.grey[800]),
         ],
       ),
     );

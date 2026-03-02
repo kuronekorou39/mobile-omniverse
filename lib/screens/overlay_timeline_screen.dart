@@ -19,9 +19,13 @@ class _OverlayTimelineScreenState extends State<OverlayTimelineScreen> {
   List<Post> _posts = [];
   StreamSubscription? _subscription;
   bool _moveMode = false;
+  int _sizeIndex = 1; // 0=S, 1=M, 2=L
 
-  static const _overlayW = 360;
-  static const _overlayH = 700;
+  static const _sizes = [
+    (w: 280, h: 450, label: 'S'),
+    (w: 360, h: 700, label: 'M'),
+    (w: 420, h: 900, label: 'L'),
+  ];
 
   @override
   void initState() {
@@ -61,12 +65,16 @@ class _OverlayTimelineScreenState extends State<OverlayTimelineScreen> {
 
   Future<void> _toggleMoveMode() async {
     final newMode = !_moveMode;
-    await FlutterOverlayWindow.resizeOverlay(
-      _overlayW,
-      _overlayH,
-      newMode,
-    );
+    final s = _sizes[_sizeIndex];
+    await FlutterOverlayWindow.resizeOverlay(s.w, s.h, newMode);
     setState(() => _moveMode = newMode);
+  }
+
+  Future<void> _cycleSize() async {
+    final next = (_sizeIndex + 1) % _sizes.length;
+    final s = _sizes[next];
+    await FlutterOverlayWindow.resizeOverlay(s.w, s.h, _moveMode);
+    setState(() => _sizeIndex = next);
   }
 
   @override
@@ -106,25 +114,55 @@ class _OverlayTimelineScreenState extends State<OverlayTimelineScreen> {
                           color: Colors.white70, size: 16),
                     ),
                     const SizedBox(width: 6),
-                    // Move mode toggle
+                    // Move mode toggle (icon + label both tappable)
                     GestureDetector(
                       onTap: _toggleMoveMode,
-                      child: Icon(
-                        _moveMode ? Icons.lock_open : Icons.drag_indicator,
-                        color: _moveMode ? Colors.blue[300] : Colors.white70,
-                        size: 16,
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            _moveMode ? Icons.lock_open : Icons.drag_indicator,
+                            color:
+                                _moveMode ? Colors.blue[300] : Colors.white70,
+                            size: 16,
+                          ),
+                          const SizedBox(width: 4),
+                          Text(
+                            _moveMode ? '移動モード' : '移動',
+                            style: TextStyle(
+                              color: _moveMode
+                                  ? Colors.blue[300]
+                                  : Colors.white54,
+                              fontSize: 9,
+                              fontWeight: _moveMode
+                                  ? FontWeight.bold
+                                  : FontWeight.normal,
+                            ),
+                          ),
+                        ],
                       ),
                     ),
-                    const SizedBox(width: 4),
-                    if (_moveMode)
-                      Text(
-                        '移動モード',
-                        style: TextStyle(
-                          color: Colors.blue[300],
-                          fontSize: 9,
-                          fontWeight: FontWeight.bold,
+                    const SizedBox(width: 8),
+                    // Size toggle
+                    GestureDetector(
+                      onTap: _cycleSize,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 4, vertical: 1),
+                        decoration: BoxDecoration(
+                          border: Border.all(color: Colors.white38, width: 0.5),
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                        child: Text(
+                          _sizes[_sizeIndex].label,
+                          style: const TextStyle(
+                            color: Colors.white54,
+                            fontSize: 9,
+                            fontWeight: FontWeight.bold,
+                          ),
                         ),
                       ),
+                    ),
                     const Spacer(),
                     Text(
                       '${_posts.length}件',

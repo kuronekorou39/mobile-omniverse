@@ -18,9 +18,10 @@ class OverlayTimelineScreen extends StatefulWidget {
 class _OverlayTimelineScreenState extends State<OverlayTimelineScreen> {
   List<Post> _posts = [];
   StreamSubscription? _subscription;
-  bool _moveMode = false;
-  int _wIndex = 0; // 0=S, 1=M, 2=L
+  bool _settingsOpen = false;
+  int _wIndex = 0;
   int _hIndex = 0;
+  double _opacity = 0.94;
 
   static const _widths = [180, 250, 360];
   static const _heights = [250, 400, 700];
@@ -62,25 +63,161 @@ class _OverlayTimelineScreenState extends State<OverlayTimelineScreen> {
     } catch (_) {}
   }
 
-  Future<void> _toggleMoveMode() async {
-    final newMode = !_moveMode;
+  Future<void> _toggleSettings() async {
+    final opening = !_settingsOpen;
     await FlutterOverlayWindow.resizeOverlay(
-        _widths[_wIndex], _heights[_hIndex], newMode);
-    setState(() => _moveMode = newMode);
+        _widths[_wIndex], _heights[_hIndex], opening);
+    setState(() => _settingsOpen = opening);
   }
 
-  Future<void> _cycleWidth() async {
-    final next = (_wIndex + 1) % _widths.length;
+  Future<void> _setWidth(int index) async {
     await FlutterOverlayWindow.resizeOverlay(
-        _widths[next], _heights[_hIndex], _moveMode);
-    setState(() => _wIndex = next);
+        _widths[index], _heights[_hIndex], _settingsOpen);
+    setState(() => _wIndex = index);
   }
 
-  Future<void> _cycleHeight() async {
-    final next = (_hIndex + 1) % _heights.length;
+  Future<void> _setHeight(int index) async {
     await FlutterOverlayWindow.resizeOverlay(
-        _widths[_wIndex], _heights[next], _moveMode);
-    setState(() => _hIndex = next);
+        _widths[_wIndex], _heights[index], _settingsOpen);
+    setState(() => _hIndex = index);
+  }
+
+  Widget _buildSizeSelector(
+      String label, int current, ValueChanged<int> onSelect) {
+    return Row(
+      children: [
+        SizedBox(
+          width: 32,
+          child: Text(
+            label,
+            style: const TextStyle(color: Colors.white60, fontSize: 11),
+          ),
+        ),
+        for (int i = 0; i < _labels.length; i++) ...[
+          if (i > 0) const SizedBox(width: 4),
+          GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTap: () => onSelect(i),
+            child: Container(
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+              decoration: BoxDecoration(
+                color: i == current
+                    ? Colors.blue.withAlpha(60)
+                    : Colors.white.withAlpha(15),
+                border: Border.all(
+                  color: i == current ? Colors.blue : Colors.white24,
+                  width: i == current ? 1 : 0.5,
+                ),
+                borderRadius: BorderRadius.circular(6),
+              ),
+              child: Text(
+                _labels[i],
+                style: TextStyle(
+                  color: i == current ? Colors.blue[300] : Colors.white54,
+                  fontSize: 11,
+                  fontWeight:
+                      i == current ? FontWeight.bold : FontWeight.normal,
+                ),
+              ),
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+
+  Widget _buildSettingsPanel() {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          // Drag hint
+          const Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(Icons.open_with, color: Colors.white24, size: 16),
+              SizedBox(width: 4),
+              Text(
+                'ドラッグで移動可能',
+                style: TextStyle(color: Colors.white30, fontSize: 10),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          // Width
+          _buildSizeSelector('横幅', _wIndex, _setWidth),
+          const SizedBox(height: 8),
+          // Height
+          _buildSizeSelector('縦幅', _hIndex, _setHeight),
+          const SizedBox(height: 10),
+          // Opacity
+          Row(
+            children: [
+              const SizedBox(
+                width: 32,
+                child: Text(
+                  '透明',
+                  style: TextStyle(color: Colors.white60, fontSize: 11),
+                ),
+              ),
+              Expanded(
+                child: SliderTheme(
+                  data: SliderThemeData(
+                    trackHeight: 3,
+                    thumbShape:
+                        const RoundSliderThumbShape(enabledThumbRadius: 6),
+                    activeTrackColor: Colors.blue[300],
+                    inactiveTrackColor: Colors.white24,
+                    thumbColor: Colors.blue[200],
+                    overlayShape: SliderComponentShape.noOverlay,
+                  ),
+                  child: Slider(
+                    value: _opacity,
+                    min: 0.3,
+                    max: 1.0,
+                    onChanged: (v) => setState(() => _opacity = v),
+                  ),
+                ),
+              ),
+              SizedBox(
+                width: 28,
+                child: Text(
+                  '${(_opacity * 100).round()}',
+                  style: const TextStyle(color: Colors.white38, fontSize: 10),
+                  textAlign: TextAlign.right,
+                ),
+              ),
+            ],
+          ),
+          const Spacer(),
+          // Done button
+          GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTap: _toggleSettings,
+            child: Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(vertical: 8),
+              decoration: BoxDecoration(
+                color: Colors.blue.withAlpha(40),
+                border: Border.all(color: Colors.blue, width: 0.5),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: const Text(
+                '完了',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  color: Colors.blue,
+                  fontSize: 12,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   @override
@@ -89,169 +226,123 @@ class _OverlayTimelineScreenState extends State<OverlayTimelineScreen> {
       color: Colors.transparent,
       child: ClipRRect(
         borderRadius: BorderRadius.circular(12),
-        child: Container(
-          decoration: BoxDecoration(
-            color: const Color(0xF01C1C1E),
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(
-              color: _moveMode ? Colors.blue : Colors.grey[700]!,
-              width: _moveMode ? 1.5 : 0.5,
+        child: Opacity(
+          opacity: _settingsOpen ? 1.0 : _opacity,
+          child: Container(
+            decoration: BoxDecoration(
+              color: const Color(0xF01C1C1E),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(
+                color: _settingsOpen ? Colors.blue : Colors.grey[700]!,
+                width: _settingsOpen ? 1.5 : 0.5,
+              ),
             ),
-          ),
-          child: Column(
-            children: [
-              // Header bar
-              Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
-                decoration: BoxDecoration(
-                  color: _moveMode
-                      ? const Color(0xFF1A3A5C)
-                      : const Color(0xFF2C2C2E),
-                  borderRadius: const BorderRadius.vertical(
-                    top: Radius.circular(12),
+            child: Column(
+              children: [
+                // Header bar
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 8, vertical: 5),
+                  decoration: BoxDecoration(
+                    color: _settingsOpen
+                        ? const Color(0xFF1A3A5C)
+                        : const Color(0xFF2C2C2E),
+                    borderRadius: const BorderRadius.vertical(
+                      top: Radius.circular(12),
+                    ),
+                  ),
+                  child: Row(
+                    children: [
+                      GestureDetector(
+                        behavior: HitTestBehavior.opaque,
+                        onTap: _openMainApp,
+                        child: const Padding(
+                          padding: EdgeInsets.all(2),
+                          child: Icon(Icons.open_in_new,
+                              color: Colors.white70, size: 16),
+                        ),
+                      ),
+                      const SizedBox(width: 4),
+                      GestureDetector(
+                        behavior: HitTestBehavior.opaque,
+                        onTap: _toggleSettings,
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 4, vertical: 3),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(
+                                Icons.tune,
+                                color: _settingsOpen
+                                    ? Colors.blue[300]
+                                    : Colors.white70,
+                                size: 14,
+                              ),
+                              const SizedBox(width: 3),
+                              Text(
+                                _settingsOpen ? '設定中' : '設定',
+                                style: TextStyle(
+                                  color: _settingsOpen
+                                      ? Colors.blue[300]
+                                      : Colors.white54,
+                                  fontSize: 10,
+                                  fontWeight: _settingsOpen
+                                      ? FontWeight.bold
+                                      : FontWeight.normal,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                      const Spacer(),
+                      if (!_settingsOpen)
+                        Text(
+                          '${_posts.length}件',
+                          style: const TextStyle(
+                            color: Colors.white54,
+                            fontSize: 9,
+                          ),
+                        ),
+                      const SizedBox(width: 6),
+                      GestureDetector(
+                        behavior: HitTestBehavior.opaque,
+                        onTap: () async {
+                          await FlutterOverlayWindow.closeOverlay();
+                        },
+                        child: const Padding(
+                          padding: EdgeInsets.all(2),
+                          child: Icon(Icons.close,
+                              color: Colors.white70, size: 16),
+                        ),
+                      ),
+                    ],
                   ),
                 ),
-                child: Row(
-                  children: [
-                    GestureDetector(
-                      onTap: _openMainApp,
-                      child: const Icon(Icons.open_in_new,
-                          color: Colors.white70, size: 16),
-                    ),
-                    const SizedBox(width: 6),
-                    // Move mode toggle (icon + label both tappable)
-                    GestureDetector(
-                      behavior: HitTestBehavior.opaque,
-                      onTap: _toggleMoveMode,
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 4, vertical: 4),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(
-                              _moveMode ? Icons.lock_open : Icons.open_with,
-                              color:
-                                  _moveMode ? Colors.blue[300] : Colors.white70,
-                              size: 18,
-                            ),
-                            const SizedBox(width: 3),
-                            Text(
-                              _moveMode ? '確定' : '移動',
-                              style: TextStyle(
-                                color: _moveMode
-                                    ? Colors.blue[300]
-                                    : Colors.white54,
-                                fontSize: 10,
-                                fontWeight: _moveMode
-                                    ? FontWeight.bold
-                                    : FontWeight.normal,
+                // Body
+                Expanded(
+                  child: _settingsOpen
+                      ? _buildSettingsPanel()
+                      : _posts.isEmpty
+                          ? const Center(
+                              child: Text(
+                                '読み込み中...',
+                                style: TextStyle(
+                                    color: Colors.white54, fontSize: 10),
                               ),
+                            )
+                          : ListView.builder(
+                              padding: const EdgeInsets.only(top: 2),
+                              itemCount: _posts.length,
+                              itemBuilder: (context, index) {
+                                return OverlayPostCard(
+                                    post: _posts[index]);
+                              },
                             ),
-                          ],
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 4),
-                    // Width toggle
-                    GestureDetector(
-                      behavior: HitTestBehavior.opaque,
-                      onTap: _cycleWidth,
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 5, vertical: 3),
-                        decoration: BoxDecoration(
-                          border: Border.all(color: Colors.white38, width: 0.5),
-                          borderRadius: BorderRadius.circular(4),
-                        ),
-                        child: Text(
-                          '横${_labels[_wIndex]}',
-                          style: const TextStyle(
-                            color: Colors.white54,
-                            fontSize: 9,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 3),
-                    // Height toggle
-                    GestureDetector(
-                      behavior: HitTestBehavior.opaque,
-                      onTap: _cycleHeight,
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 5, vertical: 3),
-                        decoration: BoxDecoration(
-                          border: Border.all(color: Colors.white38, width: 0.5),
-                          borderRadius: BorderRadius.circular(4),
-                        ),
-                        child: Text(
-                          '縦${_labels[_hIndex]}',
-                          style: const TextStyle(
-                            color: Colors.white54,
-                            fontSize: 9,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                      ),
-                    ),
-                    const Spacer(),
-                    Text(
-                      '${_posts.length}件',
-                      style: const TextStyle(
-                        color: Colors.white54,
-                        fontSize: 9,
-                      ),
-                    ),
-                    const SizedBox(width: 6),
-                    GestureDetector(
-                      onTap: () async {
-                        await FlutterOverlayWindow.closeOverlay();
-                      },
-                      child: const Icon(Icons.close,
-                          color: Colors.white70, size: 16),
-                    ),
-                  ],
                 ),
-              ),
-              // Post list
-              Expanded(
-                child: _moveMode
-                    ? const Center(
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(Icons.open_with,
-                                color: Colors.white24, size: 40),
-                            SizedBox(height: 8),
-                            Text(
-                              'ドラッグで移動\n完了したらもう一度タップ',
-                              textAlign: TextAlign.center,
-                              style:
-                                  TextStyle(color: Colors.white38, fontSize: 11),
-                            ),
-                          ],
-                        ),
-                      )
-                    : _posts.isEmpty
-                        ? const Center(
-                            child: Text(
-                              '読み込み中...',
-                              style:
-                                  TextStyle(color: Colors.white54, fontSize: 10),
-                            ),
-                          )
-                        : ListView.builder(
-                            padding: const EdgeInsets.only(top: 2),
-                            itemCount: _posts.length,
-                            itemBuilder: (context, index) {
-                              return OverlayPostCard(post: _posts[index]);
-                            },
-                          ),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
       ),

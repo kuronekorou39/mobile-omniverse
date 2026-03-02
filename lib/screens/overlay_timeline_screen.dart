@@ -18,6 +18,8 @@ class OverlayTimelineScreen extends StatefulWidget {
 class _OverlayTimelineScreenState extends State<OverlayTimelineScreen> {
   List<Post> _posts = [];
   StreamSubscription? _subscription;
+  double _dragStartX = 0;
+  double _dragStartY = 0;
 
   @override
   void initState() {
@@ -71,15 +73,21 @@ class _OverlayTimelineScreenState extends State<OverlayTimelineScreen> {
             children: [
               // Header bar — drag to move overlay
               GestureDetector(
-                onPanUpdate: (details) async {
+                onPanStart: (details) async {
                   try {
                     final pos =
                         await FlutterOverlayWindow.getOverlayPosition();
-                    await FlutterOverlayWindow.moveOverlay(OverlayPosition(
-                      pos.x + details.delta.dx,
-                      pos.y + details.delta.dy,
-                    ));
+                    _dragStartX = pos.x;
+                    _dragStartY = pos.y;
                   } catch (_) {}
+                },
+                onPanUpdate: (details) {
+                  _dragStartX += details.delta.dx;
+                  _dragStartY += details.delta.dy;
+                  FlutterOverlayWindow.moveOverlay(OverlayPosition(
+                    _dragStartX,
+                    _dragStartY,
+                  ));
                 },
                 child: Container(
                   padding:

@@ -336,11 +336,11 @@ class _OmniFeedScreenState extends ConsumerState<OmniFeedScreen> {
 
     try {
       await FlutterOverlayWindow.showOverlay(
-        height: 450,
+        height: 700,
         width: WindowSize.matchParent,
-        enableDrag: true,
+        enableDrag: false,
         overlayTitle: 'OmniVerse',
-        flag: OverlayFlag.defaultFlag,
+        flag: OverlayFlag.focusPointer,
         positionGravity: PositionGravity.auto,
       );
 

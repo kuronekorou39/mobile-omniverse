@@ -20,8 +20,6 @@ class OverlayPostCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
       child: Column(
@@ -34,7 +32,7 @@ class OverlayPostCard extends StatelessWidget {
               CircleAvatar(
                 radius: 14,
                 backgroundColor: post.source == SnsService.x
-                    ? Colors.grey[800]
+                    ? Colors.grey[700]
                     : const Color(0xFF0085FF),
                 child: Text(
                   post.username.isNotEmpty
@@ -56,6 +54,7 @@ class OverlayPostCard extends StatelessWidget {
                       child: Text(
                         post.username,
                         style: const TextStyle(
+                          color: Colors.white,
                           fontWeight: FontWeight.bold,
                           fontSize: 12,
                         ),
@@ -66,8 +65,8 @@ class OverlayPostCard extends StatelessWidget {
                     const SizedBox(width: 4),
                     Text(
                       post.handle,
-                      style: TextStyle(
-                        color: theme.colorScheme.onSurfaceVariant,
+                      style: const TextStyle(
+                        color: Colors.white60,
                         fontSize: 11,
                       ),
                       maxLines: 1,
@@ -81,7 +80,7 @@ class OverlayPostCard extends StatelessWidget {
               const SizedBox(width: 4),
               Text(
                 _formatTimestamp(post.timestamp),
-                style: TextStyle(color: Colors.grey[500], fontSize: 11),
+                style: const TextStyle(color: Colors.white38, fontSize: 11),
               ),
             ],
           ),
@@ -92,7 +91,10 @@ class OverlayPostCard extends StatelessWidget {
               post.body,
               maxLines: 3,
               overflow: TextOverflow.ellipsis,
-              style: const TextStyle(fontSize: 12),
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 12,
+              ),
             ),
           ),
           // Engagement counts
@@ -100,19 +102,19 @@ class OverlayPostCard extends StatelessWidget {
             padding: const EdgeInsets.only(left: 34),
             child: Row(
               children: [
-                Icon(Icons.favorite_border,
-                    size: 12, color: Colors.grey[500]),
+                const Icon(Icons.favorite_border,
+                    size: 12, color: Colors.white38),
                 const SizedBox(width: 2),
                 Text(
                   '${post.likeCount}',
-                  style: TextStyle(fontSize: 10, color: Colors.grey[500]),
+                  style: const TextStyle(fontSize: 10, color: Colors.white38),
                 ),
                 const SizedBox(width: 12),
-                Icon(Icons.repeat, size: 12, color: Colors.grey[500]),
+                const Icon(Icons.repeat, size: 12, color: Colors.white38),
                 const SizedBox(width: 2),
                 Text(
                   '${post.repostCount}',
-                  style: TextStyle(fontSize: 10, color: Colors.grey[500]),
+                  style: const TextStyle(fontSize: 10, color: Colors.white38),
                 ),
               ],
             ),

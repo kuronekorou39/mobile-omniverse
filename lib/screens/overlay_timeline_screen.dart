@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_overlay_window/flutter_overlay_window.dart';
@@ -42,6 +43,17 @@ class _OverlayTimelineScreenState extends State<OverlayTimelineScreen> {
     super.dispose();
   }
 
+  Future<void> _openMainApp() async {
+    try {
+      await Process.run('am', [
+        'start',
+        '-n',
+        'com.omniverse.mobile_omniverse/.MainActivity',
+        '--activity-brought-to-front',
+      ]);
+    } catch (_) {}
+  }
+
   @override
   Widget build(BuildContext context) {
     return Material(
@@ -50,56 +62,57 @@ class _OverlayTimelineScreenState extends State<OverlayTimelineScreen> {
         borderRadius: BorderRadius.circular(16),
         child: Container(
           decoration: BoxDecoration(
-            color: const Color(0xEE1C1C1E),
+            color: const Color(0xF01C1C1E),
             borderRadius: BorderRadius.circular(16),
             border: Border.all(color: Colors.grey[700]!, width: 0.5),
           ),
           child: Column(
             children: [
-              // Header bar
-              GestureDetector(
-                onPanUpdate: (_) {},
-                child: Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFF2C2C2E),
-                    borderRadius: const BorderRadius.vertical(
-                      top: Radius.circular(16),
-                    ),
+              // Header bar (drag handle)
+              Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                decoration: const BoxDecoration(
+                  color: Color(0xFF2C2C2E),
+                  borderRadius: BorderRadius.vertical(
+                    top: Radius.circular(16),
                   ),
-                  child: Row(
-                    children: [
-                      const Icon(Icons.rss_feed,
+                ),
+                child: Row(
+                  children: [
+                    // Open main app
+                    GestureDetector(
+                      onTap: _openMainApp,
+                      child: const Icon(Icons.open_in_new,
                           color: Colors.white70, size: 18),
-                      const SizedBox(width: 6),
-                      const Expanded(
-                        child: Text(
-                          'OmniVerse',
-                          style: TextStyle(
-                            color: Colors.white,
-                            fontWeight: FontWeight.bold,
-                            fontSize: 14,
-                          ),
+                    ),
+                    const SizedBox(width: 6),
+                    const Expanded(
+                      child: Text(
+                        'OmniVerse',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 13,
                         ),
                       ),
-                      Text(
-                        '${_posts.length} posts',
-                        style: const TextStyle(
-                          color: Colors.white54,
-                          fontSize: 11,
-                        ),
+                    ),
+                    Text(
+                      '${_posts.length}件',
+                      style: const TextStyle(
+                        color: Colors.white54,
+                        fontSize: 11,
                       ),
-                      const SizedBox(width: 8),
-                      InkWell(
-                        onTap: () async {
-                          await FlutterOverlayWindow.closeOverlay();
-                        },
-                        child: const Icon(Icons.close,
-                            color: Colors.white70, size: 20),
-                      ),
-                    ],
-                  ),
+                    ),
+                    const SizedBox(width: 8),
+                    GestureDetector(
+                      onTap: () async {
+                        await FlutterOverlayWindow.closeOverlay();
+                      },
+                      child: const Icon(Icons.close,
+                          color: Colors.white70, size: 20),
+                    ),
+                  ],
                 ),
               ),
               // Post list
@@ -111,19 +124,12 @@ class _OverlayTimelineScreenState extends State<OverlayTimelineScreen> {
                           style: TextStyle(color: Colors.white54, fontSize: 12),
                         ),
                       )
-                    : Theme(
-                        data: ThemeData(
-                          brightness: Brightness.dark,
-                          useMaterial3: true,
-                          colorSchemeSeed: const Color(0xFF6750A4),
-                        ),
-                        child: ListView.builder(
-                          padding: const EdgeInsets.only(top: 4),
-                          itemCount: _posts.length,
-                          itemBuilder: (context, index) {
-                            return OverlayPostCard(post: _posts[index]);
-                          },
-                        ),
+                    : ListView.builder(
+                        padding: const EdgeInsets.only(top: 4),
+                        itemCount: _posts.length,
+                        itemBuilder: (context, index) {
+                          return OverlayPostCard(post: _posts[index]);
+                        },
                       ),
               ),
             ],

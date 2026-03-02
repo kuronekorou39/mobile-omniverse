@@ -47,9 +47,10 @@ class _OverlayTimelineScreenState extends State<OverlayTimelineScreen> {
     try {
       await Process.run('am', [
         'start',
-        '-n',
-        'com.omniverse.mobile_omniverse/.MainActivity',
-        '--activity-brought-to-front',
+        '-a', 'android.intent.action.MAIN',
+        '-c', 'android.intent.category.LAUNCHER',
+        '-n', 'com.omniverse.mobile_omniverse/.MainActivity',
+        '-f', '0x10000000', // FLAG_ACTIVITY_NEW_TASK
       ]);
     } catch (_) {}
   }

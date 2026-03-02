@@ -28,22 +28,30 @@ class OverlayPostCard extends StatelessWidget {
           // Header row
           Row(
             children: [
-              // Initial avatar
+              // Avatar (network image with initial fallback)
               CircleAvatar(
                 radius: 14,
                 backgroundColor: post.source == SnsService.x
                     ? Colors.grey[700]
                     : const Color(0xFF0085FF),
-                child: Text(
-                  post.username.isNotEmpty
-                      ? post.username[0].toUpperCase()
-                      : '?',
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 12,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
+                backgroundImage: post.avatarUrl != null
+                    ? NetworkImage(post.avatarUrl!)
+                    : null,
+                onBackgroundImageError: post.avatarUrl != null
+                    ? (_, __) {}
+                    : null,
+                child: post.avatarUrl == null
+                    ? Text(
+                        post.username.isNotEmpty
+                            ? post.username[0].toUpperCase()
+                            : '?',
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 12,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      )
+                    : null,
               ),
               const SizedBox(width: 6),
               // Name + handle

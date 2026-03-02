@@ -21,11 +21,13 @@ class _OverlayTimelineScreenState extends State<OverlayTimelineScreen> {
   bool _settingsOpen = false;
   int _wIndex = 0;
   int _hIndex = 0;
-  double _opacity = 0.94;
+  int _opacityIndex = 3;
 
   static const _widths = [180, 250, 360];
   static const _heights = [250, 400, 700];
   static const _labels = ['S', 'M', 'L'];
+  static const _opacities = [0.3, 0.5, 0.7, 0.9, 1.0];
+  static const _opacityLabels = ['30', '50', '70', '90', '100'];
 
   @override
   void initState() {
@@ -127,6 +129,117 @@ class _OverlayTimelineScreenState extends State<OverlayTimelineScreen> {
     );
   }
 
+  Widget _buildOpacitySelector() {
+    return Row(
+      children: [
+        const SizedBox(
+          width: 32,
+          child: Text(
+            '透過',
+            style: TextStyle(color: Colors.white60, fontSize: 11),
+          ),
+        ),
+        for (int i = 0; i < _opacityLabels.length; i++) ...[
+          if (i > 0) const SizedBox(width: 3),
+          GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTap: () => setState(() => _opacityIndex = i),
+            child: Container(
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 6, vertical: 5),
+              decoration: BoxDecoration(
+                color: i == _opacityIndex
+                    ? Colors.blue.withAlpha(60)
+                    : Colors.white.withAlpha(15),
+                border: Border.all(
+                  color: i == _opacityIndex ? Colors.blue : Colors.white24,
+                  width: i == _opacityIndex ? 1 : 0.5,
+                ),
+                borderRadius: BorderRadius.circular(6),
+              ),
+              child: Text(
+                _opacityLabels[i],
+                style: TextStyle(
+                  color: i == _opacityIndex
+                      ? Colors.blue[300]
+                      : Colors.white54,
+                  fontSize: 10,
+                  fontWeight: i == _opacityIndex
+                      ? FontWeight.bold
+                      : FontWeight.normal,
+                ),
+              ),
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+
+  Widget _buildPreview() {
+    final opacity = _opacities[_opacityIndex];
+    return Opacity(
+      opacity: opacity,
+      child: Container(
+        padding: const EdgeInsets.all(8),
+        decoration: BoxDecoration(
+          color: const Color(0xF01C1C1E),
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: Colors.grey[800]!, width: 0.5),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Row(
+              children: [
+                CircleAvatar(
+                  radius: 10,
+                  backgroundColor: Colors.grey[600],
+                  child: const Text('U',
+                      style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 8,
+                          fontWeight: FontWeight.bold)),
+                ),
+                const SizedBox(width: 4),
+                const Expanded(
+                  child: Text('ユーザー名',
+                      style: TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 10),
+                      maxLines: 1),
+                ),
+                Container(
+                  width: 6,
+                  height: 6,
+                  decoration: BoxDecoration(
+                    color: Colors.grey[600],
+                    shape: BoxShape.circle,
+                  ),
+                ),
+                const SizedBox(width: 4),
+                const Text('1m',
+                    style: TextStyle(color: Colors.white30, fontSize: 9)),
+              ],
+            ),
+            const Padding(
+              padding: EdgeInsets.only(left: 24, top: 1),
+              child: Text(
+                'これは表示サンプルです。この透明度で投稿が表示されます。',
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                    color: Colors.white70, fontSize: 10, height: 1.3),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Widget _buildSettingsPanel() {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
@@ -146,51 +259,20 @@ class _OverlayTimelineScreenState extends State<OverlayTimelineScreen> {
             ],
           ),
           const SizedBox(height: 10),
-          // Width
           _buildSizeSelector('横幅', _wIndex, _setWidth),
           const SizedBox(height: 8),
-          // Height
           _buildSizeSelector('縦幅', _hIndex, _setHeight),
+          const SizedBox(height: 8),
+          _buildOpacitySelector(),
           const SizedBox(height: 10),
-          // Opacity
-          Row(
-            children: [
-              const SizedBox(
-                width: 32,
-                child: Text(
-                  '透明',
-                  style: TextStyle(color: Colors.white60, fontSize: 11),
-                ),
-              ),
-              Expanded(
-                child: SliderTheme(
-                  data: SliderThemeData(
-                    trackHeight: 3,
-                    thumbShape:
-                        const RoundSliderThumbShape(enabledThumbRadius: 6),
-                    activeTrackColor: Colors.blue[300],
-                    inactiveTrackColor: Colors.white24,
-                    thumbColor: Colors.blue[200],
-                    overlayShape: SliderComponentShape.noOverlay,
-                  ),
-                  child: Slider(
-                    value: _opacity,
-                    min: 0.3,
-                    max: 1.0,
-                    onChanged: (v) => setState(() => _opacity = v),
-                  ),
-                ),
-              ),
-              SizedBox(
-                width: 28,
-                child: Text(
-                  '${(_opacity * 100).round()}',
-                  style: const TextStyle(color: Colors.white38, fontSize: 10),
-                  textAlign: TextAlign.right,
-                ),
-              ),
-            ],
+          // Preview
+          const Align(
+            alignment: Alignment.centerLeft,
+            child: Text('プレビュー',
+                style: TextStyle(color: Colors.white38, fontSize: 9)),
           ),
+          const SizedBox(height: 4),
+          _buildPreview(),
           const Spacer(),
           // Done button
           GestureDetector(
@@ -227,7 +309,7 @@ class _OverlayTimelineScreenState extends State<OverlayTimelineScreen> {
       child: ClipRRect(
         borderRadius: BorderRadius.circular(12),
         child: Opacity(
-          opacity: _settingsOpen ? 1.0 : _opacity,
+          opacity: _settingsOpen ? 1.0 : _opacities[_opacityIndex],
           child: Container(
             decoration: BoxDecoration(
               color: const Color(0xF01C1C1E),

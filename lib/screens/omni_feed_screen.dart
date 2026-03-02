@@ -341,7 +341,7 @@ class _OmniFeedScreenState extends ConsumerState<OmniFeedScreen> {
         enableDrag: false,
         overlayTitle: 'OmniVerse',
         flag: OverlayFlag.focusPointer,
-        positionGravity: PositionGravity.auto,
+        positionGravity: PositionGravity.none,
       );
 
       final posts = feed.posts.take(20).map((p) => p.toJson()).toList();

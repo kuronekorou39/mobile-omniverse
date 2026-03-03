@@ -182,17 +182,7 @@ class _OverlayTimelineScreenState extends State<OverlayTimelineScreen> {
           child: ListView(
             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
             children: [
-              // Drag hint
-              const Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Icon(Icons.open_with, color: Colors.white24, size: 14),
-                  SizedBox(width: 4),
-                  Text('ドラッグで移動可能',
-                      style: TextStyle(color: Colors.white30, fontSize: 9)),
-                ],
-              ),
-              const SizedBox(height: 8),
+              const SizedBox(height: 2),
               _buildSizeSelector('横', _wIndex, _setWidth),
               const SizedBox(height: 6),
               _buildSizeSelector('縦', _hIndex, _setHeight),
@@ -307,7 +297,12 @@ class _OverlayTimelineScreenState extends State<OverlayTimelineScreen> {
                           ),
                         ),
                       ),
-                      const Spacer(),
+                      const Expanded(
+                        child: Center(
+                          child: Icon(Icons.drag_indicator,
+                              color: Colors.white24, size: 16),
+                        ),
+                      ),
                       GestureDetector(
                         behavior: HitTestBehavior.opaque,
                         onTap: () async {

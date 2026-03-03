@@ -56,6 +56,10 @@ class _OverlayTimelineScreenState extends State<OverlayTimelineScreen> {
     await FlutterOverlayWindow.launchMainActivity();
   }
 
+  Future<void> _openPostDetail(Post post) async {
+    await FlutterOverlayWindow.openPostDetail(jsonEncode(post.toJson()));
+  }
+
   Future<void> _toggleSettings() async {
     final opening = !_settingsOpen;
     await FlutterOverlayWindow.resizeOverlay(
@@ -334,8 +338,12 @@ class _OverlayTimelineScreenState extends State<OverlayTimelineScreen> {
                               padding: const EdgeInsets.only(top: 2),
                               itemCount: _posts.length,
                               itemBuilder: (context, index) {
+                                final post = _posts[index];
                                 return OverlayPostCard(
-                                    post: _posts[index]);
+                                  post: post,
+                                  onShowDetail: () =>
+                                      _openPostDetail(post),
+                                );
                               },
                             ),
                 ),

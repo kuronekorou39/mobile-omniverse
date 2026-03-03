@@ -45,6 +45,8 @@ public class FlutterOverlayWindowPlugin implements
     private Result pendingResult;
     final int REQUEST_CODE_FOR_OVERLAY_PERMISSION = 1248;
 
+    public static String pendingPostJson = null;
+
     @Override
     public void onAttachedToEngine(@NonNull FlutterPluginBinding flutterPluginBinding) {
         this.context = flutterPluginBinding.getApplicationContext();
@@ -121,6 +123,11 @@ public class FlutterOverlayWindowPlugin implements
             result.success(OverlayService.moveOverlay(x, y));
         } else if (call.method.equals("getOverlayPosition")) {
             result.success(OverlayService.getCurrentPosition());
+        } else if (call.method.equals("getPendingPostDetail")) {
+            String post = pendingPostJson;
+            pendingPostJson = null;
+            result.success(post);
+            return;
         } else if (call.method.equals("closeOverlay")) {
             if (OverlayService.isRunning) {
                 final Intent i = new Intent(context, OverlayService.class);

@@ -34,7 +34,8 @@ class OmniFeedScreen extends ConsumerStatefulWidget {
   ConsumerState<OmniFeedScreen> createState() => _OmniFeedScreenState();
 }
 
-class _OmniFeedScreenState extends ConsumerState<OmniFeedScreen> {
+class _OmniFeedScreenState extends ConsumerState<OmniFeedScreen>
+    with WidgetsBindingObserver {
   final _scrollController = ScrollController();
 
   /// スクロールトップボタン表示
@@ -54,9 +55,11 @@ class _OmniFeedScreenState extends ConsumerState<OmniFeedScreen> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _scrollController.addListener(_onScroll);
     _startCountdownTimer();
     WidgetsBinding.instance.addPostFrameCallback((_) {
+      _checkPendingPostDetail();
       _checkForUpdate();
       // トークン期限切れ通知を設定
       ref.read(feedProvider.notifier).onTokenExpired = (accountId, handle) {
@@ -106,10 +109,30 @@ class _OmniFeedScreenState extends ConsumerState<OmniFeedScreen> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _countdownTimer?.cancel();
     _scrollController.removeListener(_onScroll);
     _scrollController.dispose();
     super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      _checkPendingPostDetail();
+    }
+  }
+
+  Future<void> _checkPendingPostDetail() async {
+    try {
+      final json = await FlutterOverlayWindow.getPendingPostDetail();
+      if (json == null || !mounted) return;
+      final post = Post.fromCache(
+          jsonDecode(json) as Map<String, dynamic>);
+      Navigator.of(context).push(
+        MaterialPageRoute(builder: (_) => PostDetailScreen(post: post)),
+      );
+    } catch (_) {}
   }
 
   void _onScroll() {

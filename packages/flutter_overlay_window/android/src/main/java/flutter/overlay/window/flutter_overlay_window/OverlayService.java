@@ -142,6 +142,10 @@ public class OverlayService extends Service implements View.OnTouchListener {
                 resizeOverlay(width, height, enableDrag, result);
             } else if (call.method.equals("launchMainActivity")) {
                 launchMainActivity(result);
+            } else if (call.method.equals("openPostDetail")) {
+                String postJson = call.argument("post");
+                FlutterOverlayWindowPlugin.pendingPostJson = postJson;
+                launchMainActivity(result);
             }
         });
         overlayMessageChannel.setMessageHandler((message, reply) -> {

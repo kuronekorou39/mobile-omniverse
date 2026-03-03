@@ -140,6 +140,18 @@ class FlutterOverlayWindow {
     return res;
   }
 
+  /// Launch the main activity and open post detail
+  static Future<bool?> openPostDetail(String postJson) async {
+    final bool? res = await _overlayChannel
+        .invokeMethod<bool?>('openPostDetail', {'post': postJson});
+    return res;
+  }
+
+  /// Get pending post detail data (called from main app)
+  static Future<String?> getPendingPostDetail() async {
+    return await _channel.invokeMethod<String?>('getPendingPostDetail');
+  }
+
   /// Update the overlay position in the screen
   ///
   /// `position` the new position of the overlay

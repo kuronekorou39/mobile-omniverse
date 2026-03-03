@@ -4,9 +4,10 @@ import '../models/post.dart';
 import '../models/sns_service.dart';
 
 class OverlayPostCard extends StatefulWidget {
-  const OverlayPostCard({super.key, required this.post});
+  const OverlayPostCard({super.key, required this.post, this.onShowDetail});
 
   final Post post;
+  final VoidCallback? onShowDetail;
 
   @override
   State<OverlayPostCard> createState() => _OverlayPostCardState();
@@ -185,6 +186,31 @@ class _OverlayPostCardState extends State<OverlayPostCard> {
               // Meta line
               const SizedBox(height: 3),
               _buildMetaLine(),
+              // Show detail button
+              if (widget.onShowDetail != null)
+                Padding(
+                  padding: const EdgeInsets.only(top: 4),
+                  child: GestureDetector(
+                    onTap: widget.onShowDetail,
+                    behavior: HitTestBehavior.opaque,
+                    child: Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.symmetric(vertical: 4),
+                      decoration: BoxDecoration(
+                        border: Border.all(color: Colors.white24, width: 0.5),
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                      child: const Text(
+                        '詳細を表示',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          color: Colors.white54,
+                          fontSize: 9,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
             ],
           ),
         ),

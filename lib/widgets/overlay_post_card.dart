@@ -59,7 +59,7 @@ class _OverlayPostCardState extends State<OverlayPostCard> {
               Padding(
                 padding: const EdgeInsets.only(left: 28, bottom: 1),
                 child: Text(
-                  '↻ @${post.retweetedByHandle} がリポスト',
+                  '↻ ${post.retweetedByHandle} がリポスト',
                   style: const TextStyle(fontSize: 8, color: Colors.white30),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
@@ -108,7 +108,7 @@ class _OverlayPostCardState extends State<OverlayPostCard> {
                 Padding(
                   padding: const EdgeInsets.only(top: 1),
                   child: Text(
-                    '↩ @${post.quotedPost!.handle}: ${post.quotedPost!.body}',
+                    '↩ ${post.quotedPost!.handle}: ${post.quotedPost!.body}',
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: const TextStyle(fontSize: 9, color: Colors.white38),
@@ -116,7 +116,7 @@ class _OverlayPostCardState extends State<OverlayPostCard> {
                 ),
               // Meta line
               const SizedBox(height: 1),
-              _buildMetaLine(showDot: false),
+              _buildMetaLine(),
             ],
           ),
         ),
@@ -174,9 +174,9 @@ class _OverlayPostCardState extends State<OverlayPostCard> {
                   padding: const EdgeInsets.only(top: 4),
                   child: _buildExpandedQuote(),
                 ),
-              // Meta line with SNS dot
+              // Meta line
               const SizedBox(height: 3),
-              _buildMetaLine(showDot: true),
+              _buildMetaLine(),
             ],
           ),
         ),
@@ -305,7 +305,7 @@ class _OverlayPostCardState extends State<OverlayPostCard> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            '@${q.handle}',
+            q.handle,
             style: const TextStyle(fontSize: 8, color: Colors.white38),
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
@@ -324,30 +324,30 @@ class _OverlayPostCardState extends State<OverlayPostCard> {
     );
   }
 
-  Widget _buildMetaLine({required bool showDot}) {
+  Widget _buildMetaLine() {
+    const metaStyle = TextStyle(fontSize: 8, color: Colors.white24);
     return Row(
       children: [
-        if (showDot) ...[
-          Container(
-            width: 5,
-            height: 5,
-            decoration: BoxDecoration(
-              color: _sourceColor,
-              shape: BoxShape.circle,
-            ),
-          ),
-          const SizedBox(width: 4),
-        ],
+        // Handle (left)
         Expanded(
           child: Text(
-            '@${post.handle} · ${_formatTimestamp(post.timestamp)}'
-            ' · ♥${_formatCount(post.likeCount)}'
-            ' ↻${_formatCount(post.repostCount)}',
+            post.handle,
             style: const TextStyle(fontSize: 8, color: Colors.white30),
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
           ),
         ),
+        // Engagement (right-aligned)
+        const Icon(Icons.favorite_border, size: 9, color: Colors.white24),
+        const SizedBox(width: 2),
+        Text(_formatCount(post.likeCount), style: metaStyle),
+        const SizedBox(width: 6),
+        const Icon(Icons.repeat, size: 9, color: Colors.white24),
+        const SizedBox(width: 2),
+        Text(_formatCount(post.repostCount), style: metaStyle),
+        const SizedBox(width: 6),
+        // Timestamp (far right)
+        Text(_formatTimestamp(post.timestamp), style: metaStyle),
       ],
     );
   }

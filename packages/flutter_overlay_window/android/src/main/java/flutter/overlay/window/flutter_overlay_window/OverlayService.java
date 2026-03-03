@@ -463,7 +463,8 @@ public class OverlayService extends Service implements View.OnTouchListener {
                 float dx = event.getRawX() - lastX;
                 float dy = event.getRawY() - lastY;
 
-                if (!headerDragStarted && dx * dx + dy * dy < 25) {
+                // Large threshold to avoid stealing taps from buttons
+                if (!headerDragStarted && dx * dx + dy * dy < 400) {
                     return false; // Below drag threshold, let Flutter handle
                 }
 
@@ -474,6 +475,25 @@ public class OverlayService extends Service implements View.OnTouchListener {
                 WindowManager.LayoutParams params = (WindowManager.LayoutParams) flutterView.getLayoutParams();
                 params.x += (int) dx;
                 params.y += (int) dy;
+
+                // Clamp to screen bounds
+                int margin = (int) (8 * mResources.getDisplayMetrics().density);
+                int overlayW = flutterView.getWidth();
+                int overlayH = flutterView.getHeight();
+                int screenW = szWindow.x;
+                int screenH = szWindow.y;
+                if (WindowSetup.gravity == Gravity.CENTER) {
+                    int maxX = (screenW - overlayW) / 2 - margin;
+                    int maxY = (screenH - overlayH) / 2 - margin;
+                    if (maxX < 0) maxX = 0;
+                    if (maxY < 0) maxY = 0;
+                    params.x = Math.max(-maxX, Math.min(params.x, maxX));
+                    params.y = Math.max(-maxY, Math.min(params.y, maxY));
+                } else {
+                    params.x = Math.max(margin, Math.min(params.x, screenW - overlayW - margin));
+                    params.y = Math.max(margin, Math.min(params.y, screenH - overlayH - margin));
+                }
+
                 windowManager.updateViewLayout(flutterView, params);
                 return true; // Consume MOVE when dragging
 

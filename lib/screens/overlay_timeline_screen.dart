@@ -180,70 +180,6 @@ class _OverlayTimelineScreenState extends State<OverlayTimelineScreen> {
     );
   }
 
-  Widget _buildPreview() {
-    final opacity = _opacities[_opacityIndex];
-    return Opacity(
-      opacity: opacity,
-      child: Container(
-        padding: const EdgeInsets.all(8),
-        decoration: BoxDecoration(
-          color: const Color(0xF01C1C1E),
-          borderRadius: BorderRadius.circular(8),
-          border: Border.all(color: Colors.grey[800]!, width: 0.5),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Row(
-              children: [
-                CircleAvatar(
-                  radius: 10,
-                  backgroundColor: Colors.grey[600],
-                  child: const Text('U',
-                      style: TextStyle(
-                          color: Colors.white,
-                          fontSize: 8,
-                          fontWeight: FontWeight.bold)),
-                ),
-                const SizedBox(width: 4),
-                const Expanded(
-                  child: Text('ユーザー名',
-                      style: TextStyle(
-                          color: Colors.white,
-                          fontWeight: FontWeight.bold,
-                          fontSize: 10),
-                      maxLines: 1),
-                ),
-                Container(
-                  width: 6,
-                  height: 6,
-                  decoration: BoxDecoration(
-                    color: Colors.grey[600],
-                    shape: BoxShape.circle,
-                  ),
-                ),
-                const SizedBox(width: 4),
-                const Text('1m',
-                    style: TextStyle(color: Colors.white30, fontSize: 9)),
-              ],
-            ),
-            const Padding(
-              padding: EdgeInsets.only(left: 24, top: 1),
-              child: Text(
-                'これは表示サンプルです。この透明度で投稿が表示されます。',
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                    color: Colors.white70, fontSize: 10, height: 1.3),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
   Widget _buildSettingsPanel() {
     return Column(
       children: [
@@ -267,11 +203,6 @@ class _OverlayTimelineScreenState extends State<OverlayTimelineScreen> {
               _buildSizeSelector('縦', _hIndex, _setHeight),
               const SizedBox(height: 6),
               _buildOpacitySelector(),
-              const SizedBox(height: 8),
-              const Text('プレビュー',
-                  style: TextStyle(color: Colors.white38, fontSize: 9)),
-              const SizedBox(height: 4),
-              _buildPreview(),
             ],
           ),
         ),
@@ -312,7 +243,7 @@ class _OverlayTimelineScreenState extends State<OverlayTimelineScreen> {
       child: ClipRRect(
         borderRadius: BorderRadius.circular(12),
         child: Opacity(
-          opacity: _settingsOpen ? 1.0 : _opacities[_opacityIndex],
+          opacity: _opacities[_opacityIndex],
           child: Container(
             decoration: BoxDecoration(
               color: const Color(0xF01C1C1E),

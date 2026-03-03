@@ -361,7 +361,7 @@ class _OmniFeedScreenState extends ConsumerState<OmniFeedScreen>
         width: 180,
         enableDrag: false,
         overlayTitle: 'OmniVerse',
-        flag: OverlayFlag.focusPointer,
+        flag: OverlayFlag.defaultFlag,
         positionGravity: PositionGravity.none,
       );
 

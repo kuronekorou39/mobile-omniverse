@@ -78,54 +78,62 @@ class _OverlayPostCardState extends State<OverlayPostCard> {
   }
 
   Widget _buildCollapsed() {
-    return Row(
+    return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        // Avatar
-        Padding(
-          padding: const EdgeInsets.only(top: 1),
-          child: _buildAvatar(12),
-        ),
-        const SizedBox(width: 4),
-        // Text content
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // Body text (2 lines)
-              Text(
-                post.body,
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
-                  color: Colors.white70,
-                  fontSize: 10,
-                  height: 1.3,
-                ),
-              ),
-              // Quoted post (1 line)
-              if (post.quotedPost != null)
-                Padding(
-                  padding: const EdgeInsets.only(top: 1),
-                  child: Text(
-                    '↩ ${post.quotedPost!.handle}: ${post.quotedPost!.body}',
-                    maxLines: 1,
+        // Body + thumbnail row
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Avatar
+            Padding(
+              padding: const EdgeInsets.only(top: 1),
+              child: _buildAvatar(12),
+            ),
+            const SizedBox(width: 4),
+            // Body text (3 lines)
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    post.body,
+                    maxLines: 3,
                     overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(fontSize: 9, color: Colors.white38),
+                    style: const TextStyle(
+                      color: Colors.white70,
+                      fontSize: 10,
+                      height: 1.3,
+                    ),
                   ),
-                ),
-              // Meta line
-              const SizedBox(height: 1),
-              _buildMetaLine(),
-            ],
-          ),
+                  // Quoted post (1 line)
+                  if (post.quotedPost != null)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 1),
+                      child: Text(
+                        '↩ ${post.quotedPost!.handle}: ${post.quotedPost!.body}',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                            fontSize: 9, color: Colors.white38),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+            // Media thumbnail
+            if (_hasMedia)
+              Padding(
+                padding: const EdgeInsets.only(left: 4),
+                child: _buildThumbnail(28),
+              ),
+          ],
         ),
-        // Media thumbnail
-        if (_hasMedia)
-          Padding(
-            padding: const EdgeInsets.only(left: 4),
-            child: _buildThumbnail(28),
-          ),
+        // Meta line (always full width)
+        Padding(
+          padding: const EdgeInsets.only(left: 28, top: 1),
+          child: _buildMetaLine(),
+        ),
       ],
     );
   }

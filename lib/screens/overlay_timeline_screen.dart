@@ -1,6 +1,5 @@
 import 'dart:async';
 import 'dart:convert';
-import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_overlay_window/flutter_overlay_window.dart';
@@ -54,15 +53,7 @@ class _OverlayTimelineScreenState extends State<OverlayTimelineScreen> {
   }
 
   Future<void> _openMainApp() async {
-    try {
-      await Process.run('am', [
-        'start',
-        '-a', 'android.intent.action.MAIN',
-        '-c', 'android.intent.category.LAUNCHER',
-        '-n', 'com.omniverse.mobile_omniverse/.MainActivity',
-        '-f', '0x10000000',
-      ]);
-    } catch (_) {}
+    await FlutterOverlayWindow.launchMainActivity();
   }
 
   Future<void> _toggleSettings() async {
@@ -313,15 +304,6 @@ class _OverlayTimelineScreenState extends State<OverlayTimelineScreen> {
                         ),
                       ),
                       const Spacer(),
-                      if (!_settingsOpen)
-                        Text(
-                          '${_posts.length}件',
-                          style: const TextStyle(
-                            color: Colors.white54,
-                            fontSize: 9,
-                          ),
-                        ),
-                      const SizedBox(width: 6),
                       GestureDetector(
                         behavior: HitTestBehavior.opaque,
                         onTap: () async {

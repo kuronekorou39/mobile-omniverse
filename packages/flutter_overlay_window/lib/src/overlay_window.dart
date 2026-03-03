@@ -133,6 +133,13 @@ class FlutterOverlayWindow {
     return _res;
   }
 
+  /// Launch the main activity from the overlay service
+  static Future<bool?> launchMainActivity() async {
+    final bool? res = await _overlayChannel
+        .invokeMethod<bool?>('launchMainActivity');
+    return res;
+  }
+
   /// Update the overlay position in the screen
   ///
   /// `position` the new position of the overlay

@@ -140,6 +140,8 @@ public class OverlayService extends Service implements View.OnTouchListener {
                 int height = call.argument("height");
                 boolean enableDrag = call.argument("enableDrag");
                 resizeOverlay(width, height, enableDrag, result);
+            } else if (call.method.equals("launchMainActivity")) {
+                launchMainActivity(result);
             }
         });
         overlayMessageChannel.setMessageHandler((message, reply) -> {
@@ -275,6 +277,21 @@ public class OverlayService extends Service implements View.OnTouchListener {
             windowManager.updateViewLayout(flutterView, params);
             result.success(true);
         } else {
+            result.success(false);
+        }
+    }
+
+    private void launchMainActivity(MethodChannel.Result result) {
+        try {
+            Intent intent = getPackageManager().getLaunchIntentForPackage(getPackageName());
+            if (intent != null) {
+                intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_REORDER_TO_FRONT);
+                startActivity(intent);
+                result.success(true);
+            } else {
+                result.success(false);
+            }
+        } catch (Exception e) {
             result.success(false);
         }
     }

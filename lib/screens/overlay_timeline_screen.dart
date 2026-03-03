@@ -250,15 +250,8 @@ class _OverlayTimelineScreenState extends State<OverlayTimelineScreen> {
             ),
             child: Column(
               children: [
-                // Header bar (draggable)
-                GestureDetector(
-                  onPanUpdate: (details) {
-                    FlutterOverlayWindow.moveOverlayByDelta(
-                      details.delta.dx,
-                      details.delta.dy,
-                    );
-                  },
-                  child: Container(
+                // Header bar
+                Container(
                   padding: const EdgeInsets.symmetric(
                       horizontal: 8, vertical: 5),
                   decoration: BoxDecoration(
@@ -328,7 +321,6 @@ class _OverlayTimelineScreenState extends State<OverlayTimelineScreen> {
                       ),
                     ],
                   ),
-                ),
                 ),
                 // Body
                 Expanded(

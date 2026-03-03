@@ -455,17 +455,16 @@ public class OverlayService extends Service implements View.OnTouchListener {
                     lastX = event.getRawX();
                     lastY = event.getRawY();
                 }
-                return false; // Let Flutter see DOWN (for button taps)
+                break;
 
             case MotionEvent.ACTION_MOVE:
-                if (!headerTouchActive) return false;
+                if (!headerTouchActive) break;
 
                 float dx = event.getRawX() - lastX;
                 float dy = event.getRawY() - lastY;
 
-                // Large threshold to avoid stealing taps from buttons
                 if (!headerDragStarted && dx * dx + dy * dy < 400) {
-                    return false; // Below drag threshold, let Flutter handle
+                    break; // Below threshold, just let Flutter handle
                 }
 
                 headerDragStarted = true;
@@ -495,18 +494,16 @@ public class OverlayService extends Service implements View.OnTouchListener {
                 }
 
                 windowManager.updateViewLayout(flutterView, params);
-                return true; // Consume MOVE when dragging
+                break;
 
             case MotionEvent.ACTION_UP:
             case MotionEvent.ACTION_CANCEL:
-                boolean wasDragging = headerDragStarted;
                 headerTouchActive = false;
                 headerDragStarted = false;
-                return wasDragging; // Consume UP if dragging (prevent accidental tap)
-
-            default:
-                return false;
+                break;
         }
+        // Always pass all events to Flutter — never consume
+        return false;
     }
 
     private class TrayAnimationTimerTask extends TimerTask {

@@ -63,7 +63,7 @@ class _OverlayTimelineScreenState extends State<OverlayTimelineScreen> {
   Future<void> _toggleSettings() async {
     final opening = !_settingsOpen;
     await FlutterOverlayWindow.resizeOverlay(
-        _widths[_wIndex], _heights[_hIndex], opening);
+        _widths[_wIndex], _heights[_hIndex], false);
     setState(() => _settingsOpen = opening);
   }
 

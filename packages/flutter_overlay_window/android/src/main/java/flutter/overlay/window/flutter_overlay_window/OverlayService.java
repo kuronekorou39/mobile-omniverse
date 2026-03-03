@@ -449,7 +449,7 @@ public class OverlayService extends Service implements View.OnTouchListener {
 
         switch (event.getAction()) {
             case MotionEvent.ACTION_DOWN:
-                headerTouchActive = event.getY() <= headerHeightPx || WindowSetup.enableDrag;
+                headerTouchActive = event.getY() <= headerHeightPx;
                 headerDragStarted = false;
                 if (headerTouchActive) {
                     lastX = event.getRawX();

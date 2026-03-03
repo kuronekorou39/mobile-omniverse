@@ -140,6 +140,12 @@ class FlutterOverlayWindow {
     return res;
   }
 
+  /// Move the overlay by a delta (in dp)
+  static Future<void> moveOverlayByDelta(double dx, double dy) async {
+    await _overlayChannel
+        .invokeMethod('moveOverlayByDelta', {'dx': dx, 'dy': dy});
+  }
+
   /// Launch the main activity and open post detail
   static Future<bool?> openPostDetail(String postJson) async {
     final bool? res = await _overlayChannel

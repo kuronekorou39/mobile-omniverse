@@ -63,19 +63,19 @@ class _OverlayTimelineScreenState extends State<OverlayTimelineScreen> {
   Future<void> _toggleSettings() async {
     final opening = !_settingsOpen;
     await FlutterOverlayWindow.resizeOverlay(
-        _widths[_wIndex], _heights[_hIndex], opening);
+        _widths[_wIndex], _heights[_hIndex], false);
     setState(() => _settingsOpen = opening);
   }
 
   Future<void> _setWidth(int index) async {
     await FlutterOverlayWindow.resizeOverlay(
-        _widths[index], _heights[_hIndex], _settingsOpen);
+        _widths[index], _heights[_hIndex], false);
     setState(() => _wIndex = index);
   }
 
   Future<void> _setHeight(int index) async {
     await FlutterOverlayWindow.resizeOverlay(
-        _widths[_wIndex], _heights[index], _settingsOpen);
+        _widths[_wIndex], _heights[index], false);
     setState(() => _hIndex = index);
   }
 
@@ -250,8 +250,15 @@ class _OverlayTimelineScreenState extends State<OverlayTimelineScreen> {
             ),
             child: Column(
               children: [
-                // Header bar
-                Container(
+                // Header bar (draggable)
+                GestureDetector(
+                  onPanUpdate: (details) {
+                    FlutterOverlayWindow.moveOverlayByDelta(
+                      details.delta.dx,
+                      details.delta.dy,
+                    );
+                  },
+                  child: Container(
                   padding: const EdgeInsets.symmetric(
                       horizontal: 8, vertical: 5),
                   decoration: BoxDecoration(
@@ -321,6 +328,7 @@ class _OverlayTimelineScreenState extends State<OverlayTimelineScreen> {
                       ),
                     ],
                   ),
+                ),
                 ),
                 // Body
                 Expanded(

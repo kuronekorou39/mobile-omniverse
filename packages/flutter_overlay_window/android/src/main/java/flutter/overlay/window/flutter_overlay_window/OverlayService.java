@@ -142,6 +142,10 @@ public class OverlayService extends Service implements View.OnTouchListener {
                 resizeOverlay(width, height, enableDrag, result);
             } else if (call.method.equals("launchMainActivity")) {
                 launchMainActivity(result);
+            } else if (call.method.equals("moveOverlayByDelta")) {
+                double dx = ((Number) call.argument("dx")).doubleValue();
+                double dy = ((Number) call.argument("dy")).doubleValue();
+                moveOverlayByDelta(dx, dy, result);
             } else if (call.method.equals("openPostDetail")) {
                 String postJson = call.argument("post");
                 FlutterOverlayWindowPlugin.pendingPostJson = postJson;
@@ -296,6 +300,19 @@ public class OverlayService extends Service implements View.OnTouchListener {
                 result.success(false);
             }
         } catch (Exception e) {
+            result.success(false);
+        }
+    }
+
+    private void moveOverlayByDelta(double dx, double dy, MethodChannel.Result result) {
+        if (windowManager != null && flutterView != null) {
+            WindowManager.LayoutParams params = (WindowManager.LayoutParams) flutterView.getLayoutParams();
+            float density = mResources.getDisplayMetrics().density;
+            params.x += (int) (dx * density);
+            params.y += (int) (dy * density);
+            windowManager.updateViewLayout(flutterView, params);
+            result.success(true);
+        } else {
             result.success(false);
         }
     }

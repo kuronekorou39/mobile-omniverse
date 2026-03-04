@@ -17,7 +17,10 @@ class OverlayTimelineScreen extends StatefulWidget {
 class _OverlayTimelineScreenState extends State<OverlayTimelineScreen> {
   List<Post> _posts = [];
   StreamSubscription? _subscription;
+  final ScrollController _scrollController = ScrollController();
+  Completer<void>? _refreshCompleter;
   bool _settingsOpen = false;
+  bool _isLoadingMore = false;
   int _wIndex = 0;
   int _hIndex = 0;
   int _opacityIndex = 3;
@@ -31,6 +34,7 @@ class _OverlayTimelineScreenState extends State<OverlayTimelineScreen> {
   @override
   void initState() {
     super.initState();
+    _scrollController.addListener(_onScroll);
     _subscription = FlutterOverlayWindow.overlayListener.listen((data) {
       if (data is String) {
         try {
@@ -39,7 +43,12 @@ class _OverlayTimelineScreenState extends State<OverlayTimelineScreen> {
               .map((e) => Post.fromCache(e as Map<String, dynamic>))
               .toList();
           if (mounted) {
-            setState(() => _posts = posts);
+            setState(() {
+              _posts = posts;
+              _isLoadingMore = false;
+            });
+            _refreshCompleter?.complete();
+            _refreshCompleter = null;
           }
         } catch (_) {}
       }
@@ -48,8 +57,36 @@ class _OverlayTimelineScreenState extends State<OverlayTimelineScreen> {
 
   @override
   void dispose() {
+    _scrollController.removeListener(_onScroll);
+    _scrollController.dispose();
     _subscription?.cancel();
     super.dispose();
+  }
+
+  void _onScroll() {
+    if (_scrollController.position.pixels >=
+        _scrollController.position.maxScrollExtent - 100) {
+      if (!_isLoadingMore && _posts.isNotEmpty) {
+        setState(() => _isLoadingMore = true);
+        FlutterOverlayWindow.shareData({"cmd": "loadMore"});
+        // タイムアウトでリセット
+        Future.delayed(const Duration(seconds: 15), () {
+          if (mounted && _isLoadingMore) {
+            setState(() => _isLoadingMore = false);
+          }
+        });
+      }
+    }
+  }
+
+  Future<void> _onRefresh() async {
+    _refreshCompleter = Completer<void>();
+    await FlutterOverlayWindow.shareData({"cmd": "refresh"});
+    await _refreshCompleter!.future.timeout(
+      const Duration(seconds: 10),
+      onTimeout: () {},
+    );
+    _refreshCompleter = null;
   }
 
   Future<void> _openMainApp() async {
@@ -80,24 +117,21 @@ class _OverlayTimelineScreenState extends State<OverlayTimelineScreen> {
   }
 
   Widget _buildSizeSelector(
-      String label, int current, ValueChanged<int> onSelect) {
+      IconData icon, int current, ValueChanged<int> onSelect) {
     return Row(
       children: [
         SizedBox(
           width: 24,
-          child: Text(
-            label,
-            style: const TextStyle(color: Colors.white60, fontSize: 10),
-          ),
+          child: Icon(icon, color: Colors.white38, size: 16),
         ),
         for (int i = 0; i < _labels.length; i++) ...[
-          if (i > 0) const SizedBox(width: 3),
+          if (i > 0) const SizedBox(width: 4),
           Expanded(
             child: GestureDetector(
               behavior: HitTestBehavior.opaque,
               onTap: () => onSelect(i),
               child: Container(
-                padding: const EdgeInsets.symmetric(vertical: 4),
+                padding: const EdgeInsets.symmetric(vertical: 8),
                 decoration: BoxDecoration(
                   color: i == current
                       ? Colors.blue.withAlpha(60)
@@ -113,7 +147,7 @@ class _OverlayTimelineScreenState extends State<OverlayTimelineScreen> {
                   textAlign: TextAlign.center,
                   style: TextStyle(
                     color: i == current ? Colors.blue[300] : Colors.white54,
-                    fontSize: 10,
+                    fontSize: 11,
                     fontWeight:
                         i == current ? FontWeight.bold : FontWeight.normal,
                   ),
@@ -131,19 +165,16 @@ class _OverlayTimelineScreenState extends State<OverlayTimelineScreen> {
       children: [
         const SizedBox(
           width: 24,
-          child: Text(
-            '透過',
-            style: TextStyle(color: Colors.white60, fontSize: 10),
-          ),
+          child: Icon(Icons.opacity, color: Colors.white38, size: 16),
         ),
         for (int i = 0; i < _opacityLabels.length; i++) ...[
-          if (i > 0) const SizedBox(width: 3),
+          if (i > 0) const SizedBox(width: 4),
           Expanded(
             child: GestureDetector(
               behavior: HitTestBehavior.opaque,
               onTap: () => setState(() => _opacityIndex = i),
               child: Container(
-                padding: const EdgeInsets.symmetric(vertical: 4),
+                padding: const EdgeInsets.symmetric(vertical: 8),
                 decoration: BoxDecoration(
                   color: i == _opacityIndex
                       ? Colors.blue.withAlpha(60)
@@ -161,7 +192,7 @@ class _OverlayTimelineScreenState extends State<OverlayTimelineScreen> {
                     color: i == _opacityIndex
                         ? Colors.blue[300]
                         : Colors.white54,
-                    fontSize: 9,
+                    fontSize: 10,
                     fontWeight: i == _opacityIndex
                         ? FontWeight.bold
                         : FontWeight.normal,
@@ -183,10 +214,10 @@ class _OverlayTimelineScreenState extends State<OverlayTimelineScreen> {
             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
             children: [
               const SizedBox(height: 2),
-              _buildSizeSelector('横', _wIndex, _setWidth),
-              const SizedBox(height: 6),
-              _buildSizeSelector('縦', _hIndex, _setHeight),
-              const SizedBox(height: 6),
+              _buildSizeSelector(Icons.swap_horiz, _wIndex, _setWidth),
+              const SizedBox(height: 8),
+              _buildSizeSelector(Icons.swap_vert, _hIndex, _setHeight),
+              const SizedBox(height: 8),
               _buildOpacitySelector(),
             ],
           ),
@@ -218,6 +249,51 @@ class _OverlayTimelineScreenState extends State<OverlayTimelineScreen> {
           ),
         ),
       ],
+    );
+  }
+
+  Widget _buildTimeline() {
+    if (_posts.isEmpty) {
+      return const Center(
+        child: Text(
+          '読み込み中...',
+          style: TextStyle(color: Colors.white54, fontSize: 10),
+        ),
+      );
+    }
+
+    return RefreshIndicator(
+      onRefresh: _onRefresh,
+      color: Colors.blue,
+      backgroundColor: const Color(0xFF2C2C2E),
+      child: ListView.builder(
+        controller: _scrollController,
+        physics: const AlwaysScrollableScrollPhysics(),
+        padding: const EdgeInsets.only(top: 2),
+        itemCount: _posts.length + (_isLoadingMore ? 1 : 0),
+        itemBuilder: (context, index) {
+          if (index >= _posts.length) {
+            return const Padding(
+              padding: EdgeInsets.all(8),
+              child: Center(
+                child: SizedBox(
+                  width: 16,
+                  height: 16,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    color: Colors.white38,
+                  ),
+                ),
+              ),
+            );
+          }
+          final post = _posts[index];
+          return OverlayPostCard(
+            post: post,
+            onShowDetail: () => _openPostDetail(post),
+          );
+        },
+      ),
     );
   }
 
@@ -321,26 +397,7 @@ class _OverlayTimelineScreenState extends State<OverlayTimelineScreen> {
                 Expanded(
                   child: _settingsOpen
                       ? _buildSettingsPanel()
-                      : _posts.isEmpty
-                          ? const Center(
-                              child: Text(
-                                '読み込み中...',
-                                style: TextStyle(
-                                    color: Colors.white54, fontSize: 10),
-                              ),
-                            )
-                          : ListView.builder(
-                              padding: const EdgeInsets.only(top: 2),
-                              itemCount: _posts.length,
-                              itemBuilder: (context, index) {
-                                final post = _posts[index];
-                                return OverlayPostCard(
-                                  post: post,
-                                  onShowDetail: () =>
-                                      _openPostDetail(post),
-                                );
-                              },
-                            ),
+                      : _buildTimeline(),
                 ),
               ],
             ),

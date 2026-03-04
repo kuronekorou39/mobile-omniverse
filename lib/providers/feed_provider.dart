@@ -55,17 +55,35 @@ class FeedNotifier extends StateNotifier<FeedState> {
     TimelineFetchScheduler.instance.onFetchLog = _onFetchLog;
     TimelineFetchScheduler.instance.onTokenExpired = _onTokenExpired;
     _loadCachedTimeline();
+    _listenToOverlayCommands();
   }
 
   final List<Post> _pendingQueue = [];
   Timer? _dripTimer;
   Timer? _dripDelayTimer;
+  StreamSubscription? _overlayCommandSubscription;
   bool _bypassDrip = false;
   bool _firstFetch = true;
   bool _isAtTop = true;
 
   /// トークン期限切れアカウントの通知用 (accountId, handle)
   void Function(String accountId, String handle)? onTokenExpired;
+
+  void _listenToOverlayCommands() {
+    try {
+      _overlayCommandSubscription =
+          FlutterOverlayWindow.overlayListener.listen((message) {
+        if (message is Map) {
+          final cmd = message['cmd'];
+          if (cmd == 'refresh') {
+            refresh();
+          } else if (cmd == 'loadMore') {
+            loadMore();
+          }
+        }
+      });
+    } catch (_) {}
+  }
 
   void _onTokenExpired(String accountId, String handle) {
     onTokenExpired?.call(accountId, handle);
@@ -96,7 +114,7 @@ class FeedNotifier extends StateNotifier<FeedState> {
     try {
       final isActive = await FlutterOverlayWindow.isActive();
       if (!isActive) return;
-      final posts = state.posts.take(20).map((p) => p.toJson()).toList();
+      final posts = state.posts.take(100).map((p) => p.toJson()).toList();
       await FlutterOverlayWindow.shareData(jsonEncode(posts));
     } catch (_) {}
   }
@@ -179,6 +197,9 @@ class FeedNotifier extends StateNotifier<FeedState> {
   void _startDrip() {
     _dripTimer?.cancel();
     if (_pendingQueue.isEmpty) return;
+
+    // 古い順にソート → 各ドリップが常にリスト先頭に挿入されるように
+    _pendingQueue.sort((a, b) => a.timestamp.compareTo(b.timestamp));
 
     // フェッチ間隔 ÷ キュー件数 (300ms〜2000ms)
     final schedulerIntervalMs =
@@ -304,6 +325,7 @@ class FeedNotifier extends StateNotifier<FeedState> {
   void dispose() {
     _dripTimer?.cancel();
     _dripDelayTimer?.cancel();
+    _overlayCommandSubscription?.cancel();
     super.dispose();
   }
 }

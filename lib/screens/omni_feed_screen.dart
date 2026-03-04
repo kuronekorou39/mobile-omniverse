@@ -365,7 +365,7 @@ class _OmniFeedScreenState extends ConsumerState<OmniFeedScreen>
         positionGravity: PositionGravity.none,
       );
 
-      final posts = feed.posts.take(20).map((p) => p.toJson()).toList();
+      final posts = feed.posts.take(100).map((p) => p.toJson()).toList();
       await FlutterOverlayWindow.shareData(jsonEncode(posts));
 
       // ホーム画面に戻る（オーバーレイを使いやすく）

@@ -61,7 +61,6 @@ class FeedNotifier extends StateNotifier<FeedState> {
   final List<Post> _pendingQueue = [];
   Timer? _dripTimer;
   Timer? _dripDelayTimer;
-  StreamSubscription? _overlayCommandSubscription;
   bool _bypassDrip = false;
   bool _firstFetch = true;
   bool _isAtTop = true;
@@ -70,19 +69,16 @@ class FeedNotifier extends StateNotifier<FeedState> {
   void Function(String accountId, String handle)? onTokenExpired;
 
   void _listenToOverlayCommands() {
-    try {
-      _overlayCommandSubscription =
-          FlutterOverlayWindow.overlayListener.listen((message) {
-        if (message is Map) {
-          final cmd = message['cmd'];
-          if (cmd == 'refresh') {
-            refresh();
-          } else if (cmd == 'loadMore') {
-            loadMore();
-          }
+    FlutterOverlayWindow.setMainAppCommandHandler((message) {
+      if (message is Map) {
+        final cmd = message['cmd'];
+        if (cmd == 'refresh') {
+          refresh();
+        } else if (cmd == 'loadMore') {
+          loadMore();
         }
-      });
-    } catch (_) {}
+      }
+    });
   }
 
   void _onTokenExpired(String accountId, String handle) {
@@ -325,7 +321,7 @@ class FeedNotifier extends StateNotifier<FeedState> {
   void dispose() {
     _dripTimer?.cancel();
     _dripDelayTimer?.cancel();
-    _overlayCommandSubscription?.cancel();
+    FlutterOverlayWindow.setMainAppCommandHandler(null);
     super.dispose();
   }
 }

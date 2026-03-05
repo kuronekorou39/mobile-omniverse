@@ -8,7 +8,7 @@ import 'package:flutter_overlay_window/src/overlay_config.dart';
 class FlutterOverlayWindow {
   FlutterOverlayWindow._();
 
-  static final StreamController _controller = StreamController.broadcast();
+  static final StreamController _controller = StreamController();
   static const MethodChannel _channel =
       MethodChannel("x-slayer/overlay_channel");
   static const MethodChannel _overlayChannel =
@@ -101,12 +101,26 @@ class FlutterOverlayWindow {
   }
 
   /// Streams message shared between overlay and main app
+  /// Used by the OVERLAY engine to receive data from the main app.
   static Stream<dynamic> get overlayListener {
     _overlayMessageChannel.setMessageHandler((message) async {
       _controller.add(message);
       return message;
     });
     return _controller.stream;
+  }
+
+  /// Set a handler for commands sent from the overlay to the main app.
+  /// Used by the MAIN APP engine to receive commands (refresh/loadMore).
+  static void setMainAppCommandHandler(void Function(dynamic)? handler) {
+    if (handler != null) {
+      _overlayMessageChannel.setMessageHandler((message) async {
+        handler(message);
+        return null;
+      });
+    } else {
+      _overlayMessageChannel.setMessageHandler(null);
+    }
   }
 
   /// Update the overlay flag while the overlay in action

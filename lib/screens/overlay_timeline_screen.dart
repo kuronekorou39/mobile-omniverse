@@ -18,7 +18,6 @@ class _OverlayTimelineScreenState extends State<OverlayTimelineScreen> {
   List<Post> _posts = [];
   StreamSubscription? _subscription;
   final ScrollController _scrollController = ScrollController();
-  Completer<void>? _refreshCompleter;
   bool _settingsOpen = false;
   bool _isLoadingMore = false;
   int _wIndex = 0;
@@ -47,8 +46,6 @@ class _OverlayTimelineScreenState extends State<OverlayTimelineScreen> {
               _posts = posts;
               _isLoadingMore = false;
             });
-            _refreshCompleter?.complete();
-            _refreshCompleter = null;
           }
         } catch (_) {}
       }
@@ -80,13 +77,10 @@ class _OverlayTimelineScreenState extends State<OverlayTimelineScreen> {
   }
 
   Future<void> _onRefresh() async {
-    _refreshCompleter = Completer<void>();
     await FlutterOverlayWindow.shareData({"cmd": "refresh"});
-    await _refreshCompleter!.future.timeout(
-      const Duration(seconds: 10),
-      onTimeout: () {},
-    );
-    _refreshCompleter = null;
+    // コマンド送信後、短いフィードバック表示で即戻る
+    // 実データはメインアプリのフェッチ完了後に自動で届く
+    await Future.delayed(const Duration(milliseconds: 1500));
   }
 
   Future<void> _openMainApp() async {

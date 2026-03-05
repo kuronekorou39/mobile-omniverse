@@ -201,6 +201,14 @@ class FlutterOverlayWindow {
     return _res ?? false;
   }
 
+  /// Move the app to background without destroying the Activity/Engine.
+  /// Unlike SystemNavigator.pop(), this keeps the scheduler and
+  /// message handlers alive.
+  static Future<bool> moveToBackground() async {
+    final bool? res = await _channel.invokeMethod<bool?>('moveToBackground');
+    return res ?? false;
+  }
+
   /// Dispose overlay stream
   static void disposeOverlayListener() {
     _controller.close();

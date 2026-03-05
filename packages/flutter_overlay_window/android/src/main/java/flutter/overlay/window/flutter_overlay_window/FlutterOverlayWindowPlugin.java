@@ -135,6 +135,14 @@ public class FlutterOverlayWindowPlugin implements
                 result.success(true);
             }
             return;
+        } else if (call.method.equals("moveToBackground")) {
+            if (mActivity != null) {
+                mActivity.moveTaskToBack(true);
+                result.success(true);
+            } else {
+                result.success(false);
+            }
+            return;
         } else {
             result.notImplemented();
         }

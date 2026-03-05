@@ -2,7 +2,6 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_overlay_window/flutter_overlay_window.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/activity_log.dart';
@@ -368,9 +367,9 @@ class _OmniFeedScreenState extends ConsumerState<OmniFeedScreen>
       final posts = feed.posts.take(100).map((p) => p.toJson()).toList();
       await FlutterOverlayWindow.shareData(jsonEncode(posts));
 
-      // ホーム画面に戻る（オーバーレイを使いやすく）
+      // ホーム画面に戻る（Activityを破棄せずバックグラウンドへ）
       if (mounted) {
-        SystemNavigator.pop();
+        await FlutterOverlayWindow.moveToBackground();
       }
     } catch (e) {
       messenger.showSnackBar(

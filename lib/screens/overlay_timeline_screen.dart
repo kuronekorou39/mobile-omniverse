@@ -481,22 +481,8 @@ class _OverlayTimelineScreenState extends State<OverlayTimelineScreen> {
             ),
             child: Column(
               children: [
-                // Header bar
-                GestureDetector(
-                  behavior: HitTestBehavior.opaque,
-                  onPanUpdate: (details) async {
-                    final pos =
-                        await FlutterOverlayWindow.getOverlayPosition();
-                    final newY = pos.y + details.delta.dy;
-                    // 上端制限（ステータスバー高さ相当 = 48dp）
-                    if (newY >= 48 || details.delta.dy > 0) {
-                      await FlutterOverlayWindow.moveOverlayByDelta(
-                        details.delta.dx,
-                        details.delta.dy,
-                      );
-                    }
-                  },
-                  child: Container(
+                // Header bar (ドラッグはネイティブ側で処理)
+                Container(
                     padding: const EdgeInsets.symmetric(
                         horizontal: 8, vertical: 5),
                     decoration: BoxDecoration(
@@ -590,7 +576,6 @@ class _OverlayTimelineScreenState extends State<OverlayTimelineScreen> {
                       ],
                     ),
                   ),
-                ),
                 // Body
                 Expanded(
                   child: _settingsOpen

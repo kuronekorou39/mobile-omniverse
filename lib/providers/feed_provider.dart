@@ -238,7 +238,7 @@ class FeedNotifier extends StateNotifier<FeedState> {
     final schedulerIntervalMs =
         TimelineFetchScheduler.instance.interval.inMilliseconds;
     final intervalMs =
-        (schedulerIntervalMs / _pendingQueue.length).round().clamp(600, 3000);
+        (schedulerIntervalMs / _pendingQueue.length).round().clamp(200, 3000);
     _dripTimer = Timer.periodic(Duration(milliseconds: intervalMs), (_) {
       _dripOne();
     });

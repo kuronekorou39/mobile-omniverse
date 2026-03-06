@@ -24,6 +24,11 @@ class _OverlayTimelineScreenState extends State<OverlayTimelineScreen> {
   int _hIndex = 0;
   int _opacityIndex = 3;
 
+  // フェッチタイマー状態
+  int _fetchRemaining = 0;
+  int _fetchTotal = 0;
+  bool _isFetching = false;
+
   static const _widths = [180, 250, 360];
   static const _heights = [250, 400, 700];
   static const _labels = ['S', 'M', 'L'];
@@ -37,8 +42,20 @@ class _OverlayTimelineScreenState extends State<OverlayTimelineScreen> {
     _subscription = FlutterOverlayWindow.overlayListener.listen((data) {
       if (data is String) {
         try {
-          final list = jsonDecode(data) as List<dynamic>;
-          final posts = list
+          final decoded = jsonDecode(data);
+          List<dynamic> postList;
+          if (decoded is Map<String, dynamic>) {
+            postList = decoded['posts'] as List<dynamic>? ?? [];
+            final fetch = decoded['fetch'] as Map<String, dynamic>?;
+            if (fetch != null) {
+              _fetchRemaining = fetch['remaining'] as int? ?? 0;
+              _fetchTotal = fetch['total'] as int? ?? 0;
+              _isFetching = fetch['isFetching'] as bool? ?? false;
+            }
+          } else {
+            postList = decoded as List<dynamic>;
+          }
+          final posts = postList
               .map((e) => Post.fromCache(e as Map<String, dynamic>))
               .toList();
           if (mounted) {
@@ -200,6 +217,38 @@ class _OverlayTimelineScreenState extends State<OverlayTimelineScreen> {
     );
   }
 
+  Widget _buildFetchTimer() {
+    final progress = _fetchTotal > 0 ? _fetchRemaining / _fetchTotal : 0.0;
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        SizedBox(
+          width: 14,
+          height: 14,
+          child: _isFetching
+              ? const CircularProgressIndicator(
+                  strokeWidth: 1.5,
+                  color: Colors.white54,
+                )
+              : CircularProgressIndicator(
+                  value: progress,
+                  strokeWidth: 1.5,
+                  color: Colors.blue,
+                  backgroundColor: Colors.white12,
+                ),
+        ),
+        const SizedBox(width: 3),
+        Text(
+          _isFetching ? '...' : '$_fetchRemaining',
+          style: const TextStyle(
+            color: Colors.white38,
+            fontSize: 9,
+          ),
+        ),
+      ],
+    );
+  }
+
   Widget _buildSettingsPanel() {
     return Column(
       children: [
@@ -301,7 +350,7 @@ class _OverlayTimelineScreenState extends State<OverlayTimelineScreen> {
           opacity: _opacities[_opacityIndex],
           child: Container(
             decoration: BoxDecoration(
-              color: const Color(0xF01C1C1E),
+              color: const Color(0xFF1C1C1E),
               borderRadius: BorderRadius.circular(12),
               border: Border.all(
                 color: _settingsOpen ? Colors.blue : Colors.grey[700]!,
@@ -367,10 +416,17 @@ class _OverlayTimelineScreenState extends State<OverlayTimelineScreen> {
                           ),
                         ),
                       ),
-                      const Expanded(
+                      Expanded(
                         child: Center(
-                          child: Icon(Icons.drag_indicator,
-                              color: Colors.white24, size: 16),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const Icon(Icons.drag_indicator,
+                                  color: Colors.white24, size: 16),
+                              const SizedBox(width: 4),
+                              _buildFetchTimer(),
+                            ],
+                          ),
                         ),
                       ),
                       GestureDetector(

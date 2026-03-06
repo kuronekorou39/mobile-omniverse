@@ -263,6 +263,15 @@ class _AccountDetailScreen extends ConsumerWidget {
               ref.read(accountProvider.notifier).toggleAccount(account.id);
             },
           ),
+          // RT/リポスト非表示
+          SwitchListTile(
+            title: const Text('RT/リポスト非表示'),
+            subtitle: const Text('このアカウントの RT を非表示にする'),
+            value: ref.watch(settingsProvider).hideRetweetsAccountIds.contains(account.id),
+            onChanged: (_) {
+              ref.read(settingsProvider.notifier).toggleHideRetweets(account.id);
+            },
+          ),
           const Divider(),
           // 情報
           ListTile(

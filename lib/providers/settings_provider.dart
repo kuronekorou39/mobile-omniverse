@@ -6,8 +6,8 @@ import '../services/timeline_fetch_scheduler.dart';
 
 class SettingsState {
   const SettingsState({
-    this.fetchIntervalSeconds = 60,
-    this.isFetchingActive = false,
+    this.fetchIntervalSeconds = 15,
+    this.isFetchingActive = true,
     this.themeMode = ThemeMode.system,
     this.fontScale = 1.0,
     this.hideRetweetsAccountIds = const {},
@@ -57,7 +57,7 @@ class SettingsNotifier extends StateNotifier<SettingsState> {
 
   Future<void> _loadFromPrefs() async {
     final prefs = await SharedPreferences.getInstance();
-    final interval = prefs.getInt(_keyInterval) ?? 60;
+    final interval = prefs.getInt(_keyInterval) ?? 15;
     final themeModeIndex = prefs.getInt(_keyThemeMode) ?? 0;
     final fontScale = prefs.getDouble(_keyFontScale) ?? 1.0;
     final hideRtList = prefs.getStringList(_keyHideRetweetsAccounts) ?? [];

@@ -124,6 +124,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             trailing: DropdownButton<int>(
               value: settings.fetchIntervalSeconds,
               items: const [
+                DropdownMenuItem(value: 15, child: Text('15秒')),
                 DropdownMenuItem(value: 30, child: Text('30秒')),
                 DropdownMenuItem(value: 60, child: Text('60秒')),
                 DropdownMenuItem(value: 120, child: Text('2分')),
@@ -197,31 +198,6 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
               ],
             ),
           ),
-
-          const Divider(),
-
-          // RT filter per account
-          const _SectionHeader(title: 'RT/リポスト フィルタ'),
-          ...AccountStorageService.instance.accounts.map((account) {
-            final isHidden = settings.hideRetweetsAccountIds.contains(account.id);
-            return SwitchListTile(
-              title: Text(account.displayName),
-              subtitle: Text(
-                '${account.handle} (${account.service.name.toUpperCase()})',
-              ),
-              secondary: Icon(
-                account.service == SnsService.x ? Icons.close : Icons.cloud,
-                size: 20,
-              ),
-              value: isHidden,
-              onChanged: (_) => notifier.toggleHideRetweets(account.id),
-            );
-          }),
-          if (AccountStorageService.instance.accounts.isEmpty)
-            const ListTile(
-              title: Text('アカウントがありません'),
-              subtitle: Text('アカウントを追加すると、ここで RT 非表示を設定できます'),
-            ),
 
           const Divider(),
 

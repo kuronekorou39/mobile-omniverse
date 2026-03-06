@@ -8,6 +8,7 @@ import '../models/activity_log.dart';
 import '../models/post.dart';
 import '../models/sns_service.dart';
 import '../providers/activity_log_provider.dart';
+import '../providers/settings_provider.dart';
 import '../services/timeline_cache_service.dart';
 import '../services/timeline_fetch_scheduler.dart';
 
@@ -49,21 +50,26 @@ class FeedState {
 }
 
 class FeedNotifier extends StateNotifier<FeedState> {
-  FeedNotifier(this._logNotifier) : super(const FeedState()) {
+  FeedNotifier(this._logNotifier, this._settingsReader) : super(const FeedState()) {
     TimelineFetchScheduler.instance.onPostsFetched = _onPostsFetched;
     TimelineFetchScheduler.instance.onFetchStart = _onFetchStart;
     TimelineFetchScheduler.instance.onFetchLog = _onFetchLog;
     TimelineFetchScheduler.instance.onTokenExpired = _onTokenExpired;
     _loadCachedTimeline();
     _listenToOverlayCommands();
+    _startCountdownTimer();
   }
 
   final List<Post> _pendingQueue = [];
   Timer? _dripTimer;
   Timer? _dripDelayTimer;
+  Timer? _countdownTimer;
   bool _bypassDrip = false;
   bool _firstFetch = true;
   bool _isAtTop = true;
+  int _remainingSeconds = 0;
+  bool _wasFetching = false;
+  final SettingsState Function() _settingsReader;
 
   /// トークン期限切れアカウントの通知用 (accountId, handle)
   void Function(String accountId, String handle)? onTokenExpired;
@@ -83,6 +89,25 @@ class FeedNotifier extends StateNotifier<FeedState> {
 
   void _onTokenExpired(String accountId, String handle) {
     onTokenExpired?.call(accountId, handle);
+  }
+
+  void _startCountdownTimer() {
+    _countdownTimer = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (!mounted) return;
+
+      // フェッチ完了時にカウントダウンをリセット
+      if (_wasFetching && !state.isFetching) {
+        _remainingSeconds = _settingsReader().fetchIntervalSeconds;
+      }
+      _wasFetching = state.isFetching;
+
+      if (!state.isFetching && _remainingSeconds > 0) {
+        _remainingSeconds--;
+      }
+
+      // オーバーレイにタイマー状態を同期
+      _syncToOverlay();
+    });
   }
 
   Future<void> _loadCachedTimeline() async {
@@ -111,7 +136,17 @@ class FeedNotifier extends StateNotifier<FeedState> {
       final isActive = await FlutterOverlayWindow.isActive();
       if (!isActive) return;
       final posts = state.posts.take(100).map((p) => p.toJson()).toList();
-      await FlutterOverlayWindow.shareData(jsonEncode(posts));
+      final settings = _settingsReader();
+      final total = settings.fetchIntervalSeconds;
+      final payload = {
+        'posts': posts,
+        'fetch': {
+          'remaining': state.isFetching ? 0 : _remainingSeconds.clamp(0, total),
+          'total': total,
+          'isFetching': state.isFetching,
+        },
+      };
+      await FlutterOverlayWindow.shareData(jsonEncode(payload));
     } catch (_) {}
   }
 
@@ -121,7 +156,9 @@ class FeedNotifier extends StateNotifier<FeedState> {
   }
 
   void _onFetchStart() {
+    _remainingSeconds = 0;
     state = state.copyWith(isFetching: true);
+    _syncToOverlay();
   }
 
   void _onPostsFetched(List<Post> newPosts) {
@@ -321,6 +358,7 @@ class FeedNotifier extends StateNotifier<FeedState> {
   void dispose() {
     _dripTimer?.cancel();
     _dripDelayTimer?.cancel();
+    _countdownTimer?.cancel();
     FlutterOverlayWindow.setMainAppCommandHandler(null);
     super.dispose();
   }
@@ -329,6 +367,6 @@ class FeedNotifier extends StateNotifier<FeedState> {
 final feedProvider = StateNotifierProvider<FeedNotifier, FeedState>(
   (ref) {
     final logNotifier = ref.read(activityLogProvider.notifier);
-    return FeedNotifier(logNotifier);
+    return FeedNotifier(logNotifier, () => ref.read(settingsProvider));
   },
 );

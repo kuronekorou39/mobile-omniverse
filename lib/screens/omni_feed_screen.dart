@@ -20,8 +20,6 @@ import '../widgets/account_picker_modal.dart';
 import '../widgets/post_card.dart';
 import '../widgets/update_dialog.dart';
 import 'accounts_screen.dart';
-import 'activity_log_screen.dart';
-import 'bookmarks_screen.dart';
 import 'compose_screen.dart';
 import 'settings_screen.dart';
 import 'post_detail_screen.dart';
@@ -441,24 +439,6 @@ class _OmniFeedScreenState extends ConsumerState<OmniFeedScreen>
               icon: const Icon(Icons.picture_in_picture_alt),
               tooltip: 'オーバーレイ',
               onPressed: () => _launchOverlay(feed),
-            ),
-            IconButton(
-              icon: const Icon(Icons.bookmark_outline),
-              tooltip: 'ブックマーク',
-              onPressed: () {
-                Navigator.of(context).push(
-                  MaterialPageRoute(builder: (_) => const BookmarksScreen()),
-                );
-              },
-            ),
-            IconButton(
-              icon: const Icon(Icons.receipt_long_outlined),
-              tooltip: 'ログ',
-              onPressed: () {
-                Navigator.of(context).push(
-                  MaterialPageRoute(builder: (_) => const ActivityLogScreen()),
-                );
-              },
             ),
             IconButton(
               icon: const Icon(Icons.settings_outlined),

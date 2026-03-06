@@ -9,6 +9,7 @@ import '../services/account_storage_service.dart';
 import '../services/app_update_service.dart';
 import '../services/x_query_id_service.dart';
 import '../widgets/update_dialog.dart';
+import 'activity_log_screen.dart';
 
 class SettingsScreen extends ConsumerStatefulWidget {
   const SettingsScreen({super.key});
@@ -187,62 +188,77 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
 
           const Divider(),
 
-          // Debug section
-          const _SectionHeader(title: 'デバッグ'),
-          SwitchListTile(
-            title: const Text('タイムライン取得'),
-            subtitle: Text(settings.isFetchingActive ? '実行中' : '停止中'),
-            value: settings.isFetchingActive,
-            onChanged: (_) => notifier.toggleFetching(),
-          ),
-          ListTile(
-            title: const Text('フェッチ間隔'),
-            subtitle: Text('${settings.fetchIntervalSeconds} 秒'),
-            trailing: DropdownButton<int>(
-              value: settings.fetchIntervalSeconds,
-              items: const [
-                DropdownMenuItem(value: 15, child: Text('15秒')),
-                DropdownMenuItem(value: 30, child: Text('30秒')),
-                DropdownMenuItem(value: 60, child: Text('60秒')),
-                DropdownMenuItem(value: 120, child: Text('2分')),
-                DropdownMenuItem(value: 300, child: Text('5分')),
-              ],
-              onChanged: (value) {
-                if (value != null) notifier.setInterval(value);
-              },
-            ),
-          ),
-          SwitchListTile(
-            title: const Text('フェッチタイマー表示'),
-            subtitle: const Text('AppBar にタイマーを表示'),
-            value: settings.showFetchTimer,
-            onChanged: (value) => notifier.setShowFetchTimer(value),
-          ),
-          ListTile(
-            leading: const Icon(Icons.refresh),
-            title: const Text('queryId 更新'),
-            subtitle: Text(
-              _hasXAccount
-                  ? (XQueryIdService.instance.lastRefreshTime() != null
-                      ? '最終更新: ${_formatTime(XQueryIdService.instance.lastRefreshTime()!)}'
-                      : '未更新')
-                  : 'X アカウントが必要です',
-            ),
-            onTap: _hasXAccount ? _refreshQueryIds : null,
-          ),
-          ListTile(
-            leading: const Icon(Icons.delete_outline),
-            title: const Text('queryId キャッシュ消去'),
-            subtitle: const Text('デフォルト値に戻します'),
-            onTap: () async {
-              await XQueryIdService.instance.clearCache();
-              if (mounted) {
-                setState(() {});
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('queryId キャッシュを消去しました')),
-                );
-              }
-            },
+          // Debug section (accordion)
+          ExpansionTile(
+            leading: const Icon(Icons.bug_report_outlined),
+            title: const Text('デバッグ'),
+            children: [
+              SwitchListTile(
+                title: const Text('タイムライン取得'),
+                subtitle: Text(settings.isFetchingActive ? '実行中' : '停止中'),
+                value: settings.isFetchingActive,
+                onChanged: (_) => notifier.toggleFetching(),
+              ),
+              ListTile(
+                title: const Text('フェッチ間隔'),
+                subtitle: Text('${settings.fetchIntervalSeconds} 秒'),
+                trailing: DropdownButton<int>(
+                  value: settings.fetchIntervalSeconds,
+                  items: const [
+                    DropdownMenuItem(value: 15, child: Text('15秒')),
+                    DropdownMenuItem(value: 30, child: Text('30秒')),
+                    DropdownMenuItem(value: 60, child: Text('60秒')),
+                    DropdownMenuItem(value: 120, child: Text('2分')),
+                    DropdownMenuItem(value: 300, child: Text('5分')),
+                  ],
+                  onChanged: (value) {
+                    if (value != null) notifier.setInterval(value);
+                  },
+                ),
+              ),
+              SwitchListTile(
+                title: const Text('フェッチタイマー表示'),
+                subtitle: const Text('AppBar にタイマーを表示'),
+                value: settings.showFetchTimer,
+                onChanged: (value) => notifier.setShowFetchTimer(value),
+              ),
+              ListTile(
+                leading: const Icon(Icons.receipt_long_outlined),
+                title: const Text('アクションログ'),
+                trailing: const Icon(Icons.chevron_right),
+                onTap: () {
+                  Navigator.of(context).push(
+                    MaterialPageRoute(builder: (_) => const ActivityLogScreen()),
+                  );
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.refresh),
+                title: const Text('queryId 更新'),
+                subtitle: Text(
+                  _hasXAccount
+                      ? (XQueryIdService.instance.lastRefreshTime() != null
+                          ? '最終更新: ${_formatTime(XQueryIdService.instance.lastRefreshTime()!)}'
+                          : '未更新')
+                      : 'X アカウントが必要です',
+                ),
+                onTap: _hasXAccount ? _refreshQueryIds : null,
+              ),
+              ListTile(
+                leading: const Icon(Icons.delete_outline),
+                title: const Text('queryId キャッシュ消去'),
+                subtitle: const Text('デフォルト値に戻します'),
+                onTap: () async {
+                  await XQueryIdService.instance.clearCache();
+                  if (mounted) {
+                    setState(() {});
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('queryId キャッシュを消去しました')),
+                    );
+                  }
+                },
+              ),
+            ],
           ),
         ],
       ),

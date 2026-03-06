@@ -3,17 +3,68 @@ import 'package:flutter/material.dart';
 import '../models/post.dart';
 import '../models/sns_service.dart';
 
+/// オーバーレイ用テーマカラーセット
+class OverlayThemeColors {
+  const OverlayThemeColors({
+    required this.bg,
+    required this.headerBg,
+    required this.text,
+    required this.textSecondary,
+    required this.textTertiary,
+    required this.textQuaternary,
+    required this.divider,
+    required this.border,
+    required this.iconColor,
+  });
+
+  final Color bg;
+  final Color headerBg;
+  final Color text;
+  final Color textSecondary;
+  final Color textTertiary;
+  final Color textQuaternary;
+  final Color divider;
+  final Color border;
+  final Color iconColor;
+
+  static const dark = OverlayThemeColors(
+    bg: Color(0xFF1C1C1E),
+    headerBg: Color(0xFF2C2C2E),
+    text: Colors.white70,
+    textSecondary: Colors.white60,
+    textTertiary: Colors.white54,
+    textQuaternary: Colors.white38,
+    divider: Color(0xFF3A3A3C),
+    border: Color(0xFF48484A),
+    iconColor: Colors.white24,
+  );
+
+  static const light = OverlayThemeColors(
+    bg: Color(0xFFF5F5F5),
+    headerBg: Color(0xFFE8E8E8),
+    text: Color(0xFF1C1C1E),
+    textSecondary: Color(0xFF3A3A3C),
+    textTertiary: Color(0xFF636366),
+    textQuaternary: Color(0xFF8E8E93),
+    divider: Color(0xFFD1D1D6),
+    border: Color(0xFFC7C7CC),
+    iconColor: Color(0xFFAEAEB2),
+  );
+}
+
 class OverlayPostCard extends StatefulWidget {
   const OverlayPostCard({
     super.key,
     required this.post,
     this.onShowDetail,
     this.fontSize = 10,
+    this.theme = OverlayThemeColors.dark,
   });
 
   final Post post;
   final VoidCallback? onShowDetail;
   final double fontSize;
+  final OverlayThemeColors theme;
 
   @override
   State<OverlayPostCard> createState() => _OverlayPostCardState();
@@ -23,6 +74,7 @@ class _OverlayPostCardState extends State<OverlayPostCard> {
   bool _isExpanded = false;
 
   Post get post => widget.post;
+  OverlayThemeColors get t => widget.theme;
 
   String _formatTimestamp(DateTime timestamp) {
     final diff = DateTime.now().difference(timestamp);
@@ -69,7 +121,7 @@ class _OverlayPostCardState extends State<OverlayPostCard> {
                 padding: const EdgeInsets.only(left: 28, bottom: 1),
                 child: Text(
                   '↻ ${post.retweetedByHandle} がリポスト',
-                  style: TextStyle(fontSize: _fs - 2, color: Colors.white30),
+                  style: TextStyle(fontSize: _fs - 2, color: t.textQuaternary),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                 ),
@@ -79,7 +131,7 @@ class _OverlayPostCardState extends State<OverlayPostCard> {
             _isExpanded ? _buildExpanded() : _buildCollapsed(),
 
             // Divider
-            Divider(height: 6, thickness: 0.3, color: Colors.grey[800]),
+            Divider(height: 6, thickness: 0.3, color: t.divider),
           ],
         ),
       ),
@@ -110,7 +162,7 @@ class _OverlayPostCardState extends State<OverlayPostCard> {
                     maxLines: 3,
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
-                      color: Colors.white70,
+                      color: t.text,
                       fontSize: _fs,
                       height: 1.3,
                     ),
@@ -124,7 +176,7 @@ class _OverlayPostCardState extends State<OverlayPostCard> {
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: TextStyle(
-                            fontSize: _fs - 1, color: Colors.white38),
+                            fontSize: _fs - 1, color: t.textQuaternary),
                       ),
                     ),
                 ],
@@ -165,7 +217,7 @@ class _OverlayPostCardState extends State<OverlayPostCard> {
               // Username
               Text(
                 post.username,
-                style: TextStyle(fontSize: _fs, color: Colors.white60),
+                style: TextStyle(fontSize: _fs, color: t.textSecondary),
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
               ),
@@ -174,7 +226,7 @@ class _OverlayPostCardState extends State<OverlayPostCard> {
               Text(
                 post.body,
                 style: TextStyle(
-                  color: Colors.white70,
+                  color: t.text,
                   fontSize: _fs,
                   height: 1.3,
                 ),
@@ -205,14 +257,14 @@ class _OverlayPostCardState extends State<OverlayPostCard> {
                       width: double.infinity,
                       padding: const EdgeInsets.symmetric(vertical: 4),
                       decoration: BoxDecoration(
-                        border: Border.all(color: Colors.white24, width: 0.5),
+                        border: Border.all(color: t.border, width: 0.5),
                         borderRadius: BorderRadius.circular(4),
                       ),
                       child: Text(
                         '詳細を表示',
                         textAlign: TextAlign.center,
                         style: TextStyle(
-                          color: Colors.white54,
+                          color: t.textTertiary,
                           fontSize: _fs - 1,
                         ),
                       ),
@@ -265,7 +317,7 @@ class _OverlayPostCardState extends State<OverlayPostCard> {
               fit: BoxFit.cover,
               errorBuilder: (_, __, ___) => Container(
                 color: Colors.grey[800],
-                child: const Icon(Icons.image, size: 14, color: Colors.white24),
+                child: Icon(Icons.image, size: 14, color: t.iconColor),
               ),
             ),
             if (post.videoUrl != null || post.videoThumbnailUrl != null)
@@ -315,9 +367,9 @@ class _OverlayPostCardState extends State<OverlayPostCard> {
                 errorBuilder: (_, __, ___) => Container(
                   height: 60,
                   color: Colors.grey[800],
-                  child: const Center(
+                  child: Center(
                     child:
-                        Icon(Icons.broken_image, size: 20, color: Colors.white24),
+                        Icon(Icons.broken_image, size: 20, color: t.iconColor),
                   ),
                 ),
               ),
@@ -340,7 +392,7 @@ class _OverlayPostCardState extends State<OverlayPostCard> {
     return Container(
       padding: const EdgeInsets.all(5),
       decoration: BoxDecoration(
-        border: Border.all(color: Colors.white12),
+        border: Border.all(color: t.border.withAlpha(80)),
         borderRadius: BorderRadius.circular(4),
       ),
       child: Column(
@@ -348,7 +400,7 @@ class _OverlayPostCardState extends State<OverlayPostCard> {
         children: [
           Text(
             q.handle,
-            style: TextStyle(fontSize: _fs - 2, color: Colors.white38),
+            style: TextStyle(fontSize: _fs - 2, color: t.textQuaternary),
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
           ),
@@ -357,7 +409,7 @@ class _OverlayPostCardState extends State<OverlayPostCard> {
             q.body,
             style: TextStyle(
               fontSize: _fs - 1,
-              color: Colors.white54,
+              color: t.textTertiary,
               height: 1.3,
             ),
           ),
@@ -367,24 +419,24 @@ class _OverlayPostCardState extends State<OverlayPostCard> {
   }
 
   Widget _buildMetaLine() {
-    final metaStyle = TextStyle(fontSize: _fs - 2, color: Colors.white24);
+    final metaStyle = TextStyle(fontSize: _fs - 2, color: t.iconColor);
     return Row(
       children: [
         // Handle (left)
         Expanded(
           child: Text(
             post.handle,
-            style: TextStyle(fontSize: _fs - 2, color: Colors.white30),
+            style: TextStyle(fontSize: _fs - 2, color: t.textQuaternary),
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
           ),
         ),
         // Engagement (right-aligned)
-        const Icon(Icons.favorite_border, size: 9, color: Colors.white24),
+        Icon(Icons.favorite_border, size: 9, color: t.iconColor),
         const SizedBox(width: 2),
         Text(_formatCount(post.likeCount), style: metaStyle),
         const SizedBox(width: 6),
-        const Icon(Icons.repeat, size: 9, color: Colors.white24),
+        Icon(Icons.repeat, size: 9, color: t.iconColor),
         const SizedBox(width: 2),
         Text(_formatCount(post.repostCount), style: metaStyle),
         const SizedBox(width: 6),

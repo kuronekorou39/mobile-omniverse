@@ -314,6 +314,26 @@ public class OverlayService extends Service implements View.OnTouchListener {
             float density = mResources.getDisplayMetrics().density;
             params.x += (int) (dx * density);
             params.y += (int) (dy * density);
+
+            // Clamp to screen bounds
+            int margin = (int) (8 * density);
+            int topMargin = (int) (48 * density);
+            int overlayW = flutterView.getWidth();
+            int overlayH = flutterView.getHeight();
+            int screenW = szWindow.x;
+            int screenH = szWindow.y;
+            if (WindowSetup.gravity == Gravity.CENTER) {
+                int maxX = (screenW - overlayW) / 2 - margin;
+                int maxY = (screenH - overlayH) / 2 - topMargin;
+                if (maxX < 0) maxX = 0;
+                if (maxY < 0) maxY = 0;
+                params.x = Math.max(-maxX, Math.min(params.x, maxX));
+                params.y = Math.max(-maxY, Math.min(params.y, maxY));
+            } else {
+                params.x = Math.max(margin, Math.min(params.x, screenW - overlayW - margin));
+                params.y = Math.max(topMargin, Math.min(params.y, screenH - overlayH - margin));
+            }
+
             windowManager.updateViewLayout(flutterView, params);
             result.success(true);
         } else {

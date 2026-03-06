@@ -365,7 +365,15 @@ class _OmniFeedScreenState extends ConsumerState<OmniFeedScreen>
       );
 
       final posts = feed.posts.take(100).map((p) => p.toJson()).toList();
-      await FlutterOverlayWindow.shareData(jsonEncode(posts));
+      final settings = ref.read(settingsProvider);
+      await FlutterOverlayWindow.shareData(jsonEncode({
+        'posts': posts,
+        'fetch': {
+          'remaining': 0,
+          'total': settings.fetchIntervalSeconds,
+          'isFetching': feed.isFetching,
+        },
+      }));
 
       // ホーム画面に戻る（Activityを破棄せずバックグラウンドへ）
       if (mounted) {
@@ -427,7 +435,7 @@ class _OmniFeedScreenState extends ConsumerState<OmniFeedScreen>
             },
           ),
           actions: [
-            if (settings.isFetchingActive)
+            if (settings.isFetchingActive && settings.showFetchTimer)
               _buildFetchIndicator(context, feed, settings),
             IconButton(
               icon: const Icon(Icons.picture_in_picture_alt),
@@ -537,14 +545,6 @@ class _OmniFeedScreenState extends ConsumerState<OmniFeedScreen>
                     backgroundColor:
                         Theme.of(context).colorScheme.surfaceContainerHighest,
                   ),
-          ),
-          const SizedBox(width: 4),
-          Text(
-            feed.isFetching ? '...' : '$remaining/$total',
-            style: TextStyle(
-              fontSize: 11,
-              color: Theme.of(context).colorScheme.onSurfaceVariant,
-            ),
           ),
           if (feed.pendingCount > 0)
             Padding(

@@ -4,10 +4,16 @@ import '../models/post.dart';
 import '../models/sns_service.dart';
 
 class OverlayPostCard extends StatefulWidget {
-  const OverlayPostCard({super.key, required this.post, this.onShowDetail});
+  const OverlayPostCard({
+    super.key,
+    required this.post,
+    this.onShowDetail,
+    this.fontSize = 10,
+  });
 
   final Post post;
   final VoidCallback? onShowDetail;
+  final double fontSize;
 
   @override
   State<OverlayPostCard> createState() => _OverlayPostCardState();
@@ -32,6 +38,8 @@ class _OverlayPostCardState extends State<OverlayPostCard> {
     if (count >= 1000) return '${(count / 1000).toStringAsFixed(1)}K';
     return '$count';
   }
+
+  double get _fs => widget.fontSize;
 
   Color get _sourceColor => post.source == SnsService.x
       ? Colors.grey[600]!
@@ -61,7 +69,7 @@ class _OverlayPostCardState extends State<OverlayPostCard> {
                 padding: const EdgeInsets.only(left: 28, bottom: 1),
                 child: Text(
                   '↻ ${post.retweetedByHandle} がリポスト',
-                  style: const TextStyle(fontSize: 8, color: Colors.white30),
+                  style: TextStyle(fontSize: _fs - 2, color: Colors.white30),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                 ),
@@ -101,9 +109,9 @@ class _OverlayPostCardState extends State<OverlayPostCard> {
                     post.body,
                     maxLines: 3,
                     overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
+                    style: TextStyle(
                       color: Colors.white70,
-                      fontSize: 10,
+                      fontSize: _fs,
                       height: 1.3,
                     ),
                   ),
@@ -115,8 +123,8 @@ class _OverlayPostCardState extends State<OverlayPostCard> {
                         '↩ ${post.quotedPost!.handle}: ${post.quotedPost!.body}',
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                            fontSize: 9, color: Colors.white38),
+                        style: TextStyle(
+                            fontSize: _fs - 1, color: Colors.white38),
                       ),
                     ),
                 ],
@@ -157,7 +165,7 @@ class _OverlayPostCardState extends State<OverlayPostCard> {
               // Username
               Text(
                 post.username,
-                style: const TextStyle(fontSize: 10, color: Colors.white60),
+                style: TextStyle(fontSize: _fs, color: Colors.white60),
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
               ),
@@ -165,9 +173,9 @@ class _OverlayPostCardState extends State<OverlayPostCard> {
               // Full body text
               Text(
                 post.body,
-                style: const TextStyle(
+                style: TextStyle(
                   color: Colors.white70,
-                  fontSize: 10,
+                  fontSize: _fs,
                   height: 1.3,
                 ),
               ),
@@ -200,12 +208,12 @@ class _OverlayPostCardState extends State<OverlayPostCard> {
                         border: Border.all(color: Colors.white24, width: 0.5),
                         borderRadius: BorderRadius.circular(4),
                       ),
-                      child: const Text(
+                      child: Text(
                         '詳細を表示',
                         textAlign: TextAlign.center,
                         style: TextStyle(
                           color: Colors.white54,
-                          fontSize: 9,
+                          fontSize: _fs - 1,
                         ),
                       ),
                     ),
@@ -340,15 +348,15 @@ class _OverlayPostCardState extends State<OverlayPostCard> {
         children: [
           Text(
             q.handle,
-            style: const TextStyle(fontSize: 8, color: Colors.white38),
+            style: TextStyle(fontSize: _fs - 2, color: Colors.white38),
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
           ),
           const SizedBox(height: 1),
           Text(
             q.body,
-            style: const TextStyle(
-              fontSize: 9,
+            style: TextStyle(
+              fontSize: _fs - 1,
               color: Colors.white54,
               height: 1.3,
             ),
@@ -359,14 +367,14 @@ class _OverlayPostCardState extends State<OverlayPostCard> {
   }
 
   Widget _buildMetaLine() {
-    const metaStyle = TextStyle(fontSize: 8, color: Colors.white24);
+    final metaStyle = TextStyle(fontSize: _fs - 2, color: Colors.white24);
     return Row(
       children: [
         // Handle (left)
         Expanded(
           child: Text(
             post.handle,
-            style: const TextStyle(fontSize: 8, color: Colors.white30),
+            style: TextStyle(fontSize: _fs - 2, color: Colors.white30),
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
           ),

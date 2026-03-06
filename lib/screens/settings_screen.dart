@@ -110,34 +110,6 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       appBar: AppBar(title: const Text('設定')),
       body: ListView(
         children: [
-          // Fetching section
-          const _SectionHeader(title: 'タイムライン取得'),
-          SwitchListTile(
-            title: const Text('タイムライン取得'),
-            subtitle: Text(settings.isFetchingActive ? '実行中' : '停止中'),
-            value: settings.isFetchingActive,
-            onChanged: (_) => notifier.toggleFetching(),
-          ),
-          ListTile(
-            title: const Text('フェッチ間隔'),
-            subtitle: Text('${settings.fetchIntervalSeconds} 秒'),
-            trailing: DropdownButton<int>(
-              value: settings.fetchIntervalSeconds,
-              items: const [
-                DropdownMenuItem(value: 15, child: Text('15秒')),
-                DropdownMenuItem(value: 30, child: Text('30秒')),
-                DropdownMenuItem(value: 60, child: Text('60秒')),
-                DropdownMenuItem(value: 120, child: Text('2分')),
-                DropdownMenuItem(value: 300, child: Text('5分')),
-              ],
-              onChanged: (value) {
-                if (value != null) notifier.setInterval(value);
-              },
-            ),
-          ),
-
-          const Divider(),
-
           // Engagement section
           const _SectionHeader(title: 'エンゲージメント'),
           SwitchListTile(
@@ -217,6 +189,35 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
 
           // Debug section
           const _SectionHeader(title: 'デバッグ'),
+          SwitchListTile(
+            title: const Text('タイムライン取得'),
+            subtitle: Text(settings.isFetchingActive ? '実行中' : '停止中'),
+            value: settings.isFetchingActive,
+            onChanged: (_) => notifier.toggleFetching(),
+          ),
+          ListTile(
+            title: const Text('フェッチ間隔'),
+            subtitle: Text('${settings.fetchIntervalSeconds} 秒'),
+            trailing: DropdownButton<int>(
+              value: settings.fetchIntervalSeconds,
+              items: const [
+                DropdownMenuItem(value: 15, child: Text('15秒')),
+                DropdownMenuItem(value: 30, child: Text('30秒')),
+                DropdownMenuItem(value: 60, child: Text('60秒')),
+                DropdownMenuItem(value: 120, child: Text('2分')),
+                DropdownMenuItem(value: 300, child: Text('5分')),
+              ],
+              onChanged: (value) {
+                if (value != null) notifier.setInterval(value);
+              },
+            ),
+          ),
+          SwitchListTile(
+            title: const Text('フェッチタイマー表示'),
+            subtitle: const Text('AppBar にタイマーを表示'),
+            value: settings.showFetchTimer,
+            onChanged: (value) => notifier.setShowFetchTimer(value),
+          ),
           ListTile(
             leading: const Icon(Icons.refresh),
             title: const Text('queryId 更新'),

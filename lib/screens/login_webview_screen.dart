@@ -116,19 +116,6 @@ class _LoginWebViewScreenState extends State<LoginWebViewScreen> {
   bool _isExtracting = false;
   bool _cookiesCleared = false;
 
-  static const _waitingMessages = [
-    'ちょっとまってね...',
-    'もうすぐだよ！',
-    '処理中、、',
-    'おそいね〜',
-    'がんばってます...',
-    'サーバーさんおきて！',
-    'コーヒーでも飲んでて',
-    '認証情報を取得中...',
-    'あとちょっと...',
-    'ネットワーク通信中...',
-  ];
-
   @override
   void initState() {
     super.initState();
@@ -142,7 +129,10 @@ class _LoginWebViewScreenState extends State<LoginWebViewScreen> {
     await cookieManager.deleteAllCookies();
     // WebView のキャッシュ・ストレージもクリア
     await InAppWebViewController.clearAllCache();
-    debugPrint('[LoginWebView] All cookies and cache cleared');
+    // localStorage / sessionStorage もクリア（Bluesky の BSKY_STORAGE 等）
+    final webStorageManager = WebStorageManager.instance();
+    await webStorageManager.android.deleteAllData();
+    debugPrint('[LoginWebView] All cookies, cache and web storage cleared');
     if (mounted) {
       setState(() => _cookiesCleared = true);
     }
@@ -270,22 +260,24 @@ class _LoginWebViewScreenState extends State<LoginWebViewScreen> {
           ),
         ],
       ),
-          // 待機演出オーバーレイ
+          // 待機オーバーレイ
           if (_isExtracting)
             Container(
               color: Colors.black54,
-              child: Center(
+              child: const Center(
                 child: Card(
-                  margin: const EdgeInsets.all(32),
+                  margin: EdgeInsets.all(32),
                   child: Padding(
-                    padding: const EdgeInsets.all(32),
+                    padding: EdgeInsets.all(32),
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        const CircularProgressIndicator(),
-                        const SizedBox(height: 24),
-                        _WaitingMessageAnimation(
-                          messages: _waitingMessages,
+                        CircularProgressIndicator(),
+                        SizedBox(height: 24),
+                        Text(
+                          '認証情報を取得中...',
+                          style: TextStyle(fontSize: 16),
+                          textAlign: TextAlign.center,
                         ),
                       ],
                     ),
@@ -637,47 +629,3 @@ class _LoginWebViewScreenState extends State<LoginWebViewScreen> {
   }
 }
 
-/// ランダムな待機メッセージを切り替えて表示するウィジェット
-class _WaitingMessageAnimation extends StatefulWidget {
-  const _WaitingMessageAnimation({required this.messages});
-
-  final List<String> messages;
-
-  @override
-  State<_WaitingMessageAnimation> createState() =>
-      _WaitingMessageAnimationState();
-}
-
-class _WaitingMessageAnimationState extends State<_WaitingMessageAnimation> {
-  int _currentIndex = 0;
-
-  @override
-  void initState() {
-    super.initState();
-    _currentIndex = DateTime.now().millisecond % widget.messages.length;
-    _startRotation();
-  }
-
-  void _startRotation() {
-    Future.delayed(const Duration(seconds: 2), () {
-      if (!mounted) return;
-      setState(() {
-        _currentIndex = (_currentIndex + 1) % widget.messages.length;
-      });
-      _startRotation();
-    });
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return AnimatedSwitcher(
-      duration: const Duration(milliseconds: 400),
-      child: Text(
-        widget.messages[_currentIndex],
-        key: ValueKey(_currentIndex),
-        style: const TextStyle(fontSize: 16),
-        textAlign: TextAlign.center,
-      ),
-    );
-  }
-}

@@ -12,6 +12,7 @@ class SettingsState {
     this.fontScale = 1.0,
     this.hideRetweetsAccountIds = const {},
     this.showAccountPickerOnEngagement = false,
+    this.showFetchTimer = true,
   });
 
   final int fetchIntervalSeconds;
@@ -22,6 +23,8 @@ class SettingsState {
   final Set<String> hideRetweetsAccountIds;
   /// いいね/RT 時にアカウント選択モーダルを表示するか
   final bool showAccountPickerOnEngagement;
+  /// フェッチタイマーを表示するか
+  final bool showFetchTimer;
 
   SettingsState copyWith({
     int? fetchIntervalSeconds,
@@ -30,6 +33,7 @@ class SettingsState {
     double? fontScale,
     Set<String>? hideRetweetsAccountIds,
     bool? showAccountPickerOnEngagement,
+    bool? showFetchTimer,
   }) {
     return SettingsState(
       fetchIntervalSeconds: fetchIntervalSeconds ?? this.fetchIntervalSeconds,
@@ -38,6 +42,7 @@ class SettingsState {
       fontScale: fontScale ?? this.fontScale,
       hideRetweetsAccountIds: hideRetweetsAccountIds ?? this.hideRetweetsAccountIds,
       showAccountPickerOnEngagement: showAccountPickerOnEngagement ?? this.showAccountPickerOnEngagement,
+      showFetchTimer: showFetchTimer ?? this.showFetchTimer,
     );
   }
 }
@@ -52,6 +57,7 @@ class SettingsNotifier extends StateNotifier<SettingsState> {
   static const _keyFontScale = 'settings_font_scale';
   static const _keyHideRetweetsAccounts = 'settings_hide_retweets_accounts';
   static const _keyShowAccountPicker = 'settings_show_account_picker';
+  static const _keyShowFetchTimer = 'settings_show_fetch_timer';
 
   final _scheduler = TimelineFetchScheduler.instance;
 
@@ -62,6 +68,7 @@ class SettingsNotifier extends StateNotifier<SettingsState> {
     final fontScale = prefs.getDouble(_keyFontScale) ?? 1.0;
     final hideRtList = prefs.getStringList(_keyHideRetweetsAccounts) ?? [];
     final showAccountPicker = prefs.getBool(_keyShowAccountPicker) ?? false;
+    final showFetchTimer = prefs.getBool(_keyShowFetchTimer) ?? true;
 
     state = state.copyWith(
       fetchIntervalSeconds: interval,
@@ -69,7 +76,13 @@ class SettingsNotifier extends StateNotifier<SettingsState> {
       fontScale: fontScale,
       hideRetweetsAccountIds: hideRtList.toSet(),
       showAccountPickerOnEngagement: showAccountPicker,
+      showFetchTimer: showFetchTimer,
     );
+
+    // #3: デフォルトフェッチONの場合、起動時にスケジューラを開始
+    if (state.isFetchingActive) {
+      startFetching();
+    }
   }
 
   Future<void> _saveToPrefs() async {
@@ -81,6 +94,7 @@ class SettingsNotifier extends StateNotifier<SettingsState> {
         _keyHideRetweetsAccounts, state.hideRetweetsAccountIds.toList());
     await prefs.setBool(
         _keyShowAccountPicker, state.showAccountPickerOnEngagement);
+    await prefs.setBool(_keyShowFetchTimer, state.showFetchTimer);
   }
 
   void setInterval(int seconds) {
@@ -116,6 +130,11 @@ class SettingsNotifier extends StateNotifier<SettingsState> {
 
   void setShowAccountPicker(bool value) {
     state = state.copyWith(showAccountPickerOnEngagement: value);
+    _saveToPrefs();
+  }
+
+  void setShowFetchTimer(bool value) {
+    state = state.copyWith(showFetchTimer: value);
     _saveToPrefs();
   }
 

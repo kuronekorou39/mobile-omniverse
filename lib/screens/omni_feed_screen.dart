@@ -356,6 +356,42 @@ class _OmniFeedScreenState extends ConsumerState<OmniFeedScreen>
     }
   }
 
+  void _openAccountsScreen(BuildContext context) {
+    Navigator.of(context).push(PageRouteBuilder(
+      pageBuilder: (context, anim1, anim2) => const AccountsScreen(),
+      transitionsBuilder: (context, animation, secondaryAnimation, child) {
+        return SlideTransition(
+          position: Tween(
+            begin: const Offset(-1, 0),
+            end: Offset.zero,
+          ).animate(CurvedAnimation(
+            parent: animation,
+            curve: Curves.easeOutCubic,
+          )),
+          child: child,
+        );
+      },
+    ));
+  }
+
+  void _openSettingsScreen(BuildContext context) {
+    Navigator.of(context).push(PageRouteBuilder(
+      pageBuilder: (context, anim1, anim2) => const SettingsScreen(),
+      transitionsBuilder: (context, animation, secondaryAnimation, child) {
+        return SlideTransition(
+          position: Tween(
+            begin: const Offset(1, 0),
+            end: Offset.zero,
+          ).animate(CurvedAnimation(
+            parent: animation,
+            curve: Curves.easeOutCubic,
+          )),
+          child: child,
+        );
+      },
+    ));
+  }
+
   Future<void> _launchOverlay(FeedState feed) async {
     final messenger = ScaffoldMessenger.of(context);
 
@@ -440,45 +476,31 @@ class _OmniFeedScreenState extends ConsumerState<OmniFeedScreen>
         SliverAppBar(
           floating: true,
           snap: true,
-          title: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              if (settings.isFetchingActive && settings.showFetchTimer) ...[
-                _buildFetchIndicator(context, feed, settings),
-                const SizedBox(width: 8),
-              ],
-              const Text(
-                'OmniVerse',
-                style: TextStyle(fontWeight: FontWeight.bold),
-              ),
-            ],
+          title: const Text(
+            'OmniVerse',
+            style: TextStyle(fontWeight: FontWeight.bold),
           ),
           centerTitle: true,
-          leading: IconButton(
-            icon: const Icon(Icons.people_outline),
-            tooltip: 'アカウント',
-            onPressed: () {
-              Navigator.of(context).push(
-                PageRouteBuilder(
-                  pageBuilder: (context, anim1, anim2) =>
-                      const AccountsScreen(),
-                  transitionsBuilder:
-                      (context, animation, secondaryAnimation, child) {
-                    return SlideTransition(
-                      position: Tween(
-                        begin: const Offset(-1, 0),
-                        end: Offset.zero,
-                      ).animate(CurvedAnimation(
-                        parent: animation,
-                        curve: Curves.easeOutCubic,
-                      )),
-                      child: child,
-                    );
-                  },
+          leadingWidth: (settings.isFetchingActive && settings.showFetchTimer)
+              ? 80
+              : null,
+          leading: (settings.isFetchingActive && settings.showFetchTimer)
+              ? Row(
+                  children: [
+                    const SizedBox(width: 4),
+                    IconButton(
+                      icon: const Icon(Icons.people_outline),
+                      tooltip: 'アカウント',
+                      onPressed: () => _openAccountsScreen(context),
+                    ),
+                    _buildFetchIndicator(context, feed, settings),
+                  ],
+                )
+              : IconButton(
+                  icon: const Icon(Icons.people_outline),
+                  tooltip: 'アカウント',
+                  onPressed: () => _openAccountsScreen(context),
                 ),
-              );
-            },
-          ),
           actions: [
             IconButton(
               icon: const Icon(Icons.picture_in_picture_alt),
@@ -488,11 +510,7 @@ class _OmniFeedScreenState extends ConsumerState<OmniFeedScreen>
             IconButton(
               icon: const Icon(Icons.settings_outlined),
               tooltip: '設定',
-              onPressed: () {
-                Navigator.of(context).push(
-                  MaterialPageRoute(builder: (_) => const SettingsScreen()),
-                );
-              },
+              onPressed: () => _openSettingsScreen(context),
             ),
           ],
         ),

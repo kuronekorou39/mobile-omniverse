@@ -440,9 +440,18 @@ class _OmniFeedScreenState extends ConsumerState<OmniFeedScreen>
         SliverAppBar(
           floating: true,
           snap: true,
-          title: const Text(
-            'OmniVerse',
-            style: TextStyle(fontWeight: FontWeight.bold),
+          title: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (settings.isFetchingActive && settings.showFetchTimer) ...[
+                _buildFetchIndicator(context, feed, settings),
+                const SizedBox(width: 8),
+              ],
+              const Text(
+                'OmniVerse',
+                style: TextStyle(fontWeight: FontWeight.bold),
+              ),
+            ],
           ),
           centerTitle: true,
           leading: IconButton(
@@ -450,13 +459,27 @@ class _OmniFeedScreenState extends ConsumerState<OmniFeedScreen>
             tooltip: 'アカウント',
             onPressed: () {
               Navigator.of(context).push(
-                MaterialPageRoute(builder: (_) => const AccountsScreen()),
+                PageRouteBuilder(
+                  pageBuilder: (context, anim1, anim2) =>
+                      const AccountsScreen(),
+                  transitionsBuilder:
+                      (context, animation, secondaryAnimation, child) {
+                    return SlideTransition(
+                      position: Tween(
+                        begin: const Offset(-1, 0),
+                        end: Offset.zero,
+                      ).animate(CurvedAnimation(
+                        parent: animation,
+                        curve: Curves.easeOutCubic,
+                      )),
+                      child: child,
+                    );
+                  },
+                ),
               );
             },
           ),
           actions: [
-            if (settings.isFetchingActive && settings.showFetchTimer)
-              _buildFetchIndicator(context, feed, settings),
             IconButton(
               icon: const Icon(Icons.picture_in_picture_alt),
               tooltip: 'オーバーレイ',
@@ -539,14 +562,12 @@ class _OmniFeedScreenState extends ConsumerState<OmniFeedScreen>
     final remaining = feed.isFetching ? 0 : _remainingSeconds.clamp(0, total);
     final progress = total > 0 ? remaining / total : 0.0;
 
-    return Padding(
-      padding: const EdgeInsets.only(right: 4),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          SizedBox(
-            width: 18,
-            height: 18,
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        SizedBox(
+          width: 18,
+          height: 18,
             child: feed.isFetching
                 ? const CircularProgressIndicator(strokeWidth: 2)
                 : CircularProgressIndicator(
@@ -570,7 +591,6 @@ class _OmniFeedScreenState extends ConsumerState<OmniFeedScreen>
               ),
             ),
         ],
-      ),
     );
   }
 

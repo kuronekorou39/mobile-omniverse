@@ -60,6 +60,9 @@ class FeedNotifier extends StateNotifier<FeedState> {
     _startCountdownTimer();
   }
 
+  /// ドリップ→バナー切替の閾値（フェッチ間隔秒数と同じ）
+  int get dripThreshold => _settingsReader().fetchIntervalSeconds;
+
   final List<Post> _pendingQueue = [];
   Timer? _dripTimer;
   Timer? _dripDelayTimer;
@@ -217,7 +220,13 @@ class FeedNotifier extends StateNotifier<FeedState> {
     if (!shouldBypassDrip && newToQueue.isNotEmpty) {
       _pendingQueue.addAll(newToQueue);
       state = state.copyWith(pendingCount: _pendingQueue.length);
-      _startDrip();
+      if (_pendingQueue.length <= dripThreshold) {
+        _startDrip();
+      } else {
+        // 大量の場合はドリップ停止 → バナーモード
+        _dripTimer?.cancel();
+        _dripTimer = null;
+      }
     }
 
     // バックグラウンドでキャッシュ保存
@@ -230,6 +239,7 @@ class FeedNotifier extends StateNotifier<FeedState> {
   void _startDrip() {
     _dripTimer?.cancel();
     if (_pendingQueue.isEmpty) return;
+    if (_pendingQueue.length > dripThreshold) return; // バナーモードではドリップしない
 
     // 古い順にソート → 各ドリップが常にリスト先頭に挿入されるように
     _pendingQueue.sort((a, b) => a.timestamp.compareTo(b.timestamp));
@@ -299,13 +309,38 @@ class FeedNotifier extends StateNotifier<FeedState> {
     _syncToOverlay();
   }
 
+  /// バナーモード: 溜まった投稿を一括でタイムラインに反映
+  void flushPending() {
+    if (_pendingQueue.isEmpty) return;
+    _dripTimer?.cancel();
+    _dripTimer = null;
+
+    final existing = Map<String, Post>.fromEntries(
+      state.posts.map((p) => MapEntry(p.id, p)),
+    );
+    for (final post in _pendingQueue) {
+      existing[post.id] = post;
+    }
+    _pendingQueue.clear();
+
+    final sorted = existing.values.toList()
+      ..sort((a, b) => b.timestamp.compareTo(a.timestamp));
+    state = state.copyWith(posts: sorted, pendingCount: 0);
+
+    TimelineCacheService.instance.saveTimeline(sorted);
+    _syncToOverlay();
+  }
+
   List<Post> postsForService(SnsService service) {
     return state.posts.where((p) => p.source == service).toList();
   }
 
   Future<void> refresh() async {
     _bypassDrip = true;
-    state = state.copyWith(isLoading: true, clearError: true);
+    _pendingQueue.clear();
+    _dripTimer?.cancel();
+    _dripTimer = null;
+    state = state.copyWith(isLoading: true, pendingCount: 0, clearError: true);
     TimelineFetchScheduler.instance.resetCursors();
     try {
       await TimelineFetchScheduler.instance.fetchAll();

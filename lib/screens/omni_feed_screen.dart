@@ -117,7 +117,21 @@ class _OmniFeedScreenState extends ConsumerState<OmniFeedScreen>
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
       _checkPendingPostDetail();
+      // フォアグラウンド復帰 → フェッチ再開
+      ref.read(settingsProvider.notifier).resumeFetching();
+    } else if (state == AppLifecycleState.paused) {
+      // バックグラウンド → オーバーレイも非表示ならフェッチ一時停止
+      _pauseFetchingIfIdle();
     }
+  }
+
+  Future<void> _pauseFetchingIfIdle() async {
+    try {
+      final isOverlayActive = await FlutterOverlayWindow.isActive();
+      if (!isOverlayActive) {
+        ref.read(settingsProvider.notifier).pauseFetching();
+      }
+    } catch (_) {}
   }
 
   Future<void> _checkPendingPostDetail() async {
@@ -144,6 +158,14 @@ class _OmniFeedScreenState extends ConsumerState<OmniFeedScreen>
     // スクロール位置をフィードに通知
     final atTop = _scrollController.offset <= 50;
     ref.read(feedProvider.notifier).setScrollAtTop(atTop);
+
+    // トップ到達時に大量pendingをフラッシュ
+    if (_scrollController.offset <= 5) {
+      final feed = ref.read(feedProvider);
+      if (feed.pendingCount > ref.read(feedProvider.notifier).dripThreshold) {
+        ref.read(feedProvider.notifier).flushPending();
+      }
+    }
 
     // スクロールトップボタンの表示制御
     final shouldShow = _scrollController.offset > 300;
@@ -401,11 +423,11 @@ class _OmniFeedScreenState extends ConsumerState<OmniFeedScreen>
         .map((a) => a.id)
         .toSet();
 
-    // 新規投稿をアニメーション対象として検出
+    // 新規投稿をアニメーション対象として検出（少数のドリップのみ）
     final currentPostIds = feed.posts.map((p) => p.id).toSet();
     if (_prevPostIds.isNotEmpty) {
       final newIds = currentPostIds.difference(_prevPostIds);
-      if (newIds.isNotEmpty) {
+      if (newIds.isNotEmpty && newIds.length <= ref.read(feedProvider.notifier).dripThreshold) {
         _animatingPostIds.addAll(newIds);
       }
     }
@@ -463,8 +485,16 @@ class _OmniFeedScreenState extends ConsumerState<OmniFeedScreen>
       );
     }
 
+    final showBanner = feed.pendingCount > ref.read(feedProvider.notifier).dripThreshold;
+
     return Scaffold(
-      body: body,
+      body: Stack(
+        children: [
+          body,
+          if (showBanner)
+            _buildNewPostsBanner(context, feed.pendingCount),
+        ],
+      ),
       floatingActionButton: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
@@ -526,7 +556,8 @@ class _OmniFeedScreenState extends ConsumerState<OmniFeedScreen>
                         Theme.of(context).colorScheme.surfaceContainerHighest,
                   ),
           ),
-          if (feed.pendingCount > 0)
+          if (feed.pendingCount > 0 &&
+              feed.pendingCount <= ref.read(feedProvider.notifier).dripThreshold)
             Padding(
               padding: const EdgeInsets.only(left: 4),
               child: Text(
@@ -539,6 +570,60 @@ class _OmniFeedScreenState extends ConsumerState<OmniFeedScreen>
               ),
             ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildNewPostsBanner(BuildContext context, int count) {
+    return Positioned(
+      top: MediaQuery.of(context).padding.top + kToolbarHeight + 8,
+      left: 0,
+      right: 0,
+      child: Center(
+        child: Material(
+          color: Colors.transparent,
+          child: InkWell(
+            onTap: () {
+              ref.read(feedProvider.notifier).flushPending();
+              _scrollController.animateTo(
+                0,
+                duration: const Duration(milliseconds: 300),
+                curve: Curves.easeOutCubic,
+              );
+            },
+            borderRadius: BorderRadius.circular(20),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              decoration: BoxDecoration(
+                color: Theme.of(context).colorScheme.primary,
+                borderRadius: BorderRadius.circular(20),
+                boxShadow: const [
+                  BoxShadow(
+                    color: Colors.black26,
+                    blurRadius: 8,
+                    offset: Offset(0, 2),
+                  ),
+                ],
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(Icons.arrow_upward,
+                      size: 16, color: Colors.white),
+                  const SizedBox(width: 4),
+                  Text(
+                    '$count件の新しい投稿',
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 13,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
       ),
     );
   }

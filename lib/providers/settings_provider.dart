@@ -156,6 +156,19 @@ class SettingsNotifier extends StateNotifier<SettingsState> {
       startFetching();
     }
   }
+
+  /// アプリがバックグラウンドに入った時の一時停止（設定は変えない）
+  void pauseFetching() {
+    _scheduler.stop();
+  }
+
+  /// アプリがフォアグラウンドに戻った時の再開
+  void resumeFetching() {
+    if (state.isFetchingActive && !_scheduler.isRunning) {
+      _scheduler.setInterval(Duration(seconds: state.fetchIntervalSeconds));
+      _scheduler.start();
+    }
+  }
 }
 
 final settingsProvider =

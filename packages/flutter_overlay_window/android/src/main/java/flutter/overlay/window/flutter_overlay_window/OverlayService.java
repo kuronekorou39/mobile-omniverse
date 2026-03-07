@@ -256,11 +256,13 @@ public class OverlayService extends Service implements View.OnTouchListener {
 
     private void resizeOverlay(int width, int height, boolean enableDrag, MethodChannel.Result result) {
         if (windowManager != null) {
-            int margin = (int) (8 * mResources.getDisplayMetrics().density);
+            float density = mResources.getDisplayMetrics().density;
+            int margin = (int) (8 * density);
+            int topMargin = (int) (48 * density); // ステータスバー領域を避ける
             int screenW = szWindow.x;
             int screenH = szWindow.y;
             int maxW = screenW - margin * 2;
-            int maxH = screenH - margin * 2;
+            int maxH = screenH - topMargin - margin;
             WindowManager.LayoutParams params = (WindowManager.LayoutParams) flutterView.getLayoutParams();
             int newW = (width == -1999 || width == -1) ? -1 : dpToPx(width);
             int newH = (height != 1999 || height != -1) ? dpToPx(height) : height;
@@ -274,16 +276,17 @@ public class OverlayService extends Service implements View.OnTouchListener {
             int overlayH = newH > 0 ? newH : screenH;
             if (WindowSetup.gravity == Gravity.CENTER) {
                 int maxX = (screenW - overlayW) / 2 - margin;
+                int minY = -((screenH - overlayH) / 2 - topMargin);
                 int maxY = (screenH - overlayH) / 2 - margin;
                 if (maxX < 0) maxX = 0;
-                if (maxY < 0) maxY = 0;
+                if (minY > maxY) minY = maxY = 0;
                 params.x = Math.max(-maxX, Math.min(params.x, maxX));
-                params.y = Math.max(-maxY, Math.min(params.y, maxY));
+                params.y = Math.max(minY, Math.min(params.y, maxY));
             } else {
                 int maxX = screenW - overlayW - margin;
                 int maxY = screenH - overlayH - margin;
                 params.x = Math.max(margin, Math.min(params.x, maxX));
-                params.y = Math.max(margin, Math.min(params.y, maxY));
+                params.y = Math.max(topMargin, Math.min(params.y, maxY));
             }
             WindowSetup.enableDrag = enableDrag;
             windowManager.updateViewLayout(flutterView, params);
@@ -324,11 +327,12 @@ public class OverlayService extends Service implements View.OnTouchListener {
             int screenH = szWindow.y;
             if (WindowSetup.gravity == Gravity.CENTER) {
                 int maxX = (screenW - overlayW) / 2 - margin;
-                int maxY = (screenH - overlayH) / 2 - topMargin;
+                int minY = -((screenH - overlayH) / 2 - topMargin);
+                int maxY = (screenH - overlayH) / 2 - margin;
                 if (maxX < 0) maxX = 0;
-                if (maxY < 0) maxY = 0;
+                if (minY > maxY) minY = maxY = 0;
                 params.x = Math.max(-maxX, Math.min(params.x, maxX));
-                params.y = Math.max(-maxY, Math.min(params.y, maxY));
+                params.y = Math.max(minY, Math.min(params.y, maxY));
             } else {
                 params.x = Math.max(margin, Math.min(params.x, screenW - overlayW - margin));
                 params.y = Math.max(topMargin, Math.min(params.y, screenH - overlayH - margin));
@@ -506,11 +510,12 @@ public class OverlayService extends Service implements View.OnTouchListener {
                 int screenH = szWindow.y;
                 if (WindowSetup.gravity == Gravity.CENTER) {
                     int maxX = (screenW - overlayW) / 2 - margin;
-                    int maxY = (screenH - overlayH) / 2 - topMargin;
+                    int minY = -((screenH - overlayH) / 2 - topMargin);
+                    int maxY = (screenH - overlayH) / 2 - margin;
                     if (maxX < 0) maxX = 0;
-                    if (maxY < 0) maxY = 0;
+                    if (minY > maxY) minY = maxY = 0;
                     params.x = Math.max(-maxX, Math.min(params.x, maxX));
-                    params.y = Math.max(-maxY, Math.min(params.y, maxY));
+                    params.y = Math.max(minY, Math.min(params.y, maxY));
                 } else {
                     params.x = Math.max(margin, Math.min(params.x, screenW - overlayW - margin));
                     params.y = Math.max(topMargin, Math.min(params.y, screenH - overlayH - margin));

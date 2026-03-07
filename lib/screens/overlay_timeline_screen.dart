@@ -24,7 +24,6 @@ class _OverlayTimelineScreenState extends State<OverlayTimelineScreen> {
   int _hIndex = 0;
   int _opacityIndex = 3;
   int _fontSizeIndex = 1;
-  int _themeColorIndex = 0;
   int _themeModeIndex = 0; // 0=ダーク, 1=ライト, 2=システム
   bool _isMinimized = false;
   double? _savedX;
@@ -43,16 +42,7 @@ class _OverlayTimelineScreenState extends State<OverlayTimelineScreen> {
   static const _fontSizes = [8.0, 10.0, 12.0];
   static const _fontSizeLabels = ['S', 'M', 'L'];
 
-  static const _accentColors = [
-    Colors.blue,
-    Color(0xFF4A9EFF),
-    Color(0xFF9A6AFF),
-    Color(0xFF4ACFCF),
-    Color(0xFFFF6B6B),
-    Color(0xFF4ADF7C),
-  ];
-
-  Color get _accentColor => _accentColors[_themeColorIndex];
+  static const _accentColor = Colors.blue;
 
   bool get _isDark {
     if (_themeModeIndex == 0) return true;
@@ -335,38 +325,6 @@ class _OverlayTimelineScreenState extends State<OverlayTimelineScreen> {
     );
   }
 
-  Widget _buildThemeColorSelector() {
-    return Row(
-      children: [
-        SizedBox(
-          width: 24,
-          child: Icon(Icons.palette, color: _theme.textQuaternary, size: 16),
-        ),
-        for (int i = 0; i < _accentColors.length; i++) ...[
-          if (i > 0) const SizedBox(width: 6),
-          GestureDetector(
-            behavior: HitTestBehavior.opaque,
-            onTap: () => setState(() => _themeColorIndex = i),
-            child: Container(
-              width: 22,
-              height: 22,
-              decoration: BoxDecoration(
-                color: _accentColors[i].withAlpha(i == _themeColorIndex ? 255 : 120),
-                shape: BoxShape.circle,
-                border: Border.all(
-                  color: i == _themeColorIndex
-                      ? (_isDark ? Colors.white : Colors.black)
-                      : Colors.transparent,
-                  width: i == _themeColorIndex ? 2 : 0,
-                ),
-              ),
-            ),
-          ),
-        ],
-      ],
-    );
-  }
-
   Widget _buildFetchTimer() {
     final progress = _fetchTotal > 0 ? _fetchRemaining / _fetchTotal : 0.0;
     return SizedBox(
@@ -405,8 +363,6 @@ class _OverlayTimelineScreenState extends State<OverlayTimelineScreen> {
         ),
         const SizedBox(height: 8),
         _buildThemeModeSelector(),
-        const SizedBox(height: 8),
-        _buildThemeColorSelector(),
       ],
     );
   }

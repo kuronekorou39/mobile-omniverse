@@ -64,6 +64,7 @@ class FeedNotifier extends StateNotifier<FeedState> {
   int get dripThreshold => _settingsReader().fetchIntervalSeconds;
 
   final List<Post> _pendingQueue = [];
+  final Set<String> _pendingIds = {};
   Timer? _dripTimer;
   Timer? _dripDelayTimer;
   Timer? _countdownTimer;
@@ -194,8 +195,8 @@ class FeedNotifier extends StateNotifier<FeedState> {
       } else if (old != null) {
         // 既存投稿の更新（エンゲージメント等）— 即時反映
         existing[post.id] = post;
-      } else {
-        // 新規投稿 — キューに追加
+      } else if (!_pendingIds.contains(post.id)) {
+        // 新規投稿（キューにも未登録）— キューに追加
         newToQueue.add(post);
       }
     }
@@ -219,6 +220,7 @@ class FeedNotifier extends StateNotifier<FeedState> {
     // 新規投稿をキューに追加（ドリップ対象の場合のみ）
     if (!shouldBypassDrip && newToQueue.isNotEmpty) {
       _pendingQueue.addAll(newToQueue);
+      _pendingIds.addAll(newToQueue.map((p) => p.id));
       state = state.copyWith(pendingCount: _pendingQueue.length);
       if (_pendingQueue.length <= dripThreshold) {
         _startDrip();
@@ -280,6 +282,7 @@ class FeedNotifier extends StateNotifier<FeedState> {
     }
 
     final post = _pendingQueue.removeAt(0);
+    _pendingIds.remove(post.id);
 
     // 重複チェック
     if (state.posts.any((p) => p.id == post.id)) {
@@ -322,6 +325,7 @@ class FeedNotifier extends StateNotifier<FeedState> {
       existing[post.id] = post;
     }
     _pendingQueue.clear();
+    _pendingIds.clear();
 
     final sorted = existing.values.toList()
       ..sort((a, b) => b.timestamp.compareTo(a.timestamp));
@@ -338,6 +342,7 @@ class FeedNotifier extends StateNotifier<FeedState> {
   Future<void> refresh() async {
     _bypassDrip = true;
     _pendingQueue.clear();
+    _pendingIds.clear();
     _dripTimer?.cancel();
     _dripTimer = null;
     state = state.copyWith(isLoading: true, pendingCount: 0, clearError: true);

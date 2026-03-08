@@ -482,17 +482,18 @@ class _OmniFeedScreenState extends ConsumerState<OmniFeedScreen>
           ),
           centerTitle: true,
           leadingWidth: (settings.isFetchingActive && settings.showFetchTimer)
-              ? 80
+              ? 104
               : null,
           leading: (settings.isFetchingActive && settings.showFetchTimer)
               ? Row(
                   children: [
-                    const SizedBox(width: 4),
+                    const SizedBox(width: 8),
                     IconButton(
                       icon: const Icon(Icons.people_outline),
                       tooltip: 'アカウント',
                       onPressed: () => _openAccountsScreen(context),
                     ),
+                    const SizedBox(width: 4),
                     _buildFetchIndicator(context, feed, settings),
                   ],
                 )

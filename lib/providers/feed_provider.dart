@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter_overlay_window/flutter_overlay_window.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -58,6 +59,10 @@ class FeedNotifier extends StateNotifier<FeedState> {
     _loadCachedTimeline();
     _listenToOverlayCommands();
     _startCountdownTimer();
+    // スケジューラが既に動いている場合、コールバック登録後に初回フェッチをトリガー
+    if (TimelineFetchScheduler.instance.isRunning) {
+      Future.microtask(() => TimelineFetchScheduler.instance.fetchAll());
+    }
   }
 
   /// ドリップ→バナー切替の閾値（フェッチ間隔秒数と同じ）
@@ -219,6 +224,18 @@ class FeedNotifier extends StateNotifier<FeedState> {
       ..sort((a, b) => b.timestamp.compareTo(a.timestamp));
     state = state.copyWith(posts: sorted, isLoading: false, isFetching: false, clearError: true);
 
+    // キューから既に表示済みの投稿を除去（フェッチ間にドリップされた分など）
+    if (_pendingQueue.isNotEmpty) {
+      final currentIds = state.posts.map((p) => p.id).toSet();
+      final beforeLen = _pendingQueue.length;
+      _pendingQueue.removeWhere((p) => currentIds.contains(p.id));
+      _pendingIds.removeWhere((id) => currentIds.contains(id));
+      if (_pendingQueue.length != beforeLen) {
+        debugPrint('[Feed] Queue cleanup: $beforeLen → ${_pendingQueue.length}');
+        state = state.copyWith(pendingCount: _pendingQueue.length);
+      }
+    }
+
     // 新規投稿をキューに追加（ドリップ対象の場合のみ）
     if (!shouldBypassDrip && newPending.isNotEmpty) {
       // state.posts と既存キューに対する防御的フィルタ
@@ -226,6 +243,7 @@ class FeedNotifier extends StateNotifier<FeedState> {
       final filtered = newPending
           .where((p) => !stateIds.contains(p.id) && !_pendingIds.contains(p.id))
           .toList();
+      debugPrint('[Feed] newPending=${newPending.length} filtered=${filtered.length} queue=${_pendingQueue.length}');
       if (filtered.isEmpty) return;
       _pendingQueue.addAll(filtered);
       _pendingIds.addAll(filtered.map((p) => p.id));
@@ -309,18 +327,9 @@ class FeedNotifier extends StateNotifier<FeedState> {
       return;
     }
 
-    // ソート済みリストに二分探索で挿入（降順: 新しい順）
+    // 常にリスト先頭に挿入（古い順ドリップなので最終的に新しい順になる）
     final posts = List<Post>.of(state.posts);
-    int lo = 0, hi = posts.length;
-    while (lo < hi) {
-      final mid = (lo + hi) ~/ 2;
-      if (posts[mid].timestamp.compareTo(post.timestamp) > 0) {
-        lo = mid + 1;
-      } else {
-        hi = mid;
-      }
-    }
-    posts.insert(lo, post);
+    posts.insert(0, post);
 
     state = state.copyWith(posts: posts, pendingCount: _pendingQueue.length);
 

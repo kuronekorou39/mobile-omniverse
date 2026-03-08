@@ -262,7 +262,7 @@ public class OverlayService extends Service implements View.OnTouchListener {
         if (windowManager != null) {
             float density = mResources.getDisplayMetrics().density;
             int margin = (int) (8 * density);
-            int topMargin = (int) (48 * density); // ステータスバー領域を避ける
+            int topMargin = (int) (100 * density); // ステータスバー＋通知ジェスチャー領域を避ける
             int bottomMargin = margin + navigationBarHeightPx();
             int screenW = szWindow.x;
             int screenH = szWindow.y;
@@ -276,8 +276,10 @@ public class OverlayService extends Service implements View.OnTouchListener {
             if (newH > 0) newH = Math.min(newH, maxH);
             params.width = newW;
             params.height = newH;
-            // Clamp position so overlay stays on screen after resize
-            int[] clamped = clampPosition(params.x, params.y);
+            // Clamp position so overlay stays on screen after resize (新サイズで計算)
+            int clampW = newW > 0 ? newW : screenW;
+            int clampH = newH > 0 ? newH : screenH;
+            int[] clamped = clampPosition(params.x, params.y, clampW, clampH);
             params.x = clamped[0];
             params.y = clamped[1];
             WindowSetup.enableDrag = enableDrag;
@@ -566,14 +568,17 @@ public class OverlayService extends Service implements View.OnTouchListener {
         return new int[]{x, y};
     }
 
-    /** 指を離した後のハードクランプ: 正規の範囲内に戻す */
+    /** 指を離した後のハードクランプ: 正規の範囲内に戻す（現在のビューサイズを使用） */
     private int[] clampPosition(int x, int y) {
+        return clampPosition(x, y, flutterView.getWidth(), flutterView.getHeight());
+    }
+
+    /** 指を離した後のハードクランプ: 指定サイズで計算 */
+    private int[] clampPosition(int x, int y, int overlayW, int overlayH) {
         float density = mResources.getDisplayMetrics().density;
         int margin = (int) (8 * density);
-        int topMargin = (int) (48 * density);
+        int topMargin = (int) (100 * density);
         int bottomMargin = margin + navigationBarHeightPx();
-        int overlayW = flutterView.getWidth();
-        int overlayH = flutterView.getHeight();
         int screenW = szWindow.x;
         int screenH = szWindow.y;
         if (WindowSetup.gravity == Gravity.CENTER) {

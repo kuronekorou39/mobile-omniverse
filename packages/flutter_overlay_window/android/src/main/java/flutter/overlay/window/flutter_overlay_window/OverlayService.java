@@ -514,10 +514,13 @@ public class OverlayService extends Service implements View.OnTouchListener {
                 lastX = event.getRawX();
                 lastY = event.getRawY();
 
-                // ドラッグ中はクランプなし — 自由に移動可能
+                // ドラッグ中はソフトクランプ — ヘッダー領域が画面内に残る範囲で自由移動
                 WindowManager.LayoutParams params = (WindowManager.LayoutParams) flutterView.getLayoutParams();
                 params.x += (int) dx;
                 params.y += (int) dy;
+                int[] softClamped = clampPositionSoft(params.x, params.y);
+                params.x = softClamped[0];
+                params.y = softClamped[1];
                 windowManager.updateViewLayout(flutterView, params);
                 break;
 
@@ -535,6 +538,35 @@ public class OverlayService extends Service implements View.OnTouchListener {
         return false;
     }
 
+    /** ドラッグ中のソフトクランプ: ヘッダー(32dp)が画面内に残る範囲で移動可能 */
+    private int[] clampPositionSoft(int x, int y) {
+        float density = mResources.getDisplayMetrics().density;
+        int headerPx = (int) (HEADER_HEIGHT_DP * density);
+        int overlayW = flutterView.getWidth();
+        int overlayH = flutterView.getHeight();
+        int screenW = szWindow.x;
+        int screenH = szWindow.y;
+        if (WindowSetup.gravity == Gravity.CENTER) {
+            // CENTER: x=0が画面中央、overlayLeft = screenW/2 + x - overlayW/2
+            int minX = -(screenW / 2 + overlayW / 2 - headerPx);  // 右端headerPx分残す
+            int maxX = screenW / 2 + overlayW / 2 - headerPx;     // 左端headerPx分残す
+            int minY = -(screenH / 2 - overlayH / 2);             // 上端: overlay上端が画面上端
+            int maxY = screenH / 2 - headerPx;                    // 下端: ヘッダーが画面内
+            x = Math.max(minX, Math.min(x, maxX));
+            y = Math.max(minY, Math.min(y, maxY));
+        } else {
+            // TOP_LEFT: x,yは左上角の位置
+            int minX = -(overlayW - headerPx);  // 右端headerPx分残す
+            int maxX = screenW - headerPx;       // 左端headerPx分残す
+            int minY = 0;                         // 上端: 画面上端より上に行かない
+            int maxY = screenH - headerPx;        // 下端: ヘッダーが画面内
+            x = Math.max(minX, Math.min(x, maxX));
+            y = Math.max(minY, Math.min(y, maxY));
+        }
+        return new int[]{x, y};
+    }
+
+    /** 指を離した後のハードクランプ: 正規の範囲内に戻す */
     private int[] clampPosition(int x, int y) {
         float density = mResources.getDisplayMetrics().density;
         int margin = (int) (8 * density);

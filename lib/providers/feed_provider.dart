@@ -221,8 +221,14 @@ class FeedNotifier extends StateNotifier<FeedState> {
 
     // 新規投稿をキューに追加（ドリップ対象の場合のみ）
     if (!shouldBypassDrip && newPending.isNotEmpty) {
-      _pendingQueue.addAll(newPending);
-      _pendingIds.addAll(newToQueue.keys);
+      // state.posts と既存キューに対する防御的フィルタ
+      final stateIds = state.posts.map((p) => p.id).toSet();
+      final filtered = newPending
+          .where((p) => !stateIds.contains(p.id) && !_pendingIds.contains(p.id))
+          .toList();
+      if (filtered.isEmpty) return;
+      _pendingQueue.addAll(filtered);
+      _pendingIds.addAll(filtered.map((p) => p.id));
       state = state.copyWith(pendingCount: _pendingQueue.length);
       if (_pendingQueue.length <= dripThreshold) {
         _startDrip();
@@ -283,12 +289,23 @@ class FeedNotifier extends StateNotifier<FeedState> {
       return;
     }
 
-    final post = _pendingQueue.removeAt(0);
-    _pendingIds.remove(post.id);
-
-    // 重複チェック
-    if (state.posts.any((p) => p.id == post.id)) {
+    // 重複をスキップして最初の有効な投稿を見つける
+    Post? post;
+    while (_pendingQueue.isNotEmpty) {
+      final candidate = _pendingQueue.removeAt(0);
+      _pendingIds.remove(candidate.id);
+      if (!state.posts.any((p) => p.id == candidate.id)) {
+        post = candidate;
+        break;
+      }
+    }
+    if (post == null) {
+      // 全て重複だった
       state = state.copyWith(pendingCount: _pendingQueue.length);
+      if (_pendingQueue.isEmpty) {
+        _dripTimer?.cancel();
+        _dripTimer = null;
+      }
       return;
     }
 

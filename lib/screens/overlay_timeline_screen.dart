@@ -211,7 +211,7 @@ class _OverlayTimelineScreenState extends State<OverlayTimelineScreen> {
             ),
           ),
         ],
-        const SizedBox(width: 24),
+        const SizedBox(width: 8),
       ],
     );
   }
@@ -258,7 +258,7 @@ class _OverlayTimelineScreenState extends State<OverlayTimelineScreen> {
             ),
           ),
         ],
-        const SizedBox(width: 24),
+        const SizedBox(width: 8),
       ],
     );
   }
@@ -319,7 +319,7 @@ class _OverlayTimelineScreenState extends State<OverlayTimelineScreen> {
             ),
           ),
         ],
-        const SizedBox(width: 24),
+        const SizedBox(width: 8),
       ],
     );
   }

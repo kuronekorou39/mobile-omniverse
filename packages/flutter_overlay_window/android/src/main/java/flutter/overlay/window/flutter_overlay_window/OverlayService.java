@@ -277,22 +277,9 @@ public class OverlayService extends Service implements View.OnTouchListener {
             params.width = newW;
             params.height = newH;
             // Clamp position so overlay stays on screen after resize
-            int overlayW = newW > 0 ? newW : screenW;
-            int overlayH = newH > 0 ? newH : screenH;
-            if (WindowSetup.gravity == Gravity.CENTER) {
-                int maxX = (screenW - overlayW) / 2 - margin;
-                int minY = -((screenH - overlayH) / 2 - topMargin);
-                int maxY = (screenH - overlayH) / 2 - bottomMargin;
-                if (maxX < 0) maxX = 0;
-                if (minY > maxY) minY = maxY = 0;
-                params.x = Math.max(-maxX, Math.min(params.x, maxX));
-                params.y = Math.max(minY, Math.min(params.y, maxY));
-            } else {
-                int maxX = screenW - overlayW - margin;
-                int maxY = screenH - overlayH - bottomMargin;
-                params.x = Math.max(margin, Math.min(params.x, maxX));
-                params.y = Math.max(topMargin, Math.min(params.y, maxY));
-            }
+            int[] clamped = clampPosition(params.x, params.y);
+            params.x = clamped[0];
+            params.y = clamped[1];
             WindowSetup.enableDrag = enableDrag;
             windowManager.updateViewLayout(flutterView, params);
             result.success(true);
@@ -324,25 +311,9 @@ public class OverlayService extends Service implements View.OnTouchListener {
             params.y += (int) (dy * density);
 
             // Clamp to screen bounds
-            int margin = (int) (8 * density);
-            int topMargin = (int) (48 * density);
-            int bottomMargin = margin + navigationBarHeightPx();
-            int overlayW = flutterView.getWidth();
-            int overlayH = flutterView.getHeight();
-            int screenW = szWindow.x;
-            int screenH = szWindow.y;
-            if (WindowSetup.gravity == Gravity.CENTER) {
-                int maxX = (screenW - overlayW) / 2 - margin;
-                int minY = -((screenH - overlayH) / 2 - topMargin);
-                int maxY = (screenH - overlayH) / 2 - bottomMargin;
-                if (maxX < 0) maxX = 0;
-                if (minY > maxY) minY = maxY = 0;
-                params.x = Math.max(-maxX, Math.min(params.x, maxX));
-                params.y = Math.max(minY, Math.min(params.y, maxY));
-            } else {
-                params.x = Math.max(margin, Math.min(params.x, screenW - overlayW - margin));
-                params.y = Math.max(topMargin, Math.min(params.y, screenH - overlayH - bottomMargin));
-            }
+            int[] clamped = clampPosition(params.x, params.y);
+            params.x = clamped[0];
+            params.y = clamped[1];
 
             windowManager.updateViewLayout(flutterView, params);
             result.success(true);
@@ -543,43 +514,81 @@ public class OverlayService extends Service implements View.OnTouchListener {
                 lastX = event.getRawX();
                 lastY = event.getRawY();
 
+                // ドラッグ中はクランプなし — 自由に移動可能
                 WindowManager.LayoutParams params = (WindowManager.LayoutParams) flutterView.getLayoutParams();
                 params.x += (int) dx;
                 params.y += (int) dy;
-
-                // Clamp to screen bounds
-                float density = mResources.getDisplayMetrics().density;
-                int margin = (int) (8 * density);
-                int topMargin = (int) (48 * density); // ステータスバー領域を避ける
-                int bottomMargin = margin + navigationBarHeightPx();
-                int overlayW = flutterView.getWidth();
-                int overlayH = flutterView.getHeight();
-                int screenW = szWindow.x;
-                int screenH = szWindow.y;
-                if (WindowSetup.gravity == Gravity.CENTER) {
-                    int maxX = (screenW - overlayW) / 2 - margin;
-                    int minY = -((screenH - overlayH) / 2 - topMargin);
-                    int maxY = (screenH - overlayH) / 2 - bottomMargin;
-                    if (maxX < 0) maxX = 0;
-                    if (minY > maxY) minY = maxY = 0;
-                    params.x = Math.max(-maxX, Math.min(params.x, maxX));
-                    params.y = Math.max(minY, Math.min(params.y, maxY));
-                } else {
-                    params.x = Math.max(margin, Math.min(params.x, screenW - overlayW - margin));
-                    params.y = Math.max(topMargin, Math.min(params.y, screenH - overlayH - bottomMargin));
-                }
-
                 windowManager.updateViewLayout(flutterView, params);
                 break;
 
             case MotionEvent.ACTION_UP:
             case MotionEvent.ACTION_CANCEL:
+                if (headerDragStarted) {
+                    // 指を離したら範囲内にスナップバック
+                    snapBackToBounds();
+                }
                 headerTouchActive = false;
                 headerDragStarted = false;
                 break;
         }
         // Always pass all events to Flutter — never consume
         return false;
+    }
+
+    private int[] clampPosition(int x, int y) {
+        float density = mResources.getDisplayMetrics().density;
+        int margin = (int) (8 * density);
+        int topMargin = (int) (48 * density);
+        int bottomMargin = margin + navigationBarHeightPx();
+        int overlayW = flutterView.getWidth();
+        int overlayH = flutterView.getHeight();
+        int screenW = szWindow.x;
+        int screenH = szWindow.y;
+        if (WindowSetup.gravity == Gravity.CENTER) {
+            int maxX = (screenW - overlayW) / 2 - margin;
+            int minY = -((screenH - overlayH) / 2 - topMargin);
+            int maxY = (screenH - overlayH) / 2 - bottomMargin;
+            if (maxX < 0) maxX = 0;
+            if (minY > maxY) minY = maxY = 0;
+            x = Math.max(-maxX, Math.min(x, maxX));
+            y = Math.max(minY, Math.min(y, maxY));
+        } else {
+            x = Math.max(margin, Math.min(x, screenW - overlayW - margin));
+            y = Math.max(topMargin, Math.min(y, screenH - overlayH - bottomMargin));
+        }
+        return new int[]{x, y};
+    }
+
+    private void snapBackToBounds() {
+        if (windowManager == null || flutterView == null) return;
+        WindowManager.LayoutParams params = (WindowManager.LayoutParams) flutterView.getLayoutParams();
+        int[] clamped = clampPosition(params.x, params.y);
+        if (params.x == clamped[0] && params.y == clamped[1]) return; // 既に範囲内
+
+        final int startX = params.x;
+        final int startY = params.y;
+        final int destX = clamped[0];
+        final int destY = clamped[1];
+        final long startTime = System.currentTimeMillis();
+        final long duration = 200; // ms
+
+        mAnimationHandler.post(new Runnable() {
+            @Override
+            public void run() {
+                if (windowManager == null || flutterView == null) return;
+                long elapsed = System.currentTimeMillis() - startTime;
+                float t = Math.min(1f, (float) elapsed / duration);
+                // ease-out: t * (2 - t)
+                float ease = t * (2f - t);
+                WindowManager.LayoutParams p = (WindowManager.LayoutParams) flutterView.getLayoutParams();
+                p.x = startX + (int) ((destX - startX) * ease);
+                p.y = startY + (int) ((destY - startY) * ease);
+                windowManager.updateViewLayout(flutterView, p);
+                if (t < 1f) {
+                    mAnimationHandler.postDelayed(this, 8); // ~120fps
+                }
+            }
+        });
     }
 
     private class TrayAnimationTimerTask extends TimerTask {

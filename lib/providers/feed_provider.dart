@@ -144,8 +144,11 @@ class FeedNotifier extends StateNotifier<FeedState> {
     try {
       final isActive = await FlutterOverlayWindow.isActive();
       if (!isActive) return;
-      final posts = state.posts.take(100).map((p) => p.toJson()).toList();
       final settings = _settingsReader();
+      final hideRtIds = settings.hideRetweetsAccountIds;
+      var visiblePosts = state.posts.where((p) =>
+          !p.isRetweet || p.accountId == null || !hideRtIds.contains(p.accountId));
+      final posts = visiblePosts.take(100).map((p) => p.toJson()).toList();
       final total = settings.fetchIntervalSeconds;
       final payload = {
         'posts': posts,
@@ -238,12 +241,16 @@ class FeedNotifier extends StateNotifier<FeedState> {
 
     // 新規投稿をキューに追加（ドリップ対象の場合のみ）
     if (!shouldBypassDrip && newPending.isNotEmpty) {
-      // state.posts と既存キューに対する防御的フィルタ
+      // RT非表示フィルタ + state.posts/キュー重複フィルタ
+      final hideRtIds = _settingsReader().hideRetweetsAccountIds;
       final stateIds = state.posts.map((p) => p.id).toSet();
       final filtered = newPending
-          .where((p) => !stateIds.contains(p.id) && !_pendingIds.contains(p.id))
+          .where((p) =>
+              !stateIds.contains(p.id) &&
+              !_pendingIds.contains(p.id) &&
+              !(p.isRetweet && hideRtIds.contains(p.accountId)))
           .toList();
-      debugPrint('[Feed] newPending=${newPending.length} filtered=${filtered.length} queue=${_pendingQueue.length}');
+      debugPrint('[Feed] newPending=${newPending.length} filtered=${filtered.length} (hideRT=${hideRtIds.length})');
       if (filtered.isEmpty) return;
       _pendingQueue.addAll(filtered);
       _pendingIds.addAll(filtered.map((p) => p.id));

@@ -170,7 +170,7 @@ class FeedNotifier extends StateNotifier<FeedState> {
       state.posts.map((p) => MapEntry(p.id, p)),
     );
 
-    final newToQueue = <Post>[];
+    final newToQueue = <String, Post>{};
 
     for (final post in newPosts) {
       final old = existing[post.id];
@@ -196,18 +196,20 @@ class FeedNotifier extends StateNotifier<FeedState> {
         // 既存投稿の更新（エンゲージメント等）— 即時反映
         existing[post.id] = post;
       } else if (!_pendingIds.contains(post.id)) {
-        // 新規投稿（キューにも未登録）— キューに追加
-        newToQueue.add(post);
+        // 新規投稿（キューにも未登録）— キューに追加（Mapで同一フェッチ内の重複防止）
+        newToQueue[post.id] = post;
       }
     }
+
+    final newPending = newToQueue.values.toList();
 
     // 初回ロード・手動リフレッシュ・loadMore・起動後初回フェッチはドリップせず即時反映
     final shouldBypassDrip = _bypassDrip || _firstFetch || state.posts.isEmpty;
     _bypassDrip = false;
     _firstFetch = false;
 
-    if (shouldBypassDrip && newToQueue.isNotEmpty) {
-      for (final post in newToQueue) {
+    if (shouldBypassDrip && newPending.isNotEmpty) {
+      for (final post in newPending) {
         existing[post.id] = post;
       }
     }
@@ -218,9 +220,9 @@ class FeedNotifier extends StateNotifier<FeedState> {
     state = state.copyWith(posts: sorted, isLoading: false, isFetching: false, clearError: true);
 
     // 新規投稿をキューに追加（ドリップ対象の場合のみ）
-    if (!shouldBypassDrip && newToQueue.isNotEmpty) {
-      _pendingQueue.addAll(newToQueue);
-      _pendingIds.addAll(newToQueue.map((p) => p.id));
+    if (!shouldBypassDrip && newPending.isNotEmpty) {
+      _pendingQueue.addAll(newPending);
+      _pendingIds.addAll(newToQueue.keys);
       state = state.copyWith(pendingCount: _pendingQueue.length);
       if (_pendingQueue.length <= dripThreshold) {
         _startDrip();

@@ -26,8 +26,8 @@ class _OverlayTimelineScreenState extends State<OverlayTimelineScreen> {
   int _fontSizeIndex = 1;
   int _themeModeIndex = 0; // 0=ダーク, 1=ライト, 2=システム
   bool _isMinimized = false;
-  double? _savedX;
-  double? _savedY;
+  final Set<String> _expandedPostIds = {};
+  final Set<String> _newPostIds = {};
 
   // フェッチタイマー状態
   int _fetchRemaining = 0;
@@ -80,6 +80,15 @@ class _OverlayTimelineScreenState extends State<OverlayTimelineScreen> {
               .map((e) => Post.fromCache(e as Map<String, dynamic>))
               .toList();
           if (mounted) {
+            // Detect new posts for animation (skip initial load)
+            if (_posts.isNotEmpty) {
+              final oldIds = _posts.map((p) => p.id).toSet();
+              for (final p in posts) {
+                if (!oldIds.contains(p.id)) {
+                  _newPostIds.add(p.id);
+                }
+              }
+            }
             setState(() {
               _posts = posts;
               _isLoadingMore = false;
@@ -147,23 +156,10 @@ class _OverlayTimelineScreenState extends State<OverlayTimelineScreen> {
 
   Future<void> _toggleMinimize() async {
     if (_isMinimized) {
-      // 復元: 元のサイズに戻してから保存位置に移動
-      await FlutterOverlayWindow.resizeOverlay(
-          _widths[_wIndex], _heights[_hIndex], false);
-      if (_savedX != null && _savedY != null) {
-        await FlutterOverlayWindow.moveOverlay(
-            OverlayPosition(_savedX!, _savedY!));
-      }
+      await FlutterOverlayWindow.restoreOverlay();
       setState(() => _isMinimized = false);
     } else {
-      // 最小化: 現在位置を保存 → 24dp幅にリサイズ → 右端へスライド
-      final pos = await FlutterOverlayWindow.getOverlayPosition();
-      _savedX = pos.x;
-      _savedY = pos.y;
-      await FlutterOverlayWindow.resizeOverlay(
-          24, _heights[_hIndex], false);
-      // 大きな値で右に移動（ネイティブ側のクランプで画面内に収まる）
-      await FlutterOverlayWindow.moveOverlayByDelta(9999, 0);
+      await FlutterOverlayWindow.minimizeOverlay(30);
       setState(() => _isMinimized = true);
     }
   }
@@ -215,6 +211,7 @@ class _OverlayTimelineScreenState extends State<OverlayTimelineScreen> {
             ),
           ),
         ],
+        const SizedBox(width: 24),
       ],
     );
   }
@@ -261,6 +258,7 @@ class _OverlayTimelineScreenState extends State<OverlayTimelineScreen> {
             ),
           ),
         ],
+        const SizedBox(width: 24),
       ],
     );
   }
@@ -321,6 +319,7 @@ class _OverlayTimelineScreenState extends State<OverlayTimelineScreen> {
             ),
           ),
         ],
+        const SizedBox(width: 24),
       ],
     );
   }
@@ -403,36 +402,77 @@ class _OverlayTimelineScreenState extends State<OverlayTimelineScreen> {
             );
           }
           final post = _posts[index];
-          return OverlayPostCard(
+          Widget card = OverlayPostCard(
             key: ValueKey(post.id),
             post: post,
             onShowDetail: () => _openPostDetail(post),
             fontSize: _fontSizes[_fontSizeIndex],
             theme: _theme,
+            isExpanded: _expandedPostIds.contains(post.id),
+            onToggleExpand: () {
+              setState(() {
+                if (_expandedPostIds.contains(post.id)) {
+                  _expandedPostIds.remove(post.id);
+                } else {
+                  _expandedPostIds.add(post.id);
+                }
+              });
+            },
           );
+          // New post animation
+          if (_newPostIds.contains(post.id)) {
+            card = TweenAnimationBuilder<double>(
+              key: ValueKey('anim_${post.id}'),
+              tween: Tween(begin: 0.0, end: 1.0),
+              duration: const Duration(milliseconds: 300),
+              onEnd: () {
+                _newPostIds.remove(post.id);
+              },
+              builder: (context, value, child) {
+                return Opacity(
+                  opacity: value,
+                  child: ClipRect(
+                    child: Align(
+                      alignment: Alignment.topCenter,
+                      heightFactor: value,
+                      child: child,
+                    ),
+                  ),
+                );
+              },
+              child: card,
+            );
+          }
+          return card;
         },
       ),
     );
   }
 
   Widget _buildMinimizedStrip() {
-    return GestureDetector(
-      behavior: HitTestBehavior.opaque,
-      onTap: _toggleMinimize,
-      child: Container(
-        width: 24,
-        decoration: BoxDecoration(
-          color: _bgColor.withAlpha(220),
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: _theme.border, width: 0.5),
-        ),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(Icons.chevron_left, color: _accentColor, size: 18),
-            const SizedBox(height: 4),
-            Icon(Icons.rss_feed, color: _accentColor, size: 14),
-          ],
+    return Align(
+      alignment: Alignment.centerLeft,
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: _toggleMinimize,
+        child: Container(
+          width: 30,
+          height: 80,
+          decoration: BoxDecoration(
+            color: _bgColor.withAlpha(220),
+            borderRadius: const BorderRadius.horizontal(
+              right: Radius.circular(12),
+            ),
+            border: Border.all(color: _theme.border, width: 0.5),
+          ),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(Icons.chevron_left, color: _accentColor, size: 18),
+              const SizedBox(height: 4),
+              Icon(Icons.rss_feed, color: _accentColor, size: 14),
+            ],
+          ),
         ),
       ),
     );

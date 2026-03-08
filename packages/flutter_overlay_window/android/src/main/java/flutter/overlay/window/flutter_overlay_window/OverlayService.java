@@ -69,6 +69,9 @@ public class OverlayService extends Service implements View.OnTouchListener {
     private boolean dragging;
     private boolean headerTouchActive = false;
     private boolean headerDragStarted = false;
+    private int savedMinimizeX = Integer.MIN_VALUE;
+    private int savedMinimizeY = Integer.MIN_VALUE;
+    private boolean isMinimized = false;
     private static final int HEADER_HEIGHT_DP = 32;
     private static final float MAXIMUM_OPACITY_ALLOWED_FOR_S_AND_HIGHER = 0.8f;
     private Point szWindow = new Point();
@@ -153,6 +156,11 @@ public class OverlayService extends Service implements View.OnTouchListener {
                 String postJson = call.argument("post");
                 FlutterOverlayWindowPlugin.pendingPostJson = postJson;
                 launchMainActivity(result);
+            } else if (call.method.equals("minimizeOverlay")) {
+                int visibleWidthDp = call.argument("visibleWidth");
+                minimizeOverlay(visibleWidthDp, result);
+            } else if (call.method.equals("restoreOverlay")) {
+                restoreOverlay(result);
             }
         });
         overlayMessageChannel.setMessageHandler((message, reply) -> {
@@ -161,14 +169,10 @@ public class OverlayService extends Service implements View.OnTouchListener {
         });
         windowManager = (WindowManager) getSystemService(WINDOW_SERVICE);
 
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.HONEYCOMB) {
-            windowManager.getDefaultDisplay().getSize(szWindow);
-        } else {
-            DisplayMetrics displaymetrics = new DisplayMetrics();
-            windowManager.getDefaultDisplay().getMetrics(displaymetrics);
-            int w = displaymetrics.widthPixels;
-            int h = displaymetrics.heightPixels;
-            szWindow.set(w, h);
+        {
+            DisplayMetrics dm = new DisplayMetrics();
+            windowManager.getDefaultDisplay().getRealMetrics(dm);
+            szWindow.set(dm.widthPixels, dm.heightPixels);
         }
         int dx = startX == OverlayConstants.DEFAULT_XY ? 0 : startX;
         int dy = startY == OverlayConstants.DEFAULT_XY ? -statusBarHeightPx() : startY;
@@ -259,10 +263,11 @@ public class OverlayService extends Service implements View.OnTouchListener {
             float density = mResources.getDisplayMetrics().density;
             int margin = (int) (8 * density);
             int topMargin = (int) (48 * density); // ステータスバー領域を避ける
+            int bottomMargin = margin + navigationBarHeightPx();
             int screenW = szWindow.x;
             int screenH = szWindow.y;
             int maxW = screenW - margin * 2;
-            int maxH = screenH - topMargin - margin;
+            int maxH = screenH - topMargin - bottomMargin;
             WindowManager.LayoutParams params = (WindowManager.LayoutParams) flutterView.getLayoutParams();
             int newW = (width == -1999 || width == -1) ? -1 : dpToPx(width);
             int newH = (height != 1999 || height != -1) ? dpToPx(height) : height;
@@ -277,14 +282,14 @@ public class OverlayService extends Service implements View.OnTouchListener {
             if (WindowSetup.gravity == Gravity.CENTER) {
                 int maxX = (screenW - overlayW) / 2 - margin;
                 int minY = -((screenH - overlayH) / 2 - topMargin);
-                int maxY = (screenH - overlayH) / 2 - margin;
+                int maxY = (screenH - overlayH) / 2 - bottomMargin;
                 if (maxX < 0) maxX = 0;
                 if (minY > maxY) minY = maxY = 0;
                 params.x = Math.max(-maxX, Math.min(params.x, maxX));
                 params.y = Math.max(minY, Math.min(params.y, maxY));
             } else {
                 int maxX = screenW - overlayW - margin;
-                int maxY = screenH - overlayH - margin;
+                int maxY = screenH - overlayH - bottomMargin;
                 params.x = Math.max(margin, Math.min(params.x, maxX));
                 params.y = Math.max(topMargin, Math.min(params.y, maxY));
             }
@@ -321,6 +326,7 @@ public class OverlayService extends Service implements View.OnTouchListener {
             // Clamp to screen bounds
             int margin = (int) (8 * density);
             int topMargin = (int) (48 * density);
+            int bottomMargin = margin + navigationBarHeightPx();
             int overlayW = flutterView.getWidth();
             int overlayH = flutterView.getHeight();
             int screenW = szWindow.x;
@@ -328,16 +334,57 @@ public class OverlayService extends Service implements View.OnTouchListener {
             if (WindowSetup.gravity == Gravity.CENTER) {
                 int maxX = (screenW - overlayW) / 2 - margin;
                 int minY = -((screenH - overlayH) / 2 - topMargin);
-                int maxY = (screenH - overlayH) / 2 - margin;
+                int maxY = (screenH - overlayH) / 2 - bottomMargin;
                 if (maxX < 0) maxX = 0;
                 if (minY > maxY) minY = maxY = 0;
                 params.x = Math.max(-maxX, Math.min(params.x, maxX));
                 params.y = Math.max(minY, Math.min(params.y, maxY));
             } else {
                 params.x = Math.max(margin, Math.min(params.x, screenW - overlayW - margin));
-                params.y = Math.max(topMargin, Math.min(params.y, screenH - overlayH - margin));
+                params.y = Math.max(topMargin, Math.min(params.y, screenH - overlayH - bottomMargin));
             }
 
+            windowManager.updateViewLayout(flutterView, params);
+            result.success(true);
+        } else {
+            result.success(false);
+        }
+    }
+
+    private void minimizeOverlay(int visibleWidthDp, MethodChannel.Result result) {
+        if (windowManager != null && flutterView != null) {
+            WindowManager.LayoutParams params = (WindowManager.LayoutParams) flutterView.getLayoutParams();
+            savedMinimizeX = params.x;
+            savedMinimizeY = params.y;
+            isMinimized = true;
+            // Slide to right edge, leaving visibleWidthDp visible on the left side
+            int visiblePx = dpToPx(visibleWidthDp);
+            int overlayW = flutterView.getWidth();
+            int screenW = szWindow.x;
+            // For CENTER gravity, x=0 means centered. We want the overlay's left edge
+            // to be at (screenW - visiblePx), so: overlayLeft = screenW/2 + x - overlayW/2
+            // => x = screenW - visiblePx - screenW/2 + overlayW/2
+            if (WindowSetup.gravity == Gravity.CENTER) {
+                params.x = screenW - visiblePx - screenW / 2 + overlayW / 2;
+            } else {
+                // TOP_LEFT: x is the left edge position
+                params.x = screenW - visiblePx;
+            }
+            windowManager.updateViewLayout(flutterView, params);
+            result.success(true);
+        } else {
+            result.success(false);
+        }
+    }
+
+    private void restoreOverlay(MethodChannel.Result result) {
+        if (windowManager != null && flutterView != null && isMinimized) {
+            WindowManager.LayoutParams params = (WindowManager.LayoutParams) flutterView.getLayoutParams();
+            if (savedMinimizeX != Integer.MIN_VALUE) {
+                params.x = savedMinimizeX;
+                params.y = savedMinimizeY;
+            }
+            isMinimized = false;
             windowManager.updateViewLayout(flutterView, params);
             result.success(true);
         } else {
@@ -504,6 +551,7 @@ public class OverlayService extends Service implements View.OnTouchListener {
                 float density = mResources.getDisplayMetrics().density;
                 int margin = (int) (8 * density);
                 int topMargin = (int) (48 * density); // ステータスバー領域を避ける
+                int bottomMargin = margin + navigationBarHeightPx();
                 int overlayW = flutterView.getWidth();
                 int overlayH = flutterView.getHeight();
                 int screenW = szWindow.x;
@@ -511,14 +559,14 @@ public class OverlayService extends Service implements View.OnTouchListener {
                 if (WindowSetup.gravity == Gravity.CENTER) {
                     int maxX = (screenW - overlayW) / 2 - margin;
                     int minY = -((screenH - overlayH) / 2 - topMargin);
-                    int maxY = (screenH - overlayH) / 2 - margin;
+                    int maxY = (screenH - overlayH) / 2 - bottomMargin;
                     if (maxX < 0) maxX = 0;
                     if (minY > maxY) minY = maxY = 0;
                     params.x = Math.max(-maxX, Math.min(params.x, maxX));
                     params.y = Math.max(minY, Math.min(params.y, maxY));
                 } else {
                     params.x = Math.max(margin, Math.min(params.x, screenW - overlayW - margin));
-                    params.y = Math.max(topMargin, Math.min(params.y, screenH - overlayH - margin));
+                    params.y = Math.max(topMargin, Math.min(params.y, screenH - overlayH - bottomMargin));
                 }
 
                 windowManager.updateViewLayout(flutterView, params);

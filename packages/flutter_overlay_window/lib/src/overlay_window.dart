@@ -160,6 +160,22 @@ class FlutterOverlayWindow {
         .invokeMethod('moveOverlayByDelta', {'dx': dx, 'dy': dy});
   }
 
+  /// Minimize the overlay by sliding it off-screen, leaving only visibleWidth dp visible
+  static Future<bool?> minimizeOverlay(int visibleWidth) async {
+    final bool? res = await _overlayChannel.invokeMethod<bool?>(
+      'minimizeOverlay',
+      {'visibleWidth': visibleWidth},
+    );
+    return res;
+  }
+
+  /// Restore the overlay from minimized state to its previous position
+  static Future<bool?> restoreOverlay() async {
+    final bool? res =
+        await _overlayChannel.invokeMethod<bool?>('restoreOverlay');
+    return res;
+  }
+
   /// Launch the main activity and open post detail
   static Future<bool?> openPostDetail(String postJson) async {
     final bool? res = await _overlayChannel

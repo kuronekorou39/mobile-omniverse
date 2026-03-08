@@ -59,19 +59,22 @@ class OverlayPostCard extends StatefulWidget {
     this.onShowDetail,
     this.fontSize = 10,
     this.theme = OverlayThemeColors.dark,
+    this.isExpanded = false,
+    this.onToggleExpand,
   });
 
   final Post post;
   final VoidCallback? onShowDetail;
   final double fontSize;
   final OverlayThemeColors theme;
+  final bool isExpanded;
+  final VoidCallback? onToggleExpand;
 
   @override
   State<OverlayPostCard> createState() => _OverlayPostCardState();
 }
 
 class _OverlayPostCardState extends State<OverlayPostCard> {
-  bool _isExpanded = false;
 
   Post get post => widget.post;
   OverlayThemeColors get t => widget.theme;
@@ -108,7 +111,7 @@ class _OverlayPostCardState extends State<OverlayPostCard> {
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
-      onTap: () => setState(() => _isExpanded = !_isExpanded),
+      onTap: widget.onToggleExpand,
       behavior: HitTestBehavior.opaque,
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
@@ -128,7 +131,7 @@ class _OverlayPostCardState extends State<OverlayPostCard> {
               ),
 
             // Main content row
-            _isExpanded ? _buildExpanded() : _buildCollapsed(),
+            widget.isExpanded ? _buildExpanded() : _buildCollapsed(),
 
             // Divider
             Divider(height: 6, thickness: 0.3, color: t.divider),

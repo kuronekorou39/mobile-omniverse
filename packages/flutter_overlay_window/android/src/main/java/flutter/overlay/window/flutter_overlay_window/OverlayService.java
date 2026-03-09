@@ -71,7 +71,9 @@ public class OverlayService extends Service implements View.OnTouchListener {
     private boolean headerDragStarted = false;
     private int savedMinimizeX = Integer.MIN_VALUE;
     private int savedMinimizeY = Integer.MIN_VALUE;
+    private int dragStartX, dragStartY;
     private boolean isMinimized = false;
+    private static final int MINIMIZE_VISIBLE_DP = 30;
     private static final int HEADER_HEIGHT_DP = 32;
     private static final float MAXIMUM_OPACITY_ALLOWED_FOR_S_AND_HIGHER = 0.8f;
     private Point szWindow = new Point();
@@ -98,6 +100,14 @@ public class OverlayService extends Service implements View.OnTouchListener {
         NotificationManager notificationManager = (NotificationManager) getApplicationContext().getSystemService(Context.NOTIFICATION_SERVICE);
         notificationManager.cancel(OverlayConstants.NOTIFICATION_ID);
         instance = null;
+    }
+
+    @Override
+    public void onTaskRemoved(Intent rootIntent) {
+        // メインアプリがタスクキルされたらオーバーレイも終了
+        Log.d("OverLay", "Task removed, stopping overlay service");
+        stopSelf();
+        super.onTaskRemoved(rootIntent);
     }
 
     @RequiresApi(api = Build.VERSION_CODES.JELLY_BEAN_MR1)
@@ -155,6 +165,8 @@ public class OverlayService extends Service implements View.OnTouchListener {
             } else if (call.method.equals("openPostDetail")) {
                 String postJson = call.argument("post");
                 FlutterOverlayWindowPlugin.pendingPostJson = postJson;
+                // 詳細表示時にオーバーレイを自動で右にしまう
+                autoMinimize();
                 launchMainActivity(result);
             } else if (call.method.equals("minimizeOverlay")) {
                 int visibleWidthDp = call.argument("visibleWidth");
@@ -324,26 +336,42 @@ public class OverlayService extends Service implements View.OnTouchListener {
         }
     }
 
+    /** 内部呼び出し用: オーバーレイを自動で右にしまう */
+    private void autoMinimize() {
+        if (windowManager == null || flutterView == null || isMinimized) return;
+        WindowManager.LayoutParams params = (WindowManager.LayoutParams) flutterView.getLayoutParams();
+        savedMinimizeX = params.x;
+        savedMinimizeY = params.y;
+        isMinimized = true;
+        int visiblePx = dpToPx(MINIMIZE_VISIBLE_DP);
+        int overlayW = flutterView.getWidth();
+        int screenW = szWindow.x;
+        int destX;
+        if (WindowSetup.gravity == Gravity.CENTER) {
+            destX = screenW - visiblePx - screenW / 2 + overlayW / 2;
+        } else {
+            destX = screenW - visiblePx;
+        }
+        animatePosition(params.x, params.y, destX, params.y, 300);
+    }
+
     private void minimizeOverlay(int visibleWidthDp, MethodChannel.Result result) {
         if (windowManager != null && flutterView != null) {
             WindowManager.LayoutParams params = (WindowManager.LayoutParams) flutterView.getLayoutParams();
             savedMinimizeX = params.x;
             savedMinimizeY = params.y;
             isMinimized = true;
-            // Slide to right edge, leaving visibleWidthDp visible on the left side
+
             int visiblePx = dpToPx(visibleWidthDp);
             int overlayW = flutterView.getWidth();
             int screenW = szWindow.x;
-            // For CENTER gravity, x=0 means centered. We want the overlay's left edge
-            // to be at (screenW - visiblePx), so: overlayLeft = screenW/2 + x - overlayW/2
-            // => x = screenW - visiblePx - screenW/2 + overlayW/2
+            int destX;
             if (WindowSetup.gravity == Gravity.CENTER) {
-                params.x = screenW - visiblePx - screenW / 2 + overlayW / 2;
+                destX = screenW - visiblePx - screenW / 2 + overlayW / 2;
             } else {
-                // TOP_LEFT: x is the left edge position
-                params.x = screenW - visiblePx;
+                destX = screenW - visiblePx;
             }
-            windowManager.updateViewLayout(flutterView, params);
+            animateX(params.x, destX, 300);
             result.success(true);
         } else {
             result.success(false);
@@ -353,16 +381,38 @@ public class OverlayService extends Service implements View.OnTouchListener {
     private void restoreOverlay(MethodChannel.Result result) {
         if (windowManager != null && flutterView != null && isMinimized) {
             WindowManager.LayoutParams params = (WindowManager.LayoutParams) flutterView.getLayoutParams();
-            if (savedMinimizeX != Integer.MIN_VALUE) {
-                params.x = savedMinimizeX;
+            int destX = savedMinimizeX != Integer.MIN_VALUE ? savedMinimizeX : params.x;
+            if (savedMinimizeY != Integer.MIN_VALUE) {
                 params.y = savedMinimizeY;
+                windowManager.updateViewLayout(flutterView, params);
             }
             isMinimized = false;
-            windowManager.updateViewLayout(flutterView, params);
+            animateX(params.x, destX, 300);
             result.success(true);
         } else {
             result.success(false);
         }
+    }
+
+    /** X座標をアニメーションで移動（ease-out） */
+    private void animateX(int fromX, int toX, long duration) {
+        if (fromX == toX) return;
+        final long startTime = System.currentTimeMillis();
+        mAnimationHandler.post(new Runnable() {
+            @Override
+            public void run() {
+                if (windowManager == null || flutterView == null) return;
+                long elapsed = System.currentTimeMillis() - startTime;
+                float t = Math.min(1f, (float) elapsed / duration);
+                float ease = t * (2f - t); // ease-out
+                WindowManager.LayoutParams p = (WindowManager.LayoutParams) flutterView.getLayoutParams();
+                p.x = fromX + (int) ((toX - fromX) * ease);
+                windowManager.updateViewLayout(flutterView, p);
+                if (t < 1f) {
+                    mAnimationHandler.postDelayed(this, 8);
+                }
+            }
+        });
     }
 
     private void moveOverlay(int x, int y, MethodChannel.Result result) {
@@ -499,6 +549,10 @@ public class OverlayService extends Service implements View.OnTouchListener {
                 if (headerTouchActive) {
                     lastX = event.getRawX();
                     lastY = event.getRawY();
+                    // ドラッグ開始位置を保存（最小化/復元の判定用）
+                    WindowManager.LayoutParams downParams = (WindowManager.LayoutParams) flutterView.getLayoutParams();
+                    dragStartX = downParams.x;
+                    dragStartY = downParams.y;
                 }
                 break;
 
@@ -529,8 +583,7 @@ public class OverlayService extends Service implements View.OnTouchListener {
             case MotionEvent.ACTION_UP:
             case MotionEvent.ACTION_CANCEL:
                 if (headerDragStarted) {
-                    // 指を離したら範囲内にスナップバック
-                    snapBackToBounds();
+                    handleDragEnd();
                 }
                 headerTouchActive = false;
                 headerDragStarted = false;
@@ -538,6 +591,73 @@ public class OverlayService extends Service implements View.OnTouchListener {
         }
         // Always pass all events to Flutter — never consume
         return false;
+    }
+
+    /** ドラッグ終了時の最小化/復元判定 */
+    private void handleDragEnd() {
+        if (windowManager == null || flutterView == null) return;
+        WindowManager.LayoutParams params = (WindowManager.LayoutParams) flutterView.getLayoutParams();
+        int overlayW = flutterView.getWidth();
+        int screenW = szWindow.x;
+
+        // オーバーレイの左端を画面座標で計算
+        int overlayLeft;
+        if (WindowSetup.gravity == Gravity.CENTER) {
+            overlayLeft = screenW / 2 + params.x - overlayW / 2;
+        } else {
+            overlayLeft = params.x;
+        }
+        int overlayRight = overlayLeft + overlayW;
+        int visibleLeft = Math.max(overlayLeft, 0);
+        int visibleRight = Math.min(overlayRight, screenW);
+        int visibleWidth = Math.max(0, visibleRight - visibleLeft);
+
+        // 右方向に半分以上隠れている → 最小化
+        if (visibleWidth < overlayW / 2 && overlayLeft > 0) {
+            if (!isMinimized) {
+                savedMinimizeX = dragStartX;
+                savedMinimizeY = dragStartY;
+            }
+            isMinimized = true;
+            int visiblePx = dpToPx(MINIMIZE_VISIBLE_DP);
+            int destX;
+            if (WindowSetup.gravity == Gravity.CENTER) {
+                destX = screenW - visiblePx - screenW / 2 + overlayW / 2;
+            } else {
+                destX = screenW - visiblePx;
+            }
+            animatePosition(params.x, params.y, destX, params.y, 200);
+        } else if (isMinimized) {
+            // 最小化状態から半分以上見える位置まで戻された → 復元
+            isMinimized = false;
+            int[] clamped = clampPosition(savedMinimizeX, savedMinimizeY);
+            animatePosition(params.x, params.y, clamped[0], clamped[1], 200);
+        } else {
+            // 通常のスナップバック
+            snapBackToBounds();
+        }
+    }
+
+    /** X,Y両方をアニメーションで移動（ease-out） */
+    private void animatePosition(int fromX, int fromY, int toX, int toY, long duration) {
+        if (fromX == toX && fromY == toY) return;
+        final long startTime = System.currentTimeMillis();
+        mAnimationHandler.post(new Runnable() {
+            @Override
+            public void run() {
+                if (windowManager == null || flutterView == null) return;
+                long elapsed = System.currentTimeMillis() - startTime;
+                float t = Math.min(1f, (float) elapsed / duration);
+                float ease = t * (2f - t);
+                WindowManager.LayoutParams p = (WindowManager.LayoutParams) flutterView.getLayoutParams();
+                p.x = fromX + (int) ((toX - fromX) * ease);
+                p.y = fromY + (int) ((toY - fromY) * ease);
+                windowManager.updateViewLayout(flutterView, p);
+                if (t < 1f) {
+                    mAnimationHandler.postDelayed(this, 8);
+                }
+            }
+        });
     }
 
     /** ドラッグ中のソフトクランプ: ヘッダー(32dp)が画面内に残る範囲で移動可能 */

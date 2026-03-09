@@ -25,7 +25,6 @@ class _OverlayTimelineScreenState extends State<OverlayTimelineScreen> {
   int _opacityIndex = 3;
   int _fontSizeIndex = 1;
   int _themeModeIndex = 0; // 0=ダーク, 1=ライト, 2=システム
-  bool _isMinimized = false;
   final Set<String> _expandedPostIds = {};
   final Set<String> _newPostIds = {};
 
@@ -152,16 +151,6 @@ class _OverlayTimelineScreenState extends State<OverlayTimelineScreen> {
     await FlutterOverlayWindow.resizeOverlay(
         _widths[_wIndex], _heights[index], false);
     setState(() => _hIndex = index);
-  }
-
-  Future<void> _toggleMinimize() async {
-    if (_isMinimized) {
-      await FlutterOverlayWindow.restoreOverlay();
-      setState(() => _isMinimized = false);
-    } else {
-      await FlutterOverlayWindow.minimizeOverlay(30);
-      setState(() => _isMinimized = true);
-    }
   }
 
   Widget _buildSizeSelector(
@@ -449,61 +438,30 @@ class _OverlayTimelineScreenState extends State<OverlayTimelineScreen> {
     );
   }
 
-  Widget _buildMinimizedStrip() {
-    return Align(
-      alignment: Alignment.centerLeft,
-      child: GestureDetector(
-        behavior: HitTestBehavior.opaque,
-        onTap: _toggleMinimize,
-        child: Container(
-          width: 30,
-          height: 80,
-          decoration: BoxDecoration(
-            color: _bgColor.withAlpha(220),
-            borderRadius: const BorderRadius.horizontal(
-              right: Radius.circular(12),
-            ),
-            border: Border.all(color: _theme.border, width: 0.5),
-          ),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Icon(Icons.chevron_left, color: _accentColor, size: 18),
-              const SizedBox(height: 4),
-              Icon(Icons.rss_feed, color: _accentColor, size: 14),
-            ],
-          ),
-        ),
-      ),
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.transparent,
+      child: _buildOverlayBody(),
     );
   }
 
-  @override
-  Widget build(BuildContext context) {
-    if (_isMinimized) {
-      return Material(
-        color: Colors.transparent,
-        child: _buildMinimizedStrip(),
-      );
-    }
-
-    return Material(
-      color: Colors.transparent,
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(12),
-        child: Opacity(
-          opacity: _opacities[_opacityIndex],
-          child: Container(
-            decoration: BoxDecoration(
-              color: _bgColor,
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(
-                color: _settingsOpen ? _accentColor : _theme.border,
-                width: _settingsOpen ? 1.5 : 0.5,
-              ),
+  Widget _buildOverlayBody() {
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(12),
+      child: Opacity(
+        opacity: _opacities[_opacityIndex],
+        child: Container(
+          decoration: BoxDecoration(
+            color: _bgColor,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(
+              color: _settingsOpen ? _accentColor : _theme.border,
+              width: _settingsOpen ? 1.5 : 0.5,
             ),
-            child: Column(
-              children: [
+          ),
+          child: Column(
+            children: [
                 // Header bar (ドラッグはネイティブ側で処理)
                 Container(
                     padding: const EdgeInsets.symmetric(
@@ -518,16 +476,6 @@ class _OverlayTimelineScreenState extends State<OverlayTimelineScreen> {
                     ),
                     child: Row(
                       children: [
-                        GestureDetector(
-                          behavior: HitTestBehavior.opaque,
-                          onTap: _openMainApp,
-                          child: Padding(
-                            padding: const EdgeInsets.all(2),
-                            child: Icon(Icons.open_in_new,
-                                color: _theme.text, size: 16),
-                          ),
-                        ),
-                        const SizedBox(width: 4),
                         GestureDetector(
                           behavior: HitTestBehavior.opaque,
                           onTap: _toggleSettings,
@@ -574,17 +522,6 @@ class _OverlayTimelineScreenState extends State<OverlayTimelineScreen> {
                             ),
                           ),
                         ),
-                        // 最小化ボタン
-                        GestureDetector(
-                          behavior: HitTestBehavior.opaque,
-                          onTap: _toggleMinimize,
-                          child: Padding(
-                            padding: const EdgeInsets.all(2),
-                            child: Icon(Icons.chevron_right,
-                                color: _theme.text, size: 16),
-                          ),
-                        ),
-                        const SizedBox(width: 2),
                         GestureDetector(
                           behavior: HitTestBehavior.opaque,
                           onTap: () async {
@@ -609,7 +546,6 @@ class _OverlayTimelineScreenState extends State<OverlayTimelineScreen> {
             ),
           ),
         ),
-      ),
-    );
+      );
   }
 }

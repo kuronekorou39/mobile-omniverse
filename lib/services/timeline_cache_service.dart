@@ -24,7 +24,8 @@ class TimelineCacheService {
       final posts = <Post>[];
       for (final item in list) {
         try {
-          posts.add(Post.fromCache(item as Map<String, dynamic>));
+          final post = Post.tryFromCache(item as Map<String, dynamic>);
+          if (post != null) posts.add(post);
         } catch (e) {
           debugPrint('[TimelineCache] Error parsing cached post: $e');
         }

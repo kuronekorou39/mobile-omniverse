@@ -3,6 +3,7 @@ import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_overlay_window/flutter_overlay_window.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/post.dart';
 import '../widgets/overlay_post_card.dart';
@@ -58,6 +59,7 @@ class _OverlayTimelineScreenState extends State<OverlayTimelineScreen> {
   @override
   void initState() {
     super.initState();
+    _loadSettings();
     _scrollController.addListener(_onScroll);
     _subscription = FlutterOverlayWindow.overlayListener.listen((data) {
       if (data is String) {
@@ -76,7 +78,8 @@ class _OverlayTimelineScreenState extends State<OverlayTimelineScreen> {
             postList = decoded as List<dynamic>;
           }
           final posts = postList
-              .map((e) => Post.fromCache(e as Map<String, dynamic>))
+              .map((e) => Post.tryFromCache(e as Map<String, dynamic>))
+              .whereType<Post>()
               .toList();
           if (mounted) {
             // Detect new posts for animation (skip initial load)
@@ -96,6 +99,35 @@ class _OverlayTimelineScreenState extends State<OverlayTimelineScreen> {
         } catch (_) {}
       }
     });
+  }
+
+  Future<void> _loadSettings() async {
+    final prefs = await SharedPreferences.getInstance();
+    final w = prefs.getInt('overlay_wIndex') ?? 0;
+    final h = prefs.getInt('overlay_hIndex') ?? 0;
+    final o = prefs.getInt('overlay_opacityIndex') ?? 3;
+    final f = prefs.getInt('overlay_fontSizeIndex') ?? 1;
+    final t = prefs.getInt('overlay_themeModeIndex') ?? 0;
+    if (mounted) {
+      setState(() {
+        _wIndex = w;
+        _hIndex = h;
+        _opacityIndex = o;
+        _fontSizeIndex = f;
+        _themeModeIndex = t;
+      });
+      await FlutterOverlayWindow.resizeOverlay(
+          _widths[_wIndex], _heights[_hIndex], false);
+    }
+  }
+
+  Future<void> _saveSettings() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setInt('overlay_wIndex', _wIndex);
+    await prefs.setInt('overlay_hIndex', _hIndex);
+    await prefs.setInt('overlay_opacityIndex', _opacityIndex);
+    await prefs.setInt('overlay_fontSizeIndex', _fontSizeIndex);
+    await prefs.setInt('overlay_themeModeIndex', _themeModeIndex);
   }
 
   @override
@@ -145,12 +177,14 @@ class _OverlayTimelineScreenState extends State<OverlayTimelineScreen> {
     await FlutterOverlayWindow.resizeOverlay(
         _widths[index], _heights[_hIndex], false);
     setState(() => _wIndex = index);
+    _saveSettings();
   }
 
   Future<void> _setHeight(int index) async {
     await FlutterOverlayWindow.resizeOverlay(
         _widths[_wIndex], _heights[index], false);
     setState(() => _hIndex = index);
+    _saveSettings();
   }
 
   Widget _buildSizeSelector(
@@ -217,7 +251,7 @@ class _OverlayTimelineScreenState extends State<OverlayTimelineScreen> {
           Expanded(
             child: GestureDetector(
               behavior: HitTestBehavior.opaque,
-              onTap: () => setState(() => _opacityIndex = i),
+              onTap: () { setState(() => _opacityIndex = i); _saveSettings(); },
               child: Container(
                 padding: const EdgeInsets.symmetric(vertical: 8),
                 decoration: BoxDecoration(
@@ -266,7 +300,7 @@ class _OverlayTimelineScreenState extends State<OverlayTimelineScreen> {
           Expanded(
             child: GestureDetector(
               behavior: HitTestBehavior.opaque,
-              onTap: () => setState(() => _themeModeIndex = i),
+              onTap: () { setState(() => _themeModeIndex = i); _saveSettings(); },
               child: Container(
                 padding: const EdgeInsets.symmetric(vertical: 6),
                 decoration: BoxDecoration(
@@ -347,7 +381,7 @@ class _OverlayTimelineScreenState extends State<OverlayTimelineScreen> {
           Icons.text_fields,
           _fontSizeLabels,
           _fontSizeIndex,
-          (i) => setState(() => _fontSizeIndex = i),
+          (i) { setState(() => _fontSizeIndex = i); _saveSettings(); },
         ),
         const SizedBox(height: 8),
         _buildThemeModeSelector(),

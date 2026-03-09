@@ -144,6 +144,13 @@ class Post {
         if (quotedPost != null) 'quotedPost': quotedPost!.toJson(),
       };
 
+  /// キャッシュからの復元。タイムスタンプが不正な場合はnullを返す。
+  static Post? tryFromCache(Map<String, dynamic> json) {
+    final ts = DateTime.tryParse(json['timestamp'] as String? ?? '');
+    if (ts == null) return null; // タイムスタンプ不正 → 破棄
+    return Post.fromCache(json);
+  }
+
   factory Post.fromCache(Map<String, dynamic> json) {
     final source = SnsService.values.firstWhere(
       (s) => s.name == json['source'],
@@ -156,7 +163,7 @@ class Post {
       handle: json['handle'] as String? ?? '',
       body: json['body'] as String? ?? '',
       timestamp: DateTime.tryParse(json['timestamp'] as String? ?? '') ??
-          DateTime.now(),
+          DateTime.fromMillisecondsSinceEpoch(0),
       avatarUrl: json['avatarUrl'] as String?,
       accountId: json['accountId'] as String?,
       likeCount: json['likeCount'] as int? ?? 0,

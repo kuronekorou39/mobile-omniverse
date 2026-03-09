@@ -5,6 +5,7 @@ import 'package:flutter/widgets.dart' show visibleForTesting;
 import 'package:http/http.dart' as http;
 
 import '../models/account.dart';
+import '../models/notification_item.dart';
 import '../models/post.dart';
 import '../models/sns_service.dart';
 
@@ -566,6 +567,101 @@ class BlueskyApiService {
       uri: qUri,
       cid: qCid,
     );
+  }
+
+  /// 通知一覧を取得
+  Future<({List<NotificationItem> notifications, String? cursor})>
+      getNotifications(
+    BlueskyCredentials creds, {
+    int limit = 30,
+    String? cursor,
+  }) async {
+    var url =
+        '${creds.pdsUrl}/xrpc/app.bsky.notification.listNotifications?limit=$limit';
+    if (cursor != null) url += '&cursor=${Uri.encodeComponent(cursor)}';
+
+    final response =
+        await (httpClientOverride ?? http.Client()).get(Uri.parse(url), headers: {
+      'Authorization': 'Bearer ${creds.accessJwt}',
+      'Accept': 'application/json',
+    });
+
+    if (response.statusCode == 401) {
+      throw BlueskyAuthException('Token expired');
+    }
+    if (response.statusCode != 200) {
+      throw BlueskyApiException(
+        'Failed to fetch notifications: ${response.statusCode}',
+      );
+    }
+
+    final body = json.decode(response.body) as Map<String, dynamic>;
+    final items = body['notifications'] as List<dynamic>? ?? [];
+    final nextCursor = body['cursor'] as String?;
+
+    final notifications = <NotificationItem>[];
+    for (final item in items) {
+      final map = item as Map<String, dynamic>;
+      final n = _parseBlueskyNotification(map);
+      if (n != null) notifications.add(n);
+    }
+    return (notifications: notifications, cursor: nextCursor);
+  }
+
+  NotificationItem? _parseBlueskyNotification(Map<String, dynamic> map) {
+    try {
+      final reason = map['reason'] as String? ?? '';
+      final type = switch (reason) {
+        'like' => NotificationType.like,
+        'repost' => NotificationType.repost,
+        'reply' => NotificationType.reply,
+        'follow' => NotificationType.follow,
+        'mention' => NotificationType.mention,
+        'quote' => NotificationType.quote,
+        _ => NotificationType.unknown,
+      };
+
+      final author = map['author'] as Map<String, dynamic>? ?? {};
+      final actorName = author['displayName'] as String? ??
+          author['handle'] as String? ??
+          '';
+      final actorHandle = '@${author['handle'] as String? ?? ''}';
+      final actorAvatar = author['avatar'] as String?;
+
+      final indexedAt = map['indexedAt'] as String? ?? '';
+      final ts =
+          DateTime.tryParse(indexedAt) ?? DateTime.fromMillisecondsSinceEpoch(0);
+
+      final isRead = map['isRead'] as bool? ?? false;
+      final uri = map['uri'] as String? ?? '';
+      final cid = map['cid'] as String? ?? '';
+
+      // 対象の投稿テキスト (reply/mention の場合は record.text)
+      String? targetPostBody;
+      final record = map['record'] as Map<String, dynamic>?;
+      if (record != null) {
+        targetPostBody = record['text'] as String?;
+      }
+
+      // reasonSubject: いいね/リポストされた投稿の URI
+      final reasonSubject = map['reasonSubject'] as String?;
+
+      return NotificationItem(
+        id: '${uri}_$cid',
+        type: type,
+        source: SnsService.bluesky,
+        actorName: actorName,
+        actorHandle: actorHandle,
+        actorAvatarUrl: actorAvatar,
+        targetPostBody: targetPostBody,
+        targetPostId: reasonSubject ?? uri,
+        timestamp: ts,
+        isRead: isRead,
+      );
+    } catch (e) {
+      debugPrint('[BlueskyApi] Error parsing notification: $e');
+      return null;
+    }
   }
 
   /// セッションをリフレッシュ

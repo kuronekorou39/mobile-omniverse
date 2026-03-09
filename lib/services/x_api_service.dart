@@ -5,6 +5,7 @@ import 'package:flutter/widgets.dart' show visibleForTesting;
 import 'package:http/http.dart' as http;
 
 import '../models/account.dart';
+import '../models/notification_item.dart';
 import '../models/post.dart';
 import '../models/sns_service.dart';
 import 'x_query_id_service.dart';
@@ -677,6 +678,188 @@ class XApiService {
       statusCode: response.statusCode,
       bodySnippet: _snippet(response.body),
     );
+  }
+
+  /// 通知一覧を取得 (REST v2 API)
+  Future<({List<NotificationItem> notifications, String? cursor})>
+      getNotifications(
+    XCredentials creds, {
+    int count = 40,
+    String? cursor,
+  }) async {
+    final params = {
+      'include_profile_interstitial_type': '1',
+      'include_blocking': '1',
+      'include_blocked_by': '1',
+      'include_followed_by': '1',
+      'include_want_retweets': '1',
+      'include_mute_edge': '1',
+      'include_can_dm': '1',
+      'include_can_media_tag': '1',
+      'include_ext_is_blue_verified': '1',
+      'include_ext_verified_type': '1',
+      'include_ext_profile_image_shape': '1',
+      'skip_status': '1',
+      'cards_platform': 'Web-12',
+      'include_cards': '1',
+      'include_ext_alt_text': 'true',
+      'include_ext_limited_action_results': 'true',
+      'include_quote_count': 'true',
+      'include_reply_count': '1',
+      'tweet_mode': 'extended',
+      'include_ext_views': 'true',
+      'count': '$count',
+      if (cursor != null) 'cursor': cursor,
+      'ext': 'mediaStats,highlightedLabel,parodyCommentaryFanLabel,hasNftAvatar,voiceInfo,birdwatchPivot,superFollowMetadata,unmentionInfo,editControl',
+    };
+
+    final uri = Uri.https('x.com', '/i/api/2/notifications/all.json', params);
+
+    final response = await (httpClientOverride ?? http.Client())
+        .get(uri, headers: _buildHeaders(creds));
+
+    if (response.statusCode == 401 || response.statusCode == 403) {
+      throw XAuthException('Authentication failed: ${response.statusCode}');
+    }
+    if (response.statusCode != 200) {
+      throw XApiException(
+        'Failed to fetch notifications: ${response.statusCode}',
+        statusCode: response.statusCode,
+      );
+    }
+
+    final body = json.decode(response.body) as Map<String, dynamic>;
+    return _parseNotifications(body);
+  }
+
+  ({List<NotificationItem> notifications, String? cursor}) _parseNotifications(
+      Map<String, dynamic> body) {
+    final notifications = <NotificationItem>[];
+    String? nextCursor;
+
+    try {
+      final globalObjects = body['globalObjects'] as Map<String, dynamic>?;
+      final tweets =
+          globalObjects?['tweets'] as Map<String, dynamic>? ?? {};
+      final users =
+          globalObjects?['users'] as Map<String, dynamic>? ?? {};
+
+      // notifications map
+      final notifMap =
+          globalObjects?['notifications'] as Map<String, dynamic>? ?? {};
+
+      // timeline instructions → sorted entries
+      final timeline = body['timeline'] as Map<String, dynamic>?;
+      final instructions = timeline?['instructions'] as List<dynamic>? ?? [];
+
+      // 通知IDの順序を取得
+      final orderedIds = <String>[];
+      for (final instruction in instructions) {
+        final map = instruction as Map<String, dynamic>;
+        if (map.containsKey('addEntries')) {
+          final addEntries = map['addEntries'] as Map<String, dynamic>;
+          final entries = addEntries['entries'] as List<dynamic>? ?? [];
+          for (final entry in entries) {
+            final entryMap = entry as Map<String, dynamic>;
+            final entryId = entryMap['entryId'] as String? ?? '';
+            // cursor-top / cursor-bottom
+            if (entryId.startsWith('cursor-bottom-')) {
+              final content = entryMap['content'] as Map<String, dynamic>?;
+              final op = content?['operation'] as Map<String, dynamic>?;
+              final cursor = op?['cursor'] as Map<String, dynamic>?;
+              nextCursor = cursor?['value'] as String?;
+              continue;
+            }
+            if (entryId.startsWith('cursor-')) continue;
+            // notification-XXXXX
+            final content = entryMap['content'] as Map<String, dynamic>?;
+            final id = content?['notification']?['id'] as String?;
+            if (id != null) orderedIds.add(id);
+          }
+        }
+      }
+
+      for (final notifId in orderedIds) {
+        final notif = notifMap[notifId] as Map<String, dynamic>?;
+        if (notif == null) continue;
+
+        final icon = notif['icon'] as Map<String, dynamic>?;
+        final iconId = icon?['id'] as String? ?? '';
+
+        final type = switch (iconId) {
+          'heart_icon' => NotificationType.like,
+          'retweet_icon' => NotificationType.repost,
+          'person_icon' => NotificationType.follow,
+          'reply_icon' => NotificationType.reply,
+          _ => NotificationType.unknown,
+        };
+
+        final message = notif['message'] as Map<String, dynamic>?;
+        final messageText = message?['text'] as String? ?? '';
+        final timestampMs = notif['timestampMs'] as String? ?? '0';
+        final ts = DateTime.fromMillisecondsSinceEpoch(
+            int.tryParse(timestampMs) ?? 0);
+
+        // ユーザー情報
+        final userActions =
+            notif['template']?['aggregateUserActionsV1'] as Map<String, dynamic>?;
+        final targetUserIds =
+            userActions?['targetObjects'] as List<dynamic>? ?? [];
+        final fromUserIds =
+            userActions?['fromUsers'] as List<dynamic>? ?? [];
+
+        String actorName = '';
+        String actorHandle = '';
+        String? actorAvatarUrl;
+
+        if (fromUserIds.isNotEmpty) {
+          final firstUserId = fromUserIds.first?['user']?['id'] as String?;
+          if (firstUserId != null) {
+            final user = users[firstUserId] as Map<String, dynamic>?;
+            if (user != null) {
+              actorName = user['name'] as String? ?? '';
+              actorHandle = '@${user['screen_name'] as String? ?? ''}';
+              actorAvatarUrl =
+                  user['profile_image_url_https'] as String?;
+            }
+          }
+        }
+
+        // メッセージからアクター名を抽出 (fromUsers が空の場合)
+        if (actorName.isEmpty && messageText.isNotEmpty) {
+          actorName = messageText.split('さんが').firstOrNull ??
+              messageText.split(' liked').firstOrNull ??
+              messageText;
+        }
+
+        // 対象ツイートのテキスト
+        String? targetPostBody;
+        String? targetPostId;
+        if (targetUserIds.isNotEmpty) {
+          final tweetId = targetUserIds.first?['tweet']?['id'] as String?;
+          if (tweetId != null) {
+            final tweet = tweets[tweetId] as Map<String, dynamic>?;
+            targetPostBody = tweet?['full_text'] as String?;
+            targetPostId = tweetId;
+          }
+        }
+
+        notifications.add(NotificationItem(
+          id: 'x_notif_$notifId',
+          type: type,
+          source: SnsService.x,
+          actorName: actorName,
+          actorHandle: actorHandle,
+          actorAvatarUrl: actorAvatarUrl,
+          targetPostBody: targetPostBody,
+          targetPostId: targetPostId,
+          timestamp: ts,
+        ));
+      }
+    } catch (e) {
+      debugPrint('[XApi] Error parsing notifications: $e');
+    }
+    return (notifications: notifications, cursor: nextCursor);
   }
 
   @visibleForTesting

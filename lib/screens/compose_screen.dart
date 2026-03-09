@@ -142,6 +142,7 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
               padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
               child: DropdownButtonFormField<Account>(
                 initialValue: _selectedAccount,
+                isExpanded: true,
                 decoration: const InputDecoration(
                   labelText: '投稿アカウント',
                   border: OutlineInputBorder(),
@@ -152,11 +153,10 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
                   return DropdownMenuItem(
                     value: account,
                     child: Row(
-                      mainAxisSize: MainAxisSize.min,
                       children: [
                         SnsBadge(service: account.service),
                         const SizedBox(width: 8),
-                        Flexible(
+                        Expanded(
                           child: Text(
                             '${account.displayName} (${account.handle})',
                             overflow: TextOverflow.ellipsis,

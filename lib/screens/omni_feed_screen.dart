@@ -21,6 +21,7 @@ import '../widgets/post_card.dart';
 import '../widgets/update_dialog.dart';
 import 'accounts_screen.dart';
 import 'compose_screen.dart';
+import 'notifications_screen.dart';
 import 'settings_screen.dart';
 import 'post_detail_screen.dart';
 
@@ -503,6 +504,14 @@ class _OmniFeedScreenState extends ConsumerState<OmniFeedScreen>
                   onPressed: () => _openAccountsScreen(context),
                 ),
           actions: [
+            IconButton(
+              icon: const Icon(Icons.notifications_outlined),
+              tooltip: '通知',
+              onPressed: () => Navigator.of(context).push(
+                MaterialPageRoute(
+                    builder: (_) => const NotificationsScreen()),
+              ),
+            ),
             IconButton(
               icon: const Icon(Icons.picture_in_picture_alt),
               tooltip: 'オーバーレイ',

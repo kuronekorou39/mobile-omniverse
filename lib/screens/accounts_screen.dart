@@ -7,6 +7,7 @@ import '../providers/account_provider.dart';
 import '../providers/settings_provider.dart';
 import '../widgets/sns_badge.dart';
 import 'login_webview_screen.dart';
+import 'session_refresh_screen.dart';
 
 class AccountsScreen extends ConsumerWidget {
   const AccountsScreen({super.key});
@@ -292,9 +293,18 @@ class _AccountDetailScreen extends ConsumerWidget {
             ),
           ),
           const Divider(),
+          // セッション更新ボタン
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            child: OutlinedButton.icon(
+              onPressed: () => _openSessionRefresh(context, ref, account),
+              icon: const Icon(Icons.refresh),
+              label: const Text('セッション更新'),
+            ),
+          ),
           // 削除ボタン
           Padding(
-            padding: const EdgeInsets.all(16),
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
             child: OutlinedButton.icon(
               onPressed: () => _confirmDelete(context, ref, account),
               icon: const Icon(Icons.delete_outline, color: Colors.red),
@@ -308,6 +318,27 @@ class _AccountDetailScreen extends ConsumerWidget {
         ],
       ),
     );
+  }
+
+  Future<void> _openSessionRefresh(
+      BuildContext context, WidgetRef ref, Account account) async {
+    final result = await Navigator.of(context).push<SessionRefreshResult>(
+      MaterialPageRoute(
+        builder: (_) => SessionRefreshScreen(account: account),
+      ),
+    );
+
+    if (result == null) return;
+
+    await ref
+        .read(accountProvider.notifier)
+        .updateCredentials(account.id, result.credentials);
+
+    if (context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('セッションを更新しました')),
+      );
+    }
   }
 
   void _confirmDelete(

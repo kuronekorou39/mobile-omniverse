@@ -661,9 +661,19 @@ class XApiService {
         'queryId': queryId,
       }),
     );
-    debugPrint('[XApi] createTweet: ${response.statusCode}');
+    debugPrint('[XApi] createTweet: ${response.statusCode} body=${_snippet(response.body)}');
+    // HTTP 200でもレスポンスボディにerrorsがある場合は失敗
+    bool success = response.statusCode == 200;
+    if (success) {
+      try {
+        final body = json.decode(response.body);
+        if (body is Map<String, dynamic> && body.containsKey('errors')) {
+          success = false;
+        }
+      } catch (_) {}
+    }
     return XApiResult(
-      success: response.statusCode == 200,
+      success: success,
       statusCode: response.statusCode,
       bodySnippet: _snippet(response.body),
     );

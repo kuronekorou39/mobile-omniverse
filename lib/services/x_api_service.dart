@@ -736,63 +736,106 @@ class XApiService {
     return (
       notifications: result.notifications,
       cursor: result.cursor,
-      responseSnippet: 'keys=${body.keys.toList()}, parsed=${result.notifications.length}',
+      responseSnippet: '${result.debugInfo}',
     );
   }
 
-  ({List<NotificationItem> notifications, String? cursor}) _parseNotifications(
+  ({List<NotificationItem> notifications, String? cursor, String debugInfo}) _parseNotifications(
       Map<String, dynamic> body) {
     final notifications = <NotificationItem>[];
     String? nextCursor;
+    final debug = StringBuffer();
 
     try {
       final globalObjects = body['globalObjects'] as Map<String, dynamic>?;
-      debugPrint('[XApi] notifications globalObjects keys: ${globalObjects?.keys.toList()}');
+      debug.write('go_keys=${globalObjects?.keys.toList()}');
       final tweets =
           globalObjects?['tweets'] as Map<String, dynamic>? ?? {};
       final users =
           globalObjects?['users'] as Map<String, dynamic>? ?? {};
-      debugPrint('[XApi] notifications tweets=${tweets.length}, users=${users.length}');
+      debug.write(' tw=${tweets.length} us=${users.length}');
 
       // notifications map
       final notifMap =
           globalObjects?['notifications'] as Map<String, dynamic>? ?? {};
-      debugPrint('[XApi] notifications notifMap=${notifMap.length}');
+      debug.write(' notif=${notifMap.length}');
 
       // timeline instructions → sorted entries
       final timeline = body['timeline'] as Map<String, dynamic>?;
-      debugPrint('[XApi] notifications timeline keys: ${timeline?.keys.toList()}');
       final instructions = timeline?['instructions'] as List<dynamic>? ?? [];
-      debugPrint('[XApi] notifications instructions count: ${instructions.length}');
+      debug.write(' instr=${instructions.length}');
 
       // 通知IDの順序を取得
       final orderedIds = <String>[];
       for (final instruction in instructions) {
         final map = instruction as Map<String, dynamic>;
+        debug.write(' ikeys=${map.keys.toList()}');
+
+        // addEntries パターン
+        List<dynamic> entries = [];
         if (map.containsKey('addEntries')) {
           final addEntries = map['addEntries'] as Map<String, dynamic>;
-          final entries = addEntries['entries'] as List<dynamic>? ?? [];
-          for (final entry in entries) {
-            final entryMap = entry as Map<String, dynamic>;
-            final entryId = entryMap['entryId'] as String? ?? '';
-            // cursor-top / cursor-bottom
-            if (entryId.startsWith('cursor-bottom-')) {
-              final content = entryMap['content'] as Map<String, dynamic>?;
-              final op = content?['operation'] as Map<String, dynamic>?;
-              final cursor = op?['cursor'] as Map<String, dynamic>?;
-              nextCursor = cursor?['value'] as String?;
-              continue;
-            }
-            if (entryId.startsWith('cursor-')) continue;
-            // notification-XXXXX
-            final content = entryMap['content'] as Map<String, dynamic>?;
-            final id = content?['notification']?['id'] as String?;
-            if (id != null) orderedIds.add(id);
+          entries = addEntries['entries'] as List<dynamic>? ?? [];
+        }
+
+        if (entries.isEmpty) continue;
+        debug.write(' entries=${entries.length}');
+
+        // 最初のエントリの構造をダンプ
+        if (entries.isNotEmpty) {
+          final first = entries.first as Map<String, dynamic>;
+          final firstContent = first['content'] as Map<String, dynamic>?;
+          debug.write(' e0_id=${first['entryId']} e0_ckeys=${firstContent?.keys.toList()}');
+          // item ネスト確認
+          final item = firstContent?['item'] as Map<String, dynamic>?;
+          if (item != null) {
+            final itemContent = item['content'] as Map<String, dynamic>?;
+            debug.write(' item_ckeys=${itemContent?.keys.toList()}');
           }
+        }
+
+        for (final entry in entries) {
+          final entryMap = entry as Map<String, dynamic>;
+          final entryId = entryMap['entryId'] as String? ?? '';
+
+          // cursor
+          if (entryId.startsWith('cursor-bottom-')) {
+            final content = entryMap['content'] as Map<String, dynamic>?;
+            final op = content?['operation'] as Map<String, dynamic>?;
+            final cursor = op?['cursor'] as Map<String, dynamic>?;
+            nextCursor = cursor?['value'] as String?;
+            continue;
+          }
+          if (entryId.startsWith('cursor-')) continue;
+
+          final content = entryMap['content'] as Map<String, dynamic>?;
+          if (content == null) continue;
+
+          // パス1: content.notification.id
+          String? id = (content['notification'] as Map<String, dynamic>?)?['id'] as String?;
+          // パス2: content.item.content.notification.id
+          if (id == null) {
+            final item = content['item'] as Map<String, dynamic>?;
+            final itemContent = item?['content'] as Map<String, dynamic>?;
+            id = (itemContent?['notification'] as Map<String, dynamic>?)?['id'] as String?;
+          }
+          // パス3: content.item.clientEventInfo.element → notification ID from entryId
+          if (id == null && entryId.startsWith('notification-')) {
+            id = entryId.replaceFirst('notification-', '');
+          }
+
+          if (id != null) orderedIds.add(id);
         }
       }
 
-      debugPrint('[XApi] notifications orderedIds=${orderedIds.length}, cursor=$nextCursor');
+      debug.write(' ids=${orderedIds.length}');
+
+      // notifMap のキーの最初の1つをダンプ
+      if (notifMap.isNotEmpty && orderedIds.isEmpty) {
+        final sampleKey = notifMap.keys.first;
+        final sampleNotif = notifMap[sampleKey] as Map<String, dynamic>?;
+        debug.write(' sample_nkeys=${sampleNotif?.keys.toList()}');
+      }
 
       for (final notifId in orderedIds) {
         final notif = notifMap[notifId] as Map<String, dynamic>?;
@@ -818,7 +861,7 @@ class XApiService {
         // ユーザー情報
         final userActions =
             notif['template']?['aggregateUserActionsV1'] as Map<String, dynamic>?;
-        final targetUserIds =
+        final targetObjects =
             userActions?['targetObjects'] as List<dynamic>? ?? [];
         final fromUserIds =
             userActions?['fromUsers'] as List<dynamic>? ?? [];
@@ -850,8 +893,8 @@ class XApiService {
         // 対象ツイートのテキスト
         String? targetPostBody;
         String? targetPostId;
-        if (targetUserIds.isNotEmpty) {
-          final tweetId = targetUserIds.first?['tweet']?['id'] as String?;
+        if (targetObjects.isNotEmpty) {
+          final tweetId = targetObjects.first?['tweet']?['id'] as String?;
           if (tweetId != null) {
             final tweet = tweets[tweetId] as Map<String, dynamic>?;
             targetPostBody = tweet?['full_text'] as String?;
@@ -872,9 +915,10 @@ class XApiService {
         ));
       }
     } catch (e) {
+      debug.write(' ERR=$e');
       debugPrint('[XApi] Error parsing notifications: $e');
     }
-    return (notifications: notifications, cursor: nextCursor);
+    return (notifications: notifications, cursor: nextCursor, debugInfo: debug.toString());
   }
 
   @visibleForTesting

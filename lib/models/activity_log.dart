@@ -10,6 +10,7 @@ enum ActivityAction {
   unfollow,
   post,
   profileFetch,
+  notificationFetch,
 }
 
 class ActivityLog {
@@ -56,6 +57,7 @@ class ActivityLog {
         ActivityAction.unfollow => 'フォロー解除',
         ActivityAction.post => '投稿',
         ActivityAction.profileFetch => 'プロフィール取得',
+        ActivityAction.notificationFetch => '通知取得',
       };
 
   String get statusLabel => success ? 'OK' : 'FAIL';

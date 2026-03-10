@@ -1,10 +1,13 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../models/account.dart';
+import '../models/activity_log.dart';
 import '../models/notification_item.dart';
 import '../models/sns_service.dart';
 import '../providers/account_provider.dart';
+import '../providers/activity_log_provider.dart';
 import '../services/bluesky_api_service.dart';
 import '../services/x_api_service.dart';
 import '../widgets/sns_badge.dart';
@@ -84,15 +87,15 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen>
 }
 
 /// アカウントごとの通知リスト
-class _NotificationList extends StatefulWidget {
+class _NotificationList extends ConsumerStatefulWidget {
   const _NotificationList({required this.account});
   final Account account;
 
   @override
-  State<_NotificationList> createState() => _NotificationListState();
+  ConsumerState<_NotificationList> createState() => _NotificationListState();
 }
 
-class _NotificationListState extends State<_NotificationList>
+class _NotificationListState extends ConsumerState<_NotificationList>
     with AutomaticKeepAliveClientMixin {
   final _notifications = <NotificationItem>[];
   bool _isLoading = true;
@@ -116,9 +119,14 @@ class _NotificationListState extends State<_NotificationList>
     });
 
     try {
+      late final int count;
+      String? responseSnippet;
+
       if (widget.account.service == SnsService.x) {
         final result = await XApiService.instance
             .getNotifications(widget.account.xCredentials);
+        count = result.notifications.length;
+        responseSnippet = result.responseSnippet;
         if (!mounted) return;
         setState(() {
           _notifications
@@ -130,6 +138,7 @@ class _NotificationListState extends State<_NotificationList>
       } else {
         final result = await BlueskyApiService.instance
             .getNotifications(widget.account.blueskyCredentials);
+        count = result.notifications.length;
         if (!mounted) return;
         setState(() {
           _notifications
@@ -139,7 +148,29 @@ class _NotificationListState extends State<_NotificationList>
           _isLoading = false;
         });
       }
-    } catch (e) {
+
+      ref.read(activityLogProvider.notifier).logAction(
+        action: ActivityAction.notificationFetch,
+        platform: widget.account.service,
+        accountHandle: widget.account.handle,
+        accountId: widget.account.id,
+        targetSummary: '$count件取得',
+        success: true,
+        responseSnippet: responseSnippet,
+      );
+    } catch (e, st) {
+      debugPrint('[Notifications] Error fetching for ${widget.account.handle}: $e');
+      debugPrint('[Notifications] Stack: $st');
+
+      ref.read(activityLogProvider.notifier).logAction(
+        action: ActivityAction.notificationFetch,
+        platform: widget.account.service,
+        accountHandle: widget.account.handle,
+        accountId: widget.account.id,
+        success: false,
+        errorMessage: '$e',
+      );
+
       if (!mounted) return;
       setState(() {
         _error = '$e';

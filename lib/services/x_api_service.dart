@@ -681,7 +681,7 @@ class XApiService {
   }
 
   /// 通知一覧を取得 (REST v2 API)
-  Future<({List<NotificationItem> notifications, String? cursor})>
+  Future<({List<NotificationItem> notifications, String? cursor, String? responseSnippet})>
       getNotifications(
     XCredentials creds, {
     int count = 40,
@@ -729,7 +729,15 @@ class XApiService {
     }
 
     final body = json.decode(response.body) as Map<String, dynamic>;
-    return _parseNotifications(body);
+    debugPrint('[XApi] notifications response status: ${response.statusCode}');
+    debugPrint('[XApi] notifications body top keys: ${body.keys.toList()}');
+    debugPrint('[XApi] notifications body snippet: ${_snippet(response.body)}');
+    final result = _parseNotifications(body);
+    return (
+      notifications: result.notifications,
+      cursor: result.cursor,
+      responseSnippet: 'keys=${body.keys.toList()}, parsed=${result.notifications.length}',
+    );
   }
 
   ({List<NotificationItem> notifications, String? cursor}) _parseNotifications(
@@ -739,18 +747,23 @@ class XApiService {
 
     try {
       final globalObjects = body['globalObjects'] as Map<String, dynamic>?;
+      debugPrint('[XApi] notifications globalObjects keys: ${globalObjects?.keys.toList()}');
       final tweets =
           globalObjects?['tweets'] as Map<String, dynamic>? ?? {};
       final users =
           globalObjects?['users'] as Map<String, dynamic>? ?? {};
+      debugPrint('[XApi] notifications tweets=${tweets.length}, users=${users.length}');
 
       // notifications map
       final notifMap =
           globalObjects?['notifications'] as Map<String, dynamic>? ?? {};
+      debugPrint('[XApi] notifications notifMap=${notifMap.length}');
 
       // timeline instructions → sorted entries
       final timeline = body['timeline'] as Map<String, dynamic>?;
+      debugPrint('[XApi] notifications timeline keys: ${timeline?.keys.toList()}');
       final instructions = timeline?['instructions'] as List<dynamic>? ?? [];
+      debugPrint('[XApi] notifications instructions count: ${instructions.length}');
 
       // 通知IDの順序を取得
       final orderedIds = <String>[];
@@ -778,6 +791,8 @@ class XApiService {
           }
         }
       }
+
+      debugPrint('[XApi] notifications orderedIds=${orderedIds.length}, cursor=$nextCursor');
 
       for (final notifId in orderedIds) {
         final notif = notifMap[notifId] as Map<String, dynamic>?;

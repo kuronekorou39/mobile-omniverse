@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:math';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/widgets.dart' show visibleForTesting;
 
@@ -51,6 +52,12 @@ class XApiService {
     }
   }
 
+  static final _random = Random();
+  String _generateTransactionId() {
+    final bytes = List<int>.generate(16, (_) => _random.nextInt(256));
+    return base64Url.encode(bytes).replaceAll('=', '');
+  }
+
   Map<String, String> _buildHeaders(XCredentials creds,
           {bool form = false, String? cookieOverride}) =>
       {
@@ -61,10 +68,13 @@ class XApiService {
             ? 'application/x-www-form-urlencoded'
             : 'application/json',
         'User-Agent':
-            'Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Mobile Safari/537.36',
+            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+        'Origin': 'https://x.com',
+        'Referer': 'https://x.com/',
         'x-twitter-active-user': 'yes',
         'x-twitter-auth-type': 'OAuth2Session',
         'x-twitter-client-language': 'ja',
+        'x-client-transaction-id': _generateTransactionId(),
       };
 
   /// ミューテーション前にGETで最新 Cookie を取得しマージする
@@ -741,6 +751,7 @@ class XApiService {
           'semantic_annotation_ids': [],
         },
         'features': {
+          'premium_content_api_read_enabled': false,
           'communities_web_enable_tweet_community_results_fetch': true,
           'c9s_tweet_anatomy_moderator_badge_enabled': true,
           'responsive_web_edit_tweet_api_enabled': true,
@@ -765,11 +776,21 @@ class XApiService {
               false,
           'responsive_web_graphql_timeline_navigation_enabled': true,
           'responsive_web_enhance_cards_enabled': false,
+          'tweetypie_unmention_optimization_enabled': true,
+          'responsive_web_text_conversations_enabled': false,
+          'profile_label_improvements_pcf_label_in_post_enabled': true,
+        },
+        'fieldToggles': {
+          'withArticleRichContentState': true,
+          'withArticlePlainText': false,
+          'withGrokAnalyze': false,
+          'withDisallowedReplyControls': false,
         },
         'queryId': queryId,
       }),
     );
-    debugPrint('[XApi] createTweet(gql): ${gqlResponse.statusCode} body=${_snippet(gqlResponse.body)}');
+    debugPrint('[XApi] createTweet(gql): status=${gqlResponse.statusCode}');
+    debugPrint('[XApi] createTweet(gql) body: ${gqlResponse.body}');
     _updateCt0FromResponse(creds, gqlResponse);
 
     // GraphQL の成功判定

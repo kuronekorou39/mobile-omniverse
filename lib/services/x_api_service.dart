@@ -34,7 +34,11 @@ class XApiService {
   /// レスポンスの Set-Cookie から ct0 を抽出して更新
   void _updateCt0FromResponse(XCredentials creds, http.Response response) {
     final setCookie = response.headers['set-cookie'];
-    if (setCookie == null) return;
+    if (setCookie == null) {
+      debugPrint('[XApi] _updateCt0: no set-cookie header (keys: ${response.headers.keys.toList()})');
+      return;
+    }
+    debugPrint('[XApi] _updateCt0: set-cookie len=${setCookie.length}');
     // set-cookie ヘッダーから ct0= を探す
     final match = RegExp(r'ct0=([^;]+)').firstMatch(setCookie);
     if (match != null) {
@@ -47,21 +51,82 @@ class XApiService {
     }
   }
 
-  Map<String, String> _buildHeaders(XCredentials creds, {bool form = false}) => {
+  Map<String, String> _buildHeaders(XCredentials creds,
+          {bool form = false, String? cookieOverride}) =>
+      {
         'Authorization': 'Bearer $_bearerToken',
         'x-csrf-token': _getCt0(creds),
-        'Cookie': creds.cookieHeader,
+        'Cookie': cookieOverride ?? creds.cookieHeader,
         'Content-Type': form
             ? 'application/x-www-form-urlencoded'
             : 'application/json',
         'User-Agent':
-            'Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36',
-        'Origin': 'https://x.com',
-        'Referer': 'https://x.com/',
+            'Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Mobile Safari/537.36',
         'x-twitter-active-user': 'yes',
         'x-twitter-auth-type': 'OAuth2Session',
         'x-twitter-client-language': 'ja',
       };
+
+  /// ミューテーション前にGETで最新 Cookie を取得しマージする
+  /// ブラウザが自動で行う Cookie 更新を再現する
+  Future<String> _warmCookies(XCredentials creds) async {
+    try {
+      final uri = Uri.parse(
+          'https://x.com/i/api/1.1/account/settings.json');
+      final response = await (httpClientOverride ?? http.Client()).get(
+        uri,
+        headers: _buildHeaders(creds),
+      );
+      debugPrint('[XApi] warmCookies status=${response.statusCode}');
+
+      final setCookie = response.headers['set-cookie'];
+      if (setCookie == null || setCookie.isEmpty) {
+        debugPrint('[XApi] warmCookies: no set-cookie header');
+        debugPrint('[XApi] warmCookies resp-keys: ${response.headers.keys.toList()}');
+        return creds.cookieHeader;
+      }
+
+      debugPrint('[XApi] warmCookies set-cookie len=${setCookie.length}');
+
+      // 既存 Cookie をパース
+      final merged = <String, String>{};
+      for (final pair in creds.cookieHeader.split('; ')) {
+        final eq = pair.indexOf('=');
+        if (eq > 0) {
+          merged[pair.substring(0, eq).trim()] = pair.substring(eq + 1);
+        }
+      }
+
+      // Set-Cookie から各 Cookie 値を抽出してマージ
+      // Dart http パッケージは複数の Set-Cookie を ", " で結合する
+      int updated = 0;
+      for (final name in merged.keys.toList()) {
+        // Cookie名の直後に = が来るパターンを検索
+        final match = RegExp('(?:^|[,;]\\s*)${RegExp.escape(name)}=([^;,]+)')
+            .firstMatch(setCookie);
+        if (match != null) {
+          final newVal = match.group(1)!.trim();
+          if (merged[name] != newVal) {
+            merged[name] = newVal;
+            updated++;
+          }
+        }
+      }
+      debugPrint('[XApi] warmCookies: $updated cookies refreshed');
+
+      // ct0 が更新された場合は内部トラッカーも更新
+      final ct0Val = merged['ct0'];
+      if (ct0Val != null) {
+        final key = creds.authToken.hashCode.toRadixString(16);
+        _latestCt0[key] = ct0Val;
+      }
+
+      return merged.entries.map((e) => '${e.key}=${e.value}').join('; ');
+    } catch (e) {
+      debugPrint('[XApi] warmCookies error: $e');
+      return creds.cookieHeader;
+    }
+  }
 
   // ===== queryId 404 リトライラッパー =====
 
@@ -273,11 +338,12 @@ class XApiService {
   Future<XApiResult> likeTweetWithDetail(
       XCredentials creds, String tweetId) async {
     final queryId = _getMutationQueryId('FavoriteTweet', creds);
+    final warmedCookies = await _warmCookies(creds);
     final uri =
         Uri.parse('https://x.com/i/api/graphql/$queryId/FavoriteTweet');
     final response = await (httpClientOverride ?? http.Client()).post(
       uri,
-      headers: _buildHeaders(creds),
+      headers: _buildHeaders(creds, cookieOverride: warmedCookies),
       body: json.encode({
         'variables': {'tweet_id': tweetId},
         'queryId': queryId,
@@ -299,11 +365,12 @@ class XApiService {
   Future<XApiResult> unlikeTweetWithDetail(
       XCredentials creds, String tweetId) async {
     final queryId = _getMutationQueryId('UnfavoriteTweet', creds);
+    final warmedCookies = await _warmCookies(creds);
     final uri =
         Uri.parse('https://x.com/i/api/graphql/$queryId/UnfavoriteTweet');
     final response = await (httpClientOverride ?? http.Client()).post(
       uri,
-      headers: _buildHeaders(creds),
+      headers: _buildHeaders(creds, cookieOverride: warmedCookies),
       body: json.encode({
         'variables': {'tweet_id': tweetId},
         'queryId': queryId,
@@ -325,11 +392,12 @@ class XApiService {
   Future<XApiResult> retweetWithDetail(
       XCredentials creds, String tweetId) async {
     final queryId = _getMutationQueryId('CreateRetweet', creds);
+    final warmedCookies = await _warmCookies(creds);
     final uri =
         Uri.parse('https://x.com/i/api/graphql/$queryId/CreateRetweet');
     final response = await (httpClientOverride ?? http.Client()).post(
       uri,
-      headers: _buildHeaders(creds),
+      headers: _buildHeaders(creds, cookieOverride: warmedCookies),
       body: json.encode({
         'variables': {'tweet_id': tweetId, 'dark_request': false},
         'queryId': queryId,
@@ -351,11 +419,12 @@ class XApiService {
   Future<XApiResult> unretweetWithDetail(
       XCredentials creds, String tweetId) async {
     final queryId = _getMutationQueryId('DeleteRetweet', creds);
+    final warmedCookies = await _warmCookies(creds);
     final uri =
         Uri.parse('https://x.com/i/api/graphql/$queryId/DeleteRetweet');
     final response = await (httpClientOverride ?? http.Client()).post(
       uri,
-      headers: _buildHeaders(creds),
+      headers: _buildHeaders(creds, cookieOverride: warmedCookies),
       body: json.encode({
         'variables': {'source_tweet_id': tweetId, 'dark_request': false},
         'queryId': queryId,
@@ -629,9 +698,10 @@ class XApiService {
 
   /// フォロー (REST API)
   Future<bool> followUser(XCredentials creds, String userId) async {
+    final warmedCookies = await _warmCookies(creds);
     final response = await (httpClientOverride ?? http.Client()).post(
       Uri.parse('https://x.com/i/api/1.1/friendships/create.json'),
-      headers: _buildHeaders(creds, form: true),
+      headers: _buildHeaders(creds, form: true, cookieOverride: warmedCookies),
       body: 'user_id=$userId',
     );
     debugPrint('[XApi] followUser $userId: ${response.statusCode}');
@@ -640,9 +710,10 @@ class XApiService {
 
   /// フォロー解除 (REST API)
   Future<bool> unfollowUser(XCredentials creds, String userId) async {
+    final warmedCookies = await _warmCookies(creds);
     final response = await (httpClientOverride ?? http.Client()).post(
       Uri.parse('https://x.com/i/api/1.1/friendships/destroy.json'),
-      headers: _buildHeaders(creds, form: true),
+      headers: _buildHeaders(creds, form: true, cookieOverride: warmedCookies),
       body: 'user_id=$userId',
     );
     debugPrint('[XApi] unfollowUser $userId: ${response.statusCode}');
@@ -652,11 +723,20 @@ class XApiService {
   /// ツイートを投稿
   Future<XApiResult> createTweet(XCredentials creds, String text) async {
     final queryId = _getMutationQueryId('CreateTweet', creds);
+    // ミューテーション前に Cookie をリフレッシュ (ブラウザ動作を再現)
+    final warmedCookies = await _warmCookies(creds);
+    final ct0Used = _getCt0(creds);
+    // リフレッシュ後の Cookie 内 ct0 と x-csrf-token の一致確認
+    final cookieCt0Match = RegExp(r'ct0=([^;]+)').firstMatch(warmedCookies);
+    final cookieCt0 = cookieCt0Match?.group(1) ?? '(not found)';
+    debugPrint('[XApi] createTweet ct0_match=${ct0Used == cookieCt0} cookie_len=${warmedCookies.length}');
+    debugPrint('[XApi] createTweet auth=${creds.authToken.substring(0, 8)}...');
     final uri =
         Uri.parse('https://x.com/i/api/graphql/$queryId/CreateTweet');
+    final headers = _buildHeaders(creds, cookieOverride: warmedCookies);
     final response = await (httpClientOverride ?? http.Client()).post(
       uri,
-      headers: _buildHeaders(creds),
+      headers: headers,
       body: json.encode({
         'variables': {
           'tweet_text': text,
@@ -694,6 +774,8 @@ class XApiService {
       }),
     );
     debugPrint('[XApi] createTweet: ${response.statusCode} body=${_snippet(response.body)}');
+    debugPrint('[XApi] createTweet resp headers: ${response.headers.keys.toList()}');
+    _updateCt0FromResponse(creds, response);
     // HTTP 200でもレスポンスボディにerrorsがある場合は失敗
     bool success = response.statusCode == 200;
     if (success) {

@@ -22,15 +22,42 @@ class XApiService {
       'AAAAAAAAAAAAAAAAAAAAANRILgAAAAAAnNwIzUejRCOuH5E6I8xnZz4puTs'
       '%3D1Zv7ttfk8LF81IUq16cHjhLTvJu4FA33AGWWjCpTnA';
 
+  /// 最新の ct0 をアカウント別に追跡 (APIレスポンスの Set-Cookie で更新)
+  final Map<String, String> _latestCt0 = {};
+
+  /// authToken のハッシュをキーにして最新 ct0 を取得
+  String _getCt0(XCredentials creds) {
+    final key = creds.authToken.hashCode.toRadixString(16);
+    return _latestCt0[key] ?? creds.ct0;
+  }
+
+  /// レスポンスの Set-Cookie から ct0 を抽出して更新
+  void _updateCt0FromResponse(XCredentials creds, http.Response response) {
+    final setCookie = response.headers['set-cookie'];
+    if (setCookie == null) return;
+    // set-cookie ヘッダーから ct0= を探す
+    final match = RegExp(r'ct0=([^;]+)').firstMatch(setCookie);
+    if (match != null) {
+      final newCt0 = match.group(1)!;
+      final key = creds.authToken.hashCode.toRadixString(16);
+      if (_latestCt0[key] != newCt0) {
+        debugPrint('[XApi] ct0 updated for account $key');
+        _latestCt0[key] = newCt0;
+      }
+    }
+  }
+
   Map<String, String> _buildHeaders(XCredentials creds, {bool form = false}) => {
         'Authorization': 'Bearer $_bearerToken',
-        'x-csrf-token': creds.ct0,
+        'x-csrf-token': _getCt0(creds),
         'Cookie': creds.cookieHeader,
         'Content-Type': form
             ? 'application/x-www-form-urlencoded'
             : 'application/json',
         'User-Agent':
             'Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36',
+        'Origin': 'https://x.com',
+        'Referer': 'https://x.com/',
         'x-twitter-active-user': 'yes',
         'x-twitter-auth-type': 'OAuth2Session',
         'x-twitter-client-language': 'ja',
@@ -144,6 +171,7 @@ class XApiService {
       );
 
       final response = await (httpClientOverride ?? http.Client()).get(uri, headers: _buildHeaders(creds));
+      _updateCt0FromResponse(creds, response);
 
       if (response.statusCode == 401 || response.statusCode == 403) {
         throw XAuthException('Authentication failed: ${response.statusCode}');
@@ -215,6 +243,7 @@ class XApiService {
       );
 
       final response = await (httpClientOverride ?? http.Client()).get(uri, headers: _buildHeaders(creds));
+      _updateCt0FromResponse(creds, response);
 
       if (response.statusCode == 401 || response.statusCode == 403) {
         throw XAuthException('Authentication failed: ${response.statusCode}');
@@ -376,6 +405,7 @@ class XApiService {
 
       final response = await (httpClientOverride ?? http.Client())
           .get(uri, headers: _buildHeaders(creds));
+      _updateCt0FromResponse(creds, response);
 
       if (response.statusCode == 401 || response.statusCode == 403) {
         throw XAuthException('Authentication failed: ${response.statusCode}');
@@ -485,6 +515,7 @@ class XApiService {
 
       final response = await (httpClientOverride ?? http.Client())
           .get(uri, headers: _buildHeaders(creds));
+      _updateCt0FromResponse(creds, response);
 
       if (response.statusCode == 401 || response.statusCode == 403) {
         throw XAuthException('Authentication failed: ${response.statusCode}');
@@ -717,6 +748,7 @@ class XApiService {
 
     final response = await (httpClientOverride ?? http.Client())
         .get(uri, headers: _buildHeaders(creds));
+    _updateCt0FromResponse(creds, response);
 
     if (response.statusCode == 401 || response.statusCode == 403) {
       throw XAuthException('Authentication failed: ${response.statusCode}');

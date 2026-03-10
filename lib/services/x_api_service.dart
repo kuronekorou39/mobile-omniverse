@@ -721,22 +721,18 @@ class XApiService {
   }
 
   /// ツイートを投稿
+  /// まず GraphQL CreateTweet を試み、226 エラーの場合は REST v1.1 にフォールバック
   Future<XApiResult> createTweet(XCredentials creds, String text) async {
-    final queryId = _getMutationQueryId('CreateTweet', creds);
-    // ミューテーション前に Cookie をリフレッシュ (ブラウザ動作を再現)
     final warmedCookies = await _warmCookies(creds);
-    final ct0Used = _getCt0(creds);
-    // リフレッシュ後の Cookie 内 ct0 と x-csrf-token の一致確認
-    final cookieCt0Match = RegExp(r'ct0=([^;]+)').firstMatch(warmedCookies);
-    final cookieCt0 = cookieCt0Match?.group(1) ?? '(not found)';
-    debugPrint('[XApi] createTweet ct0_match=${ct0Used == cookieCt0} cookie_len=${warmedCookies.length}');
     debugPrint('[XApi] createTweet auth=${creds.authToken.substring(0, 8)}...');
-    final uri =
+
+    // --- GraphQL CreateTweet ---
+    final queryId = _getMutationQueryId('CreateTweet', creds);
+    final gqlUri =
         Uri.parse('https://x.com/i/api/graphql/$queryId/CreateTweet');
-    final headers = _buildHeaders(creds, cookieOverride: warmedCookies);
-    final response = await (httpClientOverride ?? http.Client()).post(
-      uri,
-      headers: headers,
+    final gqlResponse = await (httpClientOverride ?? http.Client()).post(
+      gqlUri,
+      headers: _buildHeaders(creds, cookieOverride: warmedCookies),
       body: json.encode({
         'variables': {
           'tweet_text': text,
@@ -773,23 +769,53 @@ class XApiService {
         'queryId': queryId,
       }),
     );
-    debugPrint('[XApi] createTweet: ${response.statusCode} body=${_snippet(response.body)}');
-    debugPrint('[XApi] createTweet resp headers: ${response.headers.keys.toList()}');
-    _updateCt0FromResponse(creds, response);
-    // HTTP 200でもレスポンスボディにerrorsがある場合は失敗
-    bool success = response.statusCode == 200;
-    if (success) {
+    debugPrint('[XApi] createTweet(gql): ${gqlResponse.statusCode} body=${_snippet(gqlResponse.body)}');
+    _updateCt0FromResponse(creds, gqlResponse);
+
+    // GraphQL の成功判定
+    bool gqlSuccess = gqlResponse.statusCode == 200;
+    bool has226 = false;
+    if (gqlSuccess) {
       try {
-        final body = json.decode(response.body);
+        final body = json.decode(gqlResponse.body);
         if (body is Map<String, dynamic> && body.containsKey('errors')) {
-          success = false;
+          final errors = body['errors'] as List<dynamic>?;
+          has226 = errors?.any((e) => e is Map && e['code'] == 226) ?? false;
+          gqlSuccess = false;
         }
       } catch (_) {}
     }
+
+    if (gqlSuccess) {
+      return XApiResult(
+        success: true,
+        statusCode: gqlResponse.statusCode,
+        bodySnippet: _snippet(gqlResponse.body),
+      );
+    }
+
+    // --- 226 の場合のみ REST v1.1 フォールバック ---
+    if (!has226) {
+      return XApiResult(
+        success: false,
+        statusCode: gqlResponse.statusCode,
+        bodySnippet: _snippet(gqlResponse.body),
+      );
+    }
+
+    debugPrint('[XApi] createTweet: GraphQL 226, trying REST v1.1 fallback...');
+    final restResponse = await (httpClientOverride ?? http.Client()).post(
+      Uri.parse('https://x.com/i/api/1.1/statuses/update.json'),
+      headers: _buildHeaders(creds, form: true, cookieOverride: warmedCookies),
+      body: 'status=${Uri.encodeComponent(text)}',
+    );
+    debugPrint('[XApi] createTweet(rest): ${restResponse.statusCode} body=${_snippet(restResponse.body)}');
+    _updateCt0FromResponse(creds, restResponse);
+
     return XApiResult(
-      success: success,
-      statusCode: response.statusCode,
-      bodySnippet: _snippet(response.body),
+      success: restResponse.statusCode == 200,
+      statusCode: restResponse.statusCode,
+      bodySnippet: _snippet(restResponse.body),
     );
   }
 

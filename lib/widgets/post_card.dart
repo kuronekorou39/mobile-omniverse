@@ -343,7 +343,6 @@ class PostCard extends StatelessWidget {
     const fontSize = 12.0;
 
     return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
         // Reply
         _EngagementButton(
@@ -353,6 +352,7 @@ class PostCard extends StatelessWidget {
           iconSize: iconSize,
           fontSize: fontSize,
         ),
+        const Spacer(),
         // Repost
         _EngagementButton(
           icon: Icons.repeat,
@@ -365,6 +365,7 @@ class PostCard extends StatelessWidget {
               : null,
           isActive: post.isReposted,
         ),
+        const Spacer(),
         // Like
         _EngagementButton(
           icon: Icons.favorite_border,
@@ -375,63 +376,51 @@ class PostCard extends StatelessWidget {
           onTap: onLike,
           isActive: post.isLiked,
         ),
-        // Share + via account
-        Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            if (accountHandle != null)
-              Padding(
-                padding: const EdgeInsets.only(right: 6),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    if (accountAvatarUrl != null)
-                      Padding(
-                        padding: const EdgeInsets.only(right: 3),
-                        child: CachedNetworkImage(
-                          imageUrl: accountAvatarUrl!,
-                          httpHeaders: kImageHeaders,
-                          fadeInDuration: Duration.zero,
-                          imageBuilder: (context, imageProvider) => CircleAvatar(
-                            radius: 7,
-                            backgroundImage: imageProvider,
-                          ),
-                          placeholder: (context, url) => const CircleAvatar(
-                            radius: 7,
-                            backgroundColor: Colors.grey,
-                          ),
-                          errorWidget: (context, url, error) => const CircleAvatar(
-                            radius: 7,
-                            backgroundColor: Colors.grey,
-                          ),
-                        ),
-                      ),
-                    Text(
-                      accountHandle!,
-                      style: TextStyle(
-                        color: Colors.grey[500],
-                        fontSize: 10,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            IconButton(
-              icon: Icon(Icons.share_outlined, size: iconSize, color: iconColor),
-              onPressed: post.permalink != null
-                  ? () async {
-                      final uri = Uri.tryParse(post.permalink!);
-                      if (uri != null) {
-                        await launchUrl(uri, mode: LaunchMode.externalApplication);
-                      }
-                    }
-                  : null,
-              padding: EdgeInsets.zero,
-              constraints: const BoxConstraints(),
-              visualDensity: VisualDensity.compact,
-            ),
-          ],
+        const Spacer(),
+        // Share
+        IconButton(
+          icon: Icon(Icons.share_outlined, size: iconSize, color: iconColor),
+          onPressed: post.permalink != null
+              ? () async {
+                  final uri = Uri.tryParse(post.permalink!);
+                  if (uri != null) {
+                    await launchUrl(uri, mode: LaunchMode.externalApplication);
+                  }
+                }
+              : null,
+          padding: EdgeInsets.zero,
+          constraints: const BoxConstraints(),
+          visualDensity: VisualDensity.compact,
         ),
+        // Via account (SNS badge + avatar)
+        if (accountAvatarUrl != null)
+          Padding(
+            padding: const EdgeInsets.only(left: 6),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                SnsBadge(service: post.source, size: 12),
+                const SizedBox(width: 3),
+                CachedNetworkImage(
+                  imageUrl: accountAvatarUrl!,
+                  httpHeaders: kImageHeaders,
+                  fadeInDuration: Duration.zero,
+                  imageBuilder: (context, imageProvider) => CircleAvatar(
+                    radius: 7,
+                    backgroundImage: imageProvider,
+                  ),
+                  placeholder: (context, url) => const CircleAvatar(
+                    radius: 7,
+                    backgroundColor: Colors.grey,
+                  ),
+                  errorWidget: (context, url, error) => const CircleAvatar(
+                    radius: 7,
+                    backgroundColor: Colors.grey,
+                  ),
+                ),
+              ],
+            ),
+          ),
       ],
     );
   }

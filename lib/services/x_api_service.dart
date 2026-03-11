@@ -9,6 +9,8 @@ import '../models/account.dart';
 import '../models/notification_item.dart';
 import '../models/post.dart';
 import '../models/sns_service.dart';
+import 'x_bearer_token_service.dart';
+import 'x_features.dart';
 import 'x_query_id_service.dart';
 
 class XApiService {
@@ -18,41 +20,53 @@ class XApiService {
   @visibleForTesting
   http.Client? httpClientOverride;
 
-  // X の公開 Bearer Token (Web クライアント用)
-  static const _bearerToken =
-      'AAAAAAAAAAAAAAAAAAAAANRILgAAAAAAnNwIzUejRCOuH5E6I8xnZz4puTs'
-      '%3D1Zv7ttfk8LF81IUq16cHjhLTvJu4FA33AGWWjCpTnA';
+  String get _bearerToken => XBearerTokenService.instance.token;
 
   /// 最新の ct0 をアカウント別に追跡 (APIレスポンスの Set-Cookie で更新)
   final Map<String, String> _latestCt0 = {};
 
-  /// authToken のハッシュをキーにして最新 ct0 を取得
+  /// authToken をキーにして最新 ct0 を取得
   String _getCt0(XCredentials creds) {
-    final key = creds.authToken.hashCode.toRadixString(16);
-    return _latestCt0[key] ?? creds.ct0;
+    return _latestCt0[creds.authToken] ?? creds.ct0;
   }
 
   /// レスポンスの Set-Cookie から ct0 を抽出して更新
   void _updateCt0FromResponse(XCredentials creds, http.Response response) {
     final setCookie = response.headers['set-cookie'];
-    if (setCookie == null) {
-      debugPrint('[XApi] _updateCt0: no set-cookie header (keys: ${response.headers.keys.toList()})');
-      return;
-    }
-    debugPrint('[XApi] _updateCt0: set-cookie len=${setCookie.length}');
-    // set-cookie ヘッダーから ct0= を探す
+    if (setCookie == null) return;
     final match = RegExp(r'ct0=([^;]+)').firstMatch(setCookie);
     if (match != null) {
       final newCt0 = match.group(1)!;
-      final key = creds.authToken.hashCode.toRadixString(16);
-      if (_latestCt0[key] != newCt0) {
-        debugPrint('[XApi] ct0 updated for account $key');
-        _latestCt0[key] = newCt0;
+      if (_latestCt0[creds.authToken] != newCt0) {
+        _latestCt0[creds.authToken] = newCt0;
       }
     }
   }
 
-  static final _random = Random();
+  /// 429 レートリミット対応: retry-after を尊重した exponential backoff
+  Future<http.Response> _withRateLimitRetry(
+    Future<http.Response> Function() request, {
+    int maxRetries = 2,
+  }) async {
+    for (int attempt = 0; attempt <= maxRetries; attempt++) {
+      final response = await request();
+      if (response.statusCode != 429 || attempt == maxRetries) {
+        return response;
+      }
+      final retryAfter = response.headers['retry-after'];
+      final seconds = retryAfter != null
+          ? (int.tryParse(retryAfter) ?? (2 << attempt))
+          : (2 << attempt);
+      final wait = Duration(seconds: seconds.clamp(1, 60));
+      debugPrint('[XApi] 429 Rate limited, retry in ${wait.inSeconds}s (${attempt + 1}/$maxRetries)');
+      await Future.delayed(wait);
+    }
+    throw StateError('Unreachable');
+  }
+
+  http.Client get _client => httpClientOverride ?? http.Client();
+
+  static final _random = Random.secure();
   String _generateTransactionId() {
     final bytes = List<int>.generate(16, (_) => _random.nextInt(256));
     return base64Url.encode(bytes).replaceAll('=', '');
@@ -83,20 +97,10 @@ class XApiService {
     try {
       final uri = Uri.parse(
           'https://x.com/i/api/1.1/account/settings.json');
-      final response = await (httpClientOverride ?? http.Client()).get(
-        uri,
-        headers: _buildHeaders(creds),
-      );
-      debugPrint('[XApi] warmCookies status=${response.statusCode}');
+      final response = await _client.get(uri, headers: _buildHeaders(creds));
 
       final setCookie = response.headers['set-cookie'];
-      if (setCookie == null || setCookie.isEmpty) {
-        debugPrint('[XApi] warmCookies: no set-cookie header');
-        debugPrint('[XApi] warmCookies resp-keys: ${response.headers.keys.toList()}');
-        return creds.cookieHeader;
-      }
-
-      debugPrint('[XApi] warmCookies set-cookie len=${setCookie.length}');
+      if (setCookie == null || setCookie.isEmpty) return creds.cookieHeader;
 
       // 既存 Cookie をパース
       final merged = <String, String>{};
@@ -108,28 +112,18 @@ class XApiService {
       }
 
       // Set-Cookie から各 Cookie 値を抽出してマージ
-      // Dart http パッケージは複数の Set-Cookie を ", " で結合する
-      int updated = 0;
       for (final name in merged.keys.toList()) {
-        // Cookie名の直後に = が来るパターンを検索
         final match = RegExp('(?:^|[,;]\\s*)${RegExp.escape(name)}=([^;,]+)')
             .firstMatch(setCookie);
         if (match != null) {
           final newVal = match.group(1)!.trim();
-          if (merged[name] != newVal) {
-            merged[name] = newVal;
-            updated++;
-          }
+          if (merged[name] != newVal) merged[name] = newVal;
         }
       }
-      debugPrint('[XApi] warmCookies: $updated cookies refreshed');
 
       // ct0 が更新された場合は内部トラッカーも更新
       final ct0Val = merged['ct0'];
-      if (ct0Val != null) {
-        final key = creds.authToken.hashCode.toRadixString(16);
-        _latestCt0[key] = ct0Val;
-      }
+      if (ct0Val != null) _latestCt0[creds.authToken] = ct0Val;
 
       return merged.entries.map((e) => '${e.key}=${e.value}').join('; ');
     } catch (e) {
@@ -152,21 +146,16 @@ class XApiService {
       return await action(queryId);
     } on XApiException catch (e) {
       if (e.statusCode == 404) {
-        debugPrint('[XApi] 404 detected for $operationName, refreshing queryIds...');
         final count = await XQueryIdService.instance.forceRefresh(creds);
-        debugPrint('[XApi] Refreshed $count queryIds');
+        debugPrint('[XApi] 404→queryId refresh ($count ids) for $operationName');
         final newQueryId = XQueryIdService.instance.getQueryId(operationName, creds: creds);
-        if (newQueryId != queryId) {
-          debugPrint('[XApi] Retrying $operationName with new queryId: $newQueryId');
-          return await action(newQueryId);
-        }
+        if (newQueryId != queryId) return await action(newQueryId);
       }
       rethrow;
     }
   }
 
   /// GET 系 API の 404 リトライ (対象 operation の queryId のみ更新)
-  /// HomeLatestTimeline 等のTL用 queryId は変更しないため TL 汚染が起きない
   Future<T> _withTargetedQueryIdRetry<T>(
     XCredentials creds,
     String operationName,
@@ -177,15 +166,11 @@ class XApiService {
       return await action(queryId);
     } on XApiException catch (e) {
       if (e.statusCode == 404) {
-        debugPrint('[XApi] 404 for $operationName, targeted refresh...');
         final count = await XQueryIdService.instance
             .forceRefresh(creds, onlyUpdate: {operationName});
-        debugPrint('[XApi] Refreshed $count queryIds (targeted: $operationName)');
+        debugPrint('[XApi] 404→targeted refresh ($count ids) for $operationName');
         final newQueryId = XQueryIdService.instance.getQueryId(operationName, creds: creds);
-        if (newQueryId != queryId) {
-          debugPrint('[XApi] Retrying $operationName with new queryId: $newQueryId');
-          return await action(newQueryId);
-        }
+        if (newQueryId != queryId) return await action(newQueryId);
       }
       rethrow;
     }
@@ -211,33 +196,7 @@ class XApiService {
         if (cursor != null) 'cursor': cursor,
       });
 
-      final features = json.encode({
-        'rweb_tipjar_consumption_enabled': true,
-        'responsive_web_graphql_exclude_directive_enabled': true,
-        'verified_phone_label_enabled': false,
-        'creator_subscriptions_tweet_preview_api_enabled': true,
-        'responsive_web_graphql_timeline_navigation_enabled': true,
-        'responsive_web_graphql_skip_user_profile_image_extensions_enabled':
-            false,
-        'communities_web_enable_tweet_community_results_fetch': true,
-        'c9s_tweet_anatomy_moderator_badge_enabled': true,
-        'articles_preview_enabled': true,
-        'responsive_web_edit_tweet_api_enabled': true,
-        'graphql_is_translatable_rweb_tweet_is_translatable_enabled': true,
-        'view_counts_everywhere_api_enabled': true,
-        'longform_notetweets_consumption_enabled': true,
-        'responsive_web_twitter_article_tweet_consumption_enabled': true,
-        'tweet_awards_web_tipping_enabled': false,
-        'creator_subscriptions_quote_tweet_preview_enabled': false,
-        'freedom_of_speech_not_reach_fetch_enabled': true,
-        'standardized_nudges_misinfo': true,
-        'tweet_with_visibility_results_prefer_gql_limited_actions_policy_enabled':
-            true,
-        'rweb_video_timestamps_enabled': true,
-        'longform_notetweets_rich_text_read_enabled': true,
-        'longform_notetweets_inline_media_enabled': true,
-        'responsive_web_enhance_cards_enabled': false,
-      });
+      final features = json.encode(XFeatures.timeline);
 
       final uri = Uri.parse(
         'https://x.com/i/api/graphql/$queryId/HomeLatestTimeline'
@@ -245,7 +204,9 @@ class XApiService {
         '&features=${Uri.encodeComponent(features)}',
       );
 
-      final response = await (httpClientOverride ?? http.Client()).get(uri, headers: _buildHeaders(creds));
+      final response = await _withRateLimitRetry(
+        () => _client.get(uri, headers: _buildHeaders(creds)),
+      );
       _updateCt0FromResponse(creds, response);
 
       if (response.statusCode == 401 || response.statusCode == 403) {
@@ -260,7 +221,6 @@ class XApiService {
       }
 
       final body = json.decode(response.body) as Map<String, dynamic>;
-      debugPrint('[XApi] Response top keys: ${body.keys.toList()}');
       return parseTimelineWithCursor(body, accountId);
     });
   }
@@ -283,33 +243,7 @@ class XApiService {
         'withV2Timeline': true,
       });
 
-      final features = json.encode({
-        'rweb_tipjar_consumption_enabled': true,
-        'responsive_web_graphql_exclude_directive_enabled': true,
-        'verified_phone_label_enabled': false,
-        'creator_subscriptions_tweet_preview_api_enabled': true,
-        'responsive_web_graphql_timeline_navigation_enabled': true,
-        'responsive_web_graphql_skip_user_profile_image_extensions_enabled':
-            false,
-        'communities_web_enable_tweet_community_results_fetch': true,
-        'c9s_tweet_anatomy_moderator_badge_enabled': true,
-        'articles_preview_enabled': true,
-        'responsive_web_edit_tweet_api_enabled': true,
-        'graphql_is_translatable_rweb_tweet_is_translatable_enabled': true,
-        'view_counts_everywhere_api_enabled': true,
-        'longform_notetweets_consumption_enabled': true,
-        'responsive_web_twitter_article_tweet_consumption_enabled': true,
-        'tweet_awards_web_tipping_enabled': false,
-        'creator_subscriptions_quote_tweet_preview_enabled': false,
-        'freedom_of_speech_not_reach_fetch_enabled': true,
-        'standardized_nudges_misinfo': true,
-        'tweet_with_visibility_results_prefer_gql_limited_actions_policy_enabled':
-            true,
-        'rweb_video_timestamps_enabled': true,
-        'longform_notetweets_rich_text_read_enabled': true,
-        'longform_notetweets_inline_media_enabled': true,
-        'responsive_web_enhance_cards_enabled': false,
-      });
+      final features = json.encode(XFeatures.timeline);
 
       final uri = Uri.parse(
         'https://x.com/i/api/graphql/$queryId/TweetDetail'
@@ -317,7 +251,9 @@ class XApiService {
         '&features=${Uri.encodeComponent(features)}',
       );
 
-      final response = await (httpClientOverride ?? http.Client()).get(uri, headers: _buildHeaders(creds));
+      final response = await _withRateLimitRetry(
+        () => _client.get(uri, headers: _buildHeaders(creds)),
+      );
       _updateCt0FromResponse(creds, response);
 
       if (response.statusCode == 401 || response.statusCode == 403) {
@@ -351,16 +287,15 @@ class XApiService {
     final warmedCookies = await _warmCookies(creds);
     final uri =
         Uri.parse('https://x.com/i/api/graphql/$queryId/FavoriteTweet');
-    final response = await (httpClientOverride ?? http.Client()).post(
-      uri,
-      headers: _buildHeaders(creds, cookieOverride: warmedCookies),
-      body: json.encode({
-        'variables': {'tweet_id': tweetId},
-        'queryId': queryId,
-      }),
+    final response = await _withRateLimitRetry(
+      () => _client.post(uri,
+        headers: _buildHeaders(creds, cookieOverride: warmedCookies),
+        body: json.encode({
+          'variables': {'tweet_id': tweetId},
+          'queryId': queryId,
+        })),
+      maxRetries: 1,
     );
-    debugPrint('[XApi] likeTweet $tweetId: ${response.statusCode}');
-    debugPrint('[XApi] likeTweet body: ${_snippet(response.body)}');
     return XApiResult(
       success: response.statusCode == 200,
       statusCode: response.statusCode,
@@ -378,16 +313,15 @@ class XApiService {
     final warmedCookies = await _warmCookies(creds);
     final uri =
         Uri.parse('https://x.com/i/api/graphql/$queryId/UnfavoriteTweet');
-    final response = await (httpClientOverride ?? http.Client()).post(
-      uri,
-      headers: _buildHeaders(creds, cookieOverride: warmedCookies),
-      body: json.encode({
-        'variables': {'tweet_id': tweetId},
-        'queryId': queryId,
-      }),
+    final response = await _withRateLimitRetry(
+      () => _client.post(uri,
+        headers: _buildHeaders(creds, cookieOverride: warmedCookies),
+        body: json.encode({
+          'variables': {'tweet_id': tweetId},
+          'queryId': queryId,
+        })),
+      maxRetries: 1,
     );
-    debugPrint('[XApi] unlikeTweet $tweetId: ${response.statusCode}');
-    debugPrint('[XApi] unlikeTweet body: ${_snippet(response.body)}');
     return XApiResult(
       success: response.statusCode == 200,
       statusCode: response.statusCode,
@@ -405,16 +339,15 @@ class XApiService {
     final warmedCookies = await _warmCookies(creds);
     final uri =
         Uri.parse('https://x.com/i/api/graphql/$queryId/CreateRetweet');
-    final response = await (httpClientOverride ?? http.Client()).post(
-      uri,
-      headers: _buildHeaders(creds, cookieOverride: warmedCookies),
-      body: json.encode({
-        'variables': {'tweet_id': tweetId, 'dark_request': false},
-        'queryId': queryId,
-      }),
+    final response = await _withRateLimitRetry(
+      () => _client.post(uri,
+        headers: _buildHeaders(creds, cookieOverride: warmedCookies),
+        body: json.encode({
+          'variables': {'tweet_id': tweetId, 'dark_request': false},
+          'queryId': queryId,
+        })),
+      maxRetries: 1,
     );
-    debugPrint('[XApi] retweet $tweetId: ${response.statusCode}');
-    debugPrint('[XApi] retweet body: ${_snippet(response.body)}');
     return XApiResult(
       success: response.statusCode == 200,
       statusCode: response.statusCode,
@@ -432,16 +365,15 @@ class XApiService {
     final warmedCookies = await _warmCookies(creds);
     final uri =
         Uri.parse('https://x.com/i/api/graphql/$queryId/DeleteRetweet');
-    final response = await (httpClientOverride ?? http.Client()).post(
-      uri,
-      headers: _buildHeaders(creds, cookieOverride: warmedCookies),
-      body: json.encode({
-        'variables': {'source_tweet_id': tweetId, 'dark_request': false},
-        'queryId': queryId,
-      }),
+    final response = await _withRateLimitRetry(
+      () => _client.post(uri,
+        headers: _buildHeaders(creds, cookieOverride: warmedCookies),
+        body: json.encode({
+          'variables': {'source_tweet_id': tweetId, 'dark_request': false},
+          'queryId': queryId,
+        })),
+      maxRetries: 1,
     );
-    debugPrint('[XApi] unretweet $tweetId: ${response.statusCode}');
-    debugPrint('[XApi] unretweet body: ${_snippet(response.body)}');
     return XApiResult(
       success: response.statusCode == 200,
       statusCode: response.statusCode,
@@ -461,20 +393,7 @@ class XApiService {
         'withSafetyModeUserFields': true,
       });
 
-      final features = json.encode({
-        'hidden_profile_subscriptions_enabled': true,
-        'rweb_tipjar_consumption_enabled': true,
-        'responsive_web_graphql_exclude_directive_enabled': true,
-        'verified_phone_label_enabled': false,
-        'subscriptions_verification_info_is_identity_verified_enabled': true,
-        'subscriptions_verification_info_verified_since_enabled': true,
-        'highlights_tweets_tab_ui_enabled': true,
-        'responsive_web_twitter_article_notes_tab_enabled': true,
-        'subscriptions_feature_can_gift_premium': true,
-        'creator_subscriptions_tweet_preview_api_enabled': true,
-        'responsive_web_graphql_skip_user_profile_image_extensions_enabled': false,
-        'responsive_web_graphql_timeline_navigation_enabled': true,
-      });
+      final features = json.encode(XFeatures.userProfile);
 
       final uri = Uri.parse(
         'https://x.com/i/api/graphql/$queryId/UserByScreenName'
@@ -482,8 +401,9 @@ class XApiService {
         '&features=${Uri.encodeComponent(features)}',
       );
 
-      final response = await (httpClientOverride ?? http.Client())
-          .get(uri, headers: _buildHeaders(creds));
+      final response = await _withRateLimitRetry(
+        () => _client.get(uri, headers: _buildHeaders(creds)),
+      );
       _updateCt0FromResponse(creds, response);
 
       if (response.statusCode == 401 || response.statusCode == 403) {
@@ -502,10 +422,7 @@ class XApiService {
       var userResult = dig(body, ['data', 'user', 'result']) as Map<String, dynamic>?;
       userResult ??= dig(body, ['data', 'user_result', 'result']) as Map<String, dynamic>?;
 
-      if (userResult == null) {
-        debugPrint('[XApi] getUserProfile: userResult is null, data keys: ${(body['data'] as Map<String, dynamic>?)?.keys.toList()}');
-        return null;
-      }
+      if (userResult == null) return null;
 
       // ユーザー結果がラッパー型の場合
       final userTypeName = userResult['__typename'] as String?;
@@ -517,11 +434,7 @@ class XApiService {
       final restId = userResult['rest_id'] as String?;
       final legacy = userResult['legacy'] as Map<String, dynamic>?;
 
-      if (legacy == null) {
-        debugPrint('[XApi] getUserProfile: legacy is null, returning rest_id only');
-        // legacy がなくても rest_id だけ返す（投稿一覧の取得に必要）
-        return {'rest_id': restId};
-      }
+      if (legacy == null) return {'rest_id': restId};
 
       final isFollowing = legacy['following'] as bool? ?? false;
 
@@ -560,31 +473,7 @@ class XApiService {
         if (cursor != null) 'cursor': cursor,
       });
 
-      final features = json.encode({
-        'rweb_tipjar_consumption_enabled': true,
-        'responsive_web_graphql_exclude_directive_enabled': true,
-        'verified_phone_label_enabled': false,
-        'creator_subscriptions_tweet_preview_api_enabled': true,
-        'responsive_web_graphql_timeline_navigation_enabled': true,
-        'responsive_web_graphql_skip_user_profile_image_extensions_enabled': false,
-        'communities_web_enable_tweet_community_results_fetch': true,
-        'c9s_tweet_anatomy_moderator_badge_enabled': true,
-        'articles_preview_enabled': true,
-        'responsive_web_edit_tweet_api_enabled': true,
-        'graphql_is_translatable_rweb_tweet_is_translatable_enabled': true,
-        'view_counts_everywhere_api_enabled': true,
-        'longform_notetweets_consumption_enabled': true,
-        'responsive_web_twitter_article_tweet_consumption_enabled': true,
-        'tweet_awards_web_tipping_enabled': false,
-        'creator_subscriptions_quote_tweet_preview_enabled': false,
-        'freedom_of_speech_not_reach_fetch_enabled': true,
-        'standardized_nudges_misinfo': true,
-        'tweet_with_visibility_results_prefer_gql_limited_actions_policy_enabled': true,
-        'rweb_video_timestamps_enabled': true,
-        'longform_notetweets_rich_text_read_enabled': true,
-        'longform_notetweets_inline_media_enabled': true,
-        'responsive_web_enhance_cards_enabled': false,
-      });
+      final features = json.encode(XFeatures.timeline);
 
       final uri = Uri.parse(
         'https://x.com/i/api/graphql/$queryId/UserTweets'
@@ -592,8 +481,9 @@ class XApiService {
         '&features=${Uri.encodeComponent(features)}',
       );
 
-      final response = await (httpClientOverride ?? http.Client())
-          .get(uri, headers: _buildHeaders(creds));
+      final response = await _withRateLimitRetry(
+        () => _client.get(uri, headers: _buildHeaders(creds)),
+      );
       _updateCt0FromResponse(creds, response);
 
       if (response.statusCode == 401 || response.statusCode == 403) {
@@ -644,7 +534,6 @@ class XApiService {
           ]) as List<dynamic>?;
 
       if (instructions == null || instructions.isEmpty) {
-        debugPrint('[XApi] _parseUserTimeline: no instructions found, data keys: ${(body['data'] as Map<String, dynamic>?)?.keys.toList()}');
         return (posts: posts, cursor: null);
       }
 
@@ -709,24 +598,28 @@ class XApiService {
   /// フォロー (REST API)
   Future<bool> followUser(XCredentials creds, String userId) async {
     final warmedCookies = await _warmCookies(creds);
-    final response = await (httpClientOverride ?? http.Client()).post(
-      Uri.parse('https://x.com/i/api/1.1/friendships/create.json'),
-      headers: _buildHeaders(creds, form: true, cookieOverride: warmedCookies),
-      body: 'user_id=$userId',
+    final response = await _withRateLimitRetry(
+      () => _client.post(
+        Uri.parse('https://x.com/i/api/1.1/friendships/create.json'),
+        headers: _buildHeaders(creds, form: true, cookieOverride: warmedCookies),
+        body: 'user_id=$userId',
+      ),
+      maxRetries: 1,
     );
-    debugPrint('[XApi] followUser $userId: ${response.statusCode}');
     return response.statusCode == 200;
   }
 
   /// フォロー解除 (REST API)
   Future<bool> unfollowUser(XCredentials creds, String userId) async {
     final warmedCookies = await _warmCookies(creds);
-    final response = await (httpClientOverride ?? http.Client()).post(
-      Uri.parse('https://x.com/i/api/1.1/friendships/destroy.json'),
-      headers: _buildHeaders(creds, form: true, cookieOverride: warmedCookies),
-      body: 'user_id=$userId',
+    final response = await _withRateLimitRetry(
+      () => _client.post(
+        Uri.parse('https://x.com/i/api/1.1/friendships/destroy.json'),
+        headers: _buildHeaders(creds, form: true, cookieOverride: warmedCookies),
+        body: 'user_id=$userId',
+      ),
+      maxRetries: 1,
     );
-    debugPrint('[XApi] unfollowUser $userId: ${response.statusCode}');
     return response.statusCode == 200;
   }
 
@@ -734,13 +627,12 @@ class XApiService {
   /// まず GraphQL CreateTweet を試み、226 エラーの場合は REST v1.1 にフォールバック
   Future<XApiResult> createTweet(XCredentials creds, String text) async {
     final warmedCookies = await _warmCookies(creds);
-    debugPrint('[XApi] createTweet auth=${creds.authToken.substring(0, 8)}...');
 
     // --- GraphQL CreateTweet ---
     final queryId = _getMutationQueryId('CreateTweet', creds);
     final gqlUri =
         Uri.parse('https://x.com/i/api/graphql/$queryId/CreateTweet');
-    final gqlResponse = await (httpClientOverride ?? http.Client()).post(
+    final gqlResponse = await _client.post(
       gqlUri,
       headers: _buildHeaders(creds, cookieOverride: warmedCookies),
       body: json.encode({
@@ -750,36 +642,7 @@ class XApiService {
           'media': {'media_entities': [], 'possibly_sensitive': false},
           'semantic_annotation_ids': [],
         },
-        'features': {
-          'premium_content_api_read_enabled': false,
-          'communities_web_enable_tweet_community_results_fetch': true,
-          'c9s_tweet_anatomy_moderator_badge_enabled': true,
-          'responsive_web_edit_tweet_api_enabled': true,
-          'graphql_is_translatable_rweb_tweet_is_translatable_enabled': true,
-          'view_counts_everywhere_api_enabled': true,
-          'longform_notetweets_consumption_enabled': true,
-          'responsive_web_twitter_article_tweet_consumption_enabled': true,
-          'tweet_awards_web_tipping_enabled': false,
-          'creator_subscriptions_quote_tweet_preview_enabled': false,
-          'longform_notetweets_rich_text_read_enabled': true,
-          'longform_notetweets_inline_media_enabled': true,
-          'articles_preview_enabled': true,
-          'rweb_video_timestamps_enabled': true,
-          'rweb_tipjar_consumption_enabled': true,
-          'responsive_web_graphql_exclude_directive_enabled': true,
-          'verified_phone_label_enabled': false,
-          'freedom_of_speech_not_reach_fetch_enabled': true,
-          'standardized_nudges_misinfo': true,
-          'tweet_with_visibility_results_prefer_gql_limited_actions_policy_enabled':
-              true,
-          'responsive_web_graphql_skip_user_profile_image_extensions_enabled':
-              false,
-          'responsive_web_graphql_timeline_navigation_enabled': true,
-          'responsive_web_enhance_cards_enabled': false,
-          'tweetypie_unmention_optimization_enabled': true,
-          'responsive_web_text_conversations_enabled': false,
-          'profile_label_improvements_pcf_label_in_post_enabled': true,
-        },
+        'features': XFeatures.createTweet,
         'fieldToggles': {
           'withArticleRichContentState': true,
           'withArticlePlainText': false,
@@ -789,8 +652,6 @@ class XApiService {
         'queryId': queryId,
       }),
     );
-    debugPrint('[XApi] createTweet(gql): status=${gqlResponse.statusCode}');
-    debugPrint('[XApi] createTweet(gql) body: ${gqlResponse.body}');
     _updateCt0FromResponse(creds, gqlResponse);
 
     // GraphQL の成功判定
@@ -812,6 +673,7 @@ class XApiService {
         success: true,
         statusCode: gqlResponse.statusCode,
         bodySnippet: _snippet(gqlResponse.body),
+        apiRoute: 'GraphQL',
       );
     }
 
@@ -821,22 +683,23 @@ class XApiService {
         success: false,
         statusCode: gqlResponse.statusCode,
         bodySnippet: _snippet(gqlResponse.body),
+        apiRoute: 'GraphQL',
       );
     }
 
-    debugPrint('[XApi] createTweet: GraphQL 226, trying REST v1.1 fallback...');
-    final restResponse = await (httpClientOverride ?? http.Client()).post(
+    debugPrint('[XApi] createTweet: GraphQL 226→REST v1.1 fallback');
+    final restResponse = await _client.post(
       Uri.parse('https://x.com/i/api/1.1/statuses/update.json'),
       headers: _buildHeaders(creds, form: true, cookieOverride: warmedCookies),
       body: 'status=${Uri.encodeComponent(text)}',
     );
-    debugPrint('[XApi] createTweet(rest): ${restResponse.statusCode} body=${_snippet(restResponse.body)}');
     _updateCt0FromResponse(creds, restResponse);
 
     return XApiResult(
       success: restResponse.statusCode == 200,
       statusCode: restResponse.statusCode,
       bodySnippet: _snippet(restResponse.body),
+      apiRoute: 'REST v1.1',
     );
   }
 
@@ -875,8 +738,9 @@ class XApiService {
 
     final uri = Uri.https('x.com', '/i/api/2/notifications/all.json', params);
 
-    final response = await (httpClientOverride ?? http.Client())
-        .get(uri, headers: _buildHeaders(creds));
+    final response = await _withRateLimitRetry(
+      () => _client.get(uri, headers: _buildHeaders(creds)),
+    );
     _updateCt0FromResponse(creds, response);
 
     if (response.statusCode == 401 || response.statusCode == 403) {
@@ -890,9 +754,6 @@ class XApiService {
     }
 
     final body = json.decode(response.body) as Map<String, dynamic>;
-    debugPrint('[XApi] notifications response status: ${response.statusCode}');
-    debugPrint('[XApi] notifications body top keys: ${body.keys.toList()}');
-    debugPrint('[XApi] notifications body snippet: ${_snippet(response.body)}');
     final result = _parseNotifications(body);
     return (
       notifications: result.notifications,
@@ -905,34 +766,24 @@ class XApiService {
       Map<String, dynamic> body) {
     final notifications = <NotificationItem>[];
     String? nextCursor;
-    final debug = StringBuffer();
 
     try {
       final globalObjects = body['globalObjects'] as Map<String, dynamic>?;
-      debug.write('go_keys=${globalObjects?.keys.toList()}');
       final tweets =
           globalObjects?['tweets'] as Map<String, dynamic>? ?? {};
       final users =
           globalObjects?['users'] as Map<String, dynamic>? ?? {};
-      debug.write(' tw=${tweets.length} us=${users.length}');
 
-      // notifications map
       final notifMap =
           globalObjects?['notifications'] as Map<String, dynamic>? ?? {};
-      debug.write(' notif=${notifMap.length}');
 
-      // timeline instructions → sorted entries
       final timeline = body['timeline'] as Map<String, dynamic>?;
       final instructions = timeline?['instructions'] as List<dynamic>? ?? [];
-      debug.write(' instr=${instructions.length}');
 
-      // 通知IDの順序を取得
       final orderedIds = <String>[];
       for (final instruction in instructions) {
         final map = instruction as Map<String, dynamic>;
-        debug.write(' ikeys=${map.keys.toList()}');
 
-        // addEntries パターン
         List<dynamic> entries = [];
         if (map.containsKey('addEntries')) {
           final addEntries = map['addEntries'] as Map<String, dynamic>;
@@ -940,26 +791,11 @@ class XApiService {
         }
 
         if (entries.isEmpty) continue;
-        debug.write(' entries=${entries.length}');
-
-        // 最初のエントリの構造をダンプ
-        if (entries.isNotEmpty) {
-          final first = entries.first as Map<String, dynamic>;
-          final firstContent = first['content'] as Map<String, dynamic>?;
-          debug.write(' e0_id=${first['entryId']} e0_ckeys=${firstContent?.keys.toList()}');
-          // item ネスト確認
-          final item = firstContent?['item'] as Map<String, dynamic>?;
-          if (item != null) {
-            final itemContent = item['content'] as Map<String, dynamic>?;
-            debug.write(' item_ckeys=${itemContent?.keys.toList()}');
-          }
-        }
 
         for (final entry in entries) {
           final entryMap = entry as Map<String, dynamic>;
           final entryId = entryMap['entryId'] as String? ?? '';
 
-          // cursor
           if (entryId.startsWith('cursor-bottom-')) {
             final content = entryMap['content'] as Map<String, dynamic>?;
             final op = content?['operation'] as Map<String, dynamic>?;
@@ -972,30 +808,18 @@ class XApiService {
           final content = entryMap['content'] as Map<String, dynamic>?;
           if (content == null) continue;
 
-          // パス1: content.notification.id
           String? id = (content['notification'] as Map<String, dynamic>?)?['id'] as String?;
-          // パス2: content.item.content.notification.id
           if (id == null) {
             final item = content['item'] as Map<String, dynamic>?;
             final itemContent = item?['content'] as Map<String, dynamic>?;
             id = (itemContent?['notification'] as Map<String, dynamic>?)?['id'] as String?;
           }
-          // パス3: content.item.clientEventInfo.element → notification ID from entryId
           if (id == null && entryId.startsWith('notification-')) {
             id = entryId.replaceFirst('notification-', '');
           }
 
           if (id != null) orderedIds.add(id);
         }
-      }
-
-      debug.write(' ids=${orderedIds.length}');
-
-      // notifMap のキーの最初の1つをダンプ
-      if (notifMap.isNotEmpty && orderedIds.isEmpty) {
-        final sampleKey = notifMap.keys.first;
-        final sampleNotif = notifMap[sampleKey] as Map<String, dynamic>?;
-        debug.write(' sample_nkeys=${sampleNotif?.keys.toList()}');
       }
 
       for (final notifId in orderedIds) {
@@ -1076,10 +900,13 @@ class XApiService {
         ));
       }
     } catch (e) {
-      debug.write(' ERR=$e');
       debugPrint('[XApi] Error parsing notifications: $e');
     }
-    return (notifications: notifications, cursor: nextCursor, debugInfo: debug.toString());
+    return (
+      notifications: notifications,
+      cursor: nextCursor,
+      debugInfo: 'notif=${notifications.length}',
+    );
   }
 
   @visibleForTesting
@@ -1118,17 +945,6 @@ class XApiService {
           ]) as List<dynamic>?;
 
       if (instructions == null || instructions.isEmpty) {
-        // デバッグ: data 直下のキーを出力
-        final data = body['data'] as Map<String, dynamic>?;
-        if (data != null) {
-          debugPrint('[XApi] data keys: ${data.keys.toList()}');
-          for (final key in data.keys) {
-            final v = data[key];
-            if (v is Map<String, dynamic>) {
-              debugPrint('[XApi] data.$key keys: ${v.keys.toList()}');
-            }
-          }
-        }
         instructions = [];
       }
 
@@ -1474,11 +1290,15 @@ class XApiResult {
     required this.success,
     required this.statusCode,
     this.bodySnippet,
+    this.apiRoute,
   });
 
   final bool success;
   final int statusCode;
   final String? bodySnippet;
+
+  /// 使用した API 経路 ('GraphQL' | 'REST v1.1')
+  final String? apiRoute;
 }
 
 class XApiException implements Exception {

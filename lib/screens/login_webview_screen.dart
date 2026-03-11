@@ -122,6 +122,12 @@ class _LoginWebViewScreenState extends State<LoginWebViewScreen> {
     _clearCookiesBeforeLogin();
   }
 
+  @override
+  void dispose() {
+    _controller = null;
+    super.dispose();
+  }
+
   /// ログイン前に該当ドメインの Cookie をクリア（他アカウントと干渉しないように）
   Future<void> _clearCookiesBeforeLogin() async {
     final cookieManager = CookieManager.instance();
@@ -132,7 +138,6 @@ class _LoginWebViewScreenState extends State<LoginWebViewScreen> {
     // localStorage / sessionStorage もクリア（Bluesky の BSKY_STORAGE 等）
     final webStorageManager = WebStorageManager.instance();
     await webStorageManager.android.deleteAllData();
-    debugPrint('[LoginWebView] All cookies, cache and web storage cleared');
     if (mounted) {
       setState(() => _cookiesCleared = true);
     }

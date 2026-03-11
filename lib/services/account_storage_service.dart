@@ -60,9 +60,12 @@ class AccountStorageService {
       await _secureStorage.write(key: _key, value: encoded);
     } catch (e) {
       debugPrint('[AccountStorage] Secure storage write failed: $e');
-      // Fallback to SharedPreferences
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setString(_key, encoded);
+      // テスト環境ではSecureStorageが利用不可のため
+      // SharedPreferencesにフォールバック（本番では到達しない）
+      try {
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setString(_key, encoded);
+      } catch (_) {}
     }
   }
 

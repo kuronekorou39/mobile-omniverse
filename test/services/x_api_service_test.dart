@@ -1190,6 +1190,7 @@ void main() {
       final result = await service.createTweet(creds, 'Hello from test');
       expect(result.success, isTrue);
       expect(result.statusCode, 200);
+      expect(result.apiRoute, 'GraphQL');
     });
 
     test('returns failure on non-200', () async {
@@ -1200,6 +1201,7 @@ void main() {
       final result = await service.createTweet(creds, 'Hello from test');
       expect(result.success, isFalse);
       expect(result.statusCode, 403);
+      expect(result.apiRoute, 'GraphQL');
     });
   });
 
@@ -1221,16 +1223,23 @@ void main() {
   });
 
   group('XApiResult', () {
-    test('holds success, statusCode and bodySnippet', () {
-      const r = XApiResult(success: true, statusCode: 200, bodySnippet: 'ok');
+    test('holds success, statusCode, bodySnippet and apiRoute', () {
+      const r = XApiResult(
+        success: true,
+        statusCode: 200,
+        bodySnippet: 'ok',
+        apiRoute: 'GraphQL',
+      );
       expect(r.success, isTrue);
       expect(r.statusCode, 200);
       expect(r.bodySnippet, 'ok');
+      expect(r.apiRoute, 'GraphQL');
     });
 
-    test('bodySnippet can be null', () {
+    test('bodySnippet and apiRoute can be null', () {
       const r = XApiResult(success: false, statusCode: 500);
       expect(r.bodySnippet, isNull);
+      expect(r.apiRoute, isNull);
     });
   });
 }

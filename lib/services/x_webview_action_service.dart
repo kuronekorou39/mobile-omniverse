@@ -130,7 +130,6 @@ class XWebViewActionService {
 
     try {
       final result = await _controller!.evaluateJavascript(source: js);
-      debugPrint('[XWebView] $operationName raw result: $result');
 
       if (result == null) {
         return (success: false, statusCode: 0, body: 'null result');
@@ -142,9 +141,6 @@ class XWebViewActionService {
       final statusCode = parsed['status'] as int? ?? 0;
       final body = parsed['body'] as String? ?? '';
 
-      debugPrint('[XWebView] $operationName $tweetId: $statusCode');
-      debugPrint(
-          '[XWebView] $operationName body: ${body.length > 200 ? body.substring(0, 200) : body}');
 
       return (success: statusCode == 200, statusCode: statusCode, body: body);
     } catch (e) {

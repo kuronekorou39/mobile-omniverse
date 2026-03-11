@@ -45,9 +45,8 @@ class XQueryIdService {
   final Map<String, Map<String, String>> _perAccount = {};
   final Map<String, DateTime> _perAccountLastRefresh = {};
 
-  /// アカウント識別キー (authToken のハッシュ)
-  static String _accountKey(XCredentials creds) =>
-      creds.authToken.hashCode.toRadixString(16);
+  /// アカウント識別キー
+  static String _accountKey(XCredentials creds) => creds.authToken;
 
   /// 初期化: SharedPreferences からキャッシュをロード
   Future<void> init() async {
@@ -61,10 +60,7 @@ class XQueryIdService {
         for (final entry in map.entries) {
           _cached[entry.key] = entry.value as String;
         }
-        debugPrint('[XQueryId] Loaded ${_cached.length} global cached queryIds');
-      } catch (e) {
-        debugPrint('[XQueryId] Error loading global cache: $e');
-      }
+      } catch (_) {}
     }
 
     // アカウント別キャッシュ読み込み
@@ -76,10 +72,7 @@ class XQueryIdService {
           final inner = entry.value as Map<String, dynamic>;
           _perAccount[entry.key] = inner.map((k, v) => MapEntry(k, v as String));
         }
-        debugPrint('[XQueryId] Loaded per-account queryIds for ${_perAccount.length} accounts');
-      } catch (e) {
-        debugPrint('[XQueryId] Error loading per-account cache: $e');
-      }
+      } catch (_) {}
     }
 
     final lastRefreshMs = prefs.getInt(_lastRefreshKey);
@@ -113,18 +106,13 @@ class XQueryIdService {
       final key = _accountKey(creds);
       final last = _perAccountLastRefresh[key];
       if (last != null && DateTime.now().difference(last) < _minRefreshInterval) {
-        debugPrint('[XQueryId] Skipping refresh for account $key (rate limited)');
         return 0;
       }
     } else if (_lastRefresh != null) {
-      final elapsed = DateTime.now().difference(_lastRefresh!);
-      if (elapsed < _minRefreshInterval) {
-        debugPrint('[XQueryId] Skipping refresh (last: ${elapsed.inMinutes}m ago)');
+      if (DateTime.now().difference(_lastRefresh!) < _minRefreshInterval) {
         return 0;
       }
     }
-
-    debugPrint('[XQueryId] Starting queryId refresh...');
 
     try {
       // 1. x.com の HTML を取得
@@ -143,30 +131,30 @@ class XQueryIdService {
         headers: headers,
       );
 
-      if (htmlResponse.statusCode != 200) {
-        debugPrint('[XQueryId] HTML fetch failed: ${htmlResponse.statusCode}');
-        return 0;
-      }
+      if (htmlResponse.statusCode != 200) return 0;
 
       // 2. <script src="..."> から JS バンドル URL を抽出
       final scriptPattern = RegExp(
         r'<script[^>]+src="(https://abs\.twimg\.com/responsive-web/client-web[^"]*\.js)"',
       );
-      final matches = scriptPattern.allMatches(htmlResponse.body);
-      final bundleUrls = matches.map((m) => m.group(1)!).toList();
-
-      debugPrint('[XQueryId] Found ${bundleUrls.length} JS bundle URLs');
-
-      if (bundleUrls.isEmpty) {
-        debugPrint('[XQueryId] No JS bundles found');
-        return 0;
+      final scriptPattern2 = RegExp(
+        r'<script[^>]+src="(https://abs\.twimg\.com/responsive-web/[^"]*(?:api|main|vendor)[^"]*\.js)"',
+      );
+      final bundleUrls = <String>{};
+      for (final m in scriptPattern.allMatches(htmlResponse.body)) {
+        bundleUrls.add(m.group(1)!);
       }
+      for (final m in scriptPattern2.allMatches(htmlResponse.body)) {
+        bundleUrls.add(m.group(1)!);
+      }
+
+      if (bundleUrls.isEmpty) return 0;
 
       // 3. 各バンドルから queryId を抽出
       final found = <String, String>{};
       final targetOps = _defaults.keys.toSet();
 
-      for (final url in bundleUrls) {
+      for (final url in bundleUrls.toList()) {
         if (found.length >= targetOps.length) break;
 
         try {
@@ -191,7 +179,7 @@ class XQueryIdService {
             }
           }
 
-          // operationName:"yyy",...,queryId:"xxx" の逆順パターンも探す
+          // operationName:"yyy",...,queryId:"xxx" の逆順パターン
           final reversePattern = RegExp(
             r'operationName\s*:\s*"([A-Za-z0-9_]+)"[^}]*?queryId\s*:\s*"([A-Za-z0-9_-]+)"',
           );
@@ -202,27 +190,31 @@ class XQueryIdService {
               found[opName] = queryId;
             }
           }
-        } catch (e) {
-          debugPrint('[XQueryId] Error fetching bundle $url: $e');
-        }
+
+          // exports={queryId:"xxx",operationName:"yyy"} パターン (minified)
+          final exportPattern = RegExp(
+            r'exports\s*=\s*\{[^}]*?queryId\s*:\s*"([A-Za-z0-9_-]+)"[^}]*?operationName\s*:\s*"([A-Za-z0-9_]+)"',
+          );
+          for (final match in exportPattern.allMatches(jsResponse.body)) {
+            final queryId = match.group(1)!;
+            final opName = match.group(2)!;
+            if (targetOps.contains(opName) && !found.containsKey(opName)) {
+              found[opName] = queryId;
+            }
+          }
+        } catch (_) {}
       }
 
-      debugPrint('[XQueryId] Found ${found.length} queryIds: ${found.keys.toList()}');
-
       if (found.isNotEmpty) {
-        // onlyUpdate が指定されている場合、対象オペレーションのみ更新
         final toStore = onlyUpdate != null
             ? Map.fromEntries(found.entries.where((e) => onlyUpdate.contains(e.key)))
             : found;
 
         if (toStore.isNotEmpty) {
           if (creds != null) {
-            // アカウント専用に保存 (他アカウントに影響しない)
             final key = _accountKey(creds);
             _perAccount[key] ??= {};
             _perAccount[key]!.addAll(toStore);
-            debugPrint('[XQueryId] Stored ${toStore.length} queryIds for account $key'
-                '${onlyUpdate != null ? ' (targeted: $onlyUpdate)' : ''}');
           } else {
             _cached.addAll(toStore);
           }
@@ -239,6 +231,7 @@ class XQueryIdService {
         await prefs.setInt(_lastRefreshKey, _lastRefresh!.millisecondsSinceEpoch);
       }
 
+      debugPrint('[XQueryId] Refreshed ${found.length} queryIds');
       return found.length;
     } catch (e) {
       debugPrint('[XQueryId] Refresh error: $e');
@@ -254,7 +247,6 @@ class XQueryIdService {
     // アカウント別キャッシュ
     final perAccountJson = _perAccount.map((k, v) => MapEntry(k, v));
     await prefs.setString(_perAccountPrefsKey, json.encode(perAccountJson));
-    debugPrint('[XQueryId] Saved queryIds to prefs (${_perAccount.length} accounts)');
   }
 
   /// 強制リフレッシュ (レート制限を無視)
@@ -279,7 +271,6 @@ class XQueryIdService {
     await prefs.remove(_prefsKey);
     await prefs.remove(_perAccountPrefsKey);
     await prefs.remove(_lastRefreshKey);
-    debugPrint('[XQueryId] Cache cleared, using defaults');
   }
 
   /// 現在のキャッシュ状態を取得 (デバッグ用)

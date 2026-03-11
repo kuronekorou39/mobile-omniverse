@@ -63,7 +63,7 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
             await XApiService.instance.createTweet(account.xCredentials, text);
         success = result.success;
         statusCode = result.statusCode;
-        responseSnippet = result.bodySnippet;
+        responseSnippet = '[${result.apiRoute ?? "GraphQL"}] ${result.bodySnippet ?? ""}';
       } else {
         success = await BlueskyApiService.instance
             .createPost(account.blueskyCredentials, text);

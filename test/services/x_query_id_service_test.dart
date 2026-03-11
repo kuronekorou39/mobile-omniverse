@@ -44,9 +44,8 @@ void main() {
     test('init loads per-account cached queryIds from SharedPreferences', () async {
       // Pre-populate SharedPreferences with per-account cached data
       final creds = XCredentials(authToken: 'testToken', ct0: 'testCt0');
-      final accountKey = creds.authToken.hashCode.toRadixString(16);
       final perAccount = {
-        accountKey: {
+        'testToken': {
           'HomeLatestTimeline': 'cachedId123',
           'TweetDetail': 'cachedId456',
         },
@@ -66,9 +65,8 @@ void main() {
     test('clearCache resets to defaults', () async {
       // First, simulate per-account cached data
       final creds = XCredentials(authToken: 'testToken', ct0: 'testCt0');
-      final accountKey = creds.authToken.hashCode.toRadixString(16);
       final perAccount = {
-        accountKey: {'HomeLatestTimeline': 'overriddenId'},
+        'testToken': {'HomeLatestTimeline': 'overriddenId'},
       };
       SharedPreferences.setMockInitialValues({
         'x_query_ids_per_account': json.encode(perAccount),

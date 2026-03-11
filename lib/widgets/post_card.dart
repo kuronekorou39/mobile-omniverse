@@ -14,6 +14,7 @@ class PostCard extends StatelessWidget {
     super.key,
     required this.post,
     this.accountHandle,
+    this.accountAvatarUrl,
     this.onTap,
     this.onLike,
     this.onRepost,
@@ -22,6 +23,7 @@ class PostCard extends StatelessWidget {
 
   final Post post;
   final String? accountHandle;
+  final String? accountAvatarUrl;
   final VoidCallback? onTap;
   final VoidCallback? onLike;
   final VoidCallback? onRepost;
@@ -380,12 +382,38 @@ class PostCard extends StatelessWidget {
             if (accountHandle != null)
               Padding(
                 padding: const EdgeInsets.only(right: 6),
-                child: Text(
-                  'via $accountHandle',
-                  style: TextStyle(
-                    color: Colors.grey[500],
-                    fontSize: 10,
-                  ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    if (accountAvatarUrl != null)
+                      Padding(
+                        padding: const EdgeInsets.only(right: 3),
+                        child: CachedNetworkImage(
+                          imageUrl: accountAvatarUrl!,
+                          httpHeaders: kImageHeaders,
+                          fadeInDuration: Duration.zero,
+                          imageBuilder: (context, imageProvider) => CircleAvatar(
+                            radius: 7,
+                            backgroundImage: imageProvider,
+                          ),
+                          placeholder: (context, url) => const CircleAvatar(
+                            radius: 7,
+                            backgroundColor: Colors.grey,
+                          ),
+                          errorWidget: (context, url, error) => const CircleAvatar(
+                            radius: 7,
+                            backgroundColor: Colors.grey,
+                          ),
+                        ),
+                      ),
+                    Text(
+                      accountHandle!,
+                      style: TextStyle(
+                        color: Colors.grey[500],
+                        fontSize: 10,
+                      ),
+                    ),
+                  ],
                 ),
               ),
             IconButton(

@@ -437,6 +437,7 @@ class _OmniFeedScreenState extends ConsumerState<OmniFeedScreen>
           'total': settings.fetchIntervalSeconds,
           'isFetching': feed.isFetching,
         },
+        'showFetchTimer': settings.showFetchTimer,
       }));
 
       // ホーム画面に戻る（Activityを破棄せずバックグラウンドへ）
@@ -863,15 +864,20 @@ class _OmniFeedScreenState extends ConsumerState<OmniFeedScreen>
             }
             final post = filteredPosts[index];
             String? accountHandle;
+            String? accountAvatarUrl;
             if (post.accountId != null) {
               final account =
                   AccountStorageService.instance.getAccount(post.accountId!);
-              if (account != null) accountHandle = account.handle;
+              if (account != null) {
+                accountHandle = account.handle;
+                accountAvatarUrl = account.avatarUrl;
+              }
             }
             final postCard = PostCard(
               key: ValueKey(post.id),
               post: post,
               accountHandle: accountHandle,
+              accountAvatarUrl: accountAvatarUrl,
               onQuoteRepost: () async {
                 final posted = await Navigator.of(context).push<bool>(
                   MaterialPageRoute(

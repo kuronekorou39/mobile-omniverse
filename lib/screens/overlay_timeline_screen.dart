@@ -26,6 +26,7 @@ class _OverlayTimelineScreenState extends State<OverlayTimelineScreen> {
   int _opacityIndex = 3;
   int _fontSizeIndex = 1;
   int _themeModeIndex = 0; // 0=ダーク, 1=ライト, 2=システム
+  bool _showFetchTimer = true; // メインアプリの設定から同期
   final Set<String> _expandedPostIds = {};
   final Set<String> _newPostIds = {};
 
@@ -73,6 +74,9 @@ class _OverlayTimelineScreenState extends State<OverlayTimelineScreen> {
               _fetchRemaining = fetch['remaining'] as int? ?? 0;
               _fetchTotal = fetch['total'] as int? ?? 0;
               _isFetching = fetch['isFetching'] as bool? ?? false;
+            }
+            if (decoded.containsKey('showFetchTimer')) {
+              _showFetchTimer = decoded['showFetchTimer'] as bool? ?? true;
             }
           } else {
             postList = decoded as List<dynamic>;
@@ -550,8 +554,10 @@ class _OverlayTimelineScreenState extends State<OverlayTimelineScreen> {
                               children: [
                                 Icon(Icons.drag_indicator,
                                     color: _theme.iconColor, size: 16),
-                                const SizedBox(width: 4),
-                                _buildFetchTimer(),
+                                if (_showFetchTimer) ...[
+                                  const SizedBox(width: 4),
+                                  _buildFetchTimer(),
+                                ],
                               ],
                             ),
                           ),

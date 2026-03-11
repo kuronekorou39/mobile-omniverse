@@ -9,12 +9,14 @@ import '../models/post.dart';
 import '../models/sns_service.dart';
 import '../providers/activity_log_provider.dart';
 import '../providers/feed_provider.dart';
+import '../providers/notification_badge_provider.dart';
 import '../providers/settings_provider.dart';
 import '../providers/account_provider.dart';
 import '../services/account_storage_service.dart';
 import '../services/x_api_service.dart';
 import '../services/bluesky_api_service.dart';
 import '../services/app_update_service.dart';
+import '../services/timeline_fetch_scheduler.dart';
 import '../models/account.dart';
 import '../widgets/account_picker_modal.dart';
 import '../widgets/post_card.dart';
@@ -56,6 +58,11 @@ class _OmniFeedScreenState extends ConsumerState<OmniFeedScreen>
     WidgetsBinding.instance.addObserver(this);
     _scrollController.addListener(_onScroll);
     _startCountdownTimer();
+    // スケジューラのサイクル完了時に通知バッジをチェック
+    TimelineFetchScheduler.instance.onCycleComplete = () {
+      ref.read(notificationBadgeProvider.notifier).onSchedulerCycle();
+    };
+
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _checkPendingPostDetail();
       _checkForUpdate();
@@ -505,12 +512,19 @@ class _OmniFeedScreenState extends ConsumerState<OmniFeedScreen>
                 ),
           actions: [
             IconButton(
-              icon: const Icon(Icons.notifications_outlined),
-              tooltip: '通知',
-              onPressed: () => Navigator.of(context).push(
-                MaterialPageRoute(
-                    builder: (_) => const NotificationsScreen()),
+              icon: Badge(
+                isLabelVisible: ref.watch(notificationBadgeProvider),
+                smallSize: 8,
+                child: const Icon(Icons.notifications_outlined),
               ),
+              tooltip: '通知',
+              onPressed: () {
+                ref.read(notificationBadgeProvider.notifier).markSeen();
+                Navigator.of(context).push(
+                  MaterialPageRoute(
+                      builder: (_) => const NotificationsScreen()),
+                );
+              },
             ),
             IconButton(
               icon: const Icon(Icons.picture_in_picture_alt),
@@ -858,6 +872,16 @@ class _OmniFeedScreenState extends ConsumerState<OmniFeedScreen>
               key: ValueKey(post.id),
               post: post,
               accountHandle: accountHandle,
+              onQuoteRepost: () async {
+                final posted = await Navigator.of(context).push<bool>(
+                  MaterialPageRoute(
+                    builder: (_) => ComposeScreen(quotedPost: post),
+                  ),
+                );
+                if (posted == true) {
+                  ref.read(feedProvider.notifier).refresh();
+                }
+              },
               onTap: () {
                 Navigator.of(context).push(
                   PageRouteBuilder(

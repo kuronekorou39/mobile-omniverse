@@ -32,6 +32,9 @@ class TimelineFetchScheduler {
   void Function(String accountHandle, SnsService platform, bool success,
       int postCount, String? error)? onFetchLog;
 
+  /// フェッチサイクル完了時のコールバック（通知バッジチェック等）
+  void Function()? onCycleComplete;
+
   /// Bluesky トークンリフレッシュ通知コールバック
   void Function(String accountHandle, bool success)? onTokenRefresh;
 
@@ -93,6 +96,8 @@ class TimelineFetchScheduler {
     if (allPosts.isNotEmpty) {
       onPostsFetched?.call(allPosts);
     }
+
+    onCycleComplete?.call();
   }
 
   /// 全有効アカウントの過去の投稿を並列取得 (カーソルベース)

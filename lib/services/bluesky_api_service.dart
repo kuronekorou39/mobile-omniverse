@@ -236,10 +236,29 @@ class BlueskyApiService {
   }
 
   /// 投稿を作成
-  Future<bool> createPost(BlueskyCredentials creds, String text) async {
+  Future<bool> createPost(BlueskyCredentials creds, String text,
+      {String? quoteUri, String? quoteCid}) async {
     final uri = Uri.parse(
       '${creds.pdsUrl}/xrpc/com.atproto.repo.createRecord',
     );
+
+    final record = <String, dynamic>{
+      '\$type': 'app.bsky.feed.post',
+      'text': text,
+      'createdAt': DateTime.now().toUtc().toIso8601String(),
+    };
+
+    // 引用リポスト
+    if (quoteUri != null && quoteCid != null) {
+      record['embed'] = {
+        '\$type': 'app.bsky.embed.record',
+        'record': {
+          'uri': quoteUri,
+          'cid': quoteCid,
+        },
+      };
+    }
+
     final response = await (httpClientOverride ?? http.Client()).post(
       uri,
       headers: {
@@ -249,11 +268,7 @@ class BlueskyApiService {
       body: json.encode({
         'repo': creds.did,
         'collection': 'app.bsky.feed.post',
-        'record': {
-          '\$type': 'app.bsky.feed.post',
-          'text': text,
-          'createdAt': DateTime.now().toUtc().toIso8601String(),
-        },
+        'record': record,
       }),
     );
     debugPrint('[BlueskyApi] createPost: ${response.statusCode}');

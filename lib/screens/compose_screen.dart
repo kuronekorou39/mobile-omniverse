@@ -1,19 +1,24 @@
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../models/account.dart';
 import '../models/activity_log.dart';
+import '../models/post.dart';
 import '../models/sns_service.dart';
 import '../providers/activity_log_provider.dart';
 import '../services/account_storage_service.dart';
 import '../services/bluesky_api_service.dart';
 import '../services/x_api_service.dart';
 import '../services/x_webview_action_service.dart';
+import '../utils/image_headers.dart';
 import '../widgets/sns_badge.dart';
 import 'browser_post_debug_screen.dart';
 
 class ComposeScreen extends ConsumerStatefulWidget {
-  const ComposeScreen({super.key});
+  const ComposeScreen({super.key, this.quotedPost});
+
+  final Post? quotedPost;
 
   @override
   ConsumerState<ComposeScreen> createState() => _ComposeScreenState();
@@ -24,8 +29,15 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
   Account? _selectedAccount;
   bool _isPosting = false;
 
-  List<Account> get _accounts =>
-      AccountStorageService.instance.accounts.where((a) => a.isEnabled).toList();
+  List<Account> get _accounts {
+    final all = AccountStorageService.instance.accounts.where((a) => a.isEnabled).toList();
+    // 引用リポスト時は同じプラットフォームのアカウントのみ表示
+    final quoted = widget.quotedPost;
+    if (quoted != null) {
+      return all.where((a) => a.service == quoted.source).toList();
+    }
+    return all;
+  }
 
   @override
   void initState() {
@@ -62,14 +74,25 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
 
       if (account.service == SnsService.x) {
         // WebView 経由で投稿 (ブラウザ環境を利用してbot検知を回避)
+        String? attachmentUrl;
+        if (widget.quotedPost != null && widget.quotedPost!.permalink != null) {
+          attachmentUrl = widget.quotedPost!.permalink;
+        }
         final wvResult = await XWebViewActionService.instance
-            .createTweet(account.xCredentials, text);
+            .createTweet(account.xCredentials, text, attachmentUrl: attachmentUrl);
         success = wvResult.success;
         statusCode = wvResult.statusCode;
         responseSnippet = '[WebView] ${wvResult.body.length > 500 ? '${wvResult.body.substring(0, 500)}...' : wvResult.body}';
       } else {
+        String? quoteUri;
+        String? quoteCid;
+        if (widget.quotedPost != null) {
+          quoteUri = widget.quotedPost!.uri;
+          quoteCid = widget.quotedPost!.cid;
+        }
         success = await BlueskyApiService.instance
-            .createPost(account.blueskyCredentials, text);
+            .createPost(account.blueskyCredentials, text,
+                quoteUri: quoteUri, quoteCid: quoteCid);
       }
 
       ref.read(activityLogProvider.notifier).logAction(
@@ -121,7 +144,7 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('投稿'),
+        title: Text(widget.quotedPost != null ? '引用リポスト' : '投稿'),
         actions: [
           // ブラウザ投稿デバッグ（Xアカウント選択時のみ）
           if (_selectedAccount?.service == SnsService.x)
@@ -174,6 +197,24 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
                     value: account,
                     child: Row(
                       children: [
+                        CircleAvatar(
+                          radius: 14,
+                          backgroundImage: account.avatarUrl != null
+                              ? CachedNetworkImageProvider(
+                                  account.avatarUrl!,
+                                  headers: kImageHeaders,
+                                )
+                              : null,
+                          child: account.avatarUrl == null
+                              ? Text(
+                                  account.displayName.isNotEmpty
+                                      ? account.displayName[0]
+                                      : '?',
+                                  style: const TextStyle(fontSize: 14),
+                                )
+                              : null,
+                        ),
+                        const SizedBox(width: 8),
                         SnsBadge(service: account.service),
                         const SizedBox(width: 8),
                         Expanded(
@@ -196,6 +237,24 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
               padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
               child: Row(
                 children: [
+                  CircleAvatar(
+                    radius: 14,
+                    backgroundImage: _selectedAccount!.avatarUrl != null
+                        ? CachedNetworkImageProvider(
+                            _selectedAccount!.avatarUrl!,
+                            headers: kImageHeaders,
+                          )
+                        : null,
+                    child: _selectedAccount!.avatarUrl == null
+                        ? Text(
+                            _selectedAccount!.displayName.isNotEmpty
+                                ? _selectedAccount!.displayName[0]
+                                : '?',
+                            style: const TextStyle(fontSize: 14),
+                          )
+                        : null,
+                  ),
+                  const SizedBox(width: 8),
                   SnsBadge(service: _selectedAccount!.service),
                   const SizedBox(width: 8),
                   Text(
@@ -224,6 +283,76 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
               ),
             ),
           ),
+
+          // 引用元プレビュー
+          if (widget.quotedPost != null)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+              child: Container(
+                decoration: BoxDecoration(
+                  border: Border.all(color: Colors.grey.withValues(alpha: 0.3)),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                padding: const EdgeInsets.all(10),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        CircleAvatar(
+                          radius: 10,
+                          backgroundImage: widget.quotedPost!.avatarUrl != null
+                              ? CachedNetworkImageProvider(
+                                  widget.quotedPost!.avatarUrl!,
+                                  headers: kImageHeaders,
+                                )
+                              : null,
+                          child: widget.quotedPost!.avatarUrl == null
+                              ? Text(
+                                  widget.quotedPost!.username.isNotEmpty
+                                      ? widget.quotedPost!.username[0]
+                                      : '?',
+                                  style: const TextStyle(fontSize: 10),
+                                )
+                              : null,
+                        ),
+                        const SizedBox(width: 6),
+                        Flexible(
+                          child: Text(
+                            widget.quotedPost!.username,
+                            style: const TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 13,
+                            ),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                        const SizedBox(width: 4),
+                        Flexible(
+                          child: Text(
+                            widget.quotedPost!.handle,
+                            style: TextStyle(
+                              color: Colors.grey[600],
+                              fontSize: 12,
+                            ),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      ],
+                    ),
+                    if (widget.quotedPost!.body.isNotEmpty) ...[
+                      const SizedBox(height: 4),
+                      Text(
+                        widget.quotedPost!.body,
+                        maxLines: 3,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(fontSize: 13),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            ),
 
           // 文字数カウンター
           Padding(

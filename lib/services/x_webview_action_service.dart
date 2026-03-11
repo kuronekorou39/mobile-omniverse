@@ -86,20 +86,26 @@ class XWebViewActionService {
 
   /// WebView 内の fetch() でツイート投稿
   Future<({bool success, int statusCode, String body})> createTweet(
-      XCredentials creds, String text) async {
+      XCredentials creds, String text, {String? attachmentUrl}) async {
     final queryId = XQueryIdService.instance.getQueryId('CreateTweet', creds: creds);
     final featuresJson = json.encode(XFeatures.createTweet);
+
+    final variables = <String, dynamic>{
+      'tweet_text': text,
+      'media': {'media_entities': <dynamic>[], 'possibly_sensitive': false},
+      'semantic_annotation_ids': <dynamic>[],
+      'disallowed_reply_options': null,
+    };
+
+    if (attachmentUrl != null) {
+      variables['attachment_url'] = attachmentUrl;
+    }
 
     return _executeMutationWithFeatures(
       creds,
       queryId,
       'CreateTweet',
-      {
-        'tweet_text': text,
-        'media': {'media_entities': <dynamic>[], 'possibly_sensitive': false},
-        'semantic_annotation_ids': <dynamic>[],
-        'disallowed_reply_options': null,
-      },
+      variables,
       featuresJson,
     );
   }

@@ -17,6 +17,7 @@ class PostCard extends StatelessWidget {
     this.onTap,
     this.onLike,
     this.onRepost,
+    this.onQuoteRepost,
   });
 
   final Post post;
@@ -24,6 +25,7 @@ class PostCard extends StatelessWidget {
   final VoidCallback? onTap;
   final VoidCallback? onLike;
   final VoidCallback? onRepost;
+  final VoidCallback? onQuoteRepost;
 
   String _formatTimestamp(DateTime timestamp) {
     final diff = DateTime.now().difference(timestamp);
@@ -32,6 +34,35 @@ class PostCard extends StatelessWidget {
     if (diff.inHours < 24) return '${diff.inHours}h';
     if (diff.inDays < 7) return '${diff.inDays}d';
     return '${timestamp.month}/${timestamp.day}';
+  }
+
+  void _showRepostMenu(BuildContext context) {
+    showModalBottomSheet(
+      context: context,
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.repeat),
+              title: const Text('リポスト'),
+              onTap: () {
+                Navigator.pop(ctx);
+                onRepost?.call();
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.format_quote),
+              title: const Text('引用リポスト'),
+              onTap: () {
+                Navigator.pop(ctx);
+                onQuoteRepost?.call();
+              },
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   @override
@@ -150,18 +181,14 @@ class PostCard extends StatelessWidget {
                   ? CachedNetworkImage(
                       imageUrl: quoted.avatarUrl!,
                       httpHeaders: kImageHeaders,
+                      fadeInDuration: Duration.zero,
                       imageBuilder: (context, imageProvider) => CircleAvatar(
                         radius: 10,
                         backgroundImage: imageProvider,
                       ),
-                      placeholder: (context, url) => CircleAvatar(
+                      placeholder: (context, url) => const CircleAvatar(
                         radius: 10,
-                        child: Text(
-                          quoted.username.isNotEmpty
-                              ? quoted.username[0].toUpperCase()
-                              : '?',
-                          style: const TextStyle(fontSize: 10),
-                        ),
+                        backgroundColor: Colors.grey,
                       ),
                       errorWidget: (context, url, error) => CircleAvatar(
                         radius: 10,
@@ -243,17 +270,14 @@ class PostCard extends StatelessWidget {
               ? CachedNetworkImage(
                   imageUrl: post.avatarUrl!,
                   httpHeaders: kImageHeaders,
+                  fadeInDuration: Duration.zero,
                   imageBuilder: (context, imageProvider) => CircleAvatar(
                     radius: 20,
                     backgroundImage: imageProvider,
                   ),
-                  placeholder: (context, url) => CircleAvatar(
+                  placeholder: (context, url) => const CircleAvatar(
                     radius: 20,
-                    child: Text(
-                      post.username.isNotEmpty
-                          ? post.username[0].toUpperCase()
-                          : '?',
-                    ),
+                    backgroundColor: Colors.grey,
                   ),
                   errorWidget: (context, url, error) => CircleAvatar(
                     radius: 20,
@@ -292,38 +316,13 @@ class PostCard extends StatelessWidget {
                   SnsBadge(service: post.source),
                 ],
               ),
-              Row(
-                children: [
-                  Flexible(
-                    child: Text(
-                      post.handle,
-                      style: TextStyle(
-                        color: Colors.grey[600],
-                        fontSize: 13,
-                      ),
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ),
-                  if (accountHandle != null) ...[
-                    Text(
-                      ' via ',
-                      style: TextStyle(
-                        color: Colors.grey[500],
-                        fontSize: 11,
-                      ),
-                    ),
-                    Flexible(
-                      child: Text(
-                        accountHandle,
-                        style: TextStyle(
-                          color: Colors.grey[500],
-                          fontSize: 11,
-                        ),
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ),
-                  ],
-                ],
+              Text(
+                post.handle,
+                style: TextStyle(
+                  color: Colors.grey[600],
+                  fontSize: 13,
+                ),
+                overflow: TextOverflow.ellipsis,
               ),
             ],
           ),
@@ -356,36 +355,54 @@ class PostCard extends StatelessWidget {
         _EngagementButton(
           icon: Icons.repeat,
           count: post.repostCount,
-          color: post.isReposted ? Colors.green : iconColor,
+          color: iconColor,
           iconSize: iconSize,
           fontSize: fontSize,
-          onTap: onRepost,
+          onTap: onRepost != null
+              ? () => _showRepostMenu(context)
+              : null,
           isActive: post.isReposted,
         ),
         // Like
         _EngagementButton(
-          icon: post.isLiked ? Icons.favorite : Icons.favorite_border,
+          icon: Icons.favorite_border,
           count: post.likeCount,
-          color: post.isLiked ? Colors.red : iconColor,
+          color: iconColor,
           iconSize: iconSize,
           fontSize: fontSize,
           onTap: onLike,
           isActive: post.isLiked,
         ),
-        // Share
-        IconButton(
-          icon: Icon(Icons.share_outlined, size: iconSize, color: iconColor),
-          onPressed: post.permalink != null
-              ? () async {
-                  final uri = Uri.tryParse(post.permalink!);
-                  if (uri != null) {
-                    await launchUrl(uri, mode: LaunchMode.externalApplication);
-                  }
-                }
-              : null,
-          padding: EdgeInsets.zero,
-          constraints: const BoxConstraints(),
-          visualDensity: VisualDensity.compact,
+        // Share + via account
+        Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (accountHandle != null)
+              Padding(
+                padding: const EdgeInsets.only(right: 6),
+                child: Text(
+                  'via $accountHandle',
+                  style: TextStyle(
+                    color: Colors.grey[500],
+                    fontSize: 10,
+                  ),
+                ),
+              ),
+            IconButton(
+              icon: Icon(Icons.share_outlined, size: iconSize, color: iconColor),
+              onPressed: post.permalink != null
+                  ? () async {
+                      final uri = Uri.tryParse(post.permalink!);
+                      if (uri != null) {
+                        await launchUrl(uri, mode: LaunchMode.externalApplication);
+                      }
+                    }
+                  : null,
+              padding: EdgeInsets.zero,
+              constraints: const BoxConstraints(),
+              visualDensity: VisualDensity.compact,
+            ),
+          ],
         ),
       ],
     );

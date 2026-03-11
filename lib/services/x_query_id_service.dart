@@ -34,7 +34,7 @@ class XQueryIdService {
     'UserByScreenName': 'xmU_MTpREJBz1I14LU744A',
     'UserTweets': 'E3opETHurmVJflFsUBVuUQ',
     'UserMedia': 'dexO_2tohK86JDlXOGVk-w',
-    'CreateTweet': 'a1p9RWpkYKBjWv_I3WzS-A',
+    'CreateTweet': 'RXKQMYyEqEjGgWpcSP6LBw',
   };
 
   /// グローバルキャッシュ (旧形式・マイグレーション用)

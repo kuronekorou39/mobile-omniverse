@@ -4,9 +4,11 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 
 import '../models/account.dart';
+import 'x_features.dart';
+import 'x_query_id_service.dart';
 
 /// X の CDN が x-client-transaction-id を暗号学的に検証するエンドポイント
-/// (CreateRetweet, DeleteRetweet 等) を、隠し WebView 経由で実行するサービス。
+/// (CreateTweet, CreateRetweet, DeleteRetweet 等) を、隠し WebView 経由で実行するサービス。
 /// WebView はブラウザとして正規のヘッダーを自動生成するため、検証を通過できる。
 class XWebViewActionService {
   XWebViewActionService._();
@@ -15,14 +17,28 @@ class XWebViewActionService {
   HeadlessInAppWebView? _webView;
   InAppWebViewController? _controller;
   bool _isReady = false;
-  final _readyCompleter = Completer<void>();
+  Completer<void>? _readyCompleter;
+  String? _currentAuthToken; // 現在初期化中のアカウント
 
   /// WebView を初期化 (x.com にアクセスして Cookie を設定)
+  /// アカウントが変わった場合は再初期化する
   Future<void> init(XCredentials creds) async {
-    if (_isReady) return;
+    // 同一アカウントで初期化済みならスキップ
+    if (_isReady && _currentAuthToken == creds.authToken) return;
 
-    // Cookie を設定
+    // 別アカウント or 未初期化 → 再初期化
+    if (_isReady || _webView != null) {
+      dispose();
+    }
+
+    _currentAuthToken = creds.authToken;
+    _readyCompleter = Completer<void>();
+    debugPrint('[XWebView] init: clearing old cookies, setting new ones');
+
+    // 前アカウントの Cookie を完全クリアしてから新しく設定
     final cookieManager = CookieManager.instance();
+    await cookieManager.deleteAllCookies();
+
     final cookies = creds.allCookies.split('; ');
     for (final cookie in cookies) {
       final idx = cookie.indexOf('=');
@@ -36,19 +52,23 @@ class XWebViewActionService {
         domain: '.x.com',
       );
     }
+    debugPrint('[XWebView] init: set ${cookies.length} cookies for ${creds.authToken.substring(0, 8)}...');
 
     _webView = HeadlessInAppWebView(
       initialUrlRequest: URLRequest(url: WebUri('https://x.com')),
       initialSettings: InAppWebViewSettings(
         javaScriptEnabled: true,
         userAgent:
-            'Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36',
+            'Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36',
       ),
       onLoadStop: (controller, url) {
+        debugPrint('[XWebView] onLoadStop: $url');
         _controller = controller;
         if (!_isReady) {
           _isReady = true;
-          if (!_readyCompleter.isCompleted) _readyCompleter.complete();
+          if (_readyCompleter != null && !_readyCompleter!.isCompleted) {
+            _readyCompleter!.complete();
+          }
         }
       },
     );
@@ -56,11 +76,31 @@ class XWebViewActionService {
     await _webView!.run();
 
     // 最大 15 秒待機
-    await _readyCompleter.future.timeout(
+    await _readyCompleter!.future.timeout(
       const Duration(seconds: 15),
       onTimeout: () {
         debugPrint('[XWebView] Timeout waiting for page load');
       },
+    );
+  }
+
+  /// WebView 内の fetch() でツイート投稿
+  Future<({bool success, int statusCode, String body})> createTweet(
+      XCredentials creds, String text) async {
+    final queryId = XQueryIdService.instance.getQueryId('CreateTweet', creds: creds);
+    final featuresJson = json.encode(XFeatures.createTweet);
+
+    return _executeMutationWithFeatures(
+      creds,
+      queryId,
+      'CreateTweet',
+      {
+        'tweet_text': text,
+        'media': {'media_entities': <dynamic>[], 'possibly_sensitive': false},
+        'semantic_annotation_ids': <dynamic>[],
+        'disallowed_reply_options': null,
+      },
+      featuresJson,
     );
   }
 
@@ -83,13 +123,103 @@ class XWebViewActionService {
     });
   }
 
+  /// features 付きミューテーション (CreateTweet 用)
+  Future<({bool success, int statusCode, String body})>
+      _executeMutationWithFeatures(
+    XCredentials creds,
+    String queryId,
+    String operationName,
+    Map<String, dynamic> variables,
+    String featuresJson,
+  ) async {
+    if (_controller == null || _currentAuthToken != creds.authToken) {
+      await init(creds);
+    }
+    if (_controller == null) {
+      return (success: false, statusCode: 0, body: 'WebView not ready');
+    }
+
+    final ct0 = creds.ct0;
+
+    // リクエストボディ全体を Dart 側で構築して JS に文字列として渡す
+    final requestBody = json.encode({
+      'variables': variables,
+      'features': json.decode(featuresJson),
+      'queryId': queryId,
+    });
+
+    // callAsyncJavaScript を使って Promise を正しく await する
+    final jsBody = '''
+      try {
+        var url = "https://x.com/i/api/graphql/" + queryId_ + "/$operationName";
+        var resp = await fetch(url, {
+          method: "POST",
+          headers: {
+            "Authorization": "Bearer AAAAAAAAAAAAAAAAAAAAANRILgAAAAAAnNwIzUejRCOuH5E6I8xnZz4puTs%3D1Zv7ttfk8LF81IUq16cHjhLTvJu4FA33AGWWjCpTnA",
+            "Content-Type": "application/json",
+            "x-csrf-token": ct0_,
+            "x-twitter-auth-type": "OAuth2Session",
+            "x-twitter-active-user": "yes",
+            "x-twitter-client-language": "en"
+          },
+          credentials: "include",
+          body: body_
+        });
+        var text = await resp.text();
+        return JSON.stringify({status: resp.status, body: text});
+      } catch(e) {
+        return JSON.stringify({status: 0, body: "JS_ERROR: " + e.toString() + " | " + (e.stack || "")});
+      }
+    ''';
+
+    try {
+      debugPrint('[XWebView] $operationName: queryId=$queryId isReady=$_isReady');
+      final jsResult = await _controller!.callAsyncJavaScript(
+        functionBody: jsBody,
+        arguments: {'queryId_': queryId, 'ct0_': ct0, 'body_': requestBody},
+      );
+
+      debugPrint('[XWebView] $operationName: raw=${jsResult?.value}');
+
+      if (jsResult?.value == null) {
+        return (success: false, statusCode: 0, body: 'null result from JS');
+      }
+
+      final parsed =
+          json.decode(jsResult!.value.toString()) as Map<String, dynamic>;
+      final statusCode = parsed['status'] as int? ?? 0;
+      final body = parsed['body'] as String? ?? '';
+
+      debugPrint('[XWebView] $operationName: status=$statusCode body=${body.length > 300 ? '${body.substring(0, 300)}...' : body}');
+
+      // 成功判定（200でもerrors配列があれば失敗）
+      if (statusCode == 200) {
+        try {
+          final respBody = json.decode(body);
+          if (respBody is Map<String, dynamic> &&
+              respBody.containsKey('errors')) {
+            final errors = respBody['errors'] as List?;
+            if (errors != null && errors.isNotEmpty) {
+              return (success: false, statusCode: statusCode, body: body);
+            }
+          }
+        } catch (_) {}
+      }
+
+      return (success: statusCode == 200, statusCode: statusCode, body: body);
+    } catch (e) {
+      debugPrint('[XWebView] $operationName dart error: $e');
+      return (success: false, statusCode: 0, body: e.toString());
+    }
+  }
+
   Future<({bool success, int statusCode, String body})> _executeMutation(
     XCredentials creds,
     String queryId,
     String operationName,
     Map<String, dynamic> variables,
   ) async {
-    if (_controller == null) {
+    if (_controller == null || _currentAuthToken != creds.authToken) {
       await init(creds);
     }
     if (_controller == null) {
@@ -116,7 +246,7 @@ class XWebViewActionService {
               "x-csrf-token": "$ct0",
               "x-twitter-auth-type": "OAuth2Session",
               "x-twitter-active-user": "yes",
-              "x-twitter-client-language": "ja"
+              "x-twitter-client-language": "en"
             },
             credentials: "include"
           });
@@ -156,5 +286,7 @@ class XWebViewActionService {
     _webView = null;
     _controller = null;
     _isReady = false;
+    _readyCompleter = null;
+    _currentAuthToken = null;
   }
 }

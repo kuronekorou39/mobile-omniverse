@@ -72,35 +72,51 @@ class XApiService {
     return base64Url.encode(bytes).replaceAll('=', '');
   }
 
+  /// 送信する Cookie 文字列から ct0 を抽出
+  String _ct0FromCookie(String cookie) {
+    final m = RegExp(r'(?:^|;\s*)ct0=([^;]+)').firstMatch(cookie);
+    return m?.group(1) ?? '';
+  }
+
   Map<String, String> _buildHeaders(XCredentials creds,
-          {bool form = false, String? cookieOverride}) =>
-      {
+          {bool form = false, String? cookieOverride}) {
+    final cookie = cookieOverride ?? creds.cookieHeader;
+    // x-csrf-token は必ず送信する Cookie 内の ct0 と一致させる
+    final ct0 = _ct0FromCookie(cookie);
+    return {
         'Authorization': 'Bearer $_bearerToken',
-        'x-csrf-token': _getCt0(creds),
-        'Cookie': cookieOverride ?? creds.cookieHeader,
+        'x-csrf-token': ct0,
+        'Cookie': cookie,
         'Content-Type': form
             ? 'application/x-www-form-urlencoded'
             : 'application/json',
         'User-Agent':
-            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+            'Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36',
         'Origin': 'https://x.com',
         'Referer': 'https://x.com/',
         'x-twitter-active-user': 'yes',
         'x-twitter-auth-type': 'OAuth2Session',
         'x-twitter-client-language': 'ja',
         'x-client-transaction-id': _generateTransactionId(),
-      };
+    };
+  }
 
   /// ミューテーション前にGETで最新 Cookie を取得しマージする
   /// ブラウザが自動で行う Cookie 更新を再現する
   Future<String> _warmCookies(XCredentials creds) async {
     try {
+      // account/settings.json は404を返すため、通知件数API（軽量GET）で代替
       final uri = Uri.parse(
-          'https://x.com/i/api/1.1/account/settings.json');
+          'https://x.com/i/api/2/badge_count/badge_count.json?supports_ntab_urt=1');
       final response = await _client.get(uri, headers: _buildHeaders(creds));
 
+      debugPrint('[XApi] warmCookies: status=${response.statusCode}');
+
       final setCookie = response.headers['set-cookie'];
-      if (setCookie == null || setCookie.isEmpty) return creds.cookieHeader;
+      if (setCookie == null || setCookie.isEmpty) {
+        debugPrint('[XApi] warmCookies: no set-cookie header');
+        return creds.cookieHeader;
+      }
 
       // 既存 Cookie をパース
       final merged = <String, String>{};
@@ -111,15 +127,23 @@ class XApiService {
         }
       }
 
-      // Set-Cookie から各 Cookie 値を抽出してマージ
-      for (final name in merged.keys.toList()) {
-        final match = RegExp('(?:^|[,;]\\s*)${RegExp.escape(name)}=([^;,]+)')
-            .firstMatch(setCookie);
-        if (match != null) {
-          final newVal = match.group(1)!.trim();
-          if (merged[name] != newVal) merged[name] = newVal;
+      // Set-Cookie を個別の cookie ごとに分割してパース
+      // Set-Cookie ヘッダーは "name=value; path=/; ..., name2=value2; ..." 形式
+      final setCookieParts = setCookie.split(RegExp(r',\s*(?=[A-Za-z_]+=)'));
+      final updated = <String>[];
+      for (final part in setCookieParts) {
+        final m = RegExp(r'^([A-Za-z_][A-Za-z0-9_]*)=([^;]*)').firstMatch(part.trim());
+        if (m != null) {
+          final name = m.group(1)!;
+          final value = m.group(2)!;
+          if (merged.containsKey(name) && merged[name] != value) {
+            updated.add(name);
+          }
+          merged[name] = value; // 既存にないCookieも追加
         }
       }
+
+      debugPrint('[XApi] warmCookies: updated=[${updated.join(",")}] total=${merged.length}');
 
       // ct0 が更新された場合は内部トラッカーも更新
       final ct0Val = merged['ct0'];
@@ -623,83 +647,142 @@ class XApiService {
     return response.statusCode == 200;
   }
 
-  /// ツイートを投稿
-  /// まず GraphQL CreateTweet を試み、226 エラーの場合は REST v1.1 にフォールバック
+  /// ツイートを投稿 (GraphQL CreateTweet)
+  /// 226 (bot detection) の場合はリトライせず即失敗を返す
   Future<XApiResult> createTweet(XCredentials creds, String text) async {
+    // --- Cookie 詳細 (key=value の先頭16文字ずつ) ---
+    final cookiePairs = <String>[];
+    for (final pair in creds.cookieHeader.split('; ')) {
+      final eq = pair.indexOf('=');
+      if (eq > 0) {
+        final name = pair.substring(0, eq);
+        final val = pair.substring(eq + 1);
+        final preview = val.length > 16 ? '${val.substring(0, 16)}…' : val;
+        cookiePairs.add('$name=$preview');
+      }
+    }
+
     final warmedCookies = await _warmCookies(creds);
+
+    // warmed で変化した Cookie を検出
+    final warmedMap = <String, String>{};
+    for (final pair in warmedCookies.split('; ')) {
+      final eq = pair.indexOf('=');
+      if (eq > 0) warmedMap[pair.substring(0, eq)] = pair.substring(eq + 1);
+    }
+    final origMap = <String, String>{};
+    for (final pair in creds.cookieHeader.split('; ')) {
+      final eq = pair.indexOf('=');
+      if (eq > 0) origMap[pair.substring(0, eq)] = pair.substring(eq + 1);
+    }
+    final changedCookies = <String>[];
+    for (final key in warmedMap.keys) {
+      if (origMap[key] != warmedMap[key]) {
+        changedCookies.add(key);
+      }
+    }
 
     // --- GraphQL CreateTweet ---
     final queryId = _getMutationQueryId('CreateTweet', creds);
     final gqlUri =
         Uri.parse('https://x.com/i/api/graphql/$queryId/CreateTweet');
+    final headers = _buildHeaders(creds, cookieOverride: warmedCookies);
+
+    // リクエスト詳細を構築（アクティビティログ用）
+    final reqLines = StringBuffer();
+    reqLines.writeln('=== Headers ===');
+    for (final entry in headers.entries) {
+      if (entry.key == 'Cookie') {
+        reqLines.writeln('Cookie: (${entry.value.length} chars)');
+      } else {
+        reqLines.writeln('${entry.key}: ${entry.value}');
+      }
+    }
+    reqLines.writeln('=== Cookies (orig) ===');
+    for (final p in cookiePairs) {
+      reqLines.writeln(p);
+    }
+    if (changedCookies.isNotEmpty) {
+      reqLines.writeln('=== warmCookies changed ===');
+      for (final key in changedCookies) {
+        final oldVal = origMap[key] ?? '(none)';
+        final newVal = warmedMap[key] ?? '(none)';
+        reqLines.writeln('$key: ${oldVal.length > 16 ? "${oldVal.substring(0,16)}…" : oldVal} → ${newVal.length > 16 ? "${newVal.substring(0,16)}…" : newVal}');
+      }
+    } else {
+      reqLines.writeln('=== warmCookies: no changes ===');
+    }
+    reqLines.writeln('=== Endpoint ===');
+    reqLines.writeln('POST $gqlUri');
+    reqLines.writeln('queryId=$queryId');
+    final reqInfo = reqLines.toString();
+
+    debugPrint('[XApi] createTweet POST:\n$reqInfo');
     final gqlResponse = await _client.post(
       gqlUri,
-      headers: _buildHeaders(creds, cookieOverride: warmedCookies),
+      headers: headers,
       body: json.encode({
         'variables': {
           'tweet_text': text,
-          'dark_request': false,
           'media': {'media_entities': [], 'possibly_sensitive': false},
-          'semantic_annotation_ids': [],
+          'semantic_annotation_ids': <dynamic>[],
+          'disallowed_reply_options': null,
         },
         'features': XFeatures.createTweet,
-        'fieldToggles': {
-          'withArticleRichContentState': true,
-          'withArticlePlainText': false,
-          'withGrokAnalyze': false,
-          'withDisallowedReplyControls': false,
-        },
         'queryId': queryId,
       }),
     );
     _updateCt0FromResponse(creds, gqlResponse);
+    debugPrint('[XApi] createTweet(gql): ${gqlResponse.statusCode} body=${_snippet(gqlResponse.body)}');
 
     // GraphQL の成功判定
     bool gqlSuccess = gqlResponse.statusCode == 200;
     bool has226 = false;
+    String? errorSummary;
     if (gqlSuccess) {
       try {
         final body = json.decode(gqlResponse.body);
         if (body is Map<String, dynamic> && body.containsKey('errors')) {
           final errors = body['errors'] as List<dynamic>?;
-          has226 = errors?.any((e) => e is Map && e['code'] == 226) ?? false;
-          gqlSuccess = false;
+          if (errors != null && errors.isNotEmpty) {
+            // エラー概要を生成（アクティビティログ用）
+            final codes = errors
+                .whereType<Map>()
+                .map((e) => 'code=${e['code']} ${e['message'] ?? ''}')
+                .join('; ');
+            errorSummary = codes;
+            has226 = errors.any((e) => e is Map && e['code'] == 226);
+            gqlSuccess = false;
+            if (!has226) {
+              debugPrint('[XApi] createTweet(gql): errors: $codes');
+            }
+          }
         }
       } catch (_) {}
+    } else {
+      errorSummary = 'HTTP ${gqlResponse.statusCode}';
     }
 
     if (gqlSuccess) {
       return XApiResult(
         success: true,
         statusCode: gqlResponse.statusCode,
-        bodySnippet: _snippet(gqlResponse.body),
+        bodySnippet: 'OK',
         apiRoute: 'GraphQL',
+        requestInfo: reqInfo,
       );
     }
 
-    // --- 226 の場合のみ REST v1.1 フォールバック ---
-    if (!has226) {
-      return XApiResult(
-        success: false,
-        statusCode: gqlResponse.statusCode,
-        bodySnippet: _snippet(gqlResponse.body),
-        apiRoute: 'GraphQL',
-      );
+    if (has226) {
+      debugPrint('[XApi] createTweet: GraphQL 226 (bot detection)');
     }
-
-    debugPrint('[XApi] createTweet: GraphQL 226→REST v1.1 fallback');
-    final restResponse = await _client.post(
-      Uri.parse('https://x.com/i/api/1.1/statuses/update.json'),
-      headers: _buildHeaders(creds, form: true, cookieOverride: warmedCookies),
-      body: 'status=${Uri.encodeComponent(text)}',
-    );
-    _updateCt0FromResponse(creds, restResponse);
 
     return XApiResult(
-      success: restResponse.statusCode == 200,
-      statusCode: restResponse.statusCode,
-      bodySnippet: _snippet(restResponse.body),
-      apiRoute: 'REST v1.1',
+      success: false,
+      statusCode: has226 ? 226 : gqlResponse.statusCode,
+      bodySnippet: errorSummary ?? _snippet(gqlResponse.body),
+      apiRoute: 'GraphQL',
+      requestInfo: reqInfo,
     );
   }
 
@@ -1291,6 +1374,7 @@ class XApiResult {
     required this.statusCode,
     this.bodySnippet,
     this.apiRoute,
+    this.requestInfo,
   });
 
   final bool success;
@@ -1299,6 +1383,9 @@ class XApiResult {
 
   /// 使用した API 経路 ('GraphQL' | 'REST v1.1')
   final String? apiRoute;
+
+  /// リクエストの詳細（デバッグ用）
+  final String? requestInfo;
 }
 
 class XApiException implements Exception {

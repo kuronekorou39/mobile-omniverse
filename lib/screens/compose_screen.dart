@@ -8,7 +8,9 @@ import '../providers/activity_log_provider.dart';
 import '../services/account_storage_service.dart';
 import '../services/bluesky_api_service.dart';
 import '../services/x_api_service.dart';
+import '../services/x_webview_action_service.dart';
 import '../widgets/sns_badge.dart';
+import 'browser_post_debug_screen.dart';
 
 class ComposeScreen extends ConsumerStatefulWidget {
   const ComposeScreen({super.key});
@@ -59,11 +61,12 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
       String? responseSnippet;
 
       if (account.service == SnsService.x) {
-        final result =
-            await XApiService.instance.createTweet(account.xCredentials, text);
-        success = result.success;
-        statusCode = result.statusCode;
-        responseSnippet = '[${result.apiRoute ?? "GraphQL"}] ${result.bodySnippet ?? ""}';
+        // WebView 経由で投稿 (ブラウザ環境を利用してbot検知を回避)
+        final wvResult = await XWebViewActionService.instance
+            .createTweet(account.xCredentials, text);
+        success = wvResult.success;
+        statusCode = wvResult.statusCode;
+        responseSnippet = '[WebView] ${wvResult.body.length > 500 ? '${wvResult.body.substring(0, 500)}...' : wvResult.body}';
       } else {
         success = await BlueskyApiService.instance
             .createPost(account.blueskyCredentials, text);
@@ -89,7 +92,9 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
         Navigator.of(context).pop(true);
       } else {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('投稿に失敗しました')),
+          SnackBar(
+            content: Text('投稿に失敗 (${statusCode ?? "?"}). 詳細はアクティビティログで確認'),
+          ),
         );
         setState(() => _isPosting = false);
       }
@@ -118,6 +123,21 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
       appBar: AppBar(
         title: const Text('投稿'),
         actions: [
+          // ブラウザ投稿デバッグ（Xアカウント選択時のみ）
+          if (_selectedAccount?.service == SnsService.x)
+            IconButton(
+              icon: const Icon(Icons.bug_report_outlined, size: 20),
+              tooltip: 'ブラウザで投稿（デバッグ）',
+              onPressed: () {
+                Navigator.of(context).push(
+                  MaterialPageRoute(
+                    builder: (_) => BrowserPostDebugScreen(
+                      account: _selectedAccount!,
+                    ),
+                  ),
+                );
+              },
+            ),
           FilledButton(
             onPressed:
                 _isPosting || _textController.text.trim().isEmpty || _remaining < 0

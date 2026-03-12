@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 
 import '../models/account.dart';
+import 'debug_log_service.dart';
 import 'x_features.dart';
 import 'x_query_id_service.dart';
 
@@ -76,12 +77,17 @@ class XWebViewActionService {
     await _webView!.run();
 
     // 最大 15 秒待機
+    bool timedOut = false;
     await _readyCompleter!.future.timeout(
       const Duration(seconds: 15),
       onTimeout: () {
+        timedOut = true;
         debugPrint('[XWebView] Timeout waiting for page load');
       },
     );
+
+    DebugLogService.instance.log('XWebView',
+        'init complete: cookies=${cookies.length} authToken=${creds.authToken.substring(0, 8)}... isReady=$_isReady timedOut=$timedOut');
   }
 
   /// WebView 内の fetch() でツイート投稿
@@ -178,16 +184,30 @@ class XWebViewActionService {
       }
     ''';
 
+    final sw = Stopwatch()..start();
     try {
       debugPrint('[XWebView] $operationName: queryId=$queryId isReady=$_isReady');
       final jsResult = await _controller!.callAsyncJavaScript(
         functionBody: jsBody,
         arguments: {'queryId_': queryId, 'ct0_': ct0, 'body_': requestBody},
       );
+      sw.stop();
 
-      debugPrint('[XWebView] $operationName: raw=${jsResult?.value}');
+      final rawValue = jsResult?.value?.toString();
+      debugPrint('[XWebView] $operationName: raw=$rawValue');
 
       if (jsResult?.value == null) {
+        DebugLogService.instance.logWebView(
+          tag: 'XWebView',
+          operation: operationName,
+          queryId: queryId,
+          ct0: ct0,
+          requestBody: requestBody,
+          jsRawResult: 'null',
+          error: 'null result from JS',
+          duration: sw.elapsed,
+          extra: {'isReady': _isReady, 'authToken': creds.authToken.substring(0, 8)},
+        );
         return (success: false, statusCode: 0, body: 'null result from JS');
       }
 
@@ -199,6 +219,7 @@ class XWebViewActionService {
       debugPrint('[XWebView] $operationName: status=$statusCode body=${body.length > 300 ? '${body.substring(0, 300)}...' : body}');
 
       // 成功判定（200でもerrors配列があれば失敗）
+      bool success = statusCode == 200;
       if (statusCode == 200) {
         try {
           final respBody = json.decode(body);
@@ -206,15 +227,39 @@ class XWebViewActionService {
               respBody.containsKey('errors')) {
             final errors = respBody['errors'] as List?;
             if (errors != null && errors.isNotEmpty) {
-              return (success: false, statusCode: statusCode, body: body);
+              success = false;
             }
           }
         } catch (_) {}
       }
 
-      return (success: statusCode == 200, statusCode: statusCode, body: body);
+      DebugLogService.instance.logWebView(
+        tag: 'XWebView',
+        operation: operationName,
+        queryId: queryId,
+        ct0: ct0,
+        requestBody: requestBody,
+        jsRawResult: rawValue,
+        statusCode: statusCode,
+        responseBody: body,
+        duration: sw.elapsed,
+        extra: {'isReady': _isReady, 'success': success, 'authToken': creds.authToken.substring(0, 8)},
+      );
+
+      return (success: success, statusCode: statusCode, body: body);
     } catch (e) {
+      sw.stop();
       debugPrint('[XWebView] $operationName dart error: $e');
+      DebugLogService.instance.logWebView(
+        tag: 'XWebView',
+        operation: operationName,
+        queryId: queryId,
+        ct0: ct0,
+        requestBody: requestBody,
+        error: e.toString(),
+        duration: sw.elapsed,
+        extra: {'isReady': _isReady, 'authToken': creds.authToken.substring(0, 8)},
+      );
       return (success: false, statusCode: 0, body: e.toString());
     }
   }
@@ -264,10 +309,22 @@ class XWebViewActionService {
       })()
     ''';
 
+    final sw = Stopwatch()..start();
     try {
       final result = await _controller!.evaluateJavascript(source: js);
+      sw.stop();
 
       if (result == null) {
+        DebugLogService.instance.logWebView(
+          tag: 'XWebView',
+          operation: operationName,
+          queryId: queryId,
+          ct0: ct0,
+          requestBody: variablesJson,
+          jsRawResult: 'null',
+          error: 'null result',
+          duration: sw.elapsed,
+        );
         return (success: false, statusCode: 0, body: 'null result');
       }
 
@@ -277,10 +334,31 @@ class XWebViewActionService {
       final statusCode = parsed['status'] as int? ?? 0;
       final body = parsed['body'] as String? ?? '';
 
+      DebugLogService.instance.logWebView(
+        tag: 'XWebView',
+        operation: operationName,
+        queryId: queryId,
+        ct0: ct0,
+        requestBody: variablesJson,
+        jsRawResult: result.toString(),
+        statusCode: statusCode,
+        responseBody: body,
+        duration: sw.elapsed,
+      );
 
       return (success: statusCode == 200, statusCode: statusCode, body: body);
     } catch (e) {
+      sw.stop();
       debugPrint('[XWebView] $operationName error: $e');
+      DebugLogService.instance.logWebView(
+        tag: 'XWebView',
+        operation: operationName,
+        queryId: queryId,
+        ct0: ct0,
+        requestBody: variablesJson,
+        error: e.toString(),
+        duration: sw.elapsed,
+      );
       return (success: false, statusCode: 0, body: e.toString());
     }
   }

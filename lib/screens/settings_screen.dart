@@ -1,12 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:package_info_plus/package_info_plus.dart';
+import 'package:share_plus/share_plus.dart';
 
 import '../models/account.dart';
 import '../models/sns_service.dart';
 import '../providers/settings_provider.dart';
 import '../services/account_storage_service.dart';
 import '../services/app_update_service.dart';
+import '../services/debug_log_service.dart';
 import '../services/x_query_id_service.dart';
 import '../widgets/update_dialog.dart';
 import 'activity_log_screen.dart';
@@ -266,6 +268,75 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                     ScaffoldMessenger.of(context).showSnackBar(
                       const SnackBar(content: Text('queryId キャッシュを消去しました')),
                     );
+                  }
+                },
+              ),
+              const Divider(),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                child: Text(
+                  '通信ログ',
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.bold,
+                    color: Theme.of(context).colorScheme.primary,
+                  ),
+                ),
+              ),
+              ListTile(
+                leading: const Icon(Icons.storage_outlined),
+                title: const Text('ログサイズ'),
+                subtitle: Text(DebugLogService.instance.logSizeLabel),
+              ),
+              ListTile(
+                leading: const Icon(Icons.download),
+                title: const Text('ログをダウンロード'),
+                subtitle: const Text('共有メニューからファイルとして保存'),
+                onTap: () async {
+                  final path = DebugLogService.instance.logFilePath;
+                  if (path == null) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('ログファイルが見つかりません')),
+                    );
+                    return;
+                  }
+                  final now = DateTime.now();
+                  final ts = '${now.year}${now.month.toString().padLeft(2, '0')}${now.day.toString().padLeft(2, '0')}_${now.hour.toString().padLeft(2, '0')}${now.minute.toString().padLeft(2, '0')}';
+                  await Share.shareXFiles(
+                    [XFile(path, name: 'omniverse_debug_$ts.log')],
+                    text: 'OmniVerse デバッグログ ($ts)',
+                  );
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.delete_sweep),
+                title: const Text('ログをクリア'),
+                onTap: () async {
+                  final confirmed = await showDialog<bool>(
+                    context: context,
+                    builder: (context) => AlertDialog(
+                      title: const Text('ログをクリア'),
+                      content: Text('${DebugLogService.instance.logSizeLabel} のログを削除します。'),
+                      actions: [
+                        TextButton(
+                          onPressed: () => Navigator.of(context).pop(false),
+                          child: const Text('キャンセル'),
+                        ),
+                        TextButton(
+                          onPressed: () => Navigator.of(context).pop(true),
+                          child: const Text('クリア'),
+                        ),
+                      ],
+                    ),
+                  );
+                  if (confirmed == true) {
+                    await DebugLogService.instance.clear();
+                    if (mounted) {
+                      setState(() {});
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('ログをクリアしました')),
+                      );
+                    }
                   }
                 },
               ),

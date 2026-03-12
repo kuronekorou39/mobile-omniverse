@@ -27,7 +27,9 @@ class Post {
     this.retweetedByHandle,
     this.quotedPost,
     this.isSensitive = false,
-  });
+    Set<String>? fetchedByAccountIds,
+  }) : fetchedByAccountIds = fetchedByAccountIds ??
+            (accountId != null ? {accountId} : {});
 
   final String id;
   final SnsService source;
@@ -67,6 +69,9 @@ class Post {
   // Sensitive content flag
   final bool isSensitive;
 
+  // 取得元アカウントID一覧（マージ時に蓄積）
+  final Set<String> fetchedByAccountIds;
+
   factory Post.fromJson(Map<String, dynamic> json, SnsService source,
       {String? accountId}) {
     return Post(
@@ -94,6 +99,7 @@ class Post {
     String? retweetedByHandle,
     Post? quotedPost,
     bool? isSensitive,
+    Set<String>? fetchedByAccountIds,
   }) {
     return Post(
       id: id,
@@ -121,6 +127,7 @@ class Post {
       retweetedByHandle: retweetedByHandle ?? this.retweetedByHandle,
       quotedPost: quotedPost ?? this.quotedPost,
       isSensitive: isSensitive ?? this.isSensitive,
+      fetchedByAccountIds: fetchedByAccountIds ?? this.fetchedByAccountIds,
     );
   }
 
@@ -149,6 +156,7 @@ class Post {
         'retweetedByUsername': retweetedByUsername,
         'retweetedByHandle': retweetedByHandle,
         'isSensitive': isSensitive,
+        'fetchedByAccountIds': fetchedByAccountIds.toList(),
         if (quotedPost != null) 'quotedPost': quotedPost!.toJson(),
       };
 
@@ -196,6 +204,9 @@ class Post {
           ? Post.fromCache(json['quotedPost'] as Map<String, dynamic>)
           : null,
       isSensitive: json['isSensitive'] as bool? ?? false,
+      fetchedByAccountIds: (json['fetchedByAccountIds'] as List<dynamic>?)
+              ?.map((e) => e as String)
+              .toSet(),
     );
   }
 

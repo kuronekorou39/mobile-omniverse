@@ -7,6 +7,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../models/post.dart';
 import '../screens/post_detail_screen.dart';
 import '../screens/user_profile_screen.dart';
+import '../services/account_storage_service.dart';
 import '../utils/image_headers.dart';
 import 'post_media.dart';
 import 'sns_badge.dart';
@@ -15,8 +16,6 @@ class PostCard extends StatelessWidget {
   const PostCard({
     super.key,
     required this.post,
-    this.accountHandle,
-    this.accountAvatarUrl,
     this.onTap,
     this.onLike,
     this.onRepost,
@@ -25,8 +24,6 @@ class PostCard extends StatelessWidget {
   });
 
   final Post post;
-  final String? accountHandle;
-  final String? accountAvatarUrl;
   final VoidCallback? onTap;
   final VoidCallback? onLike;
   final VoidCallback? onRepost;
@@ -98,7 +95,7 @@ class PostCard extends StatelessWidget {
               ],
 
               // Header row
-              _buildHeader(context, accountHandle),
+              _buildHeader(context),
               const SizedBox(height: 8),
 
               // Body text, images, video (wrapped in sensitive overlay if needed)
@@ -268,48 +265,55 @@ class PostCard extends StatelessWidget {
     );
   }
 
-  Widget _buildHeader(BuildContext context, String? accountHandle) {
+  Widget _buildHeader(BuildContext context) {
     return Row(
       children: [
-        // SNS Badge (アバターの左側)
-        SnsBadge(service: post.source, size: 8),
-        const SizedBox(width: 4),
-        // Avatar (タップでプロフィール画面へ)
+        // Avatar + SNS Badge (左上に重ねて表示)
         GestureDetector(
           onTap: () => navigateToUserProfile(context, post: post),
-          child: Hero(
-          tag: 'avatar_${post.id}',
-          child: post.avatarUrl != null
-              ? CachedNetworkImage(
-                  imageUrl: post.avatarUrl!,
-                  httpHeaders: kImageHeaders,
-                  fadeInDuration: Duration.zero,
-                  imageBuilder: (context, imageProvider) => CircleAvatar(
-                    radius: 20,
-                    backgroundImage: imageProvider,
-                  ),
-                  placeholder: (context, url) => const CircleAvatar(
-                    radius: 20,
-                    backgroundColor: Colors.grey,
-                  ),
-                  errorWidget: (context, url, error) => CircleAvatar(
-                    radius: 20,
-                    child: Text(
-                      post.username.isNotEmpty
-                          ? post.username[0].toUpperCase()
-                          : '?',
-                    ),
-                  ),
-                )
-              : CircleAvatar(
-                  radius: 20,
-                  child: Text(
-                    post.username.isNotEmpty
-                        ? post.username[0].toUpperCase()
-                        : '?',
-                  ),
-                ),
-        ),
+          child: Stack(
+            clipBehavior: Clip.none,
+            children: [
+              Hero(
+                tag: 'avatar_${post.id}',
+                child: post.avatarUrl != null
+                    ? CachedNetworkImage(
+                        imageUrl: post.avatarUrl!,
+                        httpHeaders: kImageHeaders,
+                        fadeInDuration: Duration.zero,
+                        imageBuilder: (context, imageProvider) => CircleAvatar(
+                          radius: 20,
+                          backgroundImage: imageProvider,
+                        ),
+                        placeholder: (context, url) => const CircleAvatar(
+                          radius: 20,
+                          backgroundColor: Colors.grey,
+                        ),
+                        errorWidget: (context, url, error) => CircleAvatar(
+                          radius: 20,
+                          child: Text(
+                            post.username.isNotEmpty
+                                ? post.username[0].toUpperCase()
+                                : '?',
+                          ),
+                        ),
+                      )
+                    : CircleAvatar(
+                        radius: 20,
+                        child: Text(
+                          post.username.isNotEmpty
+                              ? post.username[0].toUpperCase()
+                              : '?',
+                        ),
+                      ),
+              ),
+              Positioned(
+                top: -4,
+                left: -6,
+                child: SnsBadge(service: post.source, size: 10),
+              ),
+            ],
+          ),
         ),
         const SizedBox(width: 8),
         Expanded(
@@ -395,36 +399,47 @@ class PostCard extends StatelessWidget {
           constraints: const BoxConstraints(),
           visualDensity: VisualDensity.compact,
         ),
-        // Via account (SNS badge + avatar)
-        if (accountAvatarUrl != null)
+        // 取得元アカウントのアバター一覧
+        if (post.fetchedByAccountIds.isNotEmpty)
           Padding(
             padding: const EdgeInsets.only(left: 6),
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                SnsBadge(service: post.source, size: 8),
-                const SizedBox(width: 3),
-                CachedNetworkImage(
-                  imageUrl: accountAvatarUrl!,
-                  httpHeaders: kImageHeaders,
-                  fadeInDuration: Duration.zero,
-                  imageBuilder: (context, imageProvider) => CircleAvatar(
-                    radius: 7,
-                    backgroundImage: imageProvider,
-                  ),
-                  placeholder: (context, url) => const CircleAvatar(
-                    radius: 7,
-                    backgroundColor: Colors.grey,
-                  ),
-                  errorWidget: (context, url, error) => const CircleAvatar(
-                    radius: 7,
-                    backgroundColor: Colors.grey,
-                  ),
-                ),
+                for (final id in post.fetchedByAccountIds) ...[
+                  if (id != post.fetchedByAccountIds.first)
+                    const SizedBox(width: 2),
+                  _buildViaAvatar(id),
+                ],
               ],
             ),
           ),
       ],
+    );
+  }
+
+  Widget _buildViaAvatar(String accountId) {
+    final account = AccountStorageService.instance.getAccount(accountId);
+    final url = account?.avatarUrl;
+    if (url == null) {
+      return const CircleAvatar(radius: 7, backgroundColor: Colors.grey);
+    }
+    return CachedNetworkImage(
+      imageUrl: url,
+      httpHeaders: kImageHeaders,
+      fadeInDuration: Duration.zero,
+      imageBuilder: (context, imageProvider) => CircleAvatar(
+        radius: 7,
+        backgroundImage: imageProvider,
+      ),
+      placeholder: (context, url) => const CircleAvatar(
+        radius: 7,
+        backgroundColor: Colors.grey,
+      ),
+      errorWidget: (context, url, error) => const CircleAvatar(
+        radius: 7,
+        backgroundColor: Colors.grey,
+      ),
     );
   }
 }

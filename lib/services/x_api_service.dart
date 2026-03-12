@@ -9,6 +9,7 @@ import '../models/account.dart';
 import '../models/notification_item.dart';
 import '../models/post.dart';
 import '../models/sns_service.dart';
+import 'debug_log_service.dart';
 import 'x_bearer_token_service.dart';
 import 'x_features.dart';
 import 'x_query_id_service.dart';
@@ -99,6 +100,30 @@ class XApiService {
         'x-twitter-client-language': 'ja',
         'x-client-transaction-id': _generateTransactionId(),
     };
+  }
+
+  /// HTTP通信をDebugLogServiceに記録
+  void _logResponse(
+    String label,
+    String method,
+    Uri uri,
+    Map<String, String> headers,
+    String? requestBody,
+    http.Response response,
+    Stopwatch sw,
+  ) {
+    DebugLogService.instance.logHttp(
+      tag: 'XApi',
+      method: method,
+      url: uri.toString(),
+      requestHeaders: headers,
+      requestBody: requestBody,
+      statusCode: response.statusCode,
+      responseHeaders: response.headers,
+      responseBody: response.body,
+      duration: sw.elapsed,
+      extra: {'label': label},
+    );
   }
 
   /// ミューテーション前にGETで最新 Cookie を取得しマージする
@@ -228,10 +253,14 @@ class XApiService {
         '&features=${Uri.encodeComponent(features)}',
       );
 
+      final hdrs = _buildHeaders(creds);
+      final sw = Stopwatch()..start();
       final response = await _withRateLimitRetry(
-        () => _client.get(uri, headers: _buildHeaders(creds)),
+        () => _client.get(uri, headers: hdrs),
       );
+      sw.stop();
       _updateCt0FromResponse(creds, response);
+      _logResponse('HomeLatestTimeline', 'GET', uri, hdrs, null, response, sw);
 
       if (response.statusCode == 401 || response.statusCode == 403) {
         throw XAuthException('Authentication failed: ${response.statusCode}');
@@ -275,10 +304,14 @@ class XApiService {
         '&features=${Uri.encodeComponent(features)}',
       );
 
+      final hdrs = _buildHeaders(creds);
+      final sw = Stopwatch()..start();
       final response = await _withRateLimitRetry(
-        () => _client.get(uri, headers: _buildHeaders(creds)),
+        () => _client.get(uri, headers: hdrs),
       );
+      sw.stop();
       _updateCt0FromResponse(creds, response);
+      _logResponse('TweetDetail', 'GET', uri, hdrs, null, response, sw);
 
       if (response.statusCode == 401 || response.statusCode == 403) {
         throw XAuthException('Authentication failed: ${response.statusCode}');
@@ -311,15 +344,18 @@ class XApiService {
     final warmedCookies = await _warmCookies(creds);
     final uri =
         Uri.parse('https://x.com/i/api/graphql/$queryId/FavoriteTweet');
+    final hdrs = _buildHeaders(creds, cookieOverride: warmedCookies);
+    final reqBody = json.encode({
+      'variables': {'tweet_id': tweetId},
+      'queryId': queryId,
+    });
+    final sw = Stopwatch()..start();
     final response = await _withRateLimitRetry(
-      () => _client.post(uri,
-        headers: _buildHeaders(creds, cookieOverride: warmedCookies),
-        body: json.encode({
-          'variables': {'tweet_id': tweetId},
-          'queryId': queryId,
-        })),
+      () => _client.post(uri, headers: hdrs, body: reqBody),
       maxRetries: 1,
     );
+    sw.stop();
+    _logResponse('FavoriteTweet', 'POST', uri, hdrs, reqBody, response, sw);
     return XApiResult(
       success: response.statusCode == 200,
       statusCode: response.statusCode,
@@ -337,15 +373,18 @@ class XApiService {
     final warmedCookies = await _warmCookies(creds);
     final uri =
         Uri.parse('https://x.com/i/api/graphql/$queryId/UnfavoriteTweet');
+    final hdrs = _buildHeaders(creds, cookieOverride: warmedCookies);
+    final reqBody = json.encode({
+      'variables': {'tweet_id': tweetId},
+      'queryId': queryId,
+    });
+    final sw = Stopwatch()..start();
     final response = await _withRateLimitRetry(
-      () => _client.post(uri,
-        headers: _buildHeaders(creds, cookieOverride: warmedCookies),
-        body: json.encode({
-          'variables': {'tweet_id': tweetId},
-          'queryId': queryId,
-        })),
+      () => _client.post(uri, headers: hdrs, body: reqBody),
       maxRetries: 1,
     );
+    sw.stop();
+    _logResponse('UnfavoriteTweet', 'POST', uri, hdrs, reqBody, response, sw);
     return XApiResult(
       success: response.statusCode == 200,
       statusCode: response.statusCode,
@@ -363,15 +402,18 @@ class XApiService {
     final warmedCookies = await _warmCookies(creds);
     final uri =
         Uri.parse('https://x.com/i/api/graphql/$queryId/CreateRetweet');
+    final hdrs = _buildHeaders(creds, cookieOverride: warmedCookies);
+    final reqBody = json.encode({
+      'variables': {'tweet_id': tweetId, 'dark_request': false},
+      'queryId': queryId,
+    });
+    final sw = Stopwatch()..start();
     final response = await _withRateLimitRetry(
-      () => _client.post(uri,
-        headers: _buildHeaders(creds, cookieOverride: warmedCookies),
-        body: json.encode({
-          'variables': {'tweet_id': tweetId, 'dark_request': false},
-          'queryId': queryId,
-        })),
+      () => _client.post(uri, headers: hdrs, body: reqBody),
       maxRetries: 1,
     );
+    sw.stop();
+    _logResponse('CreateRetweet', 'POST', uri, hdrs, reqBody, response, sw);
     return XApiResult(
       success: response.statusCode == 200,
       statusCode: response.statusCode,
@@ -389,15 +431,18 @@ class XApiService {
     final warmedCookies = await _warmCookies(creds);
     final uri =
         Uri.parse('https://x.com/i/api/graphql/$queryId/DeleteRetweet');
+    final hdrs = _buildHeaders(creds, cookieOverride: warmedCookies);
+    final reqBody = json.encode({
+      'variables': {'source_tweet_id': tweetId, 'dark_request': false},
+      'queryId': queryId,
+    });
+    final sw = Stopwatch()..start();
     final response = await _withRateLimitRetry(
-      () => _client.post(uri,
-        headers: _buildHeaders(creds, cookieOverride: warmedCookies),
-        body: json.encode({
-          'variables': {'source_tweet_id': tweetId, 'dark_request': false},
-          'queryId': queryId,
-        })),
+      () => _client.post(uri, headers: hdrs, body: reqBody),
       maxRetries: 1,
     );
+    sw.stop();
+    _logResponse('DeleteRetweet', 'POST', uri, hdrs, reqBody, response, sw);
     return XApiResult(
       success: response.statusCode == 200,
       statusCode: response.statusCode,
@@ -425,10 +470,14 @@ class XApiService {
         '&features=${Uri.encodeComponent(features)}',
       );
 
+      final hdrs = _buildHeaders(creds);
+      final sw = Stopwatch()..start();
       final response = await _withRateLimitRetry(
-        () => _client.get(uri, headers: _buildHeaders(creds)),
+        () => _client.get(uri, headers: hdrs),
       );
+      sw.stop();
       _updateCt0FromResponse(creds, response);
+      _logResponse('UserByScreenName', 'GET', uri, hdrs, null, response, sw);
 
       if (response.statusCode == 401 || response.statusCode == 403) {
         throw XAuthException('Authentication failed: ${response.statusCode}');
@@ -506,10 +555,14 @@ class XApiService {
         '&features=${Uri.encodeComponent(features)}',
       );
 
+      final hdrs = _buildHeaders(creds);
+      final sw = Stopwatch()..start();
       final response = await _withRateLimitRetry(
-        () => _client.get(uri, headers: _buildHeaders(creds)),
+        () => _client.get(uri, headers: hdrs),
       );
+      sw.stop();
       _updateCt0FromResponse(creds, response);
+      _logResponse('UserTweets', 'GET', uri, hdrs, null, response, sw);
 
       if (response.statusCode == 401 || response.statusCode == 403) {
         throw XAuthException('Authentication failed: ${response.statusCode}');
@@ -623,28 +676,31 @@ class XApiService {
   /// フォロー (REST API)
   Future<bool> followUser(XCredentials creds, String userId) async {
     final warmedCookies = await _warmCookies(creds);
+    final uri = Uri.parse('https://x.com/i/api/1.1/friendships/create.json');
+    final hdrs = _buildHeaders(creds, form: true, cookieOverride: warmedCookies);
+    const reqBody = 'user_id=';
+    final sw = Stopwatch()..start();
     final response = await _withRateLimitRetry(
-      () => _client.post(
-        Uri.parse('https://x.com/i/api/1.1/friendships/create.json'),
-        headers: _buildHeaders(creds, form: true, cookieOverride: warmedCookies),
-        body: 'user_id=$userId',
-      ),
+      () => _client.post(uri, headers: hdrs, body: 'user_id=$userId'),
       maxRetries: 1,
     );
+    sw.stop();
+    _logResponse('followUser', 'POST', uri, hdrs, '$reqBody$userId', response, sw);
     return response.statusCode == 200;
   }
 
   /// フォロー解除 (REST API)
   Future<bool> unfollowUser(XCredentials creds, String userId) async {
     final warmedCookies = await _warmCookies(creds);
+    final uri = Uri.parse('https://x.com/i/api/1.1/friendships/destroy.json');
+    final hdrs = _buildHeaders(creds, form: true, cookieOverride: warmedCookies);
+    final sw = Stopwatch()..start();
     final response = await _withRateLimitRetry(
-      () => _client.post(
-        Uri.parse('https://x.com/i/api/1.1/friendships/destroy.json'),
-        headers: _buildHeaders(creds, form: true, cookieOverride: warmedCookies),
-        body: 'user_id=$userId',
-      ),
+      () => _client.post(uri, headers: hdrs, body: 'user_id=$userId'),
       maxRetries: 1,
     );
+    sw.stop();
+    _logResponse('unfollowUser', 'POST', uri, hdrs, 'user_id=$userId', response, sw);
     return response.statusCode == 200;
   }
 
@@ -719,21 +775,25 @@ class XApiService {
     final reqInfo = reqLines.toString();
 
     debugPrint('[XApi] createTweet POST:\n$reqInfo');
+    final gqlBody = json.encode({
+      'variables': {
+        'tweet_text': text,
+        'media': {'media_entities': [], 'possibly_sensitive': false},
+        'semantic_annotation_ids': <dynamic>[],
+        'disallowed_reply_options': null,
+      },
+      'features': XFeatures.createTweet,
+      'queryId': queryId,
+    });
+    final sw = Stopwatch()..start();
     final gqlResponse = await _client.post(
       gqlUri,
       headers: headers,
-      body: json.encode({
-        'variables': {
-          'tweet_text': text,
-          'media': {'media_entities': [], 'possibly_sensitive': false},
-          'semantic_annotation_ids': <dynamic>[],
-          'disallowed_reply_options': null,
-        },
-        'features': XFeatures.createTweet,
-        'queryId': queryId,
-      }),
+      body: gqlBody,
     );
+    sw.stop();
     _updateCt0FromResponse(creds, gqlResponse);
+    _logResponse('CreateTweet', 'POST', gqlUri, headers, gqlBody, gqlResponse, sw);
     debugPrint('[XApi] createTweet(gql): ${gqlResponse.statusCode} body=${_snippet(gqlResponse.body)}');
 
     // GraphQL の成功判定
@@ -822,10 +882,14 @@ class XApiService {
 
     final uri = Uri.https('x.com', '/i/api/2/notifications/all.json', params);
 
+    final hdrs = _buildHeaders(creds);
+    final sw = Stopwatch()..start();
     final response = await _withRateLimitRetry(
-      () => _client.get(uri, headers: _buildHeaders(creds)),
+      () => _client.get(uri, headers: hdrs),
     );
+    sw.stop();
     _updateCt0FromResponse(creds, response);
+    _logResponse('Notifications', 'GET', uri, hdrs, null, response, sw);
 
     if (response.statusCode == 401 || response.statusCode == 403) {
       throw XAuthException('Authentication failed: ${response.statusCode}');

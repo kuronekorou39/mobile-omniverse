@@ -6,6 +6,7 @@ import 'screens/overlay_timeline_screen.dart';
 import 'screens/splash_screen.dart';
 import 'services/account_storage_service.dart';
 import 'services/bookmark_service.dart';
+import 'services/debug_log_service.dart';
 import 'services/x_query_id_service.dart';
 
 @pragma("vm:entry-point")
@@ -22,6 +23,7 @@ void main() async {
   await AccountStorageService.instance.load();
   await XQueryIdService.instance.init();
   await BookmarkService.instance.init();
+  await DebugLogService.instance.init();
   runApp(const ProviderScope(child: OmniVerseApp()));
 }
 

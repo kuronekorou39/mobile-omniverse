@@ -8,6 +8,7 @@ import '../models/account.dart';
 import '../models/notification_item.dart';
 import '../models/post.dart';
 import '../models/sns_service.dart';
+import 'debug_log_service.dart';
 
 class BlueskyApiService {
   BlueskyApiService._();
@@ -15,6 +16,31 @@ class BlueskyApiService {
 
   @visibleForTesting
   http.Client? httpClientOverride;
+
+  http.Client get _client => httpClientOverride ?? http.Client();
+
+  void _logResponse(
+    String label,
+    String method,
+    Uri uri,
+    Map<String, String> headers,
+    String? requestBody,
+    http.Response response,
+    Stopwatch sw,
+  ) {
+    DebugLogService.instance.logHttp(
+      tag: 'BlueskyApi',
+      method: method,
+      url: uri.toString(),
+      requestHeaders: headers,
+      requestBody: requestBody,
+      statusCode: response.statusCode,
+      responseHeaders: response.headers,
+      responseBody: response.body,
+      duration: sw.elapsed,
+      extra: {'label': label},
+    );
+  }
 
   /// タイムラインを取得
   Future<({List<Post> posts, String? cursor})> getTimeline(
@@ -28,10 +54,14 @@ class BlueskyApiService {
 
     final uri = Uri.parse(url);
 
-    final response = await (httpClientOverride ?? http.Client()).get(uri, headers: {
+    final hdrs = {
       'Authorization': 'Bearer ${creds.accessJwt}',
       'Accept': 'application/json',
-    });
+    };
+    final sw = Stopwatch()..start();
+    final response = await _client.get(uri, headers: hdrs);
+    sw.stop();
+    _logResponse('getTimeline', 'GET', uri, hdrs, null, response, sw);
 
     if (response.statusCode == 401) {
       throw BlueskyAuthException('Token expired');
@@ -138,22 +168,23 @@ class BlueskyApiService {
     final uri = Uri.parse(
       '${creds.pdsUrl}/xrpc/com.atproto.repo.createRecord',
     );
-    final response = await (httpClientOverride ?? http.Client()).post(
-      uri,
-      headers: {
-        'Authorization': 'Bearer ${creds.accessJwt}',
-        'Content-Type': 'application/json',
+    final hdrs = {
+      'Authorization': 'Bearer ${creds.accessJwt}',
+      'Content-Type': 'application/json',
+    };
+    final reqBody = json.encode({
+      'repo': creds.did,
+      'collection': 'app.bsky.feed.like',
+      'record': {
+        '\$type': 'app.bsky.feed.like',
+        'subject': {'uri': postUri, 'cid': postCid},
+        'createdAt': DateTime.now().toUtc().toIso8601String(),
       },
-      body: json.encode({
-        'repo': creds.did,
-        'collection': 'app.bsky.feed.like',
-        'record': {
-          '\$type': 'app.bsky.feed.like',
-          'subject': {'uri': postUri, 'cid': postCid},
-          'createdAt': DateTime.now().toUtc().toIso8601String(),
-        },
-      }),
-    );
+    });
+    final sw = Stopwatch()..start();
+    final response = await _client.post(uri, headers: hdrs, body: reqBody);
+    sw.stop();
+    _logResponse('likePost', 'POST', uri, hdrs, reqBody, response, sw);
     if (response.statusCode == 200) {
       final body = json.decode(response.body) as Map<String, dynamic>;
       return body['uri'] as String?;
@@ -167,18 +198,19 @@ class BlueskyApiService {
     final uri = Uri.parse(
       '${creds.pdsUrl}/xrpc/com.atproto.repo.deleteRecord',
     );
-    final response = await (httpClientOverride ?? http.Client()).post(
-      uri,
-      headers: {
-        'Authorization': 'Bearer ${creds.accessJwt}',
-        'Content-Type': 'application/json',
-      },
-      body: json.encode({
-        'repo': creds.did,
-        'collection': 'app.bsky.feed.like',
-        'rkey': rkey,
-      }),
-    );
+    final hdrs = {
+      'Authorization': 'Bearer ${creds.accessJwt}',
+      'Content-Type': 'application/json',
+    };
+    final reqBody = json.encode({
+      'repo': creds.did,
+      'collection': 'app.bsky.feed.like',
+      'rkey': rkey,
+    });
+    final sw = Stopwatch()..start();
+    final response = await _client.post(uri, headers: hdrs, body: reqBody);
+    sw.stop();
+    _logResponse('unlikePost', 'POST', uri, hdrs, reqBody, response, sw);
     return response.statusCode == 200;
   }
 
@@ -191,22 +223,23 @@ class BlueskyApiService {
     final uri = Uri.parse(
       '${creds.pdsUrl}/xrpc/com.atproto.repo.createRecord',
     );
-    final response = await (httpClientOverride ?? http.Client()).post(
-      uri,
-      headers: {
-        'Authorization': 'Bearer ${creds.accessJwt}',
-        'Content-Type': 'application/json',
+    final hdrs = {
+      'Authorization': 'Bearer ${creds.accessJwt}',
+      'Content-Type': 'application/json',
+    };
+    final reqBody = json.encode({
+      'repo': creds.did,
+      'collection': 'app.bsky.feed.repost',
+      'record': {
+        '\$type': 'app.bsky.feed.repost',
+        'subject': {'uri': postUri, 'cid': postCid},
+        'createdAt': DateTime.now().toUtc().toIso8601String(),
       },
-      body: json.encode({
-        'repo': creds.did,
-        'collection': 'app.bsky.feed.repost',
-        'record': {
-          '\$type': 'app.bsky.feed.repost',
-          'subject': {'uri': postUri, 'cid': postCid},
-          'createdAt': DateTime.now().toUtc().toIso8601String(),
-        },
-      }),
-    );
+    });
+    final sw = Stopwatch()..start();
+    final response = await _client.post(uri, headers: hdrs, body: reqBody);
+    sw.stop();
+    _logResponse('repost', 'POST', uri, hdrs, reqBody, response, sw);
     if (response.statusCode == 200) {
       final body = json.decode(response.body) as Map<String, dynamic>;
       return body['uri'] as String?;
@@ -220,18 +253,19 @@ class BlueskyApiService {
     final uri = Uri.parse(
       '${creds.pdsUrl}/xrpc/com.atproto.repo.deleteRecord',
     );
-    final response = await (httpClientOverride ?? http.Client()).post(
-      uri,
-      headers: {
-        'Authorization': 'Bearer ${creds.accessJwt}',
-        'Content-Type': 'application/json',
-      },
-      body: json.encode({
-        'repo': creds.did,
-        'collection': 'app.bsky.feed.repost',
-        'rkey': rkey,
-      }),
-    );
+    final hdrs = {
+      'Authorization': 'Bearer ${creds.accessJwt}',
+      'Content-Type': 'application/json',
+    };
+    final reqBody = json.encode({
+      'repo': creds.did,
+      'collection': 'app.bsky.feed.repost',
+      'rkey': rkey,
+    });
+    final sw = Stopwatch()..start();
+    final response = await _client.post(uri, headers: hdrs, body: reqBody);
+    sw.stop();
+    _logResponse('unrepost', 'POST', uri, hdrs, reqBody, response, sw);
     return response.statusCode == 200;
   }
 
@@ -259,18 +293,19 @@ class BlueskyApiService {
       };
     }
 
-    final response = await (httpClientOverride ?? http.Client()).post(
-      uri,
-      headers: {
-        'Authorization': 'Bearer ${creds.accessJwt}',
-        'Content-Type': 'application/json',
-      },
-      body: json.encode({
-        'repo': creds.did,
-        'collection': 'app.bsky.feed.post',
-        'record': record,
-      }),
-    );
+    final hdrs = {
+      'Authorization': 'Bearer ${creds.accessJwt}',
+      'Content-Type': 'application/json',
+    };
+    final reqBody = json.encode({
+      'repo': creds.did,
+      'collection': 'app.bsky.feed.post',
+      'record': record,
+    });
+    final sw = Stopwatch()..start();
+    final response = await _client.post(uri, headers: hdrs, body: reqBody);
+    sw.stop();
+    _logResponse('createPost', 'POST', uri, hdrs, reqBody, response, sw);
     debugPrint('[BlueskyApi] createPost: ${response.statusCode}');
     return response.statusCode == 200;
   }
@@ -337,22 +372,23 @@ class BlueskyApiService {
     final uri = Uri.parse(
       '${creds.pdsUrl}/xrpc/com.atproto.repo.createRecord',
     );
-    final response = await (httpClientOverride ?? http.Client()).post(
-      uri,
-      headers: {
-        'Authorization': 'Bearer ${creds.accessJwt}',
-        'Content-Type': 'application/json',
+    final hdrs = {
+      'Authorization': 'Bearer ${creds.accessJwt}',
+      'Content-Type': 'application/json',
+    };
+    final reqBody = json.encode({
+      'repo': creds.did,
+      'collection': 'app.bsky.graph.follow',
+      'record': {
+        '\$type': 'app.bsky.graph.follow',
+        'subject': did,
+        'createdAt': DateTime.now().toUtc().toIso8601String(),
       },
-      body: json.encode({
-        'repo': creds.did,
-        'collection': 'app.bsky.graph.follow',
-        'record': {
-          '\$type': 'app.bsky.graph.follow',
-          'subject': did,
-          'createdAt': DateTime.now().toUtc().toIso8601String(),
-        },
-      }),
-    );
+    });
+    final sw = Stopwatch()..start();
+    final response = await _client.post(uri, headers: hdrs, body: reqBody);
+    sw.stop();
+    _logResponse('follow', 'POST', uri, hdrs, reqBody, response, sw);
     if (response.statusCode == 200) {
       final body = json.decode(response.body) as Map<String, dynamic>;
       return body['uri'] as String?;
@@ -366,18 +402,19 @@ class BlueskyApiService {
     final uri = Uri.parse(
       '${creds.pdsUrl}/xrpc/com.atproto.repo.deleteRecord',
     );
-    final response = await (httpClientOverride ?? http.Client()).post(
-      uri,
-      headers: {
-        'Authorization': 'Bearer ${creds.accessJwt}',
-        'Content-Type': 'application/json',
-      },
-      body: json.encode({
-        'repo': creds.did,
-        'collection': 'app.bsky.graph.follow',
-        'rkey': rkey,
-      }),
-    );
+    final hdrs = {
+      'Authorization': 'Bearer ${creds.accessJwt}',
+      'Content-Type': 'application/json',
+    };
+    final reqBody = json.encode({
+      'repo': creds.did,
+      'collection': 'app.bsky.graph.follow',
+      'rkey': rkey,
+    });
+    final sw = Stopwatch()..start();
+    final response = await _client.post(uri, headers: hdrs, body: reqBody);
+    sw.stop();
+    _logResponse('unfollow', 'POST', uri, hdrs, reqBody, response, sw);
     return response.statusCode == 200;
   }
 
@@ -602,11 +639,15 @@ class BlueskyApiService {
         '${creds.pdsUrl}/xrpc/app.bsky.notification.listNotifications?limit=$limit';
     if (cursor != null) url += '&cursor=${Uri.encodeComponent(cursor)}';
 
-    final response =
-        await (httpClientOverride ?? http.Client()).get(Uri.parse(url), headers: {
+    final notiUri = Uri.parse(url);
+    final hdrs = {
       'Authorization': 'Bearer ${creds.accessJwt}',
       'Accept': 'application/json',
-    });
+    };
+    final sw = Stopwatch()..start();
+    final response = await _client.get(notiUri, headers: hdrs);
+    sw.stop();
+    _logResponse('getNotifications', 'GET', notiUri, hdrs, null, response, sw);
 
     if (response.statusCode == 401) {
       throw BlueskyAuthException('Token expired');

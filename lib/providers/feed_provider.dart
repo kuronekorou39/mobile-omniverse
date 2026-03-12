@@ -183,6 +183,10 @@ class FeedNotifier extends StateNotifier<FeedState> {
 
     for (final post in newPosts) {
       final old = existing[post.id];
+      // 取得元アカウントIDをマージ
+      final mergedAccountIds = old != null
+          ? {...old.fetchedByAccountIds, ...post.fetchedByAccountIds}
+          : post.fetchedByAccountIds;
       if (old != null && _isUserDataMissing(post) && !_isUserDataMissing(old)) {
         // ユーザー情報が欠けた投稿で正常なデータを上書きしない — 即時更新
         existing[post.id] = old.copyWith(
@@ -190,6 +194,7 @@ class FeedNotifier extends StateNotifier<FeedState> {
           isReposted: post.isReposted,
           likeCount: post.likeCount,
           repostCount: post.repostCount,
+          fetchedByAccountIds: mergedAccountIds,
         );
       } else if (old != null && post.isRetweet && !_isUserDataMissing(old) &&
                  old.retweetedByUsername != null && old.retweetedByUsername!.isNotEmpty &&
@@ -200,10 +205,11 @@ class FeedNotifier extends StateNotifier<FeedState> {
           isReposted: post.isReposted,
           likeCount: post.likeCount,
           repostCount: post.repostCount,
+          fetchedByAccountIds: mergedAccountIds,
         );
       } else if (old != null) {
         // 既存投稿の更新（エンゲージメント等）— 即時反映
-        existing[post.id] = post;
+        existing[post.id] = post.copyWith(fetchedByAccountIds: mergedAccountIds);
       } else if (!_pendingIds.contains(post.id)) {
         // 新規投稿（キューにも未登録）— キューに追加（Mapで同一フェッチ内の重複防止）
         newToQueue[post.id] = post;

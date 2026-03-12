@@ -21,12 +21,12 @@ class SnsBadge extends StatelessWidget {
 
     final String text = switch (service) {
       SnsService.x => '\u{1D54F}',
-      SnsService.bluesky => '\u{1F98B}',
+      SnsService.bluesky => '\u{1D539}',
     };
 
     final textStyle = switch (service) {
       SnsService.x => TextStyle(color: fg, fontSize: fontSize, fontWeight: FontWeight.bold),
-      SnsService.bluesky => TextStyle(color: fg, fontSize: fontSize),
+      SnsService.bluesky => TextStyle(color: fg, fontSize: fontSize, fontWeight: FontWeight.bold),
     };
 
     return Container(

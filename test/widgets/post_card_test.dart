@@ -29,7 +29,6 @@ void main() {
     VoidCallback? onTap,
     VoidCallback? onLike,
     VoidCallback? onRepost,
-    String? accountHandle,
   }) {
     return MaterialApp(
       home: Scaffold(
@@ -39,7 +38,6 @@ void main() {
             onTap: onTap,
             onLike: onLike,
             onRepost: onRepost,
-            accountHandle: accountHandle,
           ),
         ),
       ),
@@ -231,21 +229,6 @@ void main() {
 
       // Count text widgets should not appear
       expect(find.text('0'), findsNothing);
-    });
-
-    testWidgets('accountHandle via is shown when provided', (tester) async {
-      final post = makePost();
-      await tester.pumpWidget(buildPostCard(post: post, accountHandle: '@myaccount'));
-
-      expect(find.text(' via '), findsOneWidget);
-      expect(find.text('@myaccount'), findsOneWidget);
-    });
-
-    testWidgets('accountHandle via is hidden when null', (tester) async {
-      final post = makePost();
-      await tester.pumpWidget(buildPostCard(post: post, accountHandle: null));
-
-      expect(find.text(' via '), findsNothing);
     });
 
     testWidgets('Bluesky source shows Bluesky badge', (tester) async {

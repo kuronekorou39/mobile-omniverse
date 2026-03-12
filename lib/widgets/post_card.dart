@@ -1,3 +1,5 @@
+import 'dart:ui';
+
 import 'package:flutter/material.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -19,6 +21,7 @@ class PostCard extends StatelessWidget {
     this.onLike,
     this.onRepost,
     this.onQuoteRepost,
+    this.hideSensitive = true,
   });
 
   final Post post;
@@ -28,6 +31,7 @@ class PostCard extends StatelessWidget {
   final VoidCallback? onLike;
   final VoidCallback? onRepost;
   final VoidCallback? onQuoteRepost;
+  final bool hideSensitive;
 
   String _formatTimestamp(DateTime timestamp) {
     final diff = DateTime.now().difference(timestamp);
@@ -97,23 +101,27 @@ class PostCard extends StatelessWidget {
               _buildHeader(context, accountHandle),
               const SizedBox(height: 8),
 
-              // Body text with tappable links
-              if (post.body.isNotEmpty) LinkedText(text: post.body),
-
-              // Images
-              if (post.imageUrls.isNotEmpty) ...[
-                const SizedBox(height: 8),
-                PostImageGrid(imageUrls: post.imageUrls),
-              ],
-
-              // Video thumbnail
-              if (post.videoUrl != null && post.videoThumbnailUrl != null) ...[
-                const SizedBox(height: 8),
-                PostVideoThumbnail(
-                  videoUrl: post.videoUrl!,
-                  thumbnailUrl: post.videoThumbnailUrl!,
+              // Body text, images, video (wrapped in sensitive overlay if needed)
+              _SensitiveOverlay(
+                isSensitive: post.isSensitive && hideSensitive,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    if (post.body.isNotEmpty) LinkedText(text: post.body),
+                    if (post.imageUrls.isNotEmpty) ...[
+                      const SizedBox(height: 8),
+                      PostImageGrid(imageUrls: post.imageUrls),
+                    ],
+                    if (post.videoUrl != null && post.videoThumbnailUrl != null) ...[
+                      const SizedBox(height: 8),
+                      PostVideoThumbnail(
+                        videoUrl: post.videoUrl!,
+                        thumbnailUrl: post.videoThumbnailUrl!,
+                      ),
+                    ],
+                  ],
                 ),
-              ],
+              ),
 
               // Quoted post card
               if (post.quotedPost != null) ...[
@@ -263,6 +271,9 @@ class PostCard extends StatelessWidget {
   Widget _buildHeader(BuildContext context, String? accountHandle) {
     return Row(
       children: [
+        // SNS Badge (アバターの左側)
+        SnsBadge(service: post.source, size: 8),
+        const SizedBox(width: 4),
         // Avatar (タップでプロフィール画面へ)
         GestureDetector(
           onTap: () => navigateToUserProfile(context, post: post),
@@ -305,18 +316,10 @@ class PostCard extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Row(
-                children: [
-                  Flexible(
-                    child: Text(
-                      post.username,
-                      style: const TextStyle(fontWeight: FontWeight.bold),
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ),
-                  const SizedBox(width: 4),
-                  SnsBadge(service: post.source),
-                ],
+              Text(
+                post.username,
+                style: const TextStyle(fontWeight: FontWeight.bold),
+                overflow: TextOverflow.ellipsis,
               ),
               Text(
                 post.handle,
@@ -399,7 +402,7 @@ class PostCard extends StatelessWidget {
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                SnsBadge(service: post.source, size: 12),
+                SnsBadge(service: post.source, size: 8),
                 const SizedBox(width: 3),
                 CachedNetworkImage(
                   imageUrl: accountAvatarUrl!,
@@ -515,5 +518,85 @@ class _EngagementButtonState extends State<_EngagementButton>
     if (count >= 1000000) return '${(count / 1000000).toStringAsFixed(1)}M';
     if (count >= 1000) return '${(count / 1000).toStringAsFixed(1)}K';
     return count.toString();
+  }
+}
+
+/// Sensitive content overlay with tap-to-reveal behavior.
+class _SensitiveOverlay extends StatefulWidget {
+  const _SensitiveOverlay({
+    required this.isSensitive,
+    required this.child,
+  });
+
+  final bool isSensitive;
+  final Widget child;
+
+  @override
+  State<_SensitiveOverlay> createState() => _SensitiveOverlayState();
+}
+
+class _SensitiveOverlayState extends State<_SensitiveOverlay> {
+  bool _revealed = false;
+
+  @override
+  Widget build(BuildContext context) {
+    if (!widget.isSensitive || _revealed) {
+      return widget.child;
+    }
+
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(8),
+      child: Stack(
+        children: [
+          // Blurred content underneath
+          ImageFiltered(
+            imageFilter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
+            child: widget.child,
+          ),
+          // Overlay
+          Positioned.fill(
+            child: Container(
+              decoration: BoxDecoration(
+                color: Colors.black.withValues(alpha: 0.6),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Center(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(
+                      Icons.visibility_off,
+                      color: Colors.white70,
+                      size: 28,
+                    ),
+                    const SizedBox(height: 8),
+                    const Text(
+                      'センシティブな内容を含む可能性があります',
+                      style: TextStyle(
+                        color: Colors.white70,
+                        fontSize: 13,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    TextButton(
+                      onPressed: () => setState(() => _revealed = true),
+                      style: TextButton.styleFrom(
+                        foregroundColor: Colors.white,
+                        backgroundColor: Colors.white.withValues(alpha: 0.2),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 16,
+                          vertical: 6,
+                        ),
+                      ),
+                      child: const Text('表示'),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 }

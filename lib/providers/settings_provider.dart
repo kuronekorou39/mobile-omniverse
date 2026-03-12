@@ -13,6 +13,7 @@ class SettingsState {
     this.hideRetweetsAccountIds = const {},
     this.showAccountPickerOnEngagement = false,
     this.showFetchTimer = true,
+    this.showSensitiveContent = false,
   });
 
   final int fetchIntervalSeconds;
@@ -25,6 +26,8 @@ class SettingsState {
   final bool showAccountPickerOnEngagement;
   /// フェッチタイマーを表示するか
   final bool showFetchTimer;
+  /// センシティブコンテンツを常に表示するか
+  final bool showSensitiveContent;
 
   SettingsState copyWith({
     int? fetchIntervalSeconds,
@@ -34,6 +37,7 @@ class SettingsState {
     Set<String>? hideRetweetsAccountIds,
     bool? showAccountPickerOnEngagement,
     bool? showFetchTimer,
+    bool? showSensitiveContent,
   }) {
     return SettingsState(
       fetchIntervalSeconds: fetchIntervalSeconds ?? this.fetchIntervalSeconds,
@@ -43,6 +47,7 @@ class SettingsState {
       hideRetweetsAccountIds: hideRetweetsAccountIds ?? this.hideRetweetsAccountIds,
       showAccountPickerOnEngagement: showAccountPickerOnEngagement ?? this.showAccountPickerOnEngagement,
       showFetchTimer: showFetchTimer ?? this.showFetchTimer,
+      showSensitiveContent: showSensitiveContent ?? this.showSensitiveContent,
     );
   }
 }
@@ -58,6 +63,7 @@ class SettingsNotifier extends StateNotifier<SettingsState> {
   static const _keyHideRetweetsAccounts = 'settings_hide_retweets_accounts';
   static const _keyShowAccountPicker = 'settings_show_account_picker';
   static const _keyShowFetchTimer = 'settings_show_fetch_timer';
+  static const _keyShowSensitiveContent = 'settings_show_sensitive_content';
 
   final _scheduler = TimelineFetchScheduler.instance;
 
@@ -69,6 +75,7 @@ class SettingsNotifier extends StateNotifier<SettingsState> {
     final hideRtList = prefs.getStringList(_keyHideRetweetsAccounts) ?? [];
     final showAccountPicker = prefs.getBool(_keyShowAccountPicker) ?? false;
     final showFetchTimer = prefs.getBool(_keyShowFetchTimer) ?? true;
+    final showSensitiveContent = prefs.getBool(_keyShowSensitiveContent) ?? false;
 
     state = state.copyWith(
       fetchIntervalSeconds: interval,
@@ -77,6 +84,7 @@ class SettingsNotifier extends StateNotifier<SettingsState> {
       hideRetweetsAccountIds: hideRtList.toSet(),
       showAccountPickerOnEngagement: showAccountPicker,
       showFetchTimer: showFetchTimer,
+      showSensitiveContent: showSensitiveContent,
     );
 
     // #3: デフォルトフェッチONの場合、起動時にスケジューラを開始
@@ -95,6 +103,7 @@ class SettingsNotifier extends StateNotifier<SettingsState> {
     await prefs.setBool(
         _keyShowAccountPicker, state.showAccountPickerOnEngagement);
     await prefs.setBool(_keyShowFetchTimer, state.showFetchTimer);
+    await prefs.setBool(_keyShowSensitiveContent, state.showSensitiveContent);
   }
 
   void setInterval(int seconds) {
@@ -135,6 +144,11 @@ class SettingsNotifier extends StateNotifier<SettingsState> {
 
   void setShowFetchTimer(bool value) {
     state = state.copyWith(showFetchTimer: value);
+    _saveToPrefs();
+  }
+
+  void setShowSensitiveContent(bool value) {
+    state = state.copyWith(showSensitiveContent: value);
     _saveToPrefs();
   }
 

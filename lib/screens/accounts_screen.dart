@@ -330,13 +330,32 @@ class _AccountDetailScreen extends ConsumerWidget {
 
     if (result == null) return;
 
+    // 更新前の値を記録
+    final oldCreds = account.service == SnsService.x ? account.xCredentials : null;
+    final oldCt0 = oldCreds?.ct0 ?? '';
+    final oldCookieLen = oldCreds?.allCookies.length ?? 0;
+
     await ref
         .read(accountProvider.notifier)
         .updateCredentials(account.id, result.credentials);
 
+    // 更新後の値を取得
+    String detail = '';
+    if (result.credentials is XCredentials) {
+      final newCreds = result.credentials as XCredentials;
+      final ct0Changed = oldCt0 != newCreds.ct0;
+      detail = '\nct0: ${ct0Changed ? "変更あり" : "変更なし"}'
+          ' (${newCreds.ct0.length > 8 ? newCreds.ct0.substring(0, 8) : newCreds.ct0}...)'
+          '\ncookies: ${newCreds.allCookies.length} chars'
+          '${oldCookieLen != newCreds.allCookies.length ? " (前: $oldCookieLen)" : ""}';
+    }
+
     if (context.mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('セッションを更新しました')),
+        SnackBar(
+          content: Text('セッションを更新しました$detail'),
+          duration: const Duration(seconds: 5),
+        ),
       );
     }
   }

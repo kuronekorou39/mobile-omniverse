@@ -446,6 +446,12 @@ class BlueskyApiService {
       quotedPost = extractQuotedPost(embed, accountId);
     }
 
+    // Sensitive content labels
+    final labels = (post['labels'] as List<dynamic>?) ?? [];
+    final isSensitive = labels.any((l) =>
+        ['nsfw', 'porn', 'sexual', 'nudity', 'graphic-media']
+            .contains((l as Map<String, dynamic>)['val']));
+
     // Permalink
     final handle = author['handle'] as String? ?? '';
     final permalink = handle.isNotEmpty && postId.isNotEmpty
@@ -476,6 +482,7 @@ class BlueskyApiService {
       uri: atUri,
       cid: postCid,
       quotedPost: quotedPost,
+      isSensitive: isSensitive,
     );
   }
 

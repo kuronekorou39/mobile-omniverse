@@ -122,6 +122,17 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
 
           const Divider(),
 
+          // Content section
+          const _SectionHeader(title: 'コンテンツ'),
+          SwitchListTile(
+            title: const Text('センシティブコンテンツを常に表示'),
+            subtitle: const Text('センシティブな投稿の警告を無効にする'),
+            value: settings.showSensitiveContent,
+            onChanged: (value) => notifier.setShowSensitiveContent(value),
+          ),
+
+          const Divider(),
+
           // Appearance section
           const _SectionHeader(title: '外観'),
           ListTile(

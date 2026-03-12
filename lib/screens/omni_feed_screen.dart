@@ -167,14 +167,6 @@ class _OmniFeedScreenState extends ConsumerState<OmniFeedScreen>
     final atTop = _scrollController.offset <= 50;
     ref.read(feedProvider.notifier).setScrollAtTop(atTop);
 
-    // トップ到達時に大量pendingをフラッシュ
-    if (_scrollController.offset <= 5) {
-      final feed = ref.read(feedProvider);
-      if (feed.pendingCount > ref.read(feedProvider.notifier).dripThreshold) {
-        ref.read(feedProvider.notifier).flushPending();
-      }
-    }
-
     // スクロールトップボタンの表示制御
     final shouldShow = _scrollController.offset > 300;
     if (shouldShow != _showScrollToTop) {
@@ -199,18 +191,22 @@ class _OmniFeedScreenState extends ConsumerState<OmniFeedScreen>
     final account = await _resolveAccount(post, 'いいね');
     if (account == null) return;
 
-    final wasLiked = post.isLiked;
+    final settings = ref.read(settingsProvider);
+    // マルチアカウントモード: 常にいいね実行（アカウントごとの状態は追跡しないため）
+    final wasLiked = settings.showAccountPickerOnEngagement ? false : post.isLiked;
     final action = wasLiked ? ActivityAction.unlike : ActivityAction.like;
     final postSummary = post.body.length > 40
         ? '${post.body.substring(0, 40)}...'
         : post.body;
 
-    // Optimistic update
-    ref.read(feedProvider.notifier).updatePostEngagement(
-          post.id,
-          isLiked: !wasLiked,
-          likeCount: wasLiked ? post.likeCount - 1 : post.likeCount + 1,
-        );
+    // Optimistic update（シングルアカウントモードのみ）
+    if (!settings.showAccountPickerOnEngagement) {
+      ref.read(feedProvider.notifier).updatePostEngagement(
+            post.id,
+            isLiked: !wasLiked,
+            likeCount: wasLiked ? post.likeCount - 1 : post.likeCount + 1,
+          );
+    }
 
     try {
       bool success = false;
@@ -253,7 +249,7 @@ class _OmniFeedScreenState extends ConsumerState<OmniFeedScreen>
             responseSnippet: responseSnippet,
           );
 
-      if (!success) {
+      if (!success && !settings.showAccountPickerOnEngagement) {
         ref.read(feedProvider.notifier).updatePostEngagement(
               post.id,
               isLiked: wasLiked,
@@ -271,11 +267,13 @@ class _OmniFeedScreenState extends ConsumerState<OmniFeedScreen>
             success: false,
             errorMessage: e.toString(),
           );
-      ref.read(feedProvider.notifier).updatePostEngagement(
-            post.id,
-            isLiked: wasLiked,
-            likeCount: post.likeCount,
-          );
+      if (!settings.showAccountPickerOnEngagement) {
+        ref.read(feedProvider.notifier).updatePostEngagement(
+              post.id,
+              isLiked: wasLiked,
+              likeCount: post.likeCount,
+            );
+      }
     }
   }
 
@@ -283,19 +281,24 @@ class _OmniFeedScreenState extends ConsumerState<OmniFeedScreen>
     final account = await _resolveAccount(post, 'リポスト');
     if (account == null) return;
 
-    final wasReposted = post.isReposted;
+    final settings = ref.read(settingsProvider);
+    // マルチアカウントモード: 常にリポスト実行（アカウントごとの状態は追跡しないため）
+    final wasReposted = settings.showAccountPickerOnEngagement ? false : post.isReposted;
     final action =
         wasReposted ? ActivityAction.unrepost : ActivityAction.repost;
     final postSummary = post.body.length > 40
         ? '${post.body.substring(0, 40)}...'
         : post.body;
 
-    ref.read(feedProvider.notifier).updatePostEngagement(
-          post.id,
-          isReposted: !wasReposted,
-          repostCount:
-              wasReposted ? post.repostCount - 1 : post.repostCount + 1,
-        );
+    // Optimistic update（シングルアカウントモードのみ）
+    if (!settings.showAccountPickerOnEngagement) {
+      ref.read(feedProvider.notifier).updatePostEngagement(
+            post.id,
+            isReposted: !wasReposted,
+            repostCount:
+                wasReposted ? post.repostCount - 1 : post.repostCount + 1,
+          );
+    }
 
     try {
       bool success = false;
@@ -338,7 +341,7 @@ class _OmniFeedScreenState extends ConsumerState<OmniFeedScreen>
             responseSnippet: responseSnippet,
           );
 
-      if (!success) {
+      if (!success && !settings.showAccountPickerOnEngagement) {
         ref.read(feedProvider.notifier).updatePostEngagement(
               post.id,
               isReposted: wasReposted,
@@ -356,11 +359,13 @@ class _OmniFeedScreenState extends ConsumerState<OmniFeedScreen>
             success: false,
             errorMessage: e.toString(),
           );
-      ref.read(feedProvider.notifier).updatePostEngagement(
-            post.id,
-            isReposted: wasReposted,
-            repostCount: post.repostCount,
-          );
+      if (!settings.showAccountPickerOnEngagement) {
+        ref.read(feedProvider.notifier).updatePostEngagement(
+              post.id,
+              isReposted: wasReposted,
+              repostCount: post.repostCount,
+            );
+      }
     }
   }
 
@@ -484,7 +489,7 @@ class _OmniFeedScreenState extends ConsumerState<OmniFeedScreen>
       slivers: [
         SliverAppBar(
           floating: true,
-          snap: true,
+          snap: false,
           title: const Text(
             'OmniVerse',
             style: TextStyle(fontWeight: FontWeight.bold),
@@ -878,6 +883,7 @@ class _OmniFeedScreenState extends ConsumerState<OmniFeedScreen>
               post: post,
               accountHandle: accountHandle,
               accountAvatarUrl: accountAvatarUrl,
+              hideSensitive: !settings.showSensitiveContent,
               onQuoteRepost: () async {
                 final posted = await Navigator.of(context).push<bool>(
                   MaterialPageRoute(

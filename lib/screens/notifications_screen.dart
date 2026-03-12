@@ -5,12 +5,15 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/account.dart';
 import '../models/activity_log.dart';
 import '../models/notification_item.dart';
+import '../models/post.dart';
 import '../models/sns_service.dart';
 import '../providers/account_provider.dart';
 import '../providers/activity_log_provider.dart';
 import '../services/bluesky_api_service.dart';
 import '../services/x_api_service.dart';
 import '../widgets/sns_badge.dart';
+import 'post_detail_screen.dart';
+import 'user_profile_screen.dart';
 
 class NotificationsScreen extends ConsumerStatefulWidget {
   const NotificationsScreen({super.key});
@@ -248,7 +251,10 @@ class _NotificationListState extends ConsumerState<_NotificationList>
               child: Center(child: CircularProgressIndicator()),
             );
           }
-          return _NotificationTile(notification: _notifications[index]);
+          return _NotificationTile(
+            notification: _notifications[index],
+            account: widget.account,
+          );
         },
       ),
     );
@@ -256,8 +262,12 @@ class _NotificationListState extends ConsumerState<_NotificationList>
 }
 
 class _NotificationTile extends StatelessWidget {
-  const _NotificationTile({required this.notification});
+  const _NotificationTile({
+    required this.notification,
+    required this.account,
+  });
   final NotificationItem notification;
+  final Account account;
 
   IconData get _icon => switch (notification.type) {
         NotificationType.like => Icons.favorite,
@@ -284,36 +294,39 @@ class _NotificationTile extends StatelessWidget {
     final timeAgo = _formatTimeAgo(notification.timestamp);
 
     return ListTile(
-      leading: SizedBox(
-        width: 44,
-        child: Stack(
-          children: [
-            CircleAvatar(
-              radius: 20,
-              backgroundImage: notification.actorAvatarUrl != null
-                  ? NetworkImage(notification.actorAvatarUrl!)
-                  : null,
-              child: notification.actorAvatarUrl == null
-                  ? Text(
-                      notification.actorName.isNotEmpty
-                          ? notification.actorName[0].toUpperCase()
-                          : '?',
-                    )
-                  : null,
-            ),
-            Positioned(
-              bottom: 0,
-              right: 0,
-              child: Container(
-                padding: const EdgeInsets.all(2),
-                decoration: BoxDecoration(
-                  color: Theme.of(context).scaffoldBackgroundColor,
-                  shape: BoxShape.circle,
-                ),
-                child: Icon(_icon, size: 14, color: _iconColor),
+      leading: GestureDetector(
+        onTap: () => _navigateToActorProfile(context),
+        child: SizedBox(
+          width: 44,
+          child: Stack(
+            children: [
+              CircleAvatar(
+                radius: 20,
+                backgroundImage: notification.actorAvatarUrl != null
+                    ? NetworkImage(notification.actorAvatarUrl!)
+                    : null,
+                child: notification.actorAvatarUrl == null
+                    ? Text(
+                        notification.actorName.isNotEmpty
+                            ? notification.actorName[0].toUpperCase()
+                            : '?',
+                      )
+                    : null,
               ),
-            ),
-          ],
+              Positioned(
+                bottom: 0,
+                right: 0,
+                child: Container(
+                  padding: const EdgeInsets.all(2),
+                  decoration: BoxDecoration(
+                    color: Theme.of(context).scaffoldBackgroundColor,
+                    shape: BoxShape.circle,
+                  ),
+                  child: Icon(_icon, size: 14, color: _iconColor),
+                ),
+              ),
+            ],
+          ),
         ),
       ),
       title: RichText(
@@ -343,7 +356,88 @@ class _NotificationTile extends StatelessWidget {
         style: TextStyle(color: Colors.grey[500], fontSize: 12),
       ),
       contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+      onTap: () {
+        if (notification.type == NotificationType.follow ||
+            notification.targetPostId == null) {
+          _navigateToActorProfile(context);
+        } else {
+          _navigateToTargetPost(context);
+        }
+      },
     );
+  }
+
+  void _navigateToActorProfile(BuildContext context) {
+    // actorHandle has '@' prefix — strip it for UserProfileScreen
+    final handle = notification.actorHandle.startsWith('@')
+        ? notification.actorHandle.substring(1)
+        : notification.actorHandle;
+
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => UserProfileScreen(
+          username: notification.actorName,
+          handle: handle,
+          service: notification.source,
+          avatarUrl: notification.actorAvatarUrl,
+          accountId: account.id,
+        ),
+      ),
+    );
+  }
+
+  /// 通知の対象投稿を取得して PostDetailScreen へ遷移
+  Future<void> _navigateToTargetPost(BuildContext context) async {
+    final postId = notification.targetPostId;
+    if (postId == null) {
+      _navigateToActorProfile(context);
+      return;
+    }
+
+    // ローディング表示
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => const Center(child: CircularProgressIndicator()),
+    );
+
+    try {
+      List<Post> posts;
+      if (notification.source == SnsService.x) {
+        posts = await XApiService.instance.getTweetDetail(
+          account.xCredentials,
+          postId,
+          accountId: account.id,
+        );
+      } else {
+        posts = await BlueskyApiService.instance.getPostThread(
+          account.blueskyCredentials,
+          postId,
+          accountId: account.id,
+        );
+      }
+
+      if (!context.mounted) return;
+      Navigator.of(context).pop(); // ローディングを閉じる
+
+      if (posts.isNotEmpty) {
+        Navigator.of(context).push(
+          MaterialPageRoute(
+            builder: (_) => PostDetailScreen(post: posts.first),
+          ),
+        );
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('投稿が見つかりませんでした')),
+        );
+      }
+    } catch (e) {
+      if (!context.mounted) return;
+      Navigator.of(context).pop(); // ローディングを閉じる
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('投稿の読み込みに失敗しました: $e')),
+      );
+    }
   }
 
   String _formatTimeAgo(DateTime ts) {

@@ -354,6 +354,39 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
               ),
             ),
 
+          // 未対応機能プレースホルダーボタン
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: Row(
+              children: [
+                for (final entry in <MapEntry<IconData, String>>[
+                  const MapEntry(Icons.image_outlined, '画像'),
+                  const MapEntry(Icons.videocam_outlined, '動画'),
+                  const MapEntry(Icons.schedule_outlined, '予約投稿'),
+                  const MapEntry(Icons.poll_outlined, 'アンケート'),
+                  const MapEntry(Icons.reply_outlined, 'リプライ'),
+                ])
+                  IconButton(
+                    icon: Icon(entry.key, color: Colors.grey[400], size: 20),
+                    iconSize: 20,
+                    padding: const EdgeInsets.all(6),
+                    constraints: const BoxConstraints(),
+                    tooltip: entry.value,
+                    onPressed: () {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text(
+                            '${entry.value}は対応予定なし（公式アプリをご利用ください）',
+                          ),
+                          duration: const Duration(seconds: 2),
+                        ),
+                      );
+                    },
+                  ),
+              ],
+            ),
+          ),
+
           // 文字数カウンター
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),

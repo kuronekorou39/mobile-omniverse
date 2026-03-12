@@ -45,6 +45,7 @@ class _UserProfileScreenState extends ConsumerState<UserProfileScreen>
   bool _isLoadingPosts = true;
   bool _isLoadingMore = false;
   List<Post> _posts = [];
+  String? _bannerUrl;
   String? _profileError;
   String? _postsError;
   String? _nextCursor;
@@ -152,6 +153,7 @@ class _UserProfileScreenState extends ConsumerState<UserProfileScreen>
               _followersCount = profile['followers_count'] as int?;
               _followingCount = profile['friends_count'] as int?;
               _postsCount = profile['statuses_count'] as int?;
+              _bannerUrl = profile['profile_banner_url'] as String?;
             });
             _logAction(ActivityAction.profileFetch, account, true,
                 targetId: screenName);
@@ -581,98 +583,126 @@ class _UserProfileScreenState extends ConsumerState<UserProfileScreen>
   }
 
   Widget _buildProfileHeader() {
-    return Padding(
-      padding: const EdgeInsets.all(16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              // Avatar
-              CircleAvatar(
-                radius: 36,
-                backgroundImage: widget.avatarUrl != null
-                    ? CachedNetworkImageProvider(widget.avatarUrl!,
-                        headers: kImageHeaders)
-                    : null,
-                child: widget.avatarUrl == null
-                    ? Text(
-                        widget.username.isNotEmpty
-                            ? widget.username[0].toUpperCase()
-                            : '?',
-                        style: const TextStyle(fontSize: 28),
-                      )
-                    : null,
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // Banner image
+        if (_bannerUrl != null)
+          SizedBox(
+            height: 120,
+            width: double.infinity,
+            child: CachedNetworkImage(
+              imageUrl: _bannerUrl!,
+              httpHeaders: kImageHeaders,
+              fit: BoxFit.cover,
+              placeholder: (context, url) => Container(
+                color: Colors.grey[300],
               ),
-              const Spacer(),
-            ],
-          ),
-          const SizedBox(height: 12),
-
-          // Username
-          Text(
-            widget.username,
-            style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
-          ),
-          const SizedBox(height: 2),
-
-          // Handle + badge
-          Row(
-            children: [
-              SnsBadge(service: widget.service),
-              const SizedBox(width: 6),
-              Text(
-                widget.handle,
-                style: TextStyle(color: Colors.grey[600], fontSize: 15),
+              errorWidget: (context, url, error) => Container(
+                color: Colors.grey[300],
               ),
-            ],
+            ),
+          )
+        else
+          SizedBox(
+            height: 120,
+            width: double.infinity,
+            child: Container(color: Colors.grey[300]),
           ),
-
-          // Bio
-          if (_bio != null && _bio!.isNotEmpty) ...[
-            const SizedBox(height: 12),
-            Text(_bio!, style: const TextStyle(fontSize: 14)),
-          ],
-
-          // Stats
-          if (_followersCount != null || _followingCount != null) ...[
-            const SizedBox(height: 12),
-            Row(
-              children: [
-                if (_followingCount != null)
-                  _buildStat(_followingCount!, 'フォロー'),
-                if (_followingCount != null && _followersCount != null)
-                  const SizedBox(width: 16),
-                if (_followersCount != null)
-                  _buildStat(_followersCount!, 'フォロワー'),
-                if (_postsCount != null) ...[
-                  const SizedBox(width: 16),
-                  _buildStat(_postsCount!, '投稿'),
+        Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  // Avatar
+                  CircleAvatar(
+                    radius: 36,
+                    backgroundImage: widget.avatarUrl != null
+                        ? CachedNetworkImageProvider(widget.avatarUrl!,
+                            headers: kImageHeaders)
+                        : null,
+                    child: widget.avatarUrl == null
+                        ? Text(
+                            widget.username.isNotEmpty
+                                ? widget.username[0].toUpperCase()
+                                : '?',
+                            style: const TextStyle(fontSize: 28),
+                          )
+                        : null,
+                  ),
+                  const Spacer(),
                 ],
-              ],
-            ),
-          ],
-
-          if (_isLoadingProfile) ...[
-            const SizedBox(height: 12),
-            const Center(
-              child: SizedBox(
-                width: 16,
-                height: 16,
-                child: CircularProgressIndicator(strokeWidth: 2),
               ),
-            ),
-          ],
+              const SizedBox(height: 12),
 
-          if (_profileError != null) ...[
-            const SizedBox(height: 8),
-            Text(
-              _profileError!,
-              style: const TextStyle(color: Colors.red, fontSize: 12),
-            ),
-          ],
-        ],
-      ),
+              // Username
+              Text(
+                widget.username,
+                style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 2),
+
+              // Handle + badge
+              Row(
+                children: [
+                  SnsBadge(service: widget.service),
+                  const SizedBox(width: 6),
+                  Text(
+                    widget.handle,
+                    style: TextStyle(color: Colors.grey[600], fontSize: 15),
+                  ),
+                ],
+              ),
+
+              // Bio
+              if (_bio != null && _bio!.isNotEmpty) ...[
+                const SizedBox(height: 12),
+                Text(_bio!, style: const TextStyle(fontSize: 14)),
+              ],
+
+              // Stats
+              if (_followersCount != null || _followingCount != null) ...[
+                const SizedBox(height: 12),
+                Row(
+                  children: [
+                    if (_followingCount != null)
+                      _buildStat(_followingCount!, 'フォロー'),
+                    if (_followingCount != null && _followersCount != null)
+                      const SizedBox(width: 16),
+                    if (_followersCount != null)
+                      _buildStat(_followersCount!, 'フォロワー'),
+                    if (_postsCount != null) ...[
+                      const SizedBox(width: 16),
+                      _buildStat(_postsCount!, '投稿'),
+                    ],
+                  ],
+                ),
+              ],
+
+              if (_isLoadingProfile) ...[
+                const SizedBox(height: 12),
+                const Center(
+                  child: SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  ),
+                ),
+              ],
+
+              if (_profileError != null) ...[
+                const SizedBox(height: 8),
+                Text(
+                  _profileError!,
+                  style: const TextStyle(color: Colors.red, fontSize: 12),
+                ),
+              ],
+            ],
+          ),
+        ),
+      ],
     );
   }
 

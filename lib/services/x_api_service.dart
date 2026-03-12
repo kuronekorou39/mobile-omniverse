@@ -471,6 +471,7 @@ class XApiService {
         'friends_count': legacy['friends_count'] as int? ?? 0,
         'statuses_count': legacy['statuses_count'] as int? ?? 0,
         'profile_image_url_https': legacy['profile_image_url_https'] as String?,
+        'profile_banner_url': legacy['profile_banner_url'] as String?,
         'is_following': isFollowing,
       };
     });
@@ -1200,6 +1201,7 @@ class XApiService {
               isRetweet: true,
               retweetedByUsername: username,
               retweetedByHandle: '@$screenName',
+              isSensitive: originalPost.isSensitive,
             );
           }
         }
@@ -1211,6 +1213,9 @@ class XApiService {
 
       final avatarUrl =
           userLegacy?['profile_image_url_https'] as String?;
+
+      // Sensitive content flag
+      final isSensitive = legacy['possibly_sensitive'] as bool? ?? false;
 
       // Engagement counts
       final likeCount = legacy['favorite_count'] as int? ?? 0;
@@ -1322,6 +1327,7 @@ class XApiService {
         permalink: permalink,
         inReplyToId: inReplyToId,
         quotedPost: quotedPost,
+        isSensitive: isSensitive,
       );
     } catch (e) {
       debugPrint('[XApi] Error parsing tweet: $e');

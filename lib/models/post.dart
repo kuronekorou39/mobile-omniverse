@@ -26,6 +26,7 @@ class Post {
     this.retweetedByUsername,
     this.retweetedByHandle,
     this.quotedPost,
+    this.isSensitive = false,
   });
 
   final String id;
@@ -63,6 +64,9 @@ class Post {
   final String? retweetedByHandle;
   final Post? quotedPost;
 
+  // Sensitive content flag
+  final bool isSensitive;
+
   factory Post.fromJson(Map<String, dynamic> json, SnsService source,
       {String? accountId}) {
     return Post(
@@ -75,6 +79,7 @@ class Post {
           DateTime.now(),
       avatarUrl: json['avatarUrl'] as String?,
       accountId: accountId,
+      isSensitive: json['isSensitive'] as bool? ?? false,
     );
   }
 
@@ -88,6 +93,7 @@ class Post {
     String? retweetedByUsername,
     String? retweetedByHandle,
     Post? quotedPost,
+    bool? isSensitive,
   }) {
     return Post(
       id: id,
@@ -114,6 +120,7 @@ class Post {
       retweetedByUsername: retweetedByUsername ?? this.retweetedByUsername,
       retweetedByHandle: retweetedByHandle ?? this.retweetedByHandle,
       quotedPost: quotedPost ?? this.quotedPost,
+      isSensitive: isSensitive ?? this.isSensitive,
     );
   }
 
@@ -141,6 +148,7 @@ class Post {
         'isRetweet': isRetweet,
         'retweetedByUsername': retweetedByUsername,
         'retweetedByHandle': retweetedByHandle,
+        'isSensitive': isSensitive,
         if (quotedPost != null) 'quotedPost': quotedPost!.toJson(),
       };
 
@@ -187,6 +195,7 @@ class Post {
       quotedPost: json['quotedPost'] != null
           ? Post.fromCache(json['quotedPost'] as Map<String, dynamic>)
           : null,
+      isSensitive: json['isSensitive'] as bool? ?? false,
     );
   }
 

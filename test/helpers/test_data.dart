@@ -28,6 +28,7 @@ Post makePost({
   String? retweetedByUsername,
   String? retweetedByHandle,
   Post? quotedPost,
+  bool isSensitive = false,
 }) {
   return Post(
     id: id,
@@ -54,6 +55,7 @@ Post makePost({
     retweetedByUsername: retweetedByUsername,
     retweetedByHandle: retweetedByHandle,
     quotedPost: quotedPost,
+    isSensitive: isSensitive,
   );
 }
 
@@ -143,6 +145,7 @@ Map<String, dynamic> makeXTweetResult({
   Map<String, dynamic>? retweetedStatusResult,
   Map<String, dynamic>? quotedStatusResult,
   List<Map<String, dynamic>>? urls,
+  bool possiblySensitive = false,
 }) {
   return {
     '__typename': 'Tweet',
@@ -155,6 +158,7 @@ Map<String, dynamic> makeXTweetResult({
       'reply_count': replyCount,
       'favorited': favorited,
       'retweeted': retweeted,
+      'possibly_sensitive': possiblySensitive,
       if (retweetedStatusResult != null)
         'retweeted_status_result': retweetedStatusResult,
       if (media != null)
@@ -224,6 +228,7 @@ Map<String, dynamic> makeBlueskyPostObject({
   String? likeUri,
   String? repostUri,
   Map<String, dynamic>? embed,
+  List<Map<String, dynamic>>? labels,
 }) {
   final rkey = (atUri ?? 'at://$did/app.bsky.feed.post/abc123').split('/').last;
   return {
@@ -248,5 +253,6 @@ Map<String, dynamic> makeBlueskyPostObject({
       if (repostUri != null) 'repost': repostUri,
     },
     if (embed != null) 'embed': embed,
+    if (labels != null) 'labels': labels,
   };
 }

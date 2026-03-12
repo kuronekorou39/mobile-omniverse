@@ -283,7 +283,7 @@ class _LogTile extends StatelessWidget {
                 _detailRow('Error', log.errorMessage!,
                     color: theme.colorScheme.error),
               if (log.responseSnippet != null)
-                _detailRow('Response', log.responseSnippet!),
+                _detailBlock('Response', log.responseSnippet!),
             ],
           ),
         ),
@@ -314,6 +314,39 @@ class _LogTile extends StatelessWidget {
               style: TextStyle(fontSize: 12, color: color),
               maxLines: 5,
               overflow: TextOverflow.ellipsis,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// 長文表示用。コピー可能、行数制限なし。
+  Widget _detailBlock(String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 4),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            label,
+            style: const TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w500,
+              color: Colors.grey,
+            ),
+          ),
+          const SizedBox(height: 2),
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              color: Colors.grey.shade100,
+              borderRadius: BorderRadius.circular(4),
+            ),
+            child: SelectableText(
+              value,
+              style: const TextStyle(fontSize: 11, fontFamily: 'monospace'),
             ),
           ),
         ],

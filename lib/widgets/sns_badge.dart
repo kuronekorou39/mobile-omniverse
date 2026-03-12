@@ -19,6 +19,16 @@ class SnsBadge extends StatelessWidget {
       SnsService.bluesky => (const Color(0xFF0085FF), Colors.white),
     };
 
+    final String text = switch (service) {
+      SnsService.x => '\u{1D54F}',
+      SnsService.bluesky => '\u{1F98B}',
+    };
+
+    final textStyle = switch (service) {
+      SnsService.x => TextStyle(color: fg, fontSize: fontSize, fontWeight: FontWeight.bold),
+      SnsService.bluesky => TextStyle(color: fg, fontSize: fontSize),
+    };
+
     return Container(
       padding: EdgeInsets.symmetric(horizontal: hPad, vertical: vPad),
       decoration: BoxDecoration(
@@ -26,8 +36,8 @@ class SnsBadge extends StatelessWidget {
         borderRadius: BorderRadius.circular(4),
       ),
       child: Text(
-        service.label,
-        style: TextStyle(color: fg, fontSize: fontSize, fontWeight: FontWeight.bold),
+        text,
+        style: textStyle,
       ),
     );
   }

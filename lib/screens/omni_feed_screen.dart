@@ -75,11 +75,7 @@ class _OmniFeedScreenState extends ConsumerState<OmniFeedScreen>
             duration: const Duration(seconds: 5),
             action: SnackBarAction(
               label: 'アカウント',
-              onPressed: () {
-                Navigator.of(context).push(
-                  MaterialPageRoute(builder: (_) => const AccountsScreen()),
-                );
-              },
+              onPressed: () => _openAccountsScreen(context),
             ),
           ),
         );
@@ -727,12 +723,7 @@ class _OmniFeedScreenState extends ConsumerState<OmniFeedScreen>
                   ),
                   const SizedBox(height: 24),
                   FilledButton.icon(
-                    onPressed: () {
-                      Navigator.of(context).push(
-                        MaterialPageRoute(
-                            builder: (_) => const AccountsScreen()),
-                      );
-                    },
+                    onPressed: () => _openAccountsScreen(context),
                     icon: const Icon(Icons.person_add),
                     label: const Text('アカウント追加'),
                   ),

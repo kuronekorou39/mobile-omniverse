@@ -79,9 +79,16 @@ class LinkedText extends StatelessWidget {
 
 /// 画像グリッド表示の共有ウィジェット
 class PostImageGrid extends StatelessWidget {
-  const PostImageGrid({super.key, required this.imageUrls});
+  const PostImageGrid({
+    super.key,
+    required this.imageUrls,
+    this.maxSingleHeight,
+    this.gridHeight,
+  });
 
   final List<String> imageUrls;
+  final double? maxSingleHeight;
+  final double? gridHeight;
 
   @override
   Widget build(BuildContext context) {
@@ -90,15 +97,19 @@ class PostImageGrid extends StatelessWidget {
 
     if (count == 1) return _buildSingleImage(context, imageUrls[0], 0);
 
+    final gh = gridHeight ?? 150;
+
     if (count == 2) {
       return Row(
         children: [
           Expanded(child: _buildGridImage(context, imageUrls[0], 0,
+              height: gh,
               borderRadius: const BorderRadius.only(
                   topLeft: Radius.circular(8),
                   bottomLeft: Radius.circular(8)))),
           const SizedBox(width: 2),
           Expanded(child: _buildGridImage(context, imageUrls[1], 1,
+              height: gh,
               borderRadius: const BorderRadius.only(
                   topRight: Radius.circular(8),
                   bottomRight: Radius.circular(8)))),
@@ -107,11 +118,13 @@ class PostImageGrid extends StatelessWidget {
     }
 
     if (count == 3) {
+      final tallH = gh * 2 + 2;
+      final smallH = gh;
       return Row(
         children: [
           Expanded(
             child: _buildGridImage(context, imageUrls[0], 0,
-                height: 200,
+                height: tallH,
                 borderRadius: const BorderRadius.only(
                     topLeft: Radius.circular(8),
                     bottomLeft: Radius.circular(8))),
@@ -121,12 +134,12 @@ class PostImageGrid extends StatelessWidget {
             child: Column(
               children: [
                 _buildGridImage(context, imageUrls[1], 1,
-                    height: 99,
+                    height: smallH,
                     borderRadius: const BorderRadius.only(
                         topRight: Radius.circular(8))),
                 const SizedBox(height: 2),
                 _buildGridImage(context, imageUrls[2], 2,
-                    height: 99,
+                    height: smallH,
                     borderRadius: const BorderRadius.only(
                         bottomRight: Radius.circular(8))),
               ],
@@ -142,12 +155,12 @@ class PostImageGrid extends StatelessWidget {
         Row(
           children: [
             Expanded(child: _buildGridImage(context, imageUrls[0], 0,
-                height: 100,
+                height: gh,
                 borderRadius: const BorderRadius.only(
                     topLeft: Radius.circular(8)))),
             const SizedBox(width: 2),
             Expanded(child: _buildGridImage(context, imageUrls[1], 1,
-                height: 100,
+                height: gh,
                 borderRadius: const BorderRadius.only(
                     topRight: Radius.circular(8)))),
           ],
@@ -156,12 +169,12 @@ class PostImageGrid extends StatelessWidget {
         Row(
           children: [
             Expanded(child: _buildGridImage(context, imageUrls[2], 2,
-                height: 100,
+                height: gh,
                 borderRadius: const BorderRadius.only(
                     bottomLeft: Radius.circular(8)))),
             const SizedBox(width: 2),
             Expanded(child: _buildGridImage(context, imageUrls[3], 3,
-                height: 100,
+                height: gh,
                 borderRadius: const BorderRadius.only(
                     bottomRight: Radius.circular(8)))),
           ],
@@ -176,17 +189,16 @@ class PostImageGrid extends StatelessWidget {
       child: ClipRRect(
         borderRadius: BorderRadius.circular(8),
         child: ConstrainedBox(
-          constraints: const BoxConstraints(maxHeight: 300),
+          constraints: BoxConstraints(maxHeight: maxSingleHeight ?? 300),
           child: CachedNetworkImage(
             imageUrl: url,
             httpHeaders: kImageHeaders,
+            fadeInDuration: Duration.zero,
             fit: BoxFit.cover,
             width: double.infinity,
             placeholder: (context, url) => Container(
               height: 200,
               color: Colors.grey[300],
-              child: const Center(
-                  child: CircularProgressIndicator(strokeWidth: 2)),
             ),
             errorWidget: (context, error, stackTrace) => Container(
               height: 100,
@@ -212,15 +224,16 @@ class PostImageGrid extends StatelessWidget {
         borderRadius: borderRadius ?? BorderRadius.zero,
         child: CachedNetworkImage(
           imageUrl: url,
+          fadeInDuration: Duration.zero,
           fit: BoxFit.cover,
-          height: height ?? 150,
+          height: height ?? gridHeight ?? 150,
           width: double.infinity,
           placeholder: (context, url) => Container(
-            height: height ?? 150,
+            height: height ?? gridHeight ?? 150,
             color: Colors.grey[300],
           ),
           errorWidget: (context, error, stackTrace) => Container(
-            height: height ?? 150,
+            height: height ?? gridHeight ?? 150,
             color: Colors.grey[300],
             child: const Icon(Icons.broken_image, size: 20),
           ),
@@ -247,10 +260,12 @@ class PostVideoThumbnail extends StatelessWidget {
     super.key,
     required this.videoUrl,
     required this.thumbnailUrl,
+    this.height,
   });
 
   final String videoUrl;
   final String thumbnailUrl;
+  final double? height;
 
   @override
   Widget build(BuildContext context) {
@@ -269,15 +284,16 @@ class PostVideoThumbnail extends StatelessWidget {
             CachedNetworkImage(
               imageUrl: thumbnailUrl,
               httpHeaders: kImageHeaders,
+              fadeInDuration: Duration.zero,
               fit: BoxFit.cover,
               width: double.infinity,
-              height: 200,
+              height: height ?? 200,
               placeholder: (context, url) => Container(
-                height: 200,
+                height: height ?? 200,
                 color: Colors.grey[300],
               ),
               errorWidget: (context, error, stackTrace) => Container(
-                height: 200,
+                height: height ?? 200,
                 color: Colors.grey[800],
                 child: const Icon(Icons.videocam,
                     color: Colors.white54, size: 48),

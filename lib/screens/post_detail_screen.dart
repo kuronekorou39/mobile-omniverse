@@ -11,6 +11,7 @@ import '../services/account_storage_service.dart';
 import '../services/bluesky_api_service.dart';
 import '../services/bookmark_service.dart';
 import '../services/x_api_service.dart';
+import '../providers/settings_provider.dart';
 import '../widgets/post_card.dart';
 import '../widgets/post_media.dart';
 import '../widgets/sns_badge.dart';
@@ -168,16 +169,23 @@ class _PostDetailScreenState extends ConsumerState<PostDetailScreen> {
                 ),
               ),
               ..._replies.map(
-                (reply) => PostCard(
-                  post: reply,
-                  onTap: () {
-                    Navigator.of(context).push(
-                      MaterialPageRoute(
-                        builder: (_) => PostDetailScreen(post: reply),
-                      ),
-                    );
-                  },
-                ),
+                (reply) {
+                  final s = ref.watch(settingsProvider);
+                  return PostCard(
+                    post: reply,
+                    compactEngagement: s.compactEngagement,
+                    imageMaxHeight: s.imagePreviewSize.singleImageMaxHeight,
+                    imageGridHeight: s.imagePreviewSize.gridImageHeight,
+                    videoHeight: s.imagePreviewSize.videoHeight,
+                    onTap: () {
+                      Navigator.of(context).push(
+                        MaterialPageRoute(
+                          builder: (_) => PostDetailScreen(post: reply),
+                        ),
+                      );
+                    },
+                  );
+                },
               ),
             ],
             const SizedBox(height: 80),

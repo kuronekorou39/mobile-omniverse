@@ -21,6 +21,10 @@ class PostCard extends StatelessWidget {
     this.onRepost,
     this.onQuoteRepost,
     this.hideSensitive = true,
+    this.compactEngagement = true,
+    this.imageMaxHeight,
+    this.imageGridHeight,
+    this.videoHeight,
   });
 
   final Post post;
@@ -29,6 +33,10 @@ class PostCard extends StatelessWidget {
   final VoidCallback? onRepost;
   final VoidCallback? onQuoteRepost;
   final bool hideSensitive;
+  final bool compactEngagement;
+  final double? imageMaxHeight;
+  final double? imageGridHeight;
+  final double? videoHeight;
 
   String _formatTimestamp(DateTime timestamp) {
     final diff = DateTime.now().difference(timestamp);
@@ -107,13 +115,18 @@ class PostCard extends StatelessWidget {
                     if (post.body.isNotEmpty) LinkedText(text: post.body),
                     if (post.imageUrls.isNotEmpty) ...[
                       const SizedBox(height: 8),
-                      PostImageGrid(imageUrls: post.imageUrls),
+                      PostImageGrid(
+                        imageUrls: post.imageUrls,
+                        maxSingleHeight: imageMaxHeight,
+                        gridHeight: imageGridHeight,
+                      ),
                     ],
                     if (post.videoUrl != null && post.videoThumbnailUrl != null) ...[
                       const SizedBox(height: 8),
                       PostVideoThumbnail(
                         videoUrl: post.videoUrl!,
                         thumbnailUrl: post.videoThumbnailUrl!,
+                        height: videoHeight,
                       ),
                     ],
                   ],
@@ -136,7 +149,7 @@ class PostCard extends StatelessWidget {
               ],
 
               // Engagement row
-              const SizedBox(height: 8),
+              SizedBox(height: compactEngagement ? 4 : 8),
               _buildEngagementRow(context),
             ],
           ),
@@ -346,8 +359,9 @@ class PostCard extends StatelessWidget {
 
   Widget _buildEngagementRow(BuildContext context) {
     final iconColor = Colors.grey[600];
-    const iconSize = 18.0;
-    const fontSize = 12.0;
+    final compact = compactEngagement;
+    final iconSize = compact ? 16.0 : 18.0;
+    final fontSize = compact ? 11.0 : 12.0;
 
     return Row(
       children: [
@@ -358,6 +372,7 @@ class PostCard extends StatelessWidget {
           color: iconColor!,
           iconSize: iconSize,
           fontSize: fontSize,
+          compact: compact,
         ),
         const Spacer(),
         // Repost
@@ -367,6 +382,7 @@ class PostCard extends StatelessWidget {
           color: iconColor,
           iconSize: iconSize,
           fontSize: fontSize,
+          compact: compact,
           onTap: onRepost != null
               ? () => _showRepostMenu(context)
               : null,
@@ -380,14 +396,14 @@ class PostCard extends StatelessWidget {
           color: iconColor,
           iconSize: iconSize,
           fontSize: fontSize,
+          compact: compact,
           onTap: onLike,
           isActive: post.isLiked,
         ),
         const Spacer(),
         // Share
-        IconButton(
-          icon: Icon(Icons.share_outlined, size: iconSize, color: iconColor),
-          onPressed: post.permalink != null
+        GestureDetector(
+          onTap: post.permalink != null
               ? () async {
                   final uri = Uri.tryParse(post.permalink!);
                   if (uri != null) {
@@ -395,9 +411,13 @@ class PostCard extends StatelessWidget {
                   }
                 }
               : null,
-          padding: EdgeInsets.zero,
-          constraints: const BoxConstraints(),
-          visualDensity: VisualDensity.compact,
+          child: Padding(
+            padding: EdgeInsets.symmetric(
+              horizontal: compact ? 4 : 8,
+              vertical: compact ? 2 : 4,
+            ),
+            child: Icon(Icons.share_outlined, size: iconSize, color: iconColor),
+          ),
         ),
         // 取得元アカウントのアバター一覧
         if (post.fetchedByAccountIds.isNotEmpty)
@@ -453,6 +473,7 @@ class _EngagementButton extends StatefulWidget {
     required this.fontSize,
     this.onTap,
     this.isActive = false,
+    this.compact = false,
   });
 
   final IconData icon;
@@ -462,6 +483,7 @@ class _EngagementButton extends StatefulWidget {
   final double fontSize;
   final VoidCallback? onTap;
   final bool isActive;
+  final bool compact;
 
   @override
   State<_EngagementButton> createState() => _EngagementButtonState();
@@ -504,7 +526,10 @@ class _EngagementButtonState extends State<_EngagementButton>
       borderRadius: BorderRadius.circular(20),
       onTap: widget.onTap != null ? _handleTap : null,
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+        padding: EdgeInsets.symmetric(
+          horizontal: widget.compact ? 4 : 8,
+          vertical: widget.compact ? 2 : 4,
+        ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [

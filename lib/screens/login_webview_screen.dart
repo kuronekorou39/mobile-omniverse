@@ -166,23 +166,6 @@ class _LoginWebViewScreenState extends State<LoginWebViewScreen> {
           Column(
         children: [
           if (_progress < 1.0) LinearProgressIndicator(value: _progress),
-          // ナビゲーションバー (旧版と同じ)
-          Row(
-            children: [
-              IconButton(
-                icon: const Icon(Icons.arrow_back),
-                onPressed: () => _controller?.goBack(),
-              ),
-              IconButton(
-                icon: const Icon(Icons.arrow_forward),
-                onPressed: () => _controller?.goForward(),
-              ),
-              IconButton(
-                icon: const Icon(Icons.refresh),
-                onPressed: () => _controller?.reload(),
-              ),
-            ],
-          ),
           Expanded(
             child: !_cookiesCleared
                 ? const Center(child: CircularProgressIndicator())

@@ -11,6 +11,7 @@ import '../services/account_storage_service.dart';
 import '../services/bluesky_api_service.dart';
 import '../services/x_api_service.dart';
 import '../utils/image_headers.dart';
+import '../providers/settings_provider.dart';
 import '../widgets/post_card.dart';
 import '../widgets/sns_badge.dart';
 import 'post_detail_screen.dart';
@@ -399,8 +400,13 @@ class _UserProfileScreenState extends ConsumerState<UserProfileScreen>
               );
             }
             final post = posts[index];
+            final s = ref.watch(settingsProvider);
             return PostCard(
               post: post,
+              compactEngagement: s.compactEngagement,
+              imageMaxHeight: s.imagePreviewSize.singleImageMaxHeight,
+              imageGridHeight: s.imagePreviewSize.gridImageHeight,
+              videoHeight: s.imagePreviewSize.videoHeight,
               onTap: () {
                 Navigator.of(context).push(
                   MaterialPageRoute(

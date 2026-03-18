@@ -4,6 +4,32 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../services/timeline_fetch_scheduler.dart';
 
+/// 画像プレビューサイズ
+enum ImagePreviewSize {
+  small('小'),
+  medium('中'),
+  large('大');
+
+  const ImagePreviewSize(this.label);
+  final String label;
+
+  double get singleImageMaxHeight => switch (this) {
+        small => 150,
+        medium => 200,
+        large => 300,
+      };
+  double get gridImageHeight => switch (this) {
+        small => 80,
+        medium => 100,
+        large => 150,
+      };
+  double get videoHeight => switch (this) {
+        small => 120,
+        medium => 150,
+        large => 200,
+      };
+}
+
 class SettingsState {
   const SettingsState({
     this.fetchIntervalSeconds = 15,
@@ -14,6 +40,8 @@ class SettingsState {
     this.showAccountPickerOnEngagement = false,
     this.showFetchTimer = true,
     this.showSensitiveContent = false,
+    this.compactEngagement = true,
+    this.imagePreviewSize = ImagePreviewSize.medium,
   });
 
   final int fetchIntervalSeconds;
@@ -28,6 +56,10 @@ class SettingsState {
   final bool showFetchTimer;
   /// センシティブコンテンツを常に表示するか
   final bool showSensitiveContent;
+  /// エンゲージメントバーをコンパクトにするか
+  final bool compactEngagement;
+  /// 画像プレビューサイズ
+  final ImagePreviewSize imagePreviewSize;
 
   SettingsState copyWith({
     int? fetchIntervalSeconds,
@@ -38,6 +70,8 @@ class SettingsState {
     bool? showAccountPickerOnEngagement,
     bool? showFetchTimer,
     bool? showSensitiveContent,
+    bool? compactEngagement,
+    ImagePreviewSize? imagePreviewSize,
   }) {
     return SettingsState(
       fetchIntervalSeconds: fetchIntervalSeconds ?? this.fetchIntervalSeconds,
@@ -48,6 +82,8 @@ class SettingsState {
       showAccountPickerOnEngagement: showAccountPickerOnEngagement ?? this.showAccountPickerOnEngagement,
       showFetchTimer: showFetchTimer ?? this.showFetchTimer,
       showSensitiveContent: showSensitiveContent ?? this.showSensitiveContent,
+      compactEngagement: compactEngagement ?? this.compactEngagement,
+      imagePreviewSize: imagePreviewSize ?? this.imagePreviewSize,
     );
   }
 }
@@ -64,6 +100,8 @@ class SettingsNotifier extends StateNotifier<SettingsState> {
   static const _keyShowAccountPicker = 'settings_show_account_picker';
   static const _keyShowFetchTimer = 'settings_show_fetch_timer';
   static const _keyShowSensitiveContent = 'settings_show_sensitive_content';
+  static const _keyCompactEngagement = 'settings_compact_engagement';
+  static const _keyImagePreviewSize = 'settings_image_preview_size';
 
   final _scheduler = TimelineFetchScheduler.instance;
 
@@ -76,6 +114,8 @@ class SettingsNotifier extends StateNotifier<SettingsState> {
     final showAccountPicker = prefs.getBool(_keyShowAccountPicker) ?? false;
     final showFetchTimer = prefs.getBool(_keyShowFetchTimer) ?? true;
     final showSensitiveContent = prefs.getBool(_keyShowSensitiveContent) ?? false;
+    final compactEngagement = prefs.getBool(_keyCompactEngagement) ?? true;
+    final imagePreviewSizeIndex = prefs.getInt(_keyImagePreviewSize) ?? ImagePreviewSize.medium.index;
 
     state = state.copyWith(
       fetchIntervalSeconds: interval,
@@ -85,6 +125,8 @@ class SettingsNotifier extends StateNotifier<SettingsState> {
       showAccountPickerOnEngagement: showAccountPicker,
       showFetchTimer: showFetchTimer,
       showSensitiveContent: showSensitiveContent,
+      compactEngagement: compactEngagement,
+      imagePreviewSize: ImagePreviewSize.values[imagePreviewSizeIndex.clamp(0, 2)],
     );
 
     // #3: デフォルトフェッチONの場合、起動時にスケジューラを開始
@@ -104,6 +146,8 @@ class SettingsNotifier extends StateNotifier<SettingsState> {
         _keyShowAccountPicker, state.showAccountPickerOnEngagement);
     await prefs.setBool(_keyShowFetchTimer, state.showFetchTimer);
     await prefs.setBool(_keyShowSensitiveContent, state.showSensitiveContent);
+    await prefs.setBool(_keyCompactEngagement, state.compactEngagement);
+    await prefs.setInt(_keyImagePreviewSize, state.imagePreviewSize.index);
   }
 
   void setInterval(int seconds) {
@@ -149,6 +193,16 @@ class SettingsNotifier extends StateNotifier<SettingsState> {
 
   void setShowSensitiveContent(bool value) {
     state = state.copyWith(showSensitiveContent: value);
+    _saveToPrefs();
+  }
+
+  void setCompactEngagement(bool value) {
+    state = state.copyWith(compactEngagement: value);
+    _saveToPrefs();
+  }
+
+  void setImagePreviewSize(ImagePreviewSize size) {
+    state = state.copyWith(imagePreviewSize: size);
     _saveToPrefs();
   }
 

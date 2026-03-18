@@ -41,6 +41,21 @@ class NotificationItem {
   final DateTime timestamp;
   final bool isRead;
 
+  NotificationItem copyWith({String? targetPostBody}) {
+    return NotificationItem(
+      id: id,
+      type: type,
+      source: source,
+      actorName: actorName,
+      actorHandle: actorHandle,
+      actorAvatarUrl: actorAvatarUrl,
+      targetPostBody: targetPostBody ?? this.targetPostBody,
+      targetPostId: targetPostId,
+      timestamp: timestamp,
+      isRead: isRead,
+    );
+  }
+
   String get typeLabel => switch (type) {
         NotificationType.like => 'いいね',
         NotificationType.repost => 'リポスト',

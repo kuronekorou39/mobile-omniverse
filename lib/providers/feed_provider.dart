@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter_cache_manager/flutter_cache_manager.dart';
 import 'package:flutter_overlay_window/flutter_overlay_window.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -12,6 +13,7 @@ import '../providers/activity_log_provider.dart';
 import '../providers/settings_provider.dart';
 import '../services/timeline_cache_service.dart';
 import '../services/timeline_fetch_scheduler.dart';
+import '../utils/image_headers.dart';
 
 class FeedState {
   const FeedState({
@@ -79,6 +81,44 @@ class FeedNotifier extends StateNotifier<FeedState> {
   int _remainingSeconds = 0;
   bool _wasFetching = false;
   final SettingsState Function() _settingsReader;
+
+  /// 画像キャッシュ済みの投稿 ID
+  final Set<String> _precachedIds = {};
+
+  /// 投稿の画像をプリキャッシュ
+  Future<void> _precachePostImages(Post post) async {
+    if (_precachedIds.contains(post.id)) return;
+    final urls = <String>[
+      if (post.avatarUrl != null) post.avatarUrl!,
+      ...post.imageUrls,
+      if (post.videoThumbnailUrl != null) post.videoThumbnailUrl!,
+    ];
+    if (urls.isEmpty) {
+      _precachedIds.add(post.id);
+      return;
+    }
+    try {
+      debugPrint('[Feed] Precaching ${urls.length} images for ${post.id}');
+      await Future.wait(
+        urls.map((url) => DefaultCacheManager().downloadFile(
+              url,
+              authHeaders: kImageHeaders,
+            )),
+      ).timeout(const Duration(seconds: 5), onTimeout: () => []);
+      debugPrint('[Feed] Precache done for ${post.id}');
+    } catch (e) {
+      debugPrint('[Feed] Precache error for ${post.id}: $e');
+    }
+    _precachedIds.add(post.id);
+  }
+
+  /// 複数投稿の画像を並列プリキャッシュ
+  void _precachePostsImages(List<Post> posts) {
+    debugPrint('[Feed] Starting precache for ${posts.length} posts');
+    for (final post in posts) {
+      _precachePostImages(post);
+    }
+  }
 
   /// トークン期限切れアカウントの通知用 (accountId, handle)
   void Function(String accountId, String handle)? onTokenExpired;
@@ -207,12 +247,27 @@ class FeedNotifier extends StateNotifier<FeedState> {
           repostCount: post.repostCount,
           fetchedByAccountIds: mergedAccountIds,
         );
+      } else if (old != null && old.isRetweet && !post.isRetweet) {
+        // RT版が既にあるのに非RT版が来た場合、RTフラグを保持
+        // (同じツイートがRT版と直接版の両方でフェッチされるケース)
+        existing[post.id] = post.copyWith(
+          fetchedByAccountIds: mergedAccountIds,
+          isRetweet: true,
+          retweetedByUsername: old.retweetedByUsername,
+          retweetedByHandle: old.retweetedByHandle,
+        );
       } else if (old != null) {
         // 既存投稿の更新（エンゲージメント等）— 即時反映
         existing[post.id] = post.copyWith(fetchedByAccountIds: mergedAccountIds);
       } else if (!_pendingIds.contains(post.id)) {
-        // 新規投稿（キューにも未登録）— キューに追加（Mapで同一フェッチ内の重複防止）
-        newToQueue[post.id] = post;
+        // 新規投稿（キューにも未登録）— キューに追加
+        // 同一バッチ内でRT版と非RT版が競合する場合、RT版を優先
+        final queued = newToQueue[post.id];
+        if (queued != null && queued.isRetweet && !post.isRetweet) {
+          // RT版が既にキューにあるので非RT版では上書きしない
+        } else {
+          newToQueue[post.id] = post;
+        }
       }
     }
 
@@ -224,6 +279,7 @@ class FeedNotifier extends StateNotifier<FeedState> {
     _firstFetch = false;
 
     if (shouldBypassDrip && newPending.isNotEmpty) {
+      _precachePostsImages(newPending);
       for (final post in newPending) {
         existing[post.id] = post;
       }
@@ -259,6 +315,7 @@ class FeedNotifier extends StateNotifier<FeedState> {
           .toList();
       debugPrint('[Feed] newPending=${newPending.length} filtered=${filtered.length} (hideRT=${hideRtIds.length})');
       if (filtered.isEmpty) return;
+      _precachePostsImages(filtered);
       _pendingQueue.addAll(filtered);
       _pendingIds.addAll(filtered.map((p) => p.id));
       state = state.copyWith(pendingCount: _pendingQueue.length);

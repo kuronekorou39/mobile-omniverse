@@ -652,6 +652,18 @@ class BlueskyApiService {
     if (response.statusCode == 401) {
       throw BlueskyAuthException('Token expired');
     }
+    if (response.statusCode == 400) {
+      try {
+        final errBody = json.decode(response.body) as Map<String, dynamic>;
+        final errCode = errBody['error'] as String?;
+        debugPrint('[BlueskyApi] Notification 400 error code: $errCode');
+        if (errCode == 'ExpiredToken' || errCode == 'InvalidToken') {
+          throw BlueskyAuthException('Token expired (400: $errCode)');
+        }
+      } catch (e) {
+        if (e is BlueskyAuthException) rethrow;
+      }
+    }
     if (response.statusCode != 200) {
       throw BlueskyApiException(
         'Failed to fetch notifications: ${response.statusCode}',
@@ -727,6 +739,40 @@ class BlueskyApiService {
     }
   }
 
+  /// 投稿を一括取得 (AT URI のリスト、最大25件)
+  Future<Map<String, String>> getPostTexts(
+    BlueskyCredentials creds,
+    List<String> uris,
+  ) async {
+    if (uris.isEmpty) return {};
+    // API は最大 25 件
+    final batch = uris.take(25).toList();
+    final queryParams = batch.map((u) => 'uris=${Uri.encodeComponent(u)}').join('&');
+    final uri = Uri.parse(
+      '${creds.pdsUrl}/xrpc/app.bsky.feed.getPosts?$queryParams',
+    );
+    final hdrs = {
+      'Authorization': 'Bearer ${creds.accessJwt}',
+      'Accept': 'application/json',
+    };
+    final response = await _client.get(uri, headers: hdrs);
+    if (response.statusCode != 200) return {};
+
+    final body = json.decode(response.body) as Map<String, dynamic>;
+    final posts = body['posts'] as List<dynamic>? ?? [];
+    final result = <String, String>{};
+    for (final post in posts) {
+      final p = post as Map<String, dynamic>;
+      final postUri = p['uri'] as String? ?? '';
+      final record = p['record'] as Map<String, dynamic>?;
+      final text = record?['text'] as String?;
+      if (postUri.isNotEmpty && text != null && text.isNotEmpty) {
+        result[postUri] = text;
+      }
+    }
+    return result;
+  }
+
   /// セッションをリフレッシュ
   Future<BlueskyCredentials> refreshSession(BlueskyCredentials creds) async {
     final uri = Uri.parse(
@@ -752,6 +798,60 @@ class BlueskyApiService {
       accessJwt: body['accessJwt'] as String,
       refreshJwt: body['refreshJwt'] as String,
     );
+  }
+
+  /// 通知取得 (トークン期限切れ時は自動リフレッシュ + 投稿内容補完)
+  Future<({List<NotificationItem> notifications, String? cursor, BlueskyCredentials? updatedCreds})>
+      getNotificationsWithRefresh(
+    BlueskyCredentials creds, {
+    int limit = 30,
+    String? cursor,
+  }) async {
+    BlueskyCredentials? updatedCreds;
+    List<NotificationItem> notifications;
+    String? nextCursor;
+
+    try {
+      final result = await getNotifications(creds, limit: limit, cursor: cursor);
+      notifications = result.notifications;
+      nextCursor = result.cursor;
+    } on BlueskyAuthException {
+      debugPrint('[BlueskyApi] Notification token expired, refreshing...');
+      updatedCreds = await refreshSession(creds);
+      final result = await getNotifications(updatedCreds, limit: limit, cursor: cursor);
+      notifications = result.notifications;
+      nextCursor = result.cursor;
+    }
+
+    // 投稿内容が未取得の通知 (like/repost/quote) の対象投稿を一括取得
+    final activeCreds = updatedCreds ?? creds;
+    final urisToFetch = <String>[];
+    for (final n in notifications) {
+      if (n.targetPostBody == null &&
+          n.targetPostId != null &&
+          n.targetPostId!.startsWith('at://')) {
+        urisToFetch.add(n.targetPostId!);
+      }
+    }
+    if (urisToFetch.isNotEmpty) {
+      try {
+        final postTexts = await getPostTexts(activeCreds, urisToFetch);
+        if (postTexts.isNotEmpty) {
+          notifications = notifications.map((n) {
+            if (n.targetPostBody == null &&
+                n.targetPostId != null &&
+                postTexts.containsKey(n.targetPostId)) {
+              return n.copyWith(targetPostBody: postTexts[n.targetPostId]);
+            }
+            return n;
+          }).toList();
+        }
+      } catch (e) {
+        debugPrint('[BlueskyApi] Failed to fetch post texts for notifications: $e');
+      }
+    }
+
+    return (notifications: notifications, cursor: nextCursor, updatedCreds: updatedCreds);
   }
 
   /// タイムライン取得 (トークン期限切れ時は自動リフレッシュ)

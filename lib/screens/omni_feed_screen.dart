@@ -863,6 +863,10 @@ class _OmniFeedScreenState extends ConsumerState<OmniFeedScreen>
               key: ValueKey(post.id),
               post: post,
               hideSensitive: !settings.showSensitiveContent,
+              compactEngagement: settings.compactEngagement,
+              imageMaxHeight: settings.imagePreviewSize.singleImageMaxHeight,
+              imageGridHeight: settings.imagePreviewSize.gridImageHeight,
+              videoHeight: settings.imagePreviewSize.videoHeight,
               onQuoteRepost: () async {
                 final posted = await Navigator.of(context).push<bool>(
                   MaterialPageRoute(

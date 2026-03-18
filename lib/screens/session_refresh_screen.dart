@@ -112,22 +112,6 @@ class _SessionRefreshScreenState extends State<SessionRefreshScreen> {
           Column(
             children: [
               if (_progress < 1.0) LinearProgressIndicator(value: _progress),
-              Row(
-                children: [
-                  IconButton(
-                    icon: const Icon(Icons.arrow_back),
-                    onPressed: () => _controller?.goBack(),
-                  ),
-                  IconButton(
-                    icon: const Icon(Icons.arrow_forward),
-                    onPressed: () => _controller?.goForward(),
-                  ),
-                  IconButton(
-                    icon: const Icon(Icons.refresh),
-                    onPressed: () => _controller?.reload(),
-                  ),
-                ],
-              ),
               Expanded(
                 child: !_cookiesReady
                     ? const Center(child: CircularProgressIndicator())

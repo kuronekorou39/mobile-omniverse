@@ -137,6 +137,29 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
 
           // Appearance section
           const _SectionHeader(title: '外観'),
+          SwitchListTile(
+            title: const Text('コンパクトエンゲージメント'),
+            subtitle: const Text('いいね/RT ボタンの領域を小さくする'),
+            value: settings.compactEngagement,
+            onChanged: (value) => notifier.setCompactEngagement(value),
+          ),
+          ListTile(
+            title: const Text('画像プレビューサイズ'),
+            subtitle: Text(settings.imagePreviewSize.label),
+            trailing: SegmentedButton<ImagePreviewSize>(
+              segments: const [
+                ButtonSegment(value: ImagePreviewSize.small, label: Text('小')),
+                ButtonSegment(value: ImagePreviewSize.medium, label: Text('中')),
+                ButtonSegment(value: ImagePreviewSize.large, label: Text('大')),
+              ],
+              selected: {settings.imagePreviewSize},
+              onSelectionChanged: (value) =>
+                  notifier.setImagePreviewSize(value.first),
+              style: ButtonStyle(
+                visualDensity: VisualDensity.compact,
+              ),
+            ),
+          ),
           ListTile(
             title: const Text('テーマ'),
             subtitle: Text(_themeModeLabel(settings.themeMode)),

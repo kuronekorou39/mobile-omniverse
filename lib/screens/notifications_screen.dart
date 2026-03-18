@@ -9,6 +9,7 @@ import '../models/post.dart';
 import '../models/sns_service.dart';
 import '../providers/account_provider.dart';
 import '../providers/activity_log_provider.dart';
+import '../services/account_storage_service.dart';
 import '../services/bluesky_api_service.dart';
 import '../services/x_api_service.dart';
 import '../widgets/sns_badge.dart';
@@ -140,8 +141,13 @@ class _NotificationListState extends ConsumerState<_NotificationList>
         });
       } else {
         final result = await BlueskyApiService.instance
-            .getNotifications(widget.account.blueskyCredentials);
+            .getNotificationsWithRefresh(widget.account.blueskyCredentials);
         count = result.notifications.length;
+        // トークンが更新された場合は保存
+        if (result.updatedCreds != null) {
+          await ref.read(accountProvider.notifier)
+              .updateCredentials(widget.account.id, result.updatedCreds!);
+        }
         if (!mounted) return;
         setState(() {
           _notifications
@@ -197,9 +203,14 @@ class _NotificationListState extends ConsumerState<_NotificationList>
           _isLoadingMore = false;
         });
       } else {
-        final result = await BlueskyApiService.instance.getNotifications(
-            widget.account.blueskyCredentials,
-            cursor: _cursor);
+        final result = await BlueskyApiService.instance
+            .getNotificationsWithRefresh(
+                widget.account.blueskyCredentials,
+                cursor: _cursor);
+        if (result.updatedCreds != null) {
+          await ref.read(accountProvider.notifier)
+              .updateCredentials(widget.account.id, result.updatedCreds!);
+        }
         if (!mounted) return;
         setState(() {
           _notifications.addAll(result.notifications);

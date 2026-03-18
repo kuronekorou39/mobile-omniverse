@@ -183,27 +183,6 @@ class XApiService {
 
   // ===== queryId 404 リトライラッパー =====
 
-  /// GET 系 API (throw するもの) の 404 リトライラッパー
-  /// queryId はアカウント別に管理 — 他アカウントに影響しない
-  Future<T> _withQueryIdRetry<T>(
-    XCredentials creds,
-    String operationName,
-    Future<T> Function(String queryId) action,
-  ) async {
-    final queryId = XQueryIdService.instance.getQueryId(operationName, creds: creds);
-    try {
-      return await action(queryId);
-    } on XApiException catch (e) {
-      if (e.statusCode == 404) {
-        final count = await XQueryIdService.instance.forceRefresh(creds);
-        debugPrint('[XApi] 404→queryId refresh ($count ids) for $operationName');
-        final newQueryId = XQueryIdService.instance.getQueryId(operationName, creds: creds);
-        if (newQueryId != queryId) return await action(newQueryId);
-      }
-      rethrow;
-    }
-  }
-
   /// GET 系 API の 404 リトライ (対象 operation の queryId のみ更新)
   Future<T> _withTargetedQueryIdRetry<T>(
     XCredentials creds,
@@ -237,7 +216,7 @@ class XApiService {
     int count = 20,
     String? cursor,
   }) async {
-    return _withQueryIdRetry(creds, 'HomeLatestTimeline', (queryId) async {
+    return _withTargetedQueryIdRetry(creds, 'HomeLatestTimeline', (queryId) async {
       final variables = json.encode({
         'count': count,
         'includePromotedContent': false,
@@ -274,7 +253,21 @@ class XApiService {
       }
 
       final body = json.decode(response.body) as Map<String, dynamic>;
-      return parseTimelineWithCursor(body, accountId);
+      final result = parseTimelineWithCursor(body, accountId);
+
+      // queryId品質チェック: ユーザー情報が大量に欠けていたらデフォルトに戻す
+      if (result.posts.length >= 3) {
+        final missingCount = result.posts.where((p) =>
+            p.username.isEmpty || p.handle == '@').length;
+        final missingRatio = missingCount / result.posts.length;
+        if (missingRatio > 0.5) {
+          debugPrint('[XApi] WARNING: ${(missingRatio * 100).toInt()}% of posts missing user info '
+              '(queryId=$queryId). Reverting HomeLatestTimeline to default.');
+          await XQueryIdService.instance.revertToDefault(creds, 'HomeLatestTimeline');
+        }
+      }
+
+      return result;
     });
   }
 
@@ -284,7 +277,7 @@ class XApiService {
     String tweetId, {
     String? accountId,
   }) async {
-    return _withQueryIdRetry(creds, 'TweetDetail', (queryId) async {
+    return _withTargetedQueryIdRetry(creds, 'TweetDetail', (queryId) async {
       final variables = json.encode({
         'focalTweetId': tweetId,
         'with_rux_injections': false,

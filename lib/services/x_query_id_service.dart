@@ -261,6 +261,19 @@ class XQueryIdService {
     return refreshQueryIds(creds, onlyUpdate: onlyUpdate);
   }
 
+  /// 特定オペレーションのキャッシュを消去してデフォルト値に戻す
+  /// (リフレッシュで取得した queryId が不正なレスポンスを返す場合に使用)
+  Future<void> revertToDefault(XCredentials? creds, String operationName) async {
+    if (creds != null) {
+      final key = _accountKey(creds);
+      _perAccount[key]?.remove(operationName);
+    } else {
+      _cached.remove(operationName);
+    }
+    await _saveToPrefs();
+    debugPrint('[XQueryId] Reverted $operationName to default: ${_defaults[operationName]}');
+  }
+
   /// キャッシュを全消去してデフォルト値に戻す
   Future<void> clearCache() async {
     _cached.clear();

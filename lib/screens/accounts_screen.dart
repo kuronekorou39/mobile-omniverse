@@ -49,6 +49,17 @@ class AccountsScreen extends ConsumerWidget {
             )
           : ListView(
               children: [
+                const SizedBox(height: 16),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                  child: Text(
+                    'アカウント',
+                    style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                          fontWeight: FontWeight.bold,
+                        ),
+                  ),
+                ),
+                const SizedBox(height: 4),
                 ...accounts.map(
                   (account) => _AccountTile(account: account),
                 ),

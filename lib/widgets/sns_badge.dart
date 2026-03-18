@@ -29,15 +29,18 @@ class SnsBadge extends StatelessWidget {
       SnsService.bluesky => TextStyle(color: fg, fontSize: fontSize, fontWeight: FontWeight.bold),
     };
 
-    return Container(
-      padding: EdgeInsets.symmetric(horizontal: hPad, vertical: vPad),
-      decoration: BoxDecoration(
-        color: bg,
-        borderRadius: BorderRadius.circular(4),
-      ),
-      child: Text(
-        text,
-        style: textStyle,
+    return Opacity(
+      opacity: 0.55,
+      child: Container(
+        padding: EdgeInsets.symmetric(horizontal: hPad, vertical: vPad),
+        decoration: BoxDecoration(
+          color: bg,
+          borderRadius: BorderRadius.circular(4),
+        ),
+        child: Text(
+          text,
+          style: textStyle,
+        ),
       ),
     );
   }

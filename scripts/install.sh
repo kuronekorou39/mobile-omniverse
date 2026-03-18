@@ -7,7 +7,7 @@ set -e
 export PATH="/c/development/flutter/bin:/c/Java/jdk-17.0.2/bin:/c/Android/platform-tools:$PATH"
 export JAVA_HOME="C:\\Java\\jdk-17.0.2"
 
-APK="build/app/outputs/flutter-apk/app-debug.apk"
+APK="build/app/outputs/flutter-apk/app-release.apk"
 PKG="com.omniverse.mobile_omniverse"
 
 # デバイス指定
@@ -25,7 +25,7 @@ echo "デバイス: $($ADB_CMD shell getprop ro.product.model) (Android $($ADB_C
 # ビルド
 echo ""
 echo "=== ビルド ==="
-flutter build apk --debug
+flutter build apk --release
 
 # インストール（既存があれば上書き、失敗したらアンインストールしてリトライ）
 echo ""

@@ -102,55 +102,72 @@ class PostCard extends StatelessWidget {
                 const SizedBox(height: 6),
               ],
 
-              // Header row
-              _buildHeader(context),
-              const SizedBox(height: 8),
+              // Avatar + Content row (X-style layout)
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // Avatar column
+                  _buildAvatar(context),
+                  const SizedBox(width: 10),
+                  // Content column
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        // Name / Handle / Timestamp
+                        _buildNameRow(context),
+                        const SizedBox(height: 4),
 
-              // Body text, images, video (wrapped in sensitive overlay if needed)
-              _SensitiveOverlay(
-                isSensitive: post.isSensitive && hideSensitive,
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    if (post.body.isNotEmpty) LinkedText(text: post.body),
-                    if (post.imageUrls.isNotEmpty) ...[
-                      const SizedBox(height: 8),
-                      PostImageGrid(
-                        imageUrls: post.imageUrls,
-                        maxSingleHeight: imageMaxHeight,
-                        gridHeight: imageGridHeight,
-                      ),
-                    ],
-                    if (post.videoUrl != null && post.videoThumbnailUrl != null) ...[
-                      const SizedBox(height: 8),
-                      PostVideoThumbnail(
-                        videoUrl: post.videoUrl!,
-                        thumbnailUrl: post.videoThumbnailUrl!,
-                        height: videoHeight,
-                      ),
-                    ],
-                  ],
-                ),
+                        // Body text, images, video
+                        _SensitiveOverlay(
+                          isSensitive: post.isSensitive && hideSensitive,
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              if (post.body.isNotEmpty) LinkedText(text: post.body),
+                              if (post.imageUrls.isNotEmpty) ...[
+                                const SizedBox(height: 8),
+                                PostImageGrid(
+                                  imageUrls: post.imageUrls,
+                                  maxSingleHeight: imageMaxHeight,
+                                  gridHeight: imageGridHeight,
+                                ),
+                              ],
+                              if (post.videoUrl != null && post.videoThumbnailUrl != null) ...[
+                                const SizedBox(height: 8),
+                                PostVideoThumbnail(
+                                  videoUrl: post.videoUrl!,
+                                  thumbnailUrl: post.videoThumbnailUrl!,
+                                  height: videoHeight,
+                                ),
+                              ],
+                            ],
+                          ),
+                        ),
+
+                        // Quoted post card
+                        if (post.quotedPost != null) ...[
+                          const SizedBox(height: 8),
+                          GestureDetector(
+                            onTap: () {
+                              Navigator.of(context).push(
+                                MaterialPageRoute(
+                                  builder: (_) => PostDetailScreen(post: post.quotedPost!),
+                                ),
+                              );
+                            },
+                            child: _buildQuotedPostCard(context, post.quotedPost!),
+                          ),
+                        ],
+
+                        // Engagement row
+                        SizedBox(height: compactEngagement ? 4 : 8),
+                        _buildEngagementRow(context),
+                      ],
+                    ),
+                  ),
+                ],
               ),
-
-              // Quoted post card
-              if (post.quotedPost != null) ...[
-                const SizedBox(height: 8),
-                GestureDetector(
-                  onTap: () {
-                    Navigator.of(context).push(
-                      MaterialPageRoute(
-                        builder: (_) => PostDetailScreen(post: post.quotedPost!),
-                      ),
-                    );
-                  },
-                  child: _buildQuotedPostCard(context, post.quotedPost!),
-                ),
-              ],
-
-              // Engagement row
-              SizedBox(height: compactEngagement ? 4 : 8),
-              _buildEngagementRow(context),
             ],
           ),
         ),
@@ -160,7 +177,7 @@ class PostCard extends StatelessWidget {
 
   Widget _buildRetweetHeader(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.only(left: 28),
+      padding: const EdgeInsets.only(left: 32),
       child: Row(
         children: [
           Icon(Icons.repeat, size: 14, color: Colors.grey[500]),
@@ -278,77 +295,83 @@ class PostCard extends StatelessWidget {
     );
   }
 
-  Widget _buildHeader(BuildContext context) {
+  Widget _buildAvatar(BuildContext context) {
+    return GestureDetector(
+      onTap: () => navigateToUserProfile(context, post: post),
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          Hero(
+            tag: 'avatar_${post.id}',
+            child: post.avatarUrl != null
+                ? CachedNetworkImage(
+                    imageUrl: post.avatarUrl!,
+                    httpHeaders: kImageHeaders,
+                    fadeInDuration: Duration.zero,
+                    imageBuilder: (context, imageProvider) => CircleAvatar(
+                      radius: 20,
+                      backgroundImage: imageProvider,
+                    ),
+                    placeholder: (context, url) => const CircleAvatar(
+                      radius: 20,
+                      backgroundColor: Colors.grey,
+                    ),
+                    errorWidget: (context, url, error) => CircleAvatar(
+                      radius: 20,
+                      child: Text(
+                        post.username.isNotEmpty
+                            ? post.username[0].toUpperCase()
+                            : '?',
+                      ),
+                    ),
+                  )
+                : CircleAvatar(
+                    radius: 20,
+                    child: Text(
+                      post.username.isNotEmpty
+                          ? post.username[0].toUpperCase()
+                          : '?',
+                    ),
+                  ),
+          ),
+          Positioned(
+            top: -4,
+            left: -6,
+            child: SnsBadge(service: post.source, size: 10),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildNameRow(BuildContext context) {
     return Row(
       children: [
-        // Avatar + SNS Badge (左上に重ねて表示)
-        GestureDetector(
-          onTap: () => navigateToUserProfile(context, post: post),
-          child: Stack(
-            clipBehavior: Clip.none,
-            children: [
-              Hero(
-                tag: 'avatar_${post.id}',
-                child: post.avatarUrl != null
-                    ? CachedNetworkImage(
-                        imageUrl: post.avatarUrl!,
-                        httpHeaders: kImageHeaders,
-                        fadeInDuration: Duration.zero,
-                        imageBuilder: (context, imageProvider) => CircleAvatar(
-                          radius: 20,
-                          backgroundImage: imageProvider,
-                        ),
-                        placeholder: (context, url) => const CircleAvatar(
-                          radius: 20,
-                          backgroundColor: Colors.grey,
-                        ),
-                        errorWidget: (context, url, error) => CircleAvatar(
-                          radius: 20,
-                          child: Text(
-                            post.username.isNotEmpty
-                                ? post.username[0].toUpperCase()
-                                : '?',
-                          ),
-                        ),
-                      )
-                    : CircleAvatar(
-                        radius: 20,
-                        child: Text(
-                          post.username.isNotEmpty
-                              ? post.username[0].toUpperCase()
-                              : '?',
-                        ),
-                      ),
-              ),
-              Positioned(
-                top: -4,
-                left: -6,
-                child: SnsBadge(service: post.source, size: 10),
-              ),
-            ],
-          ),
-        ),
-        const SizedBox(width: 8),
         Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+          child: Row(
             children: [
-              Text(
-                post.username,
-                style: const TextStyle(fontWeight: FontWeight.bold),
-                overflow: TextOverflow.ellipsis,
-              ),
-              Text(
-                post.handle,
-                style: TextStyle(
-                  color: Colors.grey[600],
-                  fontSize: 13,
+              Flexible(
+                child: Text(
+                  post.username,
+                  style: const TextStyle(fontWeight: FontWeight.bold),
+                  overflow: TextOverflow.ellipsis,
                 ),
-                overflow: TextOverflow.ellipsis,
+              ),
+              const SizedBox(width: 4),
+              Flexible(
+                child: Text(
+                  post.handle,
+                  style: TextStyle(
+                    color: Colors.grey[600],
+                    fontSize: 13,
+                  ),
+                  overflow: TextOverflow.ellipsis,
+                ),
               ),
             ],
           ),
         ),
+        const SizedBox(width: 4),
         Text(
           _formatTimestamp(post.timestamp),
           style: TextStyle(color: Colors.grey[500], fontSize: 12),

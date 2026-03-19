@@ -940,21 +940,20 @@ class _AnimatedPostCard extends StatefulWidget {
 class _AnimatedPostCardState extends State<_AnimatedPostCard>
     with SingleTickerProviderStateMixin {
   late final AnimationController _controller;
-  late final Animation<Offset> _slideAnimation;
+  late final Animation<double> _sizeAnimation;
   late final Animation<double> _fadeAnimation;
 
   @override
   void initState() {
     super.initState();
     _controller = AnimationController(
-      duration: const Duration(milliseconds: 300),
+      duration: const Duration(milliseconds: 350),
       vsync: this,
     );
-    _slideAnimation = Tween<Offset>(
-      begin: const Offset(0, -0.5),
-      end: Offset.zero,
-    ).animate(
-        CurvedAnimation(parent: _controller, curve: Curves.easeOutCubic));
+    _sizeAnimation = CurvedAnimation(
+      parent: _controller,
+      curve: Curves.easeOutCubic,
+    );
     _fadeAnimation = Tween<double>(begin: 0.0, end: 1.0)
         .animate(CurvedAnimation(parent: _controller, curve: Curves.easeOut));
     _controller.forward();
@@ -973,8 +972,9 @@ class _AnimatedPostCardState extends State<_AnimatedPostCard>
 
   @override
   Widget build(BuildContext context) {
-    return SlideTransition(
-      position: _slideAnimation,
+    return SizeTransition(
+      sizeFactor: _sizeAnimation,
+      axisAlignment: -1.0,
       child: FadeTransition(
         opacity: _fadeAnimation,
         child: widget.child,

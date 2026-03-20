@@ -124,7 +124,14 @@ class PostCard extends StatelessWidget {
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              if (post.body.isNotEmpty) LinkedText(text: post.body),
+                              if (post.body.isNotEmpty)
+                                LinkedText(
+                                  text: post.body,
+                                  style: const TextStyle(
+                                    fontSize: 15,
+                                    height: 1.45,
+                                  ),
+                                ),
                               if (post.imageUrls.isNotEmpty) ...[
                                 const SizedBox(height: 8),
                                 PostImageGrid(
@@ -353,7 +360,10 @@ class PostCard extends StatelessWidget {
               Flexible(
                 child: Text(
                   post.username,
-                  style: const TextStyle(fontWeight: FontWeight.bold),
+                  style: const TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 14,
+                  ),
                   overflow: TextOverflow.ellipsis,
                 ),
               ),

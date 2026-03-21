@@ -168,7 +168,7 @@ class PostCard extends StatelessWidget {
                         ],
 
                         // Engagement row
-                        SizedBox(height: compactEngagement ? 4 : 8),
+                        SizedBox(height: compactEngagement ? 8 : 12),
                         _buildEngagementRow(context),
                       ],
                     ),

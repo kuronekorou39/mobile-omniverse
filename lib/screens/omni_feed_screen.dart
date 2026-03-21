@@ -789,21 +789,22 @@ class _OmniFeedScreenState extends ConsumerState<OmniFeedScreen>
     final hideRtIds = settings.hideRetweetsAccountIds;
     var filteredPosts = feed.posts.toList();
 
-    // 無効アカウントの投稿を除外
+    // 無効アカウントの投稿を除外（fetchedByAccountIdsのいずれかが有効なら表示）
     if (enabledAccountIds.length < accounts.length) {
       filteredPosts = filteredPosts
           .where((p) =>
-              p.accountId == null || enabledAccountIds.contains(p.accountId))
+              p.fetchedByAccountIds.isEmpty ||
+              p.fetchedByAccountIds.any((id) => enabledAccountIds.contains(id)))
           .toList();
     }
 
-    // RT 非表示フィルタ
+    // RT 非表示フィルタ（全取得元アカウントがRT非表示の場合のみ除外）
     if (hideRtIds.isNotEmpty) {
       filteredPosts = filteredPosts
           .where((p) =>
               !p.isRetweet ||
-              p.accountId == null ||
-              !hideRtIds.contains(p.accountId))
+              p.fetchedByAccountIds.isEmpty ||
+              p.fetchedByAccountIds.any((id) => !hideRtIds.contains(id)))
           .toList();
     }
 

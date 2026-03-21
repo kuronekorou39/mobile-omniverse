@@ -187,7 +187,9 @@ class FeedNotifier extends StateNotifier<FeedState> {
       final settings = _settingsReader();
       final hideRtIds = settings.hideRetweetsAccountIds;
       var visiblePosts = state.posts.where((p) =>
-          !p.isRetweet || p.accountId == null || !hideRtIds.contains(p.accountId));
+          !p.isRetweet ||
+          p.fetchedByAccountIds.isEmpty ||
+          p.fetchedByAccountIds.any((id) => !hideRtIds.contains(id)));
       final posts = visiblePosts.take(100).map((p) => p.toJson()).toList();
       final total = settings.fetchIntervalSeconds;
       final payload = {
@@ -258,7 +260,18 @@ class FeedNotifier extends StateNotifier<FeedState> {
         );
       } else if (old != null) {
         // 既存投稿の更新（エンゲージメント等）— 即時反映
-        existing[post.id] = post.copyWith(fetchedByAccountIds: mergedAccountIds);
+        if (old.isRetweet && !post.isRetweet) {
+          // 安全策: このパスに到達すべきではないがRT保護
+          debugPrint('[Feed] WARNING: RT flag lost at general update for ${post.id} (old.isRT=${old.isRetweet}, new.isRT=${post.isRetweet})');
+          existing[post.id] = post.copyWith(
+            fetchedByAccountIds: mergedAccountIds,
+            isRetweet: true,
+            retweetedByUsername: old.retweetedByUsername,
+            retweetedByHandle: old.retweetedByHandle,
+          );
+        } else {
+          existing[post.id] = post.copyWith(fetchedByAccountIds: mergedAccountIds);
+        }
       } else if (!_pendingIds.contains(post.id)) {
         // 新規投稿（キューにも未登録）— キューに追加
         // 同一バッチ内でRT版と非RT版が競合する場合、RT版を優先
@@ -311,7 +324,9 @@ class FeedNotifier extends StateNotifier<FeedState> {
           .where((p) =>
               !stateIds.contains(p.id) &&
               !_pendingIds.contains(p.id) &&
-              !(p.isRetweet && hideRtIds.contains(p.accountId)))
+              !(p.isRetweet &&
+                p.fetchedByAccountIds.isNotEmpty &&
+                p.fetchedByAccountIds.every((id) => hideRtIds.contains(id))))
           .toList();
       debugPrint('[Feed] newPending=${newPending.length} filtered=${filtered.length} (hideRT=${hideRtIds.length})');
       if (filtered.isEmpty) return;

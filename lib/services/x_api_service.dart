@@ -1254,11 +1254,16 @@ class XApiService {
         if (innerResult != null) {
           final originalPost = parseTweet(innerResult, accountId);
           if (originalPost != null) {
+            // RT時刻を使用（元ツイートの時刻だとソート時に古い位置に移動してしまう）
+            final rtCreatedAt = legacy['created_at'] as String? ?? '';
             return originalPost.copyWith(
               isRetweet: true,
               retweetedByUsername: username,
               retweetedByHandle: '@$screenName',
               isSensitive: originalPost.isSensitive,
+              timestamp: rtCreatedAt.isNotEmpty
+                  ? parseTwitterDate(rtCreatedAt)
+                  : null,
             );
           }
         }

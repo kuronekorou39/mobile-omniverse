@@ -254,13 +254,14 @@ class FeedNotifier extends StateNotifier<FeedState> {
           fetchedByAccountIds: mergedAccountIds,
         );
       } else if (old != null && old.isRetweet && !post.isRetweet) {
-        // RT版が既にあるのに非RT版が来た場合、RTフラグを保持
+        // RT版が既にあるのに非RT版が来た場合、RTフラグ＋タイムスタンプを保持
         // (同じツイートがRT版と直接版の両方でフェッチされるケース)
         existing[post.id] = post.copyWith(
           fetchedByAccountIds: mergedAccountIds,
           isRetweet: true,
           retweetedByUsername: old.retweetedByUsername,
           retweetedByHandle: old.retweetedByHandle,
+          timestamp: old.timestamp, // RT時刻を保持
         );
       } else if (old != null) {
         // 既存投稿の更新（エンゲージメント等）— 即時反映
@@ -272,6 +273,7 @@ class FeedNotifier extends StateNotifier<FeedState> {
             isRetweet: true,
             retweetedByUsername: old.retweetedByUsername,
             retweetedByHandle: old.retweetedByHandle,
+            timestamp: old.timestamp, // RT時刻を保持
           );
         } else {
           existing[post.id] = post.copyWith(fetchedByAccountIds: mergedAccountIds);

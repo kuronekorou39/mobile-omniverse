@@ -430,11 +430,14 @@ class BlueskyApiService {
         reason['\$type'] == 'app.bsky.feed.defs#reasonRepost') {
       final by = reason['by'] as Map<String, dynamic>?;
       if (by != null) {
+        // リポスト時刻を使用（元投稿の時刻だとソート時に古い位置に移動してしまう）
+        final indexedAt = reason['indexedAt'] as String?;
         parsed = parsed.copyWith(
           isRetweet: true,
           retweetedByUsername:
               by['displayName'] as String? ?? by['handle'] as String? ?? '',
           retweetedByHandle: '@${by['handle'] as String? ?? ''}',
+          timestamp: indexedAt != null ? DateTime.tryParse(indexedAt) : null,
         );
       }
     }

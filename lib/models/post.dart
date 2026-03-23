@@ -89,6 +89,7 @@ class Post {
   }
 
   Post copyWith({
+    DateTime? timestamp,
     int? likeCount,
     int? replyCount,
     int? repostCount,
@@ -107,7 +108,7 @@ class Post {
       username: username,
       handle: handle,
       body: body,
-      timestamp: timestamp,
+      timestamp: timestamp ?? this.timestamp,
       avatarUrl: avatarUrl,
       accountId: accountId,
       likeCount: likeCount ?? this.likeCount,

@@ -221,6 +221,10 @@ class FeedNotifier extends StateNotifier<FeedState> {
       state.posts.map((p) => MapEntry(p.id, p)),
     );
 
+    // RT追跡ログ
+    final rtBefore = existing.values.where((p) => p.isRetweet).toList();
+    debugPrint('[Feed] _onPostsFetched: before=${existing.length} posts, ${rtBefore.length} RTs, newPosts=${newPosts.length}');
+
     final newToQueue = <String, Post>{};
 
     for (final post in newPosts) {
@@ -297,6 +301,21 @@ class FeedNotifier extends StateNotifier<FeedState> {
         existing[post.id] = post;
       }
     }
+
+    // RT消失チェック
+    final rtAfter = existing.values.where((p) => p.isRetweet).toList();
+    if (rtAfter.length < rtBefore.length) {
+      debugPrint('[Feed] ⚠️ RT LOST: ${rtBefore.length} → ${rtAfter.length}');
+      for (final rt in rtBefore) {
+        final current = existing[rt.id];
+        if (current == null) {
+          debugPrint('[Feed]   MISSING: ${rt.id} by ${rt.retweetedByUsername}');
+        } else if (!current.isRetweet) {
+          debugPrint('[Feed]   FLAG LOST: ${rt.id} was RT, now not RT (accountId=${current.accountId}, fetchedBy=${current.fetchedByAccountIds})');
+        }
+      }
+    }
+    debugPrint('[Feed] _onPostsFetched: after=${existing.length} posts, ${rtAfter.length} RTs, bypass=$shouldBypassDrip, newPending=${newPending.length}');
 
     // 既存投稿の即時更新を反映
     final sorted = existing.values.toList()

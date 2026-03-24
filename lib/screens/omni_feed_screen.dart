@@ -69,13 +69,17 @@ class _OmniFeedScreenState extends ConsumerState<OmniFeedScreen>
       // トークン期限切れ通知を設定
       ref.read(feedProvider.notifier).onTokenExpired = (accountId, handle) {
         if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
+        final messenger = ScaffoldMessenger.of(context);
+        messenger.showSnackBar(
           SnackBar(
             content: Text('$handle のトークンが期限切れです。再ログインしてください'),
             duration: const Duration(seconds: 5),
             action: SnackBarAction(
               label: 'アカウント',
-              onPressed: () => _openAccountsScreen(context),
+              onPressed: () {
+                messenger.hideCurrentSnackBar();
+                _openAccountsScreen(context);
+              },
             ),
           ),
         );

@@ -5,6 +5,7 @@ import '../models/account.dart';
 import '../models/sns_service.dart';
 import '../providers/account_provider.dart';
 import '../providers/settings_provider.dart';
+import '../services/timeline_fetch_scheduler.dart';
 import '../widgets/sns_badge.dart';
 import 'login_webview_screen.dart';
 import 'session_refresh_screen.dart';
@@ -349,6 +350,9 @@ class _AccountDetailScreen extends ConsumerWidget {
     await ref
         .read(accountProvider.notifier)
         .updateCredentials(account.id, result.credentials);
+
+    // スケジューラの期限切れ状態をクリア → 次回フェッチで再試行
+    TimelineFetchScheduler.instance.clearExpiredState(account.id);
 
     // 更新後の値を取得
     String detail = '';

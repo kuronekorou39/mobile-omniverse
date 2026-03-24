@@ -22,6 +22,9 @@ class TimelineFetchScheduler {
   /// アカウント別のカーソル管理
   final Map<String, String?> _cursors = {};
 
+  /// トークン期限切れ通知済みアカウント（重複通知防止）
+  final Set<String> _expiredAccountIds = {};
+
   /// 新しい投稿が取得されたときのコールバック
   void Function(List<Post> posts)? onPostsFetched;
 
@@ -40,6 +43,11 @@ class TimelineFetchScheduler {
 
   /// Bluesky トークンリフレッシュ完全失敗時（再ログイン必要）
   void Function(String accountId, String accountHandle)? onTokenExpired;
+
+  /// トークン期限切れ状態をクリア（セッション更新後に呼ぶ）
+  void clearExpiredState(String accountId) {
+    _expiredAccountIds.remove(accountId);
+  }
 
   void setInterval(Duration interval) {
     _interval = interval;
@@ -191,7 +199,11 @@ class TimelineFetchScheduler {
       // refreshJwt も期限切れ → 再ログインが必要
       debugPrint('[Scheduler] Token fully expired for ${account.handle}');
       onTokenRefresh?.call(account.handle, false);
-      onTokenExpired?.call(account.id, account.handle);
+      // 重複通知を防止
+      if (!_expiredAccountIds.contains(account.id)) {
+        _expiredAccountIds.add(account.id);
+        onTokenExpired?.call(account.id, account.handle);
+      }
       rethrow;
     }
   }

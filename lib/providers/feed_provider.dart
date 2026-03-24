@@ -447,6 +447,44 @@ class FeedNotifier extends StateNotifier<FeedState> {
     _syncToOverlay();
   }
 
+  /// ペンディングキューに投稿があるか
+  bool get hasPending => _pendingQueue.isNotEmpty;
+
+  /// プルリフレッシュ用: ペンディングの一部を読み込み（位置維持用）
+  int flushPendingBatch([int count = 20]) {
+    if (_pendingQueue.isEmpty) return 0;
+    _dripTimer?.cancel();
+
+    // 新しい順にソートしてから先頭N件を取り出す
+    _pendingQueue.sort((a, b) => b.timestamp.compareTo(a.timestamp));
+    final batch = _pendingQueue.take(count).toList();
+    for (final p in batch) {
+      _pendingQueue.remove(p);
+      _pendingIds.remove(p.id);
+    }
+
+    final existing = Map<String, Post>.fromEntries(
+      state.posts.map((p) => MapEntry(p.id, p)),
+    );
+    for (final post in batch) {
+      existing[post.id] = post;
+    }
+
+    final sorted = existing.values.toList()
+      ..sort((a, b) => b.timestamp.compareTo(a.timestamp));
+    state = state.copyWith(posts: sorted, pendingCount: _pendingQueue.length);
+
+    TimelineCacheService.instance.saveTimeline(sorted);
+    _syncToOverlay();
+
+    // ペンディングが残っていてドリップ閾値以下ならドリップ再開
+    if (_pendingQueue.isNotEmpty && _pendingQueue.length <= dripThreshold) {
+      _startDrip();
+    }
+
+    return batch.length;
+  }
+
   /// バナーモード: 溜まった投稿を一括でタイムラインに反映
   void flushPending() {
     if (_pendingQueue.isEmpty) return;

@@ -170,6 +170,28 @@ class _OmniFeedScreenState extends ConsumerState<OmniFeedScreen>
     }
   }
 
+  Future<void> _handleRefresh() async {
+    final notifier = ref.read(feedProvider.notifier);
+    if (notifier.hasPending) {
+      // ペンディングがある場合: バッチ読み込み＋スクロール位置維持
+      final oldOffset = _scrollController.offset;
+      final oldMaxExtent = _scrollController.position.maxScrollExtent;
+
+      notifier.flushPendingBatch(20);
+
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        final newMaxExtent = _scrollController.position.maxScrollExtent;
+        final delta = newMaxExtent - oldMaxExtent;
+        if (delta > 0) {
+          _scrollController.jumpTo(oldOffset + delta);
+        }
+      });
+    } else {
+      await notifier.refresh();
+    }
+  }
+
   Future<Account?> _resolveAccount(Post post, String actionLabel) async {
     final settings = ref.read(settingsProvider);
     if (settings.showAccountPickerOnEngagement) {
@@ -547,7 +569,7 @@ class _OmniFeedScreenState extends ConsumerState<OmniFeedScreen>
 
     if (accounts.isNotEmpty) {
       body = RefreshIndicator(
-        onRefresh: () => ref.read(feedProvider.notifier).refresh(),
+        onRefresh: _handleRefresh,
         child: body,
       );
     }

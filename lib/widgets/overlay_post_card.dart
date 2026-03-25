@@ -61,6 +61,7 @@ class OverlayPostCard extends StatefulWidget {
     this.theme = OverlayThemeColors.dark,
     this.isExpanded = false,
     this.onToggleExpand,
+    this.hideUserInfo = false,
   });
 
   final Post post;
@@ -69,6 +70,7 @@ class OverlayPostCard extends StatefulWidget {
   final OverlayThemeColors theme;
   final bool isExpanded;
   final VoidCallback? onToggleExpand;
+  final bool hideUserInfo;
 
   @override
   State<OverlayPostCard> createState() => _OverlayPostCardState();
@@ -78,6 +80,7 @@ class _OverlayPostCardState extends State<OverlayPostCard> {
 
   Post get post => widget.post;
   OverlayThemeColors get t => widget.theme;
+  bool get _hideUser => widget.hideUserInfo;
 
   String _formatTimestamp(DateTime timestamp) {
     final diff = DateTime.now().difference(timestamp);
@@ -119,7 +122,7 @@ class _OverlayPostCardState extends State<OverlayPostCard> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             // RT indicator
-            if (post.isRetweet && post.retweetedByHandle != null)
+            if (!_hideUser && post.isRetweet && post.retweetedByHandle != null)
               Padding(
                 padding: const EdgeInsets.only(left: 28, bottom: 1),
                 child: Text(
@@ -150,11 +153,13 @@ class _OverlayPostCardState extends State<OverlayPostCard> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             // Avatar
-            Padding(
-              padding: const EdgeInsets.only(top: 1),
-              child: _buildAvatar(12),
-            ),
-            const SizedBox(width: 4),
+            if (!_hideUser) ...[
+              Padding(
+                padding: const EdgeInsets.only(top: 1),
+                child: _buildAvatar(12),
+              ),
+              const SizedBox(width: 4),
+            ],
             // Body text (3 lines)
             Expanded(
               child: Column(
@@ -175,7 +180,9 @@ class _OverlayPostCardState extends State<OverlayPostCard> {
                     Padding(
                       padding: const EdgeInsets.only(top: 1),
                       child: Text(
-                        '↩ ${post.quotedPost!.handle}: ${post.quotedPost!.body}',
+                        _hideUser
+                            ? '↩ ${post.quotedPost!.body}'
+                            : '↩ ${post.quotedPost!.handle}: ${post.quotedPost!.body}',
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: TextStyle(
@@ -195,7 +202,7 @@ class _OverlayPostCardState extends State<OverlayPostCard> {
         ),
         // Meta line (always full width)
         Padding(
-          padding: const EdgeInsets.only(left: 28, top: 1),
+          padding: EdgeInsets.only(left: _hideUser ? 0 : 28, top: 1),
           child: _buildMetaLine(),
         ),
       ],
@@ -207,24 +214,28 @@ class _OverlayPostCardState extends State<OverlayPostCard> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         // Avatar
-        Padding(
-          padding: const EdgeInsets.only(top: 1),
-          child: _buildAvatar(12),
-        ),
-        const SizedBox(width: 4),
+        if (!_hideUser) ...[
+          Padding(
+            padding: const EdgeInsets.only(top: 1),
+            child: _buildAvatar(12),
+          ),
+          const SizedBox(width: 4),
+        ],
         // Content
         Expanded(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               // Username
-              Text(
-                post.username,
-                style: TextStyle(fontSize: _fs, color: t.textSecondary),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-              ),
-              const SizedBox(height: 1),
+              if (!_hideUser) ...[
+                Text(
+                  post.username,
+                  style: TextStyle(fontSize: _fs, color: t.textSecondary),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                const SizedBox(height: 1),
+              ],
               // Full body text
               Text(
                 post.body,
@@ -401,13 +412,15 @@ class _OverlayPostCardState extends State<OverlayPostCard> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            q.handle,
-            style: TextStyle(fontSize: _fs - 2, color: t.textQuaternary),
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-          ),
-          const SizedBox(height: 1),
+          if (!_hideUser) ...[
+            Text(
+              q.handle,
+              style: TextStyle(fontSize: _fs - 2, color: t.textQuaternary),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+            const SizedBox(height: 1),
+          ],
           Text(
             q.body,
             style: TextStyle(
@@ -425,15 +438,18 @@ class _OverlayPostCardState extends State<OverlayPostCard> {
     final metaStyle = TextStyle(fontSize: _fs - 2, color: t.iconColor);
     return Row(
       children: [
-        // Handle (left)
-        Expanded(
-          child: Text(
-            post.handle,
-            style: TextStyle(fontSize: _fs - 2, color: t.textQuaternary),
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-          ),
-        ),
+        // Handle (left) — hide in anonymous mode
+        if (!_hideUser)
+          Expanded(
+            child: Text(
+              post.handle,
+              style: TextStyle(fontSize: _fs - 2, color: t.textQuaternary),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+          )
+        else
+          const Spacer(),
         // Engagement (right-aligned)
         Icon(Icons.favorite_border, size: 9, color: t.iconColor),
         const SizedBox(width: 2),

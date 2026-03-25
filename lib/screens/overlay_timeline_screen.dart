@@ -27,6 +27,7 @@ class _OverlayTimelineScreenState extends State<OverlayTimelineScreen> {
   int _fontSizeIndex = 1;
   int _themeModeIndex = 0; // 0=ダーク, 1=ライト, 2=システム
   bool _showFetchTimer = true; // メインアプリの設定から同期
+  bool _hideUserInfo = false; // メインアプリの設定から同期
   final Set<String> _expandedPostIds = {};
   final Set<String> _newPostIds = {};
 
@@ -78,6 +79,9 @@ class _OverlayTimelineScreenState extends State<OverlayTimelineScreen> {
             if (decoded.containsKey('showFetchTimer')) {
               _showFetchTimer = decoded['showFetchTimer'] as bool? ?? true;
             }
+            if (decoded.containsKey('hideUserInfo')) {
+              _hideUserInfo = decoded['hideUserInfo'] as bool? ?? false;
+            }
           } else {
             postList = decoded as List<dynamic>;
           }
@@ -112,6 +116,7 @@ class _OverlayTimelineScreenState extends State<OverlayTimelineScreen> {
     final o = prefs.getInt('overlay_opacityIndex') ?? 3;
     final f = prefs.getInt('overlay_fontSizeIndex') ?? 1;
     final t = prefs.getInt('overlay_themeModeIndex') ?? 0;
+    final hideUserInfo = prefs.getBool('settings_hide_user_info') ?? false;
     if (mounted) {
       setState(() {
         _wIndex = w;
@@ -119,6 +124,7 @@ class _OverlayTimelineScreenState extends State<OverlayTimelineScreen> {
         _opacityIndex = o;
         _fontSizeIndex = f;
         _themeModeIndex = t;
+        _hideUserInfo = hideUserInfo;
       });
       await FlutterOverlayWindow.resizeOverlay(
           _widths[_wIndex], _heights[_hIndex], false);
@@ -436,6 +442,7 @@ class _OverlayTimelineScreenState extends State<OverlayTimelineScreen> {
             fontSize: _fontSizes[_fontSizeIndex],
             theme: _theme,
             isExpanded: _expandedPostIds.contains(post.id),
+            hideUserInfo: _hideUserInfo,
             onToggleExpand: () {
               setState(() {
                 if (_expandedPostIds.contains(post.id)) {

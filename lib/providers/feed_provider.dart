@@ -200,6 +200,7 @@ class FeedNotifier extends StateNotifier<FeedState> {
           'isFetching': state.isFetching,
         },
         'showFetchTimer': settings.showFetchTimer,
+        'hideUserInfo': settings.hideUserInfo,
       };
       await FlutterOverlayWindow.shareData(jsonEncode(payload));
     } catch (_) {}

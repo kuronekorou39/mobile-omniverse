@@ -281,10 +281,16 @@ class FeedNotifier extends StateNotifier<FeedState> {
         }
       } else if (!_pendingIds.contains(post.id)) {
         // 新規投稿（キューにも未登録）— キューに追加
-        // 同一バッチ内でRT版と非RT版が競合する場合、RT版を優先
         final queued = newToQueue[post.id];
-        if (queued != null && queued.isRetweet && !post.isRetweet) {
-          // RT版が既にキューにあるので非RT版では上書きしない
+        if (queued != null) {
+          // 同一バッチ内の重複: fetchedByAccountIdsをマージ
+          final mergedIds = {...queued.fetchedByAccountIds, ...post.fetchedByAccountIds};
+          if (queued.isRetweet && !post.isRetweet) {
+            // RT版が既にキューにあるので非RT版では上書きしない（IDマージのみ）
+            newToQueue[post.id] = queued.copyWith(fetchedByAccountIds: mergedIds);
+          } else {
+            newToQueue[post.id] = post.copyWith(fetchedByAccountIds: mergedIds);
+          }
         } else {
           newToQueue[post.id] = post;
         }
@@ -352,9 +358,31 @@ class FeedNotifier extends StateNotifier<FeedState> {
           .toList();
       debugPrint('[Feed] newPending=${newPending.length} filtered=${filtered.length} (hideRT=${hideRtIds.length})');
       if (filtered.isEmpty) return;
-      _precachePostsImages(filtered);
-      _pendingQueue.addAll(filtered);
-      _pendingIds.addAll(filtered.map((p) => p.id));
+
+      // ドリップ前に古い投稿を分離: タイムライン先頭より古い投稿はドリップせず直接挿入
+      final topTimestamp = state.posts.isNotEmpty ? state.posts.first.timestamp : null;
+      final drippable = <Post>[];
+      final stale = <Post>[];
+      for (final p in filtered) {
+        if (topTimestamp != null && p.timestamp.isBefore(topTimestamp)) {
+          stale.add(p);
+        } else {
+          drippable.add(p);
+        }
+      }
+      // 古い投稿は即座にソート位置に挿入（ドリップしない）
+      if (stale.isNotEmpty) {
+        debugPrint('[Feed] Stale posts skipped drip: ${stale.length} (older than top)');
+        final posts = List<Post>.of(state.posts);
+        posts.addAll(stale);
+        posts.sort((a, b) => b.timestamp.compareTo(a.timestamp));
+        state = state.copyWith(posts: posts);
+      }
+
+      if (drippable.isEmpty) return;
+      _precachePostsImages(drippable);
+      _pendingQueue.addAll(drippable);
+      _pendingIds.addAll(drippable.map((p) => p.id));
       state = state.copyWith(pendingCount: _pendingQueue.length);
       if (_pendingQueue.length <= dripThreshold) {
         _startDrip();
@@ -435,9 +463,14 @@ class FeedNotifier extends StateNotifier<FeedState> {
       return;
     }
 
-    // 常にリスト先頭に挿入（古い順ドリップなので最終的に新しい順になる）
+    // タイムスタンプ順の正しい位置に挿入（古い投稿がトップに出て消える問題を防止）
     final posts = List<Post>.of(state.posts);
-    posts.insert(0, post);
+    int insertIndex = 0;
+    while (insertIndex < posts.length &&
+        posts[insertIndex].timestamp.isAfter(post.timestamp)) {
+      insertIndex++;
+    }
+    posts.insert(insertIndex, post);
 
     state = state.copyWith(posts: posts, pendingCount: _pendingQueue.length);
 

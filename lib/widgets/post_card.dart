@@ -25,6 +25,7 @@ class PostCard extends StatelessWidget {
     this.imageMaxHeight,
     this.imageGridHeight,
     this.videoHeight,
+    this.hideUserInfo = false,
   });
 
   final Post post;
@@ -37,6 +38,7 @@ class PostCard extends StatelessWidget {
   final double? imageMaxHeight;
   final double? imageGridHeight;
   final double? videoHeight;
+  final bool hideUserInfo;
 
   String _formatTimestamp(DateTime timestamp) {
     final diff = DateTime.now().difference(timestamp);
@@ -97,7 +99,7 @@ class PostCard extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               // RT header
-              if (post.isRetweet && post.retweetedByUsername != null) ...[
+              if (!hideUserInfo && post.isRetweet && post.retweetedByUsername != null) ...[
                 _buildRetweetHeader(context),
                 const SizedBox(height: 6),
               ],
@@ -107,15 +109,20 @@ class PostCard extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   // Avatar column
-                  _buildAvatar(context),
-                  const SizedBox(width: 10),
+                  if (!hideUserInfo) ...[
+                    _buildAvatar(context),
+                    const SizedBox(width: 10),
+                  ],
                   // Content column
                   Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         // Name / Handle / Timestamp
-                        _buildNameRow(context),
+                        if (hideUserInfo)
+                          _buildAnonymousNameRow(context)
+                        else
+                          _buildNameRow(context),
                         const SizedBox(height: 4),
 
                         // Body text, images, video
@@ -219,22 +226,44 @@ class PostCard extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           // Quoted post header
-          Row(
-            children: [
-              quoted.avatarUrl != null
-                  ? CachedNetworkImage(
-                      imageUrl: quoted.avatarUrl!,
-                      httpHeaders: kImageHeaders,
-                      fadeInDuration: Duration.zero,
-                      imageBuilder: (context, imageProvider) => CircleAvatar(
-                        radius: 10,
-                        backgroundImage: imageProvider,
-                      ),
-                      placeholder: (context, url) => const CircleAvatar(
-                        radius: 10,
-                        backgroundColor: Colors.grey,
-                      ),
-                      errorWidget: (context, url, error) => CircleAvatar(
+          if (hideUserInfo)
+            Row(
+              children: [
+                SnsBadge(service: quoted.source, size: 10),
+                const SizedBox(width: 6),
+                Text(
+                  _formatTimestamp(quoted.timestamp),
+                  style: TextStyle(color: Colors.grey[500], fontSize: 12),
+                ),
+              ],
+            )
+          else
+            Row(
+              children: [
+                quoted.avatarUrl != null
+                    ? CachedNetworkImage(
+                        imageUrl: quoted.avatarUrl!,
+                        httpHeaders: kImageHeaders,
+                        fadeInDuration: Duration.zero,
+                        imageBuilder: (context, imageProvider) => CircleAvatar(
+                          radius: 10,
+                          backgroundImage: imageProvider,
+                        ),
+                        placeholder: (context, url) => const CircleAvatar(
+                          radius: 10,
+                          backgroundColor: Colors.grey,
+                        ),
+                        errorWidget: (context, url, error) => CircleAvatar(
+                          radius: 10,
+                          child: Text(
+                            quoted.username.isNotEmpty
+                                ? quoted.username[0].toUpperCase()
+                                : '?',
+                            style: const TextStyle(fontSize: 10),
+                          ),
+                        ),
+                      )
+                    : CircleAvatar(
                         radius: 10,
                         child: Text(
                           quoted.username.isNotEmpty
@@ -243,40 +272,30 @@ class PostCard extends StatelessWidget {
                           style: const TextStyle(fontSize: 10),
                         ),
                       ),
-                    )
-                  : CircleAvatar(
-                      radius: 10,
-                      child: Text(
-                        quoted.username.isNotEmpty
-                            ? quoted.username[0].toUpperCase()
-                            : '?',
-                        style: const TextStyle(fontSize: 10),
-                      ),
+                const SizedBox(width: 6),
+                Flexible(
+                  child: Text(
+                    quoted.username,
+                    style: const TextStyle(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 13,
                     ),
-              const SizedBox(width: 6),
-              Flexible(
-                child: Text(
-                  quoted.username,
-                  style: const TextStyle(
-                    fontWeight: FontWeight.bold,
-                    fontSize: 13,
+                    overflow: TextOverflow.ellipsis,
                   ),
-                  overflow: TextOverflow.ellipsis,
                 ),
-              ),
-              const SizedBox(width: 4),
-              Flexible(
-                child: Text(
-                  quoted.handle,
-                  style: TextStyle(
-                    color: Colors.grey[600],
-                    fontSize: 12,
+                const SizedBox(width: 4),
+                Flexible(
+                  child: Text(
+                    quoted.handle,
+                    style: TextStyle(
+                      color: Colors.grey[600],
+                      fontSize: 12,
+                    ),
+                    overflow: TextOverflow.ellipsis,
                   ),
-                  overflow: TextOverflow.ellipsis,
                 ),
-              ),
-            ],
-          ),
+              ],
+            ),
           if (quoted.body.isNotEmpty) ...[
             const SizedBox(height: 4),
             Text(
@@ -348,6 +367,19 @@ class PostCard extends StatelessWidget {
           ),
         ],
       ),
+    );
+  }
+
+  Widget _buildAnonymousNameRow(BuildContext context) {
+    return Row(
+      children: [
+        SnsBadge(service: post.source, size: 14),
+        const Spacer(),
+        Text(
+          _formatTimestamp(post.timestamp),
+          style: TextStyle(color: Colors.grey[500], fontSize: 12),
+        ),
+      ],
     );
   }
 

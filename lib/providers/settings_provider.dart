@@ -42,6 +42,7 @@ class SettingsState {
     this.showSensitiveContent = false,
     this.compactEngagement = true,
     this.imagePreviewSize = ImagePreviewSize.medium,
+    this.hideUserInfo = false,
   });
 
   final int fetchIntervalSeconds;
@@ -60,6 +61,8 @@ class SettingsState {
   final bool compactEngagement;
   /// 画像プレビューサイズ
   final ImagePreviewSize imagePreviewSize;
+  /// ユーザー情報（名前・アイコン）を非表示にするか
+  final bool hideUserInfo;
 
   SettingsState copyWith({
     int? fetchIntervalSeconds,
@@ -72,6 +75,7 @@ class SettingsState {
     bool? showSensitiveContent,
     bool? compactEngagement,
     ImagePreviewSize? imagePreviewSize,
+    bool? hideUserInfo,
   }) {
     return SettingsState(
       fetchIntervalSeconds: fetchIntervalSeconds ?? this.fetchIntervalSeconds,
@@ -84,6 +88,7 @@ class SettingsState {
       showSensitiveContent: showSensitiveContent ?? this.showSensitiveContent,
       compactEngagement: compactEngagement ?? this.compactEngagement,
       imagePreviewSize: imagePreviewSize ?? this.imagePreviewSize,
+      hideUserInfo: hideUserInfo ?? this.hideUserInfo,
     );
   }
 }
@@ -102,6 +107,7 @@ class SettingsNotifier extends StateNotifier<SettingsState> {
   static const _keyShowSensitiveContent = 'settings_show_sensitive_content';
   static const _keyCompactEngagement = 'settings_compact_engagement';
   static const _keyImagePreviewSize = 'settings_image_preview_size';
+  static const _keyHideUserInfo = 'settings_hide_user_info';
 
   final _scheduler = TimelineFetchScheduler.instance;
 
@@ -116,6 +122,7 @@ class SettingsNotifier extends StateNotifier<SettingsState> {
     final showSensitiveContent = prefs.getBool(_keyShowSensitiveContent) ?? false;
     final compactEngagement = prefs.getBool(_keyCompactEngagement) ?? true;
     final imagePreviewSizeIndex = prefs.getInt(_keyImagePreviewSize) ?? ImagePreviewSize.medium.index;
+    final hideUserInfo = prefs.getBool(_keyHideUserInfo) ?? false;
 
     state = state.copyWith(
       fetchIntervalSeconds: interval,
@@ -127,6 +134,7 @@ class SettingsNotifier extends StateNotifier<SettingsState> {
       showSensitiveContent: showSensitiveContent,
       compactEngagement: compactEngagement,
       imagePreviewSize: ImagePreviewSize.values[imagePreviewSizeIndex.clamp(0, 2)],
+      hideUserInfo: hideUserInfo,
     );
 
     // #3: デフォルトフェッチONの場合、起動時にスケジューラを開始
@@ -148,6 +156,7 @@ class SettingsNotifier extends StateNotifier<SettingsState> {
     await prefs.setBool(_keyShowSensitiveContent, state.showSensitiveContent);
     await prefs.setBool(_keyCompactEngagement, state.compactEngagement);
     await prefs.setInt(_keyImagePreviewSize, state.imagePreviewSize.index);
+    await prefs.setBool(_keyHideUserInfo, state.hideUserInfo);
   }
 
   void setInterval(int seconds) {
@@ -203,6 +212,11 @@ class SettingsNotifier extends StateNotifier<SettingsState> {
 
   void setImagePreviewSize(ImagePreviewSize size) {
     state = state.copyWith(imagePreviewSize: size);
+    _saveToPrefs();
+  }
+
+  void setHideUserInfo(bool value) {
+    state = state.copyWith(hideUserInfo: value);
     _saveToPrefs();
   }
 

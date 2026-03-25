@@ -138,6 +138,12 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
           // Appearance section
           const _SectionHeader(title: '外観'),
           SwitchListTile(
+            title: const Text('ユーザー情報を非表示'),
+            subtitle: const Text('名前・アイコンを隠して投稿内容のみ表示'),
+            value: settings.hideUserInfo,
+            onChanged: (value) => notifier.setHideUserInfo(value),
+          ),
+          SwitchListTile(
             title: const Text('コンパクトエンゲージメント'),
             subtitle: const Text('いいね/RT ボタンの領域を小さくする'),
             value: settings.compactEngagement,

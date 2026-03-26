@@ -65,7 +65,8 @@ class XApiService {
     throw StateError('Unreachable');
   }
 
-  http.Client get _client => httpClientOverride ?? http.Client();
+  late final http.Client _sharedClient = http.Client();
+  http.Client get _client => httpClientOverride ?? _sharedClient;
 
   static final _random = Random.secure();
   String _generateTransactionId() {

@@ -29,7 +29,7 @@ class _OverlayTimelineScreenState extends State<OverlayTimelineScreen> {
   bool _showFetchTimer = true; // メインアプリの設定から同期
   bool _hideUserInfo = false; // メインアプリの設定から同期
   final Set<String> _expandedPostIds = {};
-  final Set<String> _newPostIds = {};
+  Set<String> _newPostIds = {};
 
   // フェッチタイマー状態
   int _fetchRemaining = 0;
@@ -67,30 +67,40 @@ class _OverlayTimelineScreenState extends State<OverlayTimelineScreen> {
       if (data is String) {
         try {
           final decoded = jsonDecode(data);
-          List<dynamic> postList;
-          if (decoded is Map<String, dynamic>) {
-            postList = decoded['posts'] as List<dynamic>? ?? [];
-            final fetch = decoded['fetch'] as Map<String, dynamic>?;
-            if (fetch != null) {
-              _fetchRemaining = fetch['remaining'] as int? ?? 0;
-              _fetchTotal = fetch['total'] as int? ?? 0;
-              _isFetching = fetch['isFetching'] as bool? ?? false;
+          if (decoded is! Map<String, dynamic>) return;
+
+          bool needsRebuild = false;
+
+          // タイマー情報は毎秒更新
+          final fetch = decoded['fetch'] as Map<String, dynamic>?;
+          if (fetch != null) {
+            final rem = fetch['remaining'] as int? ?? 0;
+            final tot = fetch['total'] as int? ?? 0;
+            final fetching = fetch['isFetching'] as bool? ?? false;
+            if (rem != _fetchRemaining || tot != _fetchTotal || fetching != _isFetching) {
+              _fetchRemaining = rem;
+              _fetchTotal = tot;
+              _isFetching = fetching;
+              needsRebuild = true;
             }
-            if (decoded.containsKey('showFetchTimer')) {
-              _showFetchTimer = decoded['showFetchTimer'] as bool? ?? true;
-            }
-            if (decoded.containsKey('hideUserInfo')) {
-              _hideUserInfo = decoded['hideUserInfo'] as bool? ?? false;
-            }
-          } else {
-            postList = decoded as List<dynamic>;
           }
-          final posts = postList
-              .map((e) => Post.tryFromCache(e as Map<String, dynamic>))
-              .whereType<Post>()
-              .toList();
-          if (mounted) {
-            // Detect new posts for animation (skip initial load)
+          if (decoded.containsKey('showFetchTimer')) {
+            final v = decoded['showFetchTimer'] as bool? ?? true;
+            if (v != _showFetchTimer) { _showFetchTimer = v; needsRebuild = true; }
+          }
+          if (decoded.containsKey('hideUserInfo')) {
+            final v = decoded['hideUserInfo'] as bool? ?? false;
+            if (v != _hideUserInfo) { _hideUserInfo = v; needsRebuild = true; }
+          }
+
+          // 投稿リストは変更時のみ送られてくる
+          final postList = decoded['posts'] as List<dynamic>?;
+          if (postList != null) {
+            final posts = postList
+                .map((e) => Post.tryFromCache(e as Map<String, dynamic>))
+                .whereType<Post>()
+                .toList();
+            // 新規投稿検出（アニメーション用）
             if (_posts.isNotEmpty) {
               final oldIds = _posts.map((p) => p.id).toSet();
               for (final p in posts) {
@@ -98,12 +108,17 @@ class _OverlayTimelineScreenState extends State<OverlayTimelineScreen> {
                   _newPostIds.add(p.id);
                 }
               }
+              // _newPostIds の上限を維持
+              if (_newPostIds.length > 50) {
+                _newPostIds = Set.from(_newPostIds.toList().sublist(_newPostIds.length - 50));
+              }
             }
-            setState(() {
-              _posts = posts;
-              _isLoadingMore = false;
-            });
+            _posts = posts;
+            _isLoadingMore = false;
+            needsRebuild = true;
           }
+
+          if (mounted && needsRebuild) setState(() {});
         } catch (_) {}
       }
     });

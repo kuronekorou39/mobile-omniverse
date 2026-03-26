@@ -53,6 +53,15 @@ class FeedState {
 }
 
 class FeedNotifier extends StateNotifier<FeedState> {
+  @override
+  set state(FeedState value) {
+    // 投稿リストが変わったらオーバーレイ同期フラグを立てる
+    if (!identical(value.posts, super.state.posts)) {
+      _overlayPostsDirty = true;
+    }
+    super.state = value;
+  }
+
   FeedNotifier(this._logNotifier, this._settingsReader) : super(const FeedState()) {
     TimelineFetchScheduler.instance.onPostsFetched = _onPostsFetched;
     TimelineFetchScheduler.instance.onFetchStart = _onFetchStart;
@@ -69,6 +78,9 @@ class FeedNotifier extends StateNotifier<FeedState> {
 
   /// ドリップ→バナー切替の閾値（フェッチ間隔秒数と同じ）
   int get dripThreshold => _settingsReader().fetchIntervalSeconds;
+
+  /// タイムラインの投稿保持上限（これを超えた古い投稿は破棄）
+  static const int _maxPosts = 500;
 
   final List<Post> _pendingQueue = [];
   final Set<String> _pendingIds = {};
@@ -112,6 +124,11 @@ class FeedNotifier extends StateNotifier<FeedState> {
       debugPrint('[Feed] Precache error for ${post.id}: $e');
     }
     _precachedIds.add(post.id);
+    // キャッシュID上限を超えたら古いものを削除
+    if (_precachedIds.length > _maxPosts * 2) {
+      final excess = _precachedIds.length - _maxPosts;
+      _precachedIds.removeAll(_precachedIds.take(excess).toList());
+    }
   }
 
   /// 複数投稿の画像を並列プリキャッシュ
@@ -186,20 +203,26 @@ class FeedNotifier extends StateNotifier<FeedState> {
     );
   }
 
+  /// 投稿リストの変更フラグ（trueなら次の同期でフルデータを送信）
+  bool _overlayPostsDirty = true;
+
+  /// 投稿リストを上限に切り詰め、古い投稿のキャッシュIDも解放
+  List<Post> _trimPosts(List<Post> posts) {
+    if (posts.length <= _maxPosts) return posts;
+    final removed = posts.sublist(_maxPosts);
+    for (final p in removed) {
+      _precachedIds.remove(p.id);
+    }
+    return posts.sublist(0, _maxPosts);
+  }
+
+  /// 毎秒のタイマー同期（タイマー情報のみ、投稿変更時のみフルデータ）
   Future<void> _syncToOverlay() async {
     try {
-      final isActive = await FlutterOverlayWindow.isActive();
-      if (!isActive) return;
+      if (!_overlayActive) return;
       final settings = _settingsReader();
-      final hideRtIds = settings.hideRetweetsAccountIds;
-      var visiblePosts = state.posts.where((p) =>
-          !p.isRetweet ||
-          p.fetchedByAccountIds.isEmpty ||
-          p.fetchedByAccountIds.any((id) => !hideRtIds.contains(id)));
-      final posts = visiblePosts.take(100).map((p) => p.toJson()).toList();
       final total = settings.fetchIntervalSeconds;
-      final payload = {
-        'posts': posts,
+      final payload = <String, dynamic>{
         'fetch': {
           'remaining': state.isFetching ? 0 : _remainingSeconds.clamp(0, total),
           'total': total,
@@ -208,6 +231,18 @@ class FeedNotifier extends StateNotifier<FeedState> {
         'showFetchTimer': settings.showFetchTimer,
         'hideUserInfo': settings.hideUserInfo,
       };
+
+      // 投稿に変更があった場合のみフルデータを送信
+      if (_overlayPostsDirty) {
+        _overlayPostsDirty = false;
+        final hideRtIds = settings.hideRetweetsAccountIds;
+        var visiblePosts = state.posts.where((p) =>
+            !p.isRetweet ||
+            p.fetchedByAccountIds.isEmpty ||
+            p.fetchedByAccountIds.any((id) => !hideRtIds.contains(id)));
+        payload['posts'] = visiblePosts.take(100).map((p) => p.toJson()).toList();
+      }
+
       await FlutterOverlayWindow.shareData(jsonEncode(payload));
     } catch (_) {}
   }
@@ -333,8 +368,8 @@ class FeedNotifier extends StateNotifier<FeedState> {
     debugPrint('[Feed] _onPostsFetched: after=${existing.length} posts, ${rtAfter.length} RTs, bypass=$shouldBypassDrip, newPending=${newPending.length}');
 
     // 既存投稿の即時更新を反映
-    final sorted = existing.values.toList()
-      ..sort((a, b) => b.timestamp.compareTo(a.timestamp));
+    final sorted = _trimPosts(existing.values.toList()
+      ..sort((a, b) => b.timestamp.compareTo(a.timestamp)));
     state = state.copyWith(posts: sorted, isLoading: false, isFetching: false, clearError: true);
 
     // キューから既に表示済みの投稿を除去（フェッチ間にドリップされた分など）
@@ -529,8 +564,8 @@ class FeedNotifier extends StateNotifier<FeedState> {
       existing[post.id] = post;
     }
 
-    final sorted = existing.values.toList()
-      ..sort((a, b) => b.timestamp.compareTo(a.timestamp));
+    final sorted = _trimPosts(existing.values.toList()
+      ..sort((a, b) => b.timestamp.compareTo(a.timestamp)));
     state = state.copyWith(posts: sorted, pendingCount: _pendingQueue.length);
 
     TimelineCacheService.instance.saveTimeline(sorted);
@@ -559,8 +594,8 @@ class FeedNotifier extends StateNotifier<FeedState> {
     _pendingQueue.clear();
     _pendingIds.clear();
 
-    final sorted = existing.values.toList()
-      ..sort((a, b) => b.timestamp.compareTo(a.timestamp));
+    final sorted = _trimPosts(existing.values.toList()
+      ..sort((a, b) => b.timestamp.compareTo(a.timestamp)));
     state = state.copyWith(posts: sorted, pendingCount: 0);
 
     TimelineCacheService.instance.saveTimeline(sorted);

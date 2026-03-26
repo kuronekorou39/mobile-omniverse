@@ -17,7 +17,8 @@ class BlueskyApiService {
   @visibleForTesting
   http.Client? httpClientOverride;
 
-  http.Client get _client => httpClientOverride ?? http.Client();
+  late final http.Client _sharedClient = http.Client();
+  http.Client get _client => httpClientOverride ?? _sharedClient;
 
   void _logResponse(
     String label,

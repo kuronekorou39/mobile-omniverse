@@ -16,6 +16,7 @@ import '../services/account_storage_service.dart';
 import '../services/x_api_service.dart';
 import '../services/bluesky_api_service.dart';
 import '../services/app_update_service.dart';
+import '../services/debug_log_service.dart';
 import '../services/timeline_fetch_scheduler.dart';
 import '../models/account.dart';
 import '../widgets/account_picker_modal.dart';
@@ -81,6 +82,24 @@ class _OmniFeedScreenState extends ConsumerState<OmniFeedScreen>
                 _openAccountsScreen(context);
               },
             ),
+          ),
+        );
+      };
+
+      // ログサイズ警告を設定
+      DebugLogService.instance.onLogSizeWarning = (sizeLabel) {
+        if (!mounted) return;
+        showDialog(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            title: const Text('ログサイズ警告'),
+            content: Text('デバッグログが $sizeLabel に達しました。\n設定画面からログをクリアできます。'),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(ctx).pop(),
+                child: const Text('OK'),
+              ),
+            ],
           ),
         );
       };

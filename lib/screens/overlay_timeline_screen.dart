@@ -148,7 +148,16 @@ class _OverlayTimelineScreenState extends State<OverlayTimelineScreen> {
     super.dispose();
   }
 
+  bool _overlayAtTop = true;
+
   void _onScroll() {
+    // スクロール位置をメインアプリに通知（ドリップ制御用）
+    final atTop = _scrollController.position.pixels <= 10;
+    if (atTop != _overlayAtTop) {
+      _overlayAtTop = atTop;
+      FlutterOverlayWindow.shareData({"cmd": "overlayScrollAtTop", "atTop": atTop});
+    }
+
     if (_scrollController.position.pixels >=
         _scrollController.position.maxScrollExtent - 100) {
       if (!_isLoadingMore && _posts.isNotEmpty) {

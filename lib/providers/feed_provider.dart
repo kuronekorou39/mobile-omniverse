@@ -79,6 +79,7 @@ class FeedNotifier extends StateNotifier<FeedState> {
   bool _firstFetch = true;
   bool _isAtTop = true;
   bool _overlayActive = false;
+  bool _overlayAtTop = true;
   int _remainingSeconds = 0;
   bool _wasFetching = false;
   final SettingsState Function() _settingsReader;
@@ -134,6 +135,8 @@ class FeedNotifier extends StateNotifier<FeedState> {
           loadMore();
         } else if (cmd == 'close') {
           setOverlayActive(false);
+        } else if (cmd == 'overlayScrollAtTop') {
+          setOverlayScrollAtTop(message['atTop'] as bool? ?? true);
         }
       }
     });
@@ -423,8 +426,17 @@ class FeedNotifier extends StateNotifier<FeedState> {
 
   void setOverlayActive(bool active) {
     _overlayActive = active;
-    // オーバーレイ表示時、メインがスクロール中でもドリップ再開
-    if (active && _pendingQueue.isNotEmpty && _dripTimer == null) {
+    if (!active) _overlayAtTop = true;
+    // オーバーレイ表示時トップにいればドリップ再開
+    if (active && _overlayAtTop && _pendingQueue.isNotEmpty && _dripTimer == null) {
+      _startDrip();
+    }
+  }
+
+  void setOverlayScrollAtTop(bool atTop) {
+    _overlayAtTop = atTop;
+    // オーバーレイでトップに戻ったらドリップ再開
+    if (_overlayActive && atTop && _pendingQueue.isNotEmpty && _dripTimer == null) {
       _startDrip();
     }
   }
@@ -447,7 +459,9 @@ class FeedNotifier extends StateNotifier<FeedState> {
       _dripTimer = null;
       return;
     }
-    if (!_isAtTop && !_overlayActive) return; // メインもオーバーレイも見ていないならスキップ
+    // メインもオーバーレイもトップにいないならスキップ
+    final overlayReady = _overlayActive && _overlayAtTop;
+    if (!_isAtTop && !overlayReady) return;
     if (!mounted) {
       _dripTimer?.cancel();
       _dripTimer = null;

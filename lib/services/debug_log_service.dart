@@ -11,6 +11,12 @@ class DebugLogService {
   File? _logFile;
   int _logBytes = 0;
 
+  /// 1GB単位の通知閾値（何回目の1GBを超えたか）
+  int _notifiedGbCount = 0;
+
+  /// ログサイズが1GB境界を超えた時のコールバック (sizeLabel)
+  void Function(String sizeLabel)? onLogSizeWarning;
+
   /// 初期化 (アプリ起動時に1回呼ぶ)
   Future<void> init() async {
     final dir = await getApplicationDocumentsDirectory();
@@ -20,6 +26,7 @@ class DebugLogService {
     } else {
       _logBytes = 0;
     }
+    _notifiedGbCount = _logBytes ~/ _oneGb;
   }
 
   /// 現在のログサイズ (bytes)
@@ -29,7 +36,8 @@ class DebugLogService {
   String get logSizeLabel {
     if (_logBytes < 1024) return '$_logBytes B';
     if (_logBytes < 1024 * 1024) return '${(_logBytes / 1024).toStringAsFixed(1)} KB';
-    return '${(_logBytes / (1024 * 1024)).toStringAsFixed(1)} MB';
+    if (_logBytes < _oneGb) return '${(_logBytes / (1024 * 1024)).toStringAsFixed(1)} MB';
+    return '${(_logBytes / _oneGb).toStringAsFixed(2)} GB';
   }
 
   /// ログファイルのパス
@@ -179,11 +187,19 @@ class DebugLogService {
     await _append('[$tag] ${now.toIso8601String()} $message\n');
   }
 
+  static const int _oneGb = 1024 * 1024 * 1024;
+
   Future<void> _append(String text) async {
     if (_logFile == null) return;
     try {
       await _logFile!.writeAsString(text, mode: FileMode.append, flush: true);
       _logBytes += text.length;
+      // 1GB境界を超えたら通知
+      final currentGb = _logBytes ~/ _oneGb;
+      if (currentGb > _notifiedGbCount) {
+        _notifiedGbCount = currentGb;
+        onLogSizeWarning?.call(logSizeLabel);
+      }
     } catch (e) {
       debugPrint('[DebugLog] write error: $e');
     }
@@ -195,6 +211,7 @@ class DebugLogService {
     try {
       await _logFile!.writeAsString('', mode: FileMode.write);
       _logBytes = 0;
+      _notifiedGbCount = 0;
     } catch (e) {
       debugPrint('[DebugLog] clear error: $e');
     }

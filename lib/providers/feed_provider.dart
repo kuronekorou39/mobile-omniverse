@@ -78,6 +78,7 @@ class FeedNotifier extends StateNotifier<FeedState> {
   bool _bypassDrip = false;
   bool _firstFetch = true;
   bool _isAtTop = true;
+  bool _overlayActive = false;
   int _remainingSeconds = 0;
   bool _wasFetching = false;
   final SettingsState Function() _settingsReader;
@@ -131,6 +132,8 @@ class FeedNotifier extends StateNotifier<FeedState> {
           refresh();
         } else if (cmd == 'loadMore') {
           loadMore();
+        } else if (cmd == 'close') {
+          setOverlayActive(false);
         }
       }
     });
@@ -418,6 +421,14 @@ class FeedNotifier extends StateNotifier<FeedState> {
     });
   }
 
+  void setOverlayActive(bool active) {
+    _overlayActive = active;
+    // オーバーレイ表示時、メインがスクロール中でもドリップ再開
+    if (active && _pendingQueue.isNotEmpty && _dripTimer == null) {
+      _startDrip();
+    }
+  }
+
   void setScrollAtTop(bool atTop) {
     _dripDelayTimer?.cancel();
     if (atTop) {
@@ -436,7 +447,7 @@ class FeedNotifier extends StateNotifier<FeedState> {
       _dripTimer = null;
       return;
     }
-    if (!_isAtTop) return; // トップにいないならスキップ
+    if (!_isAtTop && !_overlayActive) return; // メインもオーバーレイも見ていないならスキップ
     if (!mounted) {
       _dripTimer?.cancel();
       _dripTimer = null;

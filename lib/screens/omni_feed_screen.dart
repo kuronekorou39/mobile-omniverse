@@ -127,10 +127,19 @@ class _OmniFeedScreenState extends ConsumerState<OmniFeedScreen>
       _checkPendingPostDetail();
       // フォアグラウンド復帰 → フェッチ再開
       ref.read(settingsProvider.notifier).resumeFetching();
+      // オーバーレイ状態を同期
+      _syncOverlayActiveState();
     } else if (state == AppLifecycleState.paused) {
       // バックグラウンド → オーバーレイも非表示ならフェッチ一時停止
       _pauseFetchingIfIdle();
     }
+  }
+
+  Future<void> _syncOverlayActiveState() async {
+    try {
+      final isActive = await FlutterOverlayWindow.isActive();
+      ref.read(feedProvider.notifier).setOverlayActive(isActive);
+    } catch (_) {}
   }
 
   Future<void> _pauseFetchingIfIdle() async {
@@ -442,6 +451,7 @@ class _OmniFeedScreenState extends ConsumerState<OmniFeedScreen>
     final isActive = await FlutterOverlayWindow.isActive();
     if (isActive) {
       await FlutterOverlayWindow.closeOverlay();
+      ref.read(feedProvider.notifier).setOverlayActive(false);
       return;
     }
 
@@ -466,6 +476,8 @@ class _OmniFeedScreenState extends ConsumerState<OmniFeedScreen>
         },
         'showFetchTimer': settings.showFetchTimer,
       }));
+
+      ref.read(feedProvider.notifier).setOverlayActive(true);
 
       // ホーム画面に戻る（Activityを破棄せずバックグラウンドへ）
       if (mounted) {

@@ -572,6 +572,7 @@ class _OverlayTimelineScreenState extends State<OverlayTimelineScreen> {
                         GestureDetector(
                           behavior: HitTestBehavior.opaque,
                           onTap: () async {
+                            await FlutterOverlayWindow.shareData({"cmd": "close"});
                             await FlutterOverlayWindow.closeOverlay();
                           },
                           child: Padding(

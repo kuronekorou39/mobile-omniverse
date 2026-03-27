@@ -230,6 +230,7 @@ class DebugLogService {
       await _logFile!.writeAsString(trimmed, mode: FileMode.write);
       _logBytes = trimmed.length;
       debugPrint('[DebugLog] Rotated: kept ${logSizeLabel}');
+      onLogSizeWarning?.call(logSizeLabel);
     } catch (e) {
       debugPrint('[DebugLog] rotate error: $e');
     } finally {

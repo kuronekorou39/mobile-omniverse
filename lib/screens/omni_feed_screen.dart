@@ -89,17 +89,10 @@ class _OmniFeedScreenState extends ConsumerState<OmniFeedScreen>
       // ログサイズ警告を設定
       DebugLogService.instance.onLogSizeWarning = (sizeLabel) {
         if (!mounted) return;
-        showDialog(
-          context: context,
-          builder: (ctx) => AlertDialog(
-            title: const Text('ログサイズ警告'),
-            content: Text('デバッグログが $sizeLabel に達しました。\n設定画面からログをクリアできます。'),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.of(ctx).pop(),
-                child: const Text('OK'),
-              ),
-            ],
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('デバッグログが上限に達したため自動整理しました（現在 $sizeLabel）'),
+            duration: const Duration(seconds: 3),
           ),
         );
       };

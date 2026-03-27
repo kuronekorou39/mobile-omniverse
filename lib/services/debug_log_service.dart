@@ -11,10 +11,7 @@ class DebugLogService {
   File? _logFile;
   int _logBytes = 0;
 
-  /// 1GB単位の通知閾値（何回目の1GBを超えたか）
-  int _notifiedGbCount = 0;
-
-  /// ログサイズが1GB境界を超えた時のコールバック (sizeLabel)
+  /// ログサイズ警告コールバック（上限に近づいた時）
   void Function(String sizeLabel)? onLogSizeWarning;
 
   /// 初期化 (アプリ起動時に1回呼ぶ)
@@ -26,7 +23,10 @@ class DebugLogService {
     } else {
       _logBytes = 0;
     }
-    _notifiedGbCount = _logBytes ~/ _oneGb;
+    // 起動時に既存ログが上限超過ならローテーション
+    if (_logBytes > _maxLogSize) {
+      _rotate();
+    }
   }
 
   /// 現在のログサイズ (bytes)
@@ -178,6 +178,12 @@ class DebugLogService {
   static const int _oneGb = 1024 * 1024 * 1024;
   static const int _maxBodyLog = 2048;
 
+  /// ログファイルの上限サイズ（50MB）
+  static const int _maxLogSize = 50 * 1024 * 1024;
+  /// ローテーション時に保持するサイズ（40MB — 直近分を残す）
+  static const int _rotateKeepSize = 40 * 1024 * 1024;
+  bool _isRotating = false;
+
   /// 大きなボディを切り詰めてログに追加
   void _appendTruncatedBody(StringBuffer buf, String label, String? body) {
     if (body == null) return;
@@ -196,14 +202,38 @@ class DebugLogService {
     try {
       await _logFile!.writeAsString(text, mode: FileMode.append);
       _logBytes += text.length;
-      // 1GB境界を超えたら通知
-      final currentGb = _logBytes ~/ _oneGb;
-      if (currentGb > _notifiedGbCount) {
-        _notifiedGbCount = currentGb;
-        onLogSizeWarning?.call(logSizeLabel);
+      // 上限超過でローテーション
+      if (_logBytes > _maxLogSize && !_isRotating) {
+        _rotate();
       }
     } catch (e) {
       debugPrint('[DebugLog] write error: $e');
+    }
+  }
+
+  /// 古いログを切り捨てて直近分のみ保持
+  Future<void> _rotate() async {
+    if (_logFile == null || _isRotating) return;
+    _isRotating = true;
+    try {
+      final content = await _logFile!.readAsString();
+      if (content.length <= _rotateKeepSize) {
+        _isRotating = false;
+        return;
+      }
+      // _rotateKeepSize 分だけ末尾を残す
+      final keepFrom = content.length - _rotateKeepSize;
+      // エントリ区切り（═══）の位置まで進めて中途半端なエントリを避ける
+      final separatorIndex = content.indexOf('═══', keepFrom);
+      final cutAt = separatorIndex >= 0 ? separatorIndex : keepFrom;
+      final trimmed = content.substring(cutAt);
+      await _logFile!.writeAsString(trimmed, mode: FileMode.write);
+      _logBytes = trimmed.length;
+      debugPrint('[DebugLog] Rotated: kept ${logSizeLabel}');
+    } catch (e) {
+      debugPrint('[DebugLog] rotate error: $e');
+    } finally {
+      _isRotating = false;
     }
   }
 
@@ -213,7 +243,6 @@ class DebugLogService {
     try {
       await _logFile!.writeAsString('', mode: FileMode.write);
       _logBytes = 0;
-      _notifiedGbCount = 0;
     } catch (e) {
       debugPrint('[DebugLog] clear error: $e');
     }

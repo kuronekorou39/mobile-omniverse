@@ -93,11 +93,7 @@ class DebugLogService {
       buf.writeln('');
     }
 
-    if (responseBody != null) {
-      buf.writeln('── Response Body ──');
-      buf.writeln(responseBody);
-      buf.writeln('');
-    }
+    _appendTruncatedBody(buf, 'Response Body', responseBody);
 
     if (error != null) {
       buf.writeln('── Error ──');
@@ -148,21 +144,13 @@ class DebugLogService {
       buf.writeln('');
     }
 
-    if (jsRawResult != null) {
-      buf.writeln('── JS Raw Result ──');
-      buf.writeln(jsRawResult);
-      buf.writeln('');
-    }
+    _appendTruncatedBody(buf, 'JS Raw Result', jsRawResult);
 
     if (statusCode != null) {
       buf.writeln('── Response Status: $statusCode ──');
     }
 
-    if (responseBody != null) {
-      buf.writeln('── Response Body ──');
-      buf.writeln(responseBody);
-      buf.writeln('');
-    }
+    _appendTruncatedBody(buf, 'Response Body', responseBody);
 
     if (error != null) {
       buf.writeln('── Error ──');
@@ -188,11 +176,25 @@ class DebugLogService {
   }
 
   static const int _oneGb = 1024 * 1024 * 1024;
+  static const int _maxBodyLog = 2048;
+
+  /// 大きなボディを切り詰めてログに追加
+  void _appendTruncatedBody(StringBuffer buf, String label, String? body) {
+    if (body == null) return;
+    buf.writeln('── $label ──');
+    if (body.length > _maxBodyLog) {
+      buf.writeln(body.substring(0, _maxBodyLog));
+      buf.writeln('... [truncated: ${body.length} bytes total]');
+    } else {
+      buf.writeln(body);
+    }
+    buf.writeln('');
+  }
 
   Future<void> _append(String text) async {
     if (_logFile == null) return;
     try {
-      await _logFile!.writeAsString(text, mode: FileMode.append, flush: true);
+      await _logFile!.writeAsString(text, mode: FileMode.append);
       _logBytes += text.length;
       // 1GB境界を超えたら通知
       final currentGb = _logBytes ~/ _oneGb;

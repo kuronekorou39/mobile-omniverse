@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_overlay_window/flutter_overlay_window.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -20,9 +21,12 @@ import '../services/debug_log_service.dart';
 import '../services/timeline_fetch_scheduler.dart';
 import '../models/account.dart';
 import '../widgets/account_picker_modal.dart';
+import '../utils/image_headers.dart';
 import '../widgets/post_card.dart';
+import '../widgets/sns_badge.dart';
 import '../widgets/update_dialog.dart';
 import 'accounts_screen.dart';
+import 'user_profile_screen.dart';
 import 'compose_screen.dart';
 import 'notifications_screen.dart';
 import 'settings_screen.dart';
@@ -415,6 +419,91 @@ class _OmniFeedScreenState extends ConsumerState<OmniFeedScreen>
     }
   }
 
+  Widget _buildProfileButton(BuildContext context, List<Account> accounts) {
+    final enabled = accounts.where((a) => a.isEnabled).toList();
+    if (enabled.isEmpty) return const SizedBox.shrink();
+
+    // 最初の有効アカウントのアバターを表示
+    final primary = enabled.first;
+    return GestureDetector(
+      onTap: () => _openMyProfile(context, enabled),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 8),
+        child: Tooltip(
+          message: 'マイプロフィール',
+          child: CircleAvatar(
+            radius: 14,
+            backgroundImage: primary.avatarUrl != null
+                ? CachedNetworkImageProvider(primary.avatarUrl!, headers: kImageHeaders)
+                : null,
+            child: primary.avatarUrl == null
+                ? Text(
+                    primary.displayName.isNotEmpty
+                        ? primary.displayName[0].toUpperCase()
+                        : '?',
+                    style: const TextStyle(fontSize: 11),
+                  )
+                : null,
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _openMyProfile(BuildContext context, List<Account> enabledAccounts) {
+    if (enabledAccounts.length == 1) {
+      _navigateToAccountProfile(context, enabledAccounts.first);
+      return;
+    }
+    // 複数アカウント: ボトムシートで選択
+    showModalBottomSheet(
+      context: context,
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Padding(
+              padding: EdgeInsets.all(16),
+              child: Text('プロフィールを表示', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+            ),
+            ...enabledAccounts.map((account) => ListTile(
+              leading: CircleAvatar(
+                backgroundImage: account.avatarUrl != null
+                    ? CachedNetworkImageProvider(account.avatarUrl!, headers: kImageHeaders)
+                    : null,
+                child: account.avatarUrl == null
+                    ? Text(account.displayName.isNotEmpty ? account.displayName[0].toUpperCase() : '?')
+                    : null,
+              ),
+              title: Text(account.displayName),
+              subtitle: Text(account.handle),
+              trailing: SnsBadge(service: account.service),
+              onTap: () {
+                Navigator.of(ctx).pop();
+                _navigateToAccountProfile(context, account);
+              },
+            )),
+            const SizedBox(height: 8),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _navigateToAccountProfile(BuildContext context, Account account) {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => UserProfileScreen(
+          username: account.displayName,
+          handle: account.handle,
+          service: account.service,
+          avatarUrl: account.avatarUrl,
+          accountId: account.id,
+        ),
+      ),
+    );
+  }
+
   void _openAccountsScreen(BuildContext context) {
     Navigator.of(context).push(PageRouteBuilder(
       pageBuilder: (context, anim1, anim2) => const AccountsScreen(),
@@ -566,6 +655,7 @@ class _OmniFeedScreenState extends ConsumerState<OmniFeedScreen>
                   onPressed: () => _openAccountsScreen(context),
                 ),
           actions: [
+            _buildProfileButton(context, accounts),
             IconButton(
               icon: Badge(
                 isLabelVisible: ref.watch(notificationBadgeProvider),

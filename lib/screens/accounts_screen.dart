@@ -9,6 +9,7 @@ import '../services/timeline_fetch_scheduler.dart';
 import '../widgets/sns_badge.dart';
 import 'login_webview_screen.dart';
 import 'session_refresh_screen.dart';
+import 'user_profile_screen.dart';
 
 class AccountsScreen extends ConsumerWidget {
   const AccountsScreen({super.key});
@@ -177,6 +178,11 @@ class _AccountTile extends ConsumerWidget {
       trailing: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
+          IconButton(
+            icon: const Icon(Icons.person_outline),
+            tooltip: 'ユーザーホーム',
+            onPressed: () => _openProfile(context),
+          ),
           Switch(
             value: account.isEnabled,
             onChanged: (_) {
@@ -190,6 +196,20 @@ class _AccountTile extends ConsumerWidget {
         ],
       ),
       onTap: () => _openDetail(context),
+    );
+  }
+
+  void _openProfile(BuildContext context) {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => UserProfileScreen(
+          username: account.displayName,
+          handle: account.handle,
+          service: account.service,
+          avatarUrl: account.avatarUrl,
+          accountId: account.id,
+        ),
+      ),
     );
   }
 

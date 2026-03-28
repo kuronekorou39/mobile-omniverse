@@ -139,18 +139,21 @@ class _OmniFeedScreenState extends ConsumerState<OmniFeedScreen>
       _checkPendingPostDetail();
       // フォアグラウンド復帰 → フェッチ再開
       ref.read(settingsProvider.notifier).resumeFetching();
-      // オーバーレイ状態を同期
-      _syncOverlayActiveState();
+      // メイン表示時はオーバーレイを閉じる（ドリップ状態の競合を防止）
+      _closeOverlayIfActive();
     } else if (state == AppLifecycleState.paused) {
       // バックグラウンド → オーバーレイも非表示ならフェッチ一時停止
       _pauseFetchingIfIdle();
     }
   }
 
-  Future<void> _syncOverlayActiveState() async {
+  Future<void> _closeOverlayIfActive() async {
     try {
       final isActive = await FlutterOverlayWindow.isActive();
-      ref.read(feedProvider.notifier).setOverlayActive(isActive);
+      if (isActive) {
+        await FlutterOverlayWindow.closeOverlay();
+      }
+      ref.read(feedProvider.notifier).setOverlayActive(false);
     } catch (_) {}
   }
 

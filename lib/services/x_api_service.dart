@@ -513,7 +513,8 @@ class XApiService {
         'followers_count': legacy['followers_count'] as int? ?? 0,
         'friends_count': legacy['friends_count'] as int? ?? 0,
         'statuses_count': legacy['statuses_count'] as int? ?? 0,
-        'profile_image_url_https': legacy['profile_image_url_https'] as String?,
+        'profile_image_url_https': (legacy['profile_image_url_https'] as String?)
+            ?.replaceFirst('_normal', '_400x400'),
         'profile_banner_url': legacy['profile_banner_url'] as String?,
         'is_following': isFollowing,
       };
@@ -1005,7 +1006,8 @@ class XApiService {
               actorName = user['name'] as String? ?? '';
               actorHandle = '@${user['screen_name'] as String? ?? ''}';
               actorAvatarUrl =
-                  user['profile_image_url_https'] as String?;
+                  (user['profile_image_url_https'] as String?)
+                      ?.replaceFirst('_normal', '_400x400');
             }
           }
         }
@@ -1274,8 +1276,10 @@ class XApiService {
       var fullText = legacy['full_text'] as String? ?? '';
       final createdAt = legacy['created_at'] as String? ?? '';
 
-      final avatarUrl =
+      final avatarUrlRaw =
           userLegacy?['profile_image_url_https'] as String?;
+      // _normal (48x48) → _400x400 に置換して高解像度版を取得
+      final avatarUrl = avatarUrlRaw?.replaceFirst('_normal', '_400x400');
 
       // Sensitive content flag
       final isSensitive = legacy['possibly_sensitive'] as bool? ?? false;

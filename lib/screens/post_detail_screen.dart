@@ -5,16 +5,21 @@ import 'package:share_plus/share_plus.dart' as share_plus;
 
 import '../utils/image_headers.dart';
 import '../models/account.dart';
+import '../models/activity_log.dart';
 import '../models/post.dart';
 import '../models/sns_service.dart';
+import '../providers/activity_log_provider.dart';
+import '../providers/feed_provider.dart';
+import '../providers/settings_provider.dart';
 import '../services/account_storage_service.dart';
 import '../services/bluesky_api_service.dart';
 import '../services/bookmark_service.dart';
 import '../services/x_api_service.dart';
-import '../providers/settings_provider.dart';
+import '../widgets/account_picker_modal.dart';
 import '../widgets/post_card.dart';
 import '../widgets/post_media.dart';
 import '../widgets/sns_badge.dart';
+import 'user_profile_screen.dart';
 
 class PostDetailScreen extends ConsumerStatefulWidget {
   const PostDetailScreen({super.key, required this.post});
@@ -26,6 +31,7 @@ class PostDetailScreen extends ConsumerStatefulWidget {
 }
 
 class _PostDetailScreenState extends ConsumerState<PostDetailScreen> {
+  late Post _post;
   List<Post> _replies = [];
   bool _isLoading = true;
   String? _error;
@@ -33,6 +39,7 @@ class _PostDetailScreenState extends ConsumerState<PostDetailScreen> {
   @override
   void initState() {
     super.initState();
+    _post = widget.post;
     _loadReplies();
   }
 
@@ -184,6 +191,8 @@ class _PostDetailScreenState extends ConsumerState<PostDetailScreen> {
                         ),
                       );
                     },
+                    onLike: () => _handleLike(reply),
+                    onRepost: () => _handleRepost(reply),
                   );
                 },
               ),
@@ -196,62 +205,65 @@ class _PostDetailScreenState extends ConsumerState<PostDetailScreen> {
   }
 
   Widget _buildMainPost(BuildContext context) {
-    final post = widget.post;
+    final post = _post;
 
     return Padding(
       padding: const EdgeInsets.all(16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Author header
-          Row(
-            children: [
-              Hero(
-                tag: 'avatar_${post.id}',
-                child: CircleAvatar(
-                  radius: 24,
-                  backgroundImage: post.avatarUrl != null
-                      ? CachedNetworkImageProvider(post.avatarUrl!, headers: kImageHeaders)
-                      : null,
-                  child: post.avatarUrl == null
-                      ? Text(post.username.isNotEmpty
-                          ? post.username[0].toUpperCase()
-                          : '?')
-                      : null,
+          // Author header (タップでユーザープロフィールへ)
+          GestureDetector(
+            onTap: () => navigateToUserProfile(context, post: post),
+            child: Row(
+              children: [
+                Hero(
+                  tag: 'avatar_${post.id}',
+                  child: CircleAvatar(
+                    radius: 24,
+                    backgroundImage: post.avatarUrl != null
+                        ? CachedNetworkImageProvider(post.avatarUrl!, headers: kImageHeaders)
+                        : null,
+                    child: post.avatarUrl == null
+                        ? Text(post.username.isNotEmpty
+                            ? post.username[0].toUpperCase()
+                            : '?')
+                        : null,
+                  ),
                 ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        Flexible(
-                          child: Text(
-                            post.username,
-                            style: const TextStyle(
-                              fontWeight: FontWeight.bold,
-                              fontSize: 16,
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Flexible(
+                            child: Text(
+                              post.username,
+                              style: const TextStyle(
+                                fontWeight: FontWeight.bold,
+                                fontSize: 16,
+                              ),
+                              overflow: TextOverflow.ellipsis,
                             ),
-                            overflow: TextOverflow.ellipsis,
                           ),
-                        ),
-                        const SizedBox(width: 6),
-                        SnsBadge(service: post.source),
-                      ],
-                    ),
-                    Text(
-                      post.handle,
-                      style: TextStyle(
-                        color: Colors.grey[600],
-                        fontSize: 14,
+                          const SizedBox(width: 6),
+                          SnsBadge(service: post.source),
+                        ],
                       ),
-                    ),
-                  ],
+                      Text(
+                        post.handle,
+                        style: TextStyle(
+                          color: Colors.grey[600],
+                          fontSize: 14,
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
           const SizedBox(height: 16),
 
@@ -316,6 +328,31 @@ class _PostDetailScreenState extends ConsumerState<PostDetailScreen> {
                 _buildCountLabel(post.likeCount, 'いいね'),
               ],
             ),
+          ),
+
+          const Divider(),
+
+          // Action buttons
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceAround,
+            children: [
+              IconButton(
+                icon: Icon(
+                  post.isReposted ? Icons.repeat_on : Icons.repeat,
+                  color: post.isReposted ? Colors.green : null,
+                ),
+                onPressed: () => _handleRepost(post),
+                tooltip: 'リポスト',
+              ),
+              IconButton(
+                icon: Icon(
+                  post.isLiked ? Icons.favorite : Icons.favorite_outline,
+                  color: post.isLiked ? Colors.red : null,
+                ),
+                onPressed: () => _handleLike(post),
+                tooltip: 'いいね',
+              ),
+            ],
           ),
         ],
       ),
@@ -408,6 +445,169 @@ class _PostDetailScreenState extends ConsumerState<PostDetailScreen> {
         ],
       ),
     );
+  }
+
+  Future<Account?> _resolveAccount(Post post, String actionLabel) async {
+    final settings = ref.read(settingsProvider);
+    if (settings.showAccountPickerOnEngagement) {
+      return showAccountPickerModal(
+        context,
+        service: post.source,
+        actionLabel: actionLabel,
+      );
+    }
+    return _getAccount();
+  }
+
+  void _updatePost({bool? isLiked, int? likeCount, bool? isReposted, int? repostCount}) {
+    setState(() {
+      _post = _post.copyWith(
+        isLiked: isLiked ?? _post.isLiked,
+        likeCount: likeCount ?? _post.likeCount,
+        isReposted: isReposted ?? _post.isReposted,
+        repostCount: repostCount ?? _post.repostCount,
+      );
+    });
+    // メインタイムラインのstateにも反映
+    ref.read(feedProvider.notifier).updatePostEngagement(
+      _post.id,
+      isLiked: isLiked,
+      likeCount: likeCount,
+      isReposted: isReposted,
+      repostCount: repostCount,
+    );
+  }
+
+  Future<void> _handleLike(Post post) async {
+    final account = await _resolveAccount(post, 'いいね');
+    if (account == null) return;
+
+    final settings = ref.read(settingsProvider);
+    final wasLiked = settings.showAccountPickerOnEngagement ? false : post.isLiked;
+    final action = wasLiked ? ActivityAction.unlike : ActivityAction.like;
+    final postSummary = post.body.length > 40 ? '${post.body.substring(0, 40)}…' : post.body;
+
+    if (!settings.showAccountPickerOnEngagement) {
+      _updatePost(
+        isLiked: !wasLiked,
+        likeCount: wasLiked ? post.likeCount - 1 : post.likeCount + 1,
+      );
+    }
+
+    try {
+      bool success = false;
+      int? statusCode;
+      String? responseSnippet;
+
+      if (post.source == SnsService.x) {
+        final creds = account.xCredentials;
+        final tweetId = post.id.replaceFirst('x_', '');
+        final result = wasLiked
+            ? await XApiService.instance.unlikeTweetWithDetail(creds, tweetId)
+            : await XApiService.instance.likeTweetWithDetail(creds, tweetId);
+        success = result.success;
+        statusCode = result.statusCode;
+        responseSnippet = result.bodySnippet;
+      } else if (post.source == SnsService.bluesky) {
+        final creds = account.blueskyCredentials;
+        if (wasLiked) {
+          success = true;
+        } else {
+          final postUri = post.uri;
+          final postCid = post.cid;
+          if (postUri != null && postCid != null && postCid.isNotEmpty) {
+            final result = await BlueskyApiService.instance.likePost(creds, postUri, postCid);
+            success = result != null;
+          }
+        }
+      }
+
+      ref.read(activityLogProvider.notifier).logAction(
+        action: action,
+        platform: post.source,
+        accountHandle: account.handle,
+        accountId: account.id,
+        targetId: post.id,
+        targetSummary: postSummary,
+        success: success,
+        statusCode: statusCode,
+        responseSnippet: responseSnippet,
+      );
+
+      if (!success && !settings.showAccountPickerOnEngagement) {
+        _updatePost(isLiked: wasLiked, likeCount: post.likeCount);
+      }
+    } catch (e) {
+      if (!settings.showAccountPickerOnEngagement) {
+        _updatePost(isLiked: wasLiked, likeCount: post.likeCount);
+      }
+    }
+  }
+
+  Future<void> _handleRepost(Post post) async {
+    final account = await _resolveAccount(post, 'リポスト');
+    if (account == null) return;
+
+    final settings = ref.read(settingsProvider);
+    final wasReposted = settings.showAccountPickerOnEngagement ? false : post.isReposted;
+    final action = wasReposted ? ActivityAction.unrepost : ActivityAction.repost;
+    final postSummary = post.body.length > 40 ? '${post.body.substring(0, 40)}…' : post.body;
+
+    if (!settings.showAccountPickerOnEngagement) {
+      _updatePost(
+        isReposted: !wasReposted,
+        repostCount: wasReposted ? post.repostCount - 1 : post.repostCount + 1,
+      );
+    }
+
+    try {
+      bool success = false;
+      int? statusCode;
+      String? responseSnippet;
+
+      if (post.source == SnsService.x) {
+        final creds = account.xCredentials;
+        final tweetId = post.id.replaceFirst('x_', '');
+        final result = wasReposted
+            ? await XApiService.instance.unretweetWithDetail(creds, tweetId)
+            : await XApiService.instance.retweetWithDetail(creds, tweetId);
+        success = result.success;
+        statusCode = result.statusCode;
+        responseSnippet = result.bodySnippet;
+      } else if (post.source == SnsService.bluesky) {
+        final creds = account.blueskyCredentials;
+        if (wasReposted) {
+          success = true;
+        } else {
+          final postUri = post.uri;
+          final postCid = post.cid;
+          if (postUri != null && postCid != null && postCid.isNotEmpty) {
+            final result = await BlueskyApiService.instance.repost(creds, postUri, postCid);
+            success = result != null;
+          }
+        }
+      }
+
+      ref.read(activityLogProvider.notifier).logAction(
+        action: action,
+        platform: post.source,
+        accountHandle: account.handle,
+        accountId: account.id,
+        targetId: post.id,
+        targetSummary: postSummary,
+        success: success,
+        statusCode: statusCode,
+        responseSnippet: responseSnippet,
+      );
+
+      if (!success && !settings.showAccountPickerOnEngagement) {
+        _updatePost(isReposted: wasReposted, repostCount: post.repostCount);
+      }
+    } catch (e) {
+      if (!settings.showAccountPickerOnEngagement) {
+        _updatePost(isReposted: wasReposted, repostCount: post.repostCount);
+      }
+    }
   }
 
   String _formatFullTimestamp(DateTime dt) {

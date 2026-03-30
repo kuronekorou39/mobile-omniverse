@@ -102,6 +102,7 @@ class _NotificationList extends ConsumerStatefulWidget {
 class _NotificationListState extends ConsumerState<_NotificationList>
     with AutomaticKeepAliveClientMixin {
   final _notifications = <NotificationItem>[];
+  final _listKey = GlobalKey<AnimatedListState>();
   bool _isLoading = true;
   String? _error;
   String? _cursor;
@@ -117,43 +118,58 @@ class _NotificationListState extends ConsumerState<_NotificationList>
   }
 
   Future<void> _fetch() async {
-    setState(() {
-      _isLoading = true;
-      _error = null;
-    });
+    final isRefresh = _notifications.isNotEmpty;
+    if (!isRefresh) {
+      setState(() {
+        _isLoading = true;
+        _error = null;
+      });
+    }
 
     try {
       late final int count;
       String? responseSnippet;
+      late final List<NotificationItem> fetched;
+      late final String? newCursor;
 
       if (widget.account.service == SnsService.x) {
         final result = await XApiService.instance
             .getNotifications(widget.account.xCredentials);
         count = result.notifications.length;
         responseSnippet = result.responseSnippet;
-        if (!mounted) return;
-        setState(() {
-          _notifications
-            ..clear()
-            ..addAll(result.notifications);
-          _cursor = result.cursor;
-          _isLoading = false;
-        });
+        fetched = result.notifications;
+        newCursor = result.cursor;
       } else {
         final result = await BlueskyApiService.instance
             .getNotificationsWithRefresh(widget.account.blueskyCredentials);
         count = result.notifications.length;
-        // トークンが更新された場合は保存
+        fetched = result.notifications;
+        newCursor = result.cursor;
         if (result.updatedCreds != null) {
           await ref.read(accountProvider.notifier)
               .updateCredentials(widget.account.id, result.updatedCreds!);
         }
-        if (!mounted) return;
+      }
+
+      if (!mounted) return;
+
+      if (isRefresh) {
+        // 既存のIDセットと比較して新しい通知だけを挿入
+        final existingIds = _notifications.map((n) => n.id).toSet();
+        final newItems = fetched.where((n) => !existingIds.contains(n.id)).toList();
+        if (newItems.isNotEmpty) {
+          for (var i = 0; i < newItems.length; i++) {
+            _notifications.insert(i, newItems[i]);
+            _listKey.currentState?.insertItem(i,
+                duration: const Duration(milliseconds: 300));
+          }
+        }
+        setState(() => _cursor = newCursor);
+      } else {
+        // 初回ロード: 全件セット
+        _notifications.addAll(fetched);
         setState(() {
-          _notifications
-            ..clear()
-            ..addAll(result.notifications);
-          _cursor = result.cursor;
+          _cursor = newCursor;
           _isLoading = false;
         });
       }
@@ -188,6 +204,19 @@ class _NotificationListState extends ConsumerState<_NotificationList>
     }
   }
 
+  void _appendItems(List<NotificationItem> items, String? newCursor) {
+    final startIndex = _notifications.length;
+    _notifications.addAll(items);
+    for (var i = 0; i < items.length; i++) {
+      _listKey.currentState?.insertItem(startIndex + i,
+          duration: const Duration(milliseconds: 200));
+    }
+    setState(() {
+      _cursor = newCursor;
+      _isLoadingMore = false;
+    });
+  }
+
   Future<void> _loadMore() async {
     if (_isLoadingMore || _cursor == null) return;
     setState(() => _isLoadingMore = true);
@@ -197,11 +226,7 @@ class _NotificationListState extends ConsumerState<_NotificationList>
         final result = await XApiService.instance
             .getNotifications(widget.account.xCredentials, cursor: _cursor);
         if (!mounted) return;
-        setState(() {
-          _notifications.addAll(result.notifications);
-          _cursor = result.cursor;
-          _isLoadingMore = false;
-        });
+        _appendItems(result.notifications, result.cursor);
       } else {
         final result = await BlueskyApiService.instance
             .getNotificationsWithRefresh(
@@ -212,11 +237,7 @@ class _NotificationListState extends ConsumerState<_NotificationList>
               .updateCredentials(widget.account.id, result.updatedCreds!);
         }
         if (!mounted) return;
-        setState(() {
-          _notifications.addAll(result.notifications);
-          _cursor = result.cursor;
-          _isLoadingMore = false;
-        });
+        _appendItems(result.notifications, result.cursor);
       }
     } catch (e) {
       if (!mounted) return;
@@ -251,20 +272,23 @@ class _NotificationListState extends ConsumerState<_NotificationList>
 
     return RefreshIndicator(
       onRefresh: _fetch,
-      child: ListView.builder(
-        itemCount: _notifications.length + (_cursor != null ? 1 : 0),
-        itemBuilder: (context, index) {
+      child: AnimatedList(
+        key: _listKey,
+        initialItemCount: _notifications.length + (_cursor != null ? 1 : 0),
+        itemBuilder: (context, index, animation) {
           if (index == _notifications.length) {
-            // ページネーションローダー
             _loadMore();
             return const Padding(
               padding: EdgeInsets.all(16),
               child: Center(child: CircularProgressIndicator()),
             );
           }
-          return _NotificationTile(
-            notification: _notifications[index],
-            account: widget.account,
+          return SizeTransition(
+            sizeFactor: animation,
+            child: _NotificationTile(
+              notification: _notifications[index],
+              account: widget.account,
+            ),
           );
         },
       ),

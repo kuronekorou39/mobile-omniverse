@@ -90,6 +90,22 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen>
   }
 }
 
+/// アカウントごとの通知キャッシュ
+class _NotificationCache {
+  static final Map<String, _CachedData> _cache = {};
+
+  static _CachedData? get(String accountId) => _cache[accountId];
+  static void set(String accountId, List<NotificationItem> items, String? cursor) {
+    _cache[accountId] = _CachedData(items, cursor);
+  }
+}
+
+class _CachedData {
+  _CachedData(this.notifications, this.cursor);
+  final List<NotificationItem> notifications;
+  final String? cursor;
+}
+
 /// アカウントごとの通知リスト
 class _NotificationList extends ConsumerStatefulWidget {
   const _NotificationList({required this.account});
@@ -114,6 +130,13 @@ class _NotificationListState extends ConsumerState<_NotificationList>
   @override
   void initState() {
     super.initState();
+    // キャッシュがあれば即表示、なければローディング
+    final cached = _NotificationCache.get(widget.account.id);
+    if (cached != null && cached.notifications.isNotEmpty) {
+      _notifications.addAll(cached.notifications);
+      _cursor = cached.cursor;
+      _isLoading = false;
+    }
     _fetch();
   }
 
@@ -173,6 +196,9 @@ class _NotificationListState extends ConsumerState<_NotificationList>
           _isLoading = false;
         });
       }
+
+      // キャッシュに保存
+      _NotificationCache.set(widget.account.id, List.of(_notifications), _cursor);
 
       ref.read(activityLogProvider.notifier).logAction(
         action: ActivityAction.notificationFetch,

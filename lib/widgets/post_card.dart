@@ -245,6 +245,8 @@ class PostCard extends StatelessWidget {
                         imageUrl: quoted.avatarUrl!,
                         httpHeaders: kImageHeaders,
                         fadeInDuration: Duration.zero,
+                        memCacheWidth: 40,
+                        memCacheHeight: 40,
                         imageBuilder: (context, imageProvider) => CircleAvatar(
                           radius: 10,
                           backgroundImage: imageProvider,
@@ -334,6 +336,8 @@ class PostCard extends StatelessWidget {
                     imageUrl: post.avatarUrl!,
                     httpHeaders: kImageHeaders,
                     fadeInDuration: Duration.zero,
+                    memCacheWidth: 80,
+                    memCacheHeight: 80,
                     imageBuilder: (context, imageProvider) => CircleAvatar(
                       radius: 20,
                       backgroundImage: imageProvider,

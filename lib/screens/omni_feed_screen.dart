@@ -178,6 +178,8 @@ class _OmniFeedScreenState extends ConsumerState<OmniFeedScreen>
     } catch (_) {}
   }
 
+  bool _lastAtTop = true;
+
   void _onScroll() {
     if (_scrollController.position.pixels >=
         _scrollController.position.maxScrollExtent - 200) {
@@ -187,11 +189,14 @@ class _OmniFeedScreenState extends ConsumerState<OmniFeedScreen>
       }
     }
 
-    // スクロール位置をフィードに通知
+    // スクロール位置をフィードに通知（変化時のみ）
     final atTop = _scrollController.offset <= 50;
-    ref.read(feedProvider.notifier).setScrollAtTop(atTop);
+    if (atTop != _lastAtTop) {
+      _lastAtTop = atTop;
+      ref.read(feedProvider.notifier).setScrollAtTop(atTop);
+    }
 
-    // スクロールトップボタンの表示制御
+    // スクロールトップボタンの表示制御（変化時のみsetState）
     final shouldShow = _scrollController.offset > 300;
     if (shouldShow != _showScrollToTop) {
       setState(() => _showScrollToTop = shouldShow);
@@ -533,6 +538,7 @@ class _OmniFeedScreenState extends ConsumerState<OmniFeedScreen>
     _prevPostIds = currentPostIds;
 
     Widget body = CustomScrollView(
+      cacheExtent: 800,
       controller: _scrollController,
       physics: const AlwaysScrollableScrollPhysics(),
       slivers: [

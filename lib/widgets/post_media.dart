@@ -194,6 +194,7 @@ class PostImageGrid extends StatelessWidget {
             imageUrl: url,
             httpHeaders: kImageHeaders,
             fadeInDuration: Duration.zero,
+            memCacheWidth: 720,
             fit: BoxFit.cover,
             width: double.infinity,
             placeholder: (context, url) => Container(
@@ -224,7 +225,9 @@ class PostImageGrid extends StatelessWidget {
         borderRadius: borderRadius ?? BorderRadius.zero,
         child: CachedNetworkImage(
           imageUrl: url,
+          httpHeaders: kImageHeaders,
           fadeInDuration: Duration.zero,
+          memCacheWidth: 360,
           fit: BoxFit.cover,
           height: height ?? gridHeight ?? 150,
           width: double.infinity,
@@ -285,6 +288,7 @@ class PostVideoThumbnail extends StatelessWidget {
               imageUrl: thumbnailUrl,
               httpHeaders: kImageHeaders,
               fadeInDuration: Duration.zero,
+              memCacheWidth: 720,
               fit: BoxFit.cover,
               width: double.infinity,
               height: height ?? 200,

@@ -156,12 +156,25 @@ class _NotificationListState extends ConsumerState<_NotificationList>
       late final String? newCursor;
 
       if (widget.account.service == SnsService.x) {
-        final result = await XApiService.instance
-            .getNotifications(widget.account.xCredentials);
-        count = result.notifications.length;
-        responseSnippet = result.responseSnippet;
-        fetched = result.notifications;
-        newCursor = result.cursor;
+        // 通知 + メンション（リプライ）を並列取得
+        final results = await Future.wait([
+          XApiService.instance.getNotifications(widget.account.xCredentials),
+          XApiService.instance.getMentionNotifications(widget.account.xCredentials),
+        ]);
+        final notifResult = results[0] as ({List<NotificationItem> notifications, String? cursor, String? responseSnippet});
+        final mentions = results[1] as List<NotificationItem>;
+
+        // 統合してタイムスタンプ順にソート
+        final merged = [...notifResult.notifications, ...mentions];
+        // 重複排除（同じIDがある場合）
+        final seen = <String>{};
+        merged.retainWhere((n) => seen.add(n.id));
+        merged.sort((a, b) => b.timestamp.compareTo(a.timestamp));
+
+        count = merged.length;
+        responseSnippet = notifResult.responseSnippet;
+        fetched = merged;
+        newCursor = notifResult.cursor;
       } else {
         final result = await BlueskyApiService.instance
             .getNotificationsWithRefresh(widget.account.blueskyCredentials);

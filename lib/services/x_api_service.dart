@@ -842,6 +842,122 @@ class XApiService {
     );
   }
 
+  /// メンション（リプライ）通知を取得 (REST v2 API)
+  Future<List<NotificationItem>> getMentionNotifications(
+    XCredentials creds, {
+    int count = 20,
+  }) async {
+    final params = {
+      'include_profile_interstitial_type': '1',
+      'include_blocking': '1',
+      'include_blocked_by': '1',
+      'include_followed_by': '1',
+      'include_want_retweets': '1',
+      'include_mute_edge': '1',
+      'include_can_dm': '1',
+      'include_can_media_tag': '1',
+      'include_ext_is_blue_verified': '1',
+      'include_ext_verified_type': '1',
+      'include_ext_profile_image_shape': '1',
+      'skip_status': '1',
+      'cards_platform': 'Web-12',
+      'include_cards': '1',
+      'include_ext_alt_text': 'true',
+      'include_ext_limited_action_results': 'true',
+      'include_quote_count': 'true',
+      'include_reply_count': '1',
+      'tweet_mode': 'extended',
+      'include_ext_views': 'true',
+      'count': '$count',
+      'ext': 'mediaStats,highlightedLabel,parodyCommentaryFanLabel,hasNftAvatar,voiceInfo,birdwatchPivot,superFollowMetadata,unmentionInfo,editControl',
+    };
+
+    final uri = Uri.https('x.com', '/i/api/2/notifications/mentions.json', params);
+    final hdrs = _buildHeaders(creds);
+    final sw = Stopwatch()..start();
+    final response = await _withRateLimitRetry(
+      () => _client.get(uri, headers: hdrs),
+    );
+    sw.stop();
+    _updateCt0FromResponse(creds, response);
+    _logResponse('Mentions', 'GET', uri, hdrs, null, response, sw);
+
+    if (response.statusCode != 200) return [];
+
+    try {
+      final body = json.decode(response.body) as Map<String, dynamic>;
+      return _parseMentionNotifications(body);
+    } catch (e) {
+      debugPrint('[XApi] Error parsing mentions: $e');
+      return [];
+    }
+  }
+
+  List<NotificationItem> _parseMentionNotifications(Map<String, dynamic> body) {
+    final notifications = <NotificationItem>[];
+    try {
+      final globalObjects = body['globalObjects'] as Map<String, dynamic>?;
+      final tweets = globalObjects?['tweets'] as Map<String, dynamic>? ?? {};
+      final users = globalObjects?['users'] as Map<String, dynamic>? ?? {};
+
+      final timeline = body['timeline'] as Map<String, dynamic>?;
+      final instructions = timeline?['instructions'] as List<dynamic>? ?? [];
+
+      for (final instruction in instructions) {
+        final map = instruction as Map<String, dynamic>;
+        List<dynamic> entries = [];
+        if (map.containsKey('addEntries')) {
+          entries = (map['addEntries'] as Map<String, dynamic>)['entries'] as List<dynamic>? ?? [];
+        }
+        for (final entry in entries) {
+          final entryMap = entry as Map<String, dynamic>;
+          final entryId = entryMap['entryId'] as String? ?? '';
+          if (entryId.startsWith('cursor-')) continue;
+
+          // メンションエントリからツイートIDを取得
+          final content = entryMap['content'] as Map<String, dynamic>?;
+          final item = content?['item'] as Map<String, dynamic>?;
+          final itemContent = item?['content'] as Map<String, dynamic>?;
+          final tweetId = (itemContent?['tweet'] as Map<String, dynamic>?)?['id'] as String?;
+          if (tweetId == null) continue;
+
+          final tweet = tweets[tweetId] as Map<String, dynamic>?;
+          if (tweet == null) continue;
+
+          final userId = tweet['user_id_str'] as String?;
+          final user = userId != null ? users[userId] as Map<String, dynamic>? : null;
+          final actorName = user?['name'] as String? ?? '';
+          final actorHandle = '@${user?['screen_name'] as String? ?? ''}';
+          final actorAvatarUrl = (user?['profile_image_url_https'] as String?)
+              ?.replaceFirst('_normal', '_400x400');
+
+          final fullText = tweet['full_text'] as String? ?? '';
+          final createdAt = tweet['created_at'] as String?;
+          final ts = createdAt != null ? parseTwitterDate(createdAt) : DateTime.now();
+
+          // リプライかメンションかを判定
+          final inReplyTo = tweet['in_reply_to_status_id_str'] as String?;
+          final type = inReplyTo != null ? NotificationType.reply : NotificationType.mention;
+
+          notifications.add(NotificationItem(
+            id: 'x_mention_$tweetId',
+            type: type,
+            source: SnsService.x,
+            actorName: actorName,
+            actorHandle: actorHandle,
+            actorAvatarUrl: actorAvatarUrl,
+            targetPostBody: fullText,
+            targetPostId: tweetId,
+            timestamp: ts,
+          ));
+        }
+      }
+    } catch (e) {
+      debugPrint('[XApi] Error in _parseMentionNotifications: $e');
+    }
+    return notifications;
+  }
+
   /// 通知一覧を取得 (REST v2 API)
   Future<({List<NotificationItem> notifications, String? cursor, String? responseSnippet})>
       getNotifications(

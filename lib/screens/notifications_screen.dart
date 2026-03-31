@@ -11,6 +11,7 @@ import '../providers/account_provider.dart';
 import '../providers/activity_log_provider.dart';
 import '../services/account_storage_service.dart';
 import '../services/bluesky_api_service.dart';
+import '../services/notification_cache_service.dart';
 import '../services/x_api_service.dart';
 import '../widgets/sns_badge.dart';
 import 'post_detail_screen.dart';
@@ -90,22 +91,6 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen>
   }
 }
 
-/// アカウントごとの通知キャッシュ
-class _NotificationCache {
-  static final Map<String, _CachedData> _cache = {};
-
-  static _CachedData? get(String accountId) => _cache[accountId];
-  static void set(String accountId, List<NotificationItem> items, String? cursor) {
-    _cache[accountId] = _CachedData(items, cursor);
-  }
-}
-
-class _CachedData {
-  _CachedData(this.notifications, this.cursor);
-  final List<NotificationItem> notifications;
-  final String? cursor;
-}
-
 /// アカウントごとの通知リスト
 class _NotificationList extends ConsumerStatefulWidget {
   const _NotificationList({required this.account});
@@ -169,14 +154,15 @@ class _NotificationListState extends ConsumerState<_NotificationList>
   @override
   bool get wantKeepAlive => true;
 
+  final _cacheService = NotificationCacheService.instance;
+
   @override
   void initState() {
     super.initState();
-    // キャッシュがあれば即表示、なければローディング
-    final cached = _NotificationCache.get(widget.account.id);
-    if (cached != null && cached.notifications.isNotEmpty) {
-      _notifications.addAll(cached.notifications);
-      _cursor = cached.cursor;
+    // キャッシュがあれば即表示
+    if (_cacheService.hasData(widget.account.id)) {
+      _notifications.addAll(_cacheService.get(widget.account.id));
+      _cursor = _cacheService.getCursor(widget.account.id);
       _isLoading = false;
     }
     _fetch();
@@ -252,8 +238,8 @@ class _NotificationListState extends ConsumerState<_NotificationList>
         });
       }
 
-      // キャッシュに保存
-      _NotificationCache.set(widget.account.id, List.of(_notifications), _cursor);
+      // キャッシュに同期
+      _cacheService.merge(widget.account.id, fetched, cursor: newCursor);
 
       ref.read(activityLogProvider.notifier).logAction(
         action: ActivityAction.notificationFetch,
@@ -398,9 +384,11 @@ class _NotificationListState extends ConsumerState<_NotificationList>
                 ? ListView.builder(
                     itemCount: filtered.length,
                     itemBuilder: (context, index) {
+                      final n = filtered[index];
                       return _NotificationTile(
-                        notification: filtered[index],
+                        notification: n,
                         account: widget.account,
+                        isNew: _cacheService.isNew(widget.account.id, n.id),
                       );
                     },
                   )
@@ -416,11 +404,13 @@ class _NotificationListState extends ConsumerState<_NotificationList>
                           child: Center(child: CircularProgressIndicator()),
                         );
                       }
+                      final n = _notifications[index];
                       return SizeTransition(
                         sizeFactor: animation,
                         child: _NotificationTile(
-                          notification: _notifications[index],
+                          notification: n,
                           account: widget.account,
+                          isNew: _cacheService.isNew(widget.account.id, n.id),
                         ),
                       );
                     },
@@ -436,9 +426,11 @@ class _NotificationTile extends StatelessWidget {
   const _NotificationTile({
     required this.notification,
     required this.account,
+    this.isNew = false,
   });
   final NotificationItem notification;
   final Account account;
+  final bool isNew;
 
   IconData get _icon => switch (notification.type) {
         NotificationType.like => Icons.favorite,
@@ -465,6 +457,9 @@ class _NotificationTile extends StatelessWidget {
     final timeAgo = _formatTimeAgo(notification.timestamp);
 
     return ListTile(
+      tileColor: isNew
+          ? Theme.of(context).colorScheme.primaryContainer.withValues(alpha: 0.15)
+          : null,
       leading: GestureDetector(
         onTap: () => _navigateToActorProfile(context),
         child: SizedBox(

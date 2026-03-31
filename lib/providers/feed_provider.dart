@@ -263,9 +263,7 @@ class FeedNotifier extends StateNotifier<FeedState> {
       state.posts.map((p) => MapEntry(p.id, p)),
     );
 
-    // RT追跡ログ
-    final rtBefore = existing.values.where((p) => p.isRetweet).toList();
-    debugPrint('[Feed] _onPostsFetched: before=${existing.length} posts, ${rtBefore.length} RTs, newPosts=${newPosts.length}');
+    debugPrint('[Feed] _onPostsFetched: before=${existing.length}, newPosts=${newPosts.length}');
 
     final newToQueue = <String, Post>{};
 
@@ -352,93 +350,86 @@ class FeedNotifier extends StateNotifier<FeedState> {
       }
     }
 
-    // RT消失チェック
-    final rtAfter = existing.values.where((p) => p.isRetweet).toList();
-    if (rtAfter.length < rtBefore.length) {
-      debugPrint('[Feed] ⚠️ RT LOST: ${rtBefore.length} → ${rtAfter.length}');
-      for (final rt in rtBefore) {
-        final current = existing[rt.id];
-        if (current == null) {
-          debugPrint('[Feed]   MISSING: ${rt.id} by ${rt.retweetedByUsername}');
-        } else if (!current.isRetweet) {
-          debugPrint('[Feed]   FLAG LOST: ${rt.id} was RT, now not RT (accountId=${current.accountId}, fetchedBy=${current.fetchedByAccountIds})');
-        }
-      }
-    }
-    debugPrint('[Feed] _onPostsFetched: after=${existing.length} posts, ${rtAfter.length} RTs, bypass=$shouldBypassDrip, newPending=${newPending.length}');
+    debugPrint('[Feed] _onPostsFetched: existing=${existing.length}, bypass=$shouldBypassDrip, newPending=${newPending.length}');
 
     // 既存投稿の即時更新を反映
     final sorted = _trimPosts(existing.values.toList()
       ..sort((a, b) => b.timestamp.compareTo(a.timestamp)));
-    state = state.copyWith(posts: sorted, isLoading: false, isFetching: false, clearError: true);
 
-    // キューから既に表示済みの投稿を除去（フェッチ間にドリップされた分など）
+    // IDセットを1回だけ計算（複数箇所で再利用）
+    final sortedIds = sorted.map((p) => p.id).toSet();
+
+    // キューから既に表示済みの投稿を除去
     if (_pendingQueue.isNotEmpty) {
-      final currentIds = state.posts.map((p) => p.id).toSet();
-      final beforeLen = _pendingQueue.length;
-      _pendingQueue.removeWhere((p) => currentIds.contains(p.id));
-      _pendingIds.removeWhere((id) => currentIds.contains(id));
-      if (_pendingQueue.length != beforeLen) {
-        debugPrint('[Feed] Queue cleanup: $beforeLen → ${_pendingQueue.length}');
-        state = state.copyWith(pendingCount: _pendingQueue.length);
-      }
+      _pendingQueue.removeWhere((p) => sortedIds.contains(p.id));
+      _pendingIds.removeWhere((id) => sortedIds.contains(id));
     }
 
-    // 新規投稿をキューに追加（ドリップ対象の場合のみ）
+    // 新規投稿のキュー処理（ドリップ対象の場合のみ）
+    int newPendingCount = _pendingQueue.length;
     if (!shouldBypassDrip && newPending.isNotEmpty) {
-      // RT非表示フィルタ + state.posts/キュー重複フィルタ
       final hideRtIds = _settingsReader().hideRetweetsAccountIds;
-      final stateIds = state.posts.map((p) => p.id).toSet();
       final filtered = newPending
           .where((p) =>
-              !stateIds.contains(p.id) &&
+              !sortedIds.contains(p.id) &&
               !_pendingIds.contains(p.id) &&
               !(p.isRetweet &&
                 p.fetchedByAccountIds.isNotEmpty &&
                 p.fetchedByAccountIds.every((id) => hideRtIds.contains(id))))
           .toList();
-      debugPrint('[Feed] newPending=${newPending.length} filtered=${filtered.length} (hideRT=${hideRtIds.length})');
-      if (filtered.isEmpty) return;
 
-      // ドリップ前に古い投稿を分離: タイムライン先頭より古い投稿はドリップせず直接挿入
-      final topTimestamp = state.posts.isNotEmpty ? state.posts.first.timestamp : null;
-      final drippable = <Post>[];
-      final stale = <Post>[];
-      for (final p in filtered) {
-        if (topTimestamp != null && p.timestamp.isBefore(topTimestamp)) {
-          stale.add(p);
-        } else {
-          drippable.add(p);
+      if (filtered.isNotEmpty) {
+        // 古い投稿を分離: タイムライン先頭より古い投稿はドリップせず直接挿入
+        final topTimestamp = sorted.isNotEmpty ? sorted.first.timestamp : null;
+        final drippable = <Post>[];
+        for (final p in filtered) {
+          if (topTimestamp != null && p.timestamp.isBefore(topTimestamp)) {
+            // 古い投稿はsortedに直接追加
+            sorted.add(p);
+          } else {
+            drippable.add(p);
+          }
         }
-      }
-      // 古い投稿は即座にソート位置に挿入（ドリップしない）
-      if (stale.isNotEmpty) {
-        debugPrint('[Feed] Stale posts skipped drip: ${stale.length} (older than top)');
-        final posts = List<Post>.of(state.posts);
-        posts.addAll(stale);
-        posts.sort((a, b) => b.timestamp.compareTo(a.timestamp));
-        state = state.copyWith(posts: posts);
-      }
 
-      if (drippable.isEmpty) return;
-      _precachePostsImages(drippable);
-      _pendingQueue.addAll(drippable);
-      _pendingIds.addAll(drippable.map((p) => p.id));
-      state = state.copyWith(pendingCount: _pendingQueue.length);
+        if (sorted.length != sortedIds.length + (filtered.length - drippable.length)) {
+          // stale投稿が追加された場合のみ再ソート
+          sorted.sort((a, b) => b.timestamp.compareTo(a.timestamp));
+        }
+
+        if (drippable.isNotEmpty) {
+          _precachePostsImages(drippable);
+          _pendingQueue.addAll(drippable);
+          _pendingIds.addAll(drippable.map((p) => p.id));
+        }
+
+        newPendingCount = _pendingQueue.length;
+      }
+    }
+
+    // stateは1回だけ更新（複数回のsetStateによるUI再構築を防止）
+    state = state.copyWith(
+      posts: sorted,
+      isLoading: false,
+      isFetching: false,
+      clearError: true,
+      pendingCount: newPendingCount,
+    );
+
+    // ドリップ開始判定
+    if (_pendingQueue.isNotEmpty && _dripTimer == null) {
       if (_pendingQueue.length <= dripThreshold) {
         _startDrip();
       } else {
-        // 大量の場合はドリップ停止 → バナーモード
         _dripTimer?.cancel();
         _dripTimer = null;
       }
     }
 
-    // バックグラウンドでキャッシュ保存
-    TimelineCacheService.instance.saveTimeline(sorted);
-
-    // オーバーレイへ同期
-    _syncToOverlay();
+    // キャッシュ保存とオーバーレイ同期は次フレームに遅延（現フレームのカクつき防止）
+    Future.microtask(() {
+      TimelineCacheService.instance.saveTimeline(sorted);
+      _syncToOverlay();
+    });
   }
 
   void _startDrip() {

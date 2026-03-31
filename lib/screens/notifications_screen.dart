@@ -124,6 +124,48 @@ class _NotificationListState extends ConsumerState<_NotificationList>
   String? _cursor;
   bool _isLoadingMore = false;
 
+  /// フィルタ: 表示するタイプ（空 = 全表示）
+  final Set<NotificationType> _activeFilters = {};
+
+  List<NotificationItem> get _filteredNotifications {
+    if (_activeFilters.isEmpty) return _notifications;
+    return _notifications.where((n) => _activeFilters.contains(n.type)).toList();
+  }
+
+  /// 通知リストに含まれるタイプ一覧（表示順固定）
+  List<NotificationType> get _availableTypes {
+    const order = [
+      NotificationType.like,
+      NotificationType.repost,
+      NotificationType.reply,
+      NotificationType.mention,
+      NotificationType.quote,
+      NotificationType.follow,
+    ];
+    final present = _notifications.map((n) => n.type).toSet();
+    return order.where((t) => present.contains(t)).toList();
+  }
+
+  String _typeLabel(NotificationType type) => switch (type) {
+        NotificationType.like => 'いいね',
+        NotificationType.repost => 'リポスト',
+        NotificationType.reply => 'リプライ',
+        NotificationType.mention => 'メンション',
+        NotificationType.quote => '引用',
+        NotificationType.follow => 'フォロー',
+        NotificationType.unknown => 'その他',
+      };
+
+  IconData _typeIcon(NotificationType type) => switch (type) {
+        NotificationType.like => Icons.favorite,
+        NotificationType.repost => Icons.repeat,
+        NotificationType.reply => Icons.reply,
+        NotificationType.mention => Icons.alternate_email,
+        NotificationType.quote => Icons.format_quote,
+        NotificationType.follow => Icons.person_add,
+        NotificationType.unknown => Icons.notifications,
+      };
+
   @override
   bool get wantKeepAlive => true;
 
@@ -309,28 +351,83 @@ class _NotificationListState extends ConsumerState<_NotificationList>
       return const Center(child: Text('通知はありません'));
     }
 
-    return RefreshIndicator(
-      onRefresh: _fetch,
-      child: AnimatedList(
-        key: _listKey,
-        initialItemCount: _notifications.length + (_cursor != null ? 1 : 0),
-        itemBuilder: (context, index, animation) {
-          if (index == _notifications.length) {
-            _loadMore();
-            return const Padding(
-              padding: EdgeInsets.all(16),
-              child: Center(child: CircularProgressIndicator()),
-            );
-          }
-          return SizeTransition(
-            sizeFactor: animation,
-            child: _NotificationTile(
-              notification: _notifications[index],
-              account: widget.account,
+    final types = _availableTypes;
+    final filtered = _filteredNotifications;
+    final isFiltered = _activeFilters.isNotEmpty;
+
+    return Column(
+      children: [
+        // フィルタチップ
+        if (types.length > 1)
+          SizedBox(
+            height: 48,
+            child: ListView(
+              scrollDirection: Axis.horizontal,
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+              children: types.map((type) {
+                final isActive = _activeFilters.contains(type);
+                return Padding(
+                  padding: const EdgeInsets.only(right: 6),
+                  child: FilterChip(
+                    avatar: Icon(_typeIcon(type), size: 16),
+                    label: Text(_typeLabel(type), style: const TextStyle(fontSize: 12)),
+                    selected: isActive,
+                    onSelected: (_) {
+                      setState(() {
+                        if (isActive) {
+                          _activeFilters.remove(type);
+                        } else {
+                          _activeFilters.add(type);
+                        }
+                      });
+                    },
+                    visualDensity: VisualDensity.compact,
+                    materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  ),
+                );
+              }).toList(),
             ),
-          );
-        },
-      ),
+          ),
+
+        // 通知リスト
+        Expanded(
+          child: RefreshIndicator(
+            onRefresh: _fetch,
+            child: isFiltered
+                // フィルタ中は通常ListView（AnimatedListはフィルタと相性が悪い）
+                ? ListView.builder(
+                    itemCount: filtered.length,
+                    itemBuilder: (context, index) {
+                      return _NotificationTile(
+                        notification: filtered[index],
+                        account: widget.account,
+                      );
+                    },
+                  )
+                // フィルタなしはAnimatedList（新着アニメーション対応）
+                : AnimatedList(
+                    key: _listKey,
+                    initialItemCount: _notifications.length + (_cursor != null ? 1 : 0),
+                    itemBuilder: (context, index, animation) {
+                      if (index == _notifications.length) {
+                        _loadMore();
+                        return const Padding(
+                          padding: EdgeInsets.all(16),
+                          child: Center(child: CircularProgressIndicator()),
+                        );
+                      }
+                      return SizeTransition(
+                        sizeFactor: animation,
+                        child: _NotificationTile(
+                          notification: _notifications[index],
+                          account: widget.account,
+                        ),
+                      );
+                    },
+                  ),
+          ),
+        ),
+      ],
     );
   }
 }

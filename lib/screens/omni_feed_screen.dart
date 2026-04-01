@@ -20,6 +20,7 @@ import '../services/debug_log_service.dart';
 import '../services/timeline_fetch_scheduler.dart';
 import '../models/account.dart';
 import '../widgets/account_picker_modal.dart';
+import '../utils/smooth_scroll_physics.dart';
 import '../widgets/post_card.dart';
 import '../widgets/update_dialog.dart';
 import 'accounts_screen.dart';
@@ -540,7 +541,9 @@ class _OmniFeedScreenState extends ConsumerState<OmniFeedScreen>
     Widget body = CustomScrollView(
       cacheExtent: 800,
       controller: _scrollController,
-      physics: const AlwaysScrollableScrollPhysics(),
+      physics: const AlwaysScrollableScrollPhysics(
+        parent: SmoothScrollPhysics(),
+      ),
       slivers: [
         SliverAppBar(
           floating: true,

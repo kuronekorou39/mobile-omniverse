@@ -914,12 +914,21 @@ class XApiService {
           final entryId = entryMap['entryId'] as String? ?? '';
           if (entryId.startsWith('cursor-')) continue;
 
-          // メンションエントリからツイートIDを取得
+          // メンションエントリからツイートIDを取得（複数パスを試行）
           final content = entryMap['content'] as Map<String, dynamic>?;
           final item = content?['item'] as Map<String, dynamic>?;
           final itemContent = item?['content'] as Map<String, dynamic>?;
-          final tweetId = (itemContent?['tweet'] as Map<String, dynamic>?)?['id'] as String?;
-          if (tweetId == null) continue;
+          String? tweetId = (itemContent?['tweet'] as Map<String, dynamic>?)?['id'] as String?;
+          // フォールバック: notification形式
+          tweetId ??= (itemContent?['notification'] as Map<String, dynamic>?)?['id'] as String?;
+          // フォールバック: entryIdからtweet-XXXを抽出
+          if (tweetId == null && entryId.startsWith('tweet-')) {
+            tweetId = entryId.replaceFirst('tweet-', '');
+          }
+          if (tweetId == null) {
+            debugPrint('[XApi] Mentions: skipped entry $entryId (no tweetId found)');
+            continue;
+          }
 
           final tweet = tweets[tweetId] as Map<String, dynamic>?;
           if (tweet == null) continue;
@@ -955,6 +964,9 @@ class XApiService {
     } catch (e) {
       debugPrint('[XApi] Error in _parseMentionNotifications: $e');
     }
+    debugPrint('[XApi] Mentions parsed: ${notifications.length} '
+        '(replies: ${notifications.where((n) => n.type == NotificationType.reply).length}, '
+        'mentions: ${notifications.where((n) => n.type == NotificationType.mention).length})');
     return notifications;
   }
 
@@ -1087,17 +1099,21 @@ class XApiService {
 
         final icon = notif['icon'] as Map<String, dynamic>?;
         final iconId = icon?['id'] as String? ?? '';
+        final message = notif['message'] as Map<String, dynamic>?;
+        final messageText = message?['text'] as String? ?? '';
 
         final type = switch (iconId) {
           'heart_icon' => NotificationType.like,
           'retweet_icon' => NotificationType.repost,
           'person_icon' => NotificationType.follow,
           'reply_icon' => NotificationType.reply,
+          'at_icon' || 'mention_icon' => NotificationType.mention,
+          'quote_icon' || 'retweet_with_comment_icon' => NotificationType.quote,
           _ => NotificationType.unknown,
         };
-
-        final message = notif['message'] as Map<String, dynamic>?;
-        final messageText = message?['text'] as String? ?? '';
+        if (type == NotificationType.unknown && iconId.isNotEmpty) {
+          debugPrint('[XApi] Unknown notification icon: $iconId (message: $messageText)');
+        }
         final timestampMs = notif['timestampMs'] as String? ?? '0';
         final ts = DateTime.fromMillisecondsSinceEpoch(
             int.tryParse(timestampMs) ?? 0);

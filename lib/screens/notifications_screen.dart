@@ -126,6 +126,7 @@ class _NotificationListState extends ConsumerState<_NotificationList>
       NotificationType.mention,
       NotificationType.quote,
       NotificationType.follow,
+      NotificationType.unknown,
     ];
     final present = _notifications.map((n) => n.type).toSet();
     return order.where((t) => present.contains(t)).toList();

@@ -11,14 +11,19 @@ class SmoothScrollPhysics extends ScrollPhysics {
   }
 
   @override
-  ClampingScrollSimulation createBallisticSimulation(
+  Simulation? createBallisticSimulation(
       ScrollMetrics position, double velocity) {
+    // 速度がほぼゼロ → Simulationなし（アイドル状態に遷移 → タップが効く）
     if (velocity.abs() < toleranceFor(position).velocity) {
-      return ClampingScrollSimulation(
-        position: position.pixels,
-        velocity: 0,
-      );
+      return null;
     }
+
+    // 境界外の場合はデフォルトのバウンスバック処理に委譲
+    if (position.pixels < position.minScrollExtent ||
+        position.pixels > position.maxScrollExtent) {
+      return super.createBallisticSimulation(position, velocity);
+    }
+
     // デフォルトの friction (0.015) より小さい値で減衰を緩やかに
     return ClampingScrollSimulation(
       position: position.pixels,

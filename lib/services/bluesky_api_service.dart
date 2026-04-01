@@ -87,9 +87,11 @@ class BlueskyApiService {
       );
     }
 
-    final result = await compute(
-        _parseBlueskyTimelineInIsolate, (response.body, accountId));
-    return result;
+    final body = await compute(_jsonDecodeInIsolate, response.body);
+    final feed = body['feed'] as List<dynamic>? ?? [];
+    final nextCursor = body['cursor'] as String?;
+    final posts = feed.map((item) => parsePost(item, accountId)).toList();
+    return (posts: posts, cursor: nextCursor);
   }
 
   /// 投稿スレッド取得
@@ -888,14 +890,7 @@ class BlueskyAuthException implements Exception {
   String toString() => 'BlueskyAuthException: $message';
 }
 
-/// compute() 用: JSON解析+タイムラインパースを別Isolateで実行
-({List<Post> posts, String? cursor}) _parseBlueskyTimelineInIsolate(
-    (String responseBody, String? accountId) args) {
-  final body = json.decode(args.$1) as Map<String, dynamic>;
-  final feed = body['feed'] as List<dynamic>? ?? [];
-  final cursor = body['cursor'] as String?;
-  final posts = feed
-      .map((item) => BlueskyApiService.instance.parsePost(item, args.$2))
-      .toList();
-  return (posts: posts, cursor: cursor);
+/// compute() 用: json.decodeだけを別Isolateで実行
+Map<String, dynamic> _jsonDecodeInIsolate(String responseBody) {
+  return json.decode(responseBody) as Map<String, dynamic>;
 }

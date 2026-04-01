@@ -253,8 +253,8 @@ class XApiService {
         );
       }
 
-      final result = await compute(
-          _parseTimelineInIsolate, (response.body, accountId));
+      final body = await compute(_jsonDecodeInIsolate, response.body);
+      final result = parseTimelineWithCursor(body, accountId);
 
       // queryId品質チェック: ユーザー情報が大量に欠けていたらデフォルトに戻す
       if (result.posts.length >= 3) {
@@ -885,7 +885,8 @@ class XApiService {
     if (response.statusCode != 200) return [];
 
     try {
-      return await compute(_parseMentionsInIsolate, response.body);
+      final body = await compute(_jsonDecodeInIsolate, response.body);
+      return _parseMentionNotifications(body);
     } catch (e) {
       debugPrint('[XApi] Error parsing mentions: $e');
       return [];
@@ -1011,7 +1012,8 @@ class XApiService {
       );
     }
 
-    final result = await compute(_parseNotificationsInIsolate, response.body);
+    final body = await compute(_jsonDecodeInIsolate, response.body);
+    final result = _parseNotifications(body);
     return (
       notifications: result.notifications,
       cursor: result.cursor,
@@ -1590,22 +1592,7 @@ class XAuthException implements Exception {
   String toString() => 'XAuthException: $message';
 }
 
-/// compute() 用トップレベル関数: JSON解析+タイムラインパースを別Isolateで実行
-({List<Post> posts, String? cursor}) _parseTimelineInIsolate(
-    (String responseBody, String? accountId) args) {
-  final body = json.decode(args.$1) as Map<String, dynamic>;
-  return XApiService.instance.parseTimelineWithCursor(body, args.$2);
-}
-
-/// compute() 用トップレベル関数: JSON解析+メンション通知パースを別Isolateで実行
-List<NotificationItem> _parseMentionsInIsolate(String responseBody) {
-  final body = json.decode(responseBody) as Map<String, dynamic>;
-  return XApiService.instance._parseMentionNotifications(body);
-}
-
-/// compute() 用トップレベル関数: JSON解析+通知パースを別Isolateで実行
-({List<NotificationItem> notifications, String? cursor, String debugInfo})
-    _parseNotificationsInIsolate(String responseBody) {
-  final body = json.decode(responseBody) as Map<String, dynamic>;
-  return XApiService.instance._parseNotifications(body);
+/// compute() 用: json.decodeだけを別Isolateで実行（最も重い処理）
+Map<String, dynamic> _jsonDecodeInIsolate(String responseBody) {
+  return json.decode(responseBody) as Map<String, dynamic>;
 }

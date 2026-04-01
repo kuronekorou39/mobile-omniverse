@@ -978,15 +978,17 @@ class _OmniFeedScreenState extends ConsumerState<OmniFeedScreen>
             );
 
             if (_animatingPostIds.contains(post.id)) {
-              return _AnimatedPostCard(
-                key: ValueKey('anim_${post.id}'),
-                onAnimationComplete: () {
-                  _animatingPostIds.remove(post.id);
-                },
-                child: postCard,
+              return RepaintBoundary(
+                child: _AnimatedPostCard(
+                  key: ValueKey('anim_${post.id}'),
+                  onAnimationComplete: () {
+                    _animatingPostIds.remove(post.id);
+                  },
+                  child: postCard,
+                ),
               );
             }
-            return postCard;
+            return RepaintBoundary(child: postCard);
           },
           childCount:
               filteredPosts.length + (feed.isLoadingMore ? 1 : 0),

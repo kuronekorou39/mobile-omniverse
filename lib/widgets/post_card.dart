@@ -129,7 +129,8 @@ class PostCard extends StatelessWidget {
 
                         // Body text, images, video
                         _SensitiveOverlay(
-                          isSensitive: post.isSensitive && hideSensitive,
+                          isSensitive: post.isSensitive && hideSensitive &&
+                              (post.imageUrls.isNotEmpty || post.videoUrl != null),
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [

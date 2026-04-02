@@ -113,42 +113,54 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       appBar: AppBar(title: const Text('設定')),
       body: ListView(
         children: [
-          // Engagement section
-          const _SectionHeader(title: 'エンゲージメント'),
+          // ── タイムライン ──
+          const _SectionHeader(title: 'タイムライン'),
+          ListTile(
+            title: const Text('フェッチ間隔'),
+            subtitle: Text('${settings.fetchIntervalSeconds} 秒ごとに取得'),
+            trailing: DropdownButton<int>(
+              value: settings.fetchIntervalSeconds,
+              items: const [
+                DropdownMenuItem(value: 15, child: Text('15秒')),
+                DropdownMenuItem(value: 30, child: Text('30秒')),
+                DropdownMenuItem(value: 60, child: Text('60秒')),
+                DropdownMenuItem(value: 120, child: Text('2分')),
+                DropdownMenuItem(value: 300, child: Text('5分')),
+              ],
+              onChanged: (value) {
+                if (value != null) notifier.setInterval(value);
+              },
+            ),
+          ),
+          SwitchListTile(
+            title: const Text('フェッチタイマー表示'),
+            subtitle: const Text('AppBar にカウントダウンを表示'),
+            value: settings.showFetchTimer,
+            onChanged: (value) => notifier.setShowFetchTimer(value),
+          ),
+          SwitchListTile(
+            title: const Text('ユーザー情報を表示'),
+            subtitle: const Text('アイコン・名前・ハンドルを表示する'),
+            value: !settings.hideUserInfo,
+            onChanged: (value) => notifier.setHideUserInfo(!value),
+          ),
           SwitchListTile(
             title: const Text('アカウント選択モーダル'),
             subtitle: const Text('いいね/RT 時にアカウントを選択する'),
             value: settings.showAccountPickerOnEngagement,
             onChanged: (value) => notifier.setShowAccountPicker(value),
           ),
-
-          const Divider(),
-
-          // Content section
-          const _SectionHeader(title: 'コンテンツ'),
           SwitchListTile(
-            title: const Text('センシティブコンテンツを常に表示'),
-            subtitle: const Text('センシティブな投稿の警告を無効にする'),
-            value: settings.showSensitiveContent,
-            onChanged: (value) => notifier.setShowSensitiveContent(value),
-          ),
-
-          const Divider(),
-
-          // Appearance section
-          const _SectionHeader(title: '外観'),
-          SwitchListTile(
-            title: const Text('ユーザー情報を非表示'),
-            subtitle: const Text('名前・アイコンを隠して投稿内容のみ表示'),
-            value: settings.hideUserInfo,
-            onChanged: (value) => notifier.setHideUserInfo(value),
-          ),
-          SwitchListTile(
-            title: const Text('コンパクトエンゲージメント'),
-            subtitle: const Text('いいね/RT ボタンの領域を小さくする'),
+            title: const Text('コンパクトボタン'),
+            subtitle: const Text('いいね/RT ボタンを小さく表示'),
             value: settings.compactEngagement,
             onChanged: (value) => notifier.setCompactEngagement(value),
           ),
+
+          const Divider(),
+
+          // ── メディア ──
+          const _SectionHeader(title: 'メディア'),
           ListTile(
             title: const Text('画像プレビューサイズ'),
             subtitle: Text(settings.imagePreviewSize.label),
@@ -161,32 +173,35 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
               selected: {settings.imagePreviewSize},
               onSelectionChanged: (value) =>
                   notifier.setImagePreviewSize(value.first),
-              style: ButtonStyle(
+              style: const ButtonStyle(
                 visualDensity: VisualDensity.compact,
               ),
             ),
           ),
+          SwitchListTile(
+            title: const Text('センシティブ警告を表示'),
+            subtitle: const Text('センシティブなメディアをぼかす'),
+            value: !settings.showSensitiveContent,
+            onChanged: (value) => notifier.setShowSensitiveContent(!value),
+          ),
+
+          const Divider(),
+
+          // ── 文章 ──
+          const _SectionHeader(title: '文章'),
           ListTile(
-            title: const Text('テーマ'),
-            subtitle: Text(_themeModeLabel(settings.themeMode)),
-            trailing: DropdownButton<ThemeMode>(
-              value: settings.themeMode,
+            title: const Text('フォント'),
+            subtitle: Text(settings.fontFamily.isEmpty ? 'システムデフォルト' : settings.fontFamily),
+            trailing: DropdownButton<String>(
+              value: settings.fontFamily,
               items: const [
-                DropdownMenuItem(
-                  value: ThemeMode.system,
-                  child: Text('システム設定に従う'),
-                ),
-                DropdownMenuItem(
-                  value: ThemeMode.light,
-                  child: Text('ライト'),
-                ),
-                DropdownMenuItem(
-                  value: ThemeMode.dark,
-                  child: Text('ダーク'),
-                ),
+                DropdownMenuItem(value: '', child: Text('システムデフォルト')),
+                DropdownMenuItem(value: 'Noto Sans JP', child: Text('Noto Sans JP')),
+                DropdownMenuItem(value: 'Roboto', child: Text('Roboto')),
+                DropdownMenuItem(value: 'monospace', child: Text('等幅')),
               ],
               onChanged: (value) {
-                if (value != null) notifier.setThemeMode(value);
+                if (value != null) notifier.setFontFamily(value);
               },
             ),
           ),
@@ -216,7 +231,27 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
 
           const Divider(),
 
-          // About section
+          // ── 外観 ──
+          const _SectionHeader(title: '外観'),
+          ListTile(
+            title: const Text('テーマ'),
+            subtitle: Text(_themeModeLabel(settings.themeMode)),
+            trailing: DropdownButton<ThemeMode>(
+              value: settings.themeMode,
+              items: const [
+                DropdownMenuItem(value: ThemeMode.system, child: Text('システム')),
+                DropdownMenuItem(value: ThemeMode.light, child: Text('ライト')),
+                DropdownMenuItem(value: ThemeMode.dark, child: Text('ダーク')),
+              ],
+              onChanged: (value) {
+                if (value != null) notifier.setThemeMode(value);
+              },
+            ),
+          ),
+
+          const Divider(),
+
+          // ── アプリ情報 ──
           const _SectionHeader(title: 'アプリ情報'),
           ListTile(
             title: const Text('バージョン'),
@@ -227,10 +262,20 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             title: const Text('アップデート確認'),
             onTap: _checkForUpdate,
           ),
+          ListTile(
+            leading: const Icon(Icons.receipt_long_outlined),
+            title: const Text('アクションログ'),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () {
+              Navigator.of(context).push(
+                MaterialPageRoute(builder: (_) => const ActivityLogScreen()),
+              );
+            },
+          ),
 
           const Divider(),
 
-          // Debug section (accordion)
+          // ── デバッグ ──
           ExpansionTile(
             leading: const Icon(Icons.bug_report_outlined),
             title: const Text('デバッグ'),
@@ -240,39 +285,6 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 subtitle: Text(settings.isFetchingActive ? '実行中' : '停止中'),
                 value: settings.isFetchingActive,
                 onChanged: (_) => notifier.toggleFetching(),
-              ),
-              ListTile(
-                title: const Text('フェッチ間隔'),
-                subtitle: Text('${settings.fetchIntervalSeconds} 秒'),
-                trailing: DropdownButton<int>(
-                  value: settings.fetchIntervalSeconds,
-                  items: const [
-                    DropdownMenuItem(value: 15, child: Text('15秒')),
-                    DropdownMenuItem(value: 30, child: Text('30秒')),
-                    DropdownMenuItem(value: 60, child: Text('60秒')),
-                    DropdownMenuItem(value: 120, child: Text('2分')),
-                    DropdownMenuItem(value: 300, child: Text('5分')),
-                  ],
-                  onChanged: (value) {
-                    if (value != null) notifier.setInterval(value);
-                  },
-                ),
-              ),
-              SwitchListTile(
-                title: const Text('フェッチタイマー表示'),
-                subtitle: const Text('AppBar にタイマーを表示'),
-                value: settings.showFetchTimer,
-                onChanged: (value) => notifier.setShowFetchTimer(value),
-              ),
-              ListTile(
-                leading: const Icon(Icons.receipt_long_outlined),
-                title: const Text('アクションログ'),
-                trailing: const Icon(Icons.chevron_right),
-                onTap: () {
-                  Navigator.of(context).push(
-                    MaterialPageRoute(builder: (_) => const ActivityLogScreen()),
-                  );
-                },
               ),
               ListTile(
                 leading: const Icon(Icons.refresh),
@@ -289,7 +301,6 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
               ListTile(
                 leading: const Icon(Icons.delete_outline),
                 title: const Text('queryId キャッシュ消去'),
-                subtitle: const Text('デフォルト値に戻します'),
                 onTap: () async {
                   await XQueryIdService.instance.clearCache();
                   if (mounted) {
@@ -301,34 +312,17 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 },
               ),
               const Divider(),
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-                child: Text(
-                  '通信ログ',
-                  style: TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.bold,
-                    color: Theme.of(context).colorScheme.primary,
-                  ),
-                ),
-              ),
               ListTile(
                 leading: const Icon(Icons.storage_outlined),
-                title: const Text('ログサイズ'),
+                title: const Text('通信ログ'),
                 subtitle: Text(DebugLogService.instance.logSizeLabel),
               ),
               ListTile(
                 leading: const Icon(Icons.download),
                 title: const Text('ログをダウンロード'),
-                subtitle: const Text('共有メニューからファイルとして保存'),
                 onTap: () async {
                   final path = DebugLogService.instance.logFilePath;
-                  if (path == null) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('ログファイルが見つかりません')),
-                    );
-                    return;
-                  }
+                  if (path == null) return;
                   final now = DateTime.now();
                   final ts = '${now.year}${now.month.toString().padLeft(2, '0')}${now.day.toString().padLeft(2, '0')}_${now.hour.toString().padLeft(2, '0')}${now.minute.toString().padLeft(2, '0')}';
                   await Share.shareXFiles(

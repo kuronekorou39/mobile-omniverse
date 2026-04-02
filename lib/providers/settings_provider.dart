@@ -43,6 +43,7 @@ class SettingsState {
     this.compactEngagement = true,
     this.imagePreviewSize = ImagePreviewSize.medium,
     this.hideUserInfo = false,
+    this.fontFamily = '',
   });
 
   final int fetchIntervalSeconds;
@@ -63,6 +64,8 @@ class SettingsState {
   final ImagePreviewSize imagePreviewSize;
   /// ユーザー情報（名前・アイコン）を非表示にするか
   final bool hideUserInfo;
+  /// フォントファミリー（空文字=システムデフォルト）
+  final String fontFamily;
 
   SettingsState copyWith({
     int? fetchIntervalSeconds,
@@ -76,6 +79,7 @@ class SettingsState {
     bool? compactEngagement,
     ImagePreviewSize? imagePreviewSize,
     bool? hideUserInfo,
+    String? fontFamily,
   }) {
     return SettingsState(
       fetchIntervalSeconds: fetchIntervalSeconds ?? this.fetchIntervalSeconds,
@@ -89,6 +93,7 @@ class SettingsState {
       compactEngagement: compactEngagement ?? this.compactEngagement,
       imagePreviewSize: imagePreviewSize ?? this.imagePreviewSize,
       hideUserInfo: hideUserInfo ?? this.hideUserInfo,
+      fontFamily: fontFamily ?? this.fontFamily,
     );
   }
 }
@@ -108,6 +113,7 @@ class SettingsNotifier extends StateNotifier<SettingsState> {
   static const _keyCompactEngagement = 'settings_compact_engagement';
   static const _keyImagePreviewSize = 'settings_image_preview_size';
   static const _keyHideUserInfo = 'settings_hide_user_info';
+  static const _keyFontFamily = 'settings_font_family';
 
   final _scheduler = TimelineFetchScheduler.instance;
 
@@ -123,6 +129,7 @@ class SettingsNotifier extends StateNotifier<SettingsState> {
     final compactEngagement = prefs.getBool(_keyCompactEngagement) ?? true;
     final imagePreviewSizeIndex = prefs.getInt(_keyImagePreviewSize) ?? ImagePreviewSize.medium.index;
     final hideUserInfo = prefs.getBool(_keyHideUserInfo) ?? false;
+    final fontFamily = prefs.getString(_keyFontFamily) ?? '';
 
     state = state.copyWith(
       fetchIntervalSeconds: interval,
@@ -135,6 +142,7 @@ class SettingsNotifier extends StateNotifier<SettingsState> {
       compactEngagement: compactEngagement,
       imagePreviewSize: ImagePreviewSize.values[imagePreviewSizeIndex.clamp(0, 2)],
       hideUserInfo: hideUserInfo,
+      fontFamily: fontFamily,
     );
 
     // #3: デフォルトフェッチONの場合、起動時にスケジューラを開始
@@ -157,6 +165,7 @@ class SettingsNotifier extends StateNotifier<SettingsState> {
     await prefs.setBool(_keyCompactEngagement, state.compactEngagement);
     await prefs.setInt(_keyImagePreviewSize, state.imagePreviewSize.index);
     await prefs.setBool(_keyHideUserInfo, state.hideUserInfo);
+    await prefs.setString(_keyFontFamily, state.fontFamily);
   }
 
   void setInterval(int seconds) {
@@ -217,6 +226,11 @@ class SettingsNotifier extends StateNotifier<SettingsState> {
 
   void setHideUserInfo(bool value) {
     state = state.copyWith(hideUserInfo: value);
+    _saveToPrefs();
+  }
+
+  void setFontFamily(String value) {
+    state = state.copyWith(fontFamily: value);
     _saveToPrefs();
   }
 

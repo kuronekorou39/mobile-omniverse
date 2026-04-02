@@ -82,6 +82,10 @@ class FeedNotifier extends StateNotifier<FeedState> {
   /// タイムラインの投稿保持上限（これを超えた古い投稿は破棄）
   static const int _maxPosts = 500;
 
+  /// キャッシュ保存カウンター（毎回ではなく数回に1回保存）
+  int _cacheSaveCounter = 0;
+  static const int _cacheSaveEveryN = 5;
+
   final List<Post> _pendingQueue = [];
   final Set<String> _pendingIds = {};
   Timer? _dripTimer;
@@ -254,8 +258,9 @@ class FeedNotifier extends StateNotifier<FeedState> {
 
   void _onFetchStart() {
     _remainingSeconds = 0;
+    // isFetchingのみの変更でUI全体のrebuildを避けるため、
+    // postsを変えずにisFetchingだけ更新（フィルタのメモ化が効く）
     state = state.copyWith(isFetching: true);
-    _syncToOverlay();
   }
 
   void _onPostsFetched(List<Post> newPosts) {
@@ -425,10 +430,14 @@ class FeedNotifier extends StateNotifier<FeedState> {
 
     // オーバーレイ同期は次フレームに遅延
     Future.microtask(() => _syncToOverlay());
-    // キャッシュ保存は少し遅延（150件のJSON化がメインスレッドをブロックするため）
-    Future.delayed(const Duration(milliseconds: 500), () {
-      TimelineCacheService.instance.saveTimeline(sorted);
-    });
+    // キャッシュ保存は数回に1回（150件のJSON化がメインスレッドをブロックするため）
+    _cacheSaveCounter++;
+    if (_cacheSaveCounter >= _cacheSaveEveryN) {
+      _cacheSaveCounter = 0;
+      Future.delayed(const Duration(seconds: 2), () {
+        TimelineCacheService.instance.saveTimeline(sorted);
+      });
+    }
   }
 
   void _startDrip() {

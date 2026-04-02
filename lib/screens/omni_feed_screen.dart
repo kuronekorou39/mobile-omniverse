@@ -49,6 +49,12 @@ class _OmniFeedScreenState extends ConsumerState<OmniFeedScreen>
   /// 前回の投稿IDリスト（新規投稿検出用）
   Set<String> _prevPostIds = {};
 
+  /// フィルタ結果のメモ化（postsリストが変わった時だけ再計算）
+  List<Post>? _cachedFilteredPosts;
+  List<Post>? _lastPosts;
+  Set<String>? _lastEnabledIds;
+  Set<String>? _lastHideRtIds;
+
   /// カウントダウン用
   Timer? _countdownTimer;
   int _remainingSeconds = 0;
@@ -345,6 +351,53 @@ class _OmniFeedScreenState extends ConsumerState<OmniFeedScreen>
             errorMessage: e.toString(),
           );
     }
+  }
+
+  /// postsリストが変わった時だけフィルタリングを再計算
+  List<Post> _getFilteredPosts(
+    List<Post> posts,
+    Set<String> enabledIds,
+    Set<String> hideRtIds,
+    int totalAccounts,
+  ) {
+    // 同じpostsリスト + 同じフィルタ条件なら前回結果を返す
+    if (identical(posts, _lastPosts) &&
+        _cachedFilteredPosts != null &&
+        _setsEqual(enabledIds, _lastEnabledIds) &&
+        _setsEqual(hideRtIds, _lastHideRtIds)) {
+      return _cachedFilteredPosts!;
+    }
+
+    var result = posts;
+
+    if (enabledIds.length < totalAccounts) {
+      result = result
+          .where((p) =>
+              p.fetchedByAccountIds.isEmpty ||
+              p.fetchedByAccountIds.any((id) => enabledIds.contains(id)))
+          .toList();
+    }
+
+    if (hideRtIds.isNotEmpty) {
+      result = result
+          .where((p) =>
+              !p.isRetweet ||
+              p.fetchedByAccountIds.isEmpty ||
+              p.fetchedByAccountIds.any((id) => !hideRtIds.contains(id)))
+          .toList();
+    }
+
+    _lastPosts = posts;
+    _lastEnabledIds = enabledIds;
+    _lastHideRtIds = hideRtIds;
+    _cachedFilteredPosts = result;
+    return result;
+  }
+
+  static bool _setsEqual(Set<String>? a, Set<String>? b) {
+    if (a == null || b == null) return a == b;
+    if (a.length != b.length) return false;
+    return a.containsAll(b);
   }
 
   void _openAccountsScreen(BuildContext context) {
@@ -769,42 +822,9 @@ class _OmniFeedScreenState extends ConsumerState<OmniFeedScreen>
       ];
     }
 
-    // フィルタ適用
+    // フィルタ適用（メモ化: postsリストが同一なら前回結果を再利用）
     final hideRtIds = settings.hideRetweetsAccountIds;
-    var filteredPosts = feed.posts.toList();
-    final rtCountBefore = filteredPosts.where((p) => p.isRetweet).length;
-
-    // 無効アカウントの投稿を除外（fetchedByAccountIdsのいずれかが有効なら表示）
-    if (enabledAccountIds.length < accounts.length) {
-      final beforeLen = filteredPosts.length;
-      filteredPosts = filteredPosts
-          .where((p) =>
-              p.fetchedByAccountIds.isEmpty ||
-              p.fetchedByAccountIds.any((id) => enabledAccountIds.contains(id)))
-          .toList();
-      if (filteredPosts.length < beforeLen) {
-        debugPrint('[UI] Account filter removed ${beforeLen - filteredPosts.length} posts (enabled=${enabledAccountIds.length}/${accounts.length})');
-      }
-    }
-
-    // RT 非表示フィルタ（全取得元アカウントがRT非表示の場合のみ除外）
-    if (hideRtIds.isNotEmpty) {
-      final beforeLen = filteredPosts.length;
-      filteredPosts = filteredPosts
-          .where((p) =>
-              !p.isRetweet ||
-              p.fetchedByAccountIds.isEmpty ||
-              p.fetchedByAccountIds.any((id) => !hideRtIds.contains(id)))
-          .toList();
-      if (filteredPosts.length < beforeLen) {
-        debugPrint('[UI] RT filter removed ${beforeLen - filteredPosts.length} posts (hideRtIds=$hideRtIds)');
-      }
-    }
-
-    final rtCountAfter = filteredPosts.where((p) => p.isRetweet).length;
-    if (rtCountAfter < rtCountBefore) {
-      debugPrint('[UI] ⚠️ RT filtered out: $rtCountBefore → $rtCountAfter (total: ${feed.posts.length} → ${filteredPosts.length})');
-    }
+    final filteredPosts = _getFilteredPosts(feed.posts, enabledAccountIds, hideRtIds, accounts.length);
 
     final slivers = <Widget>[];
 

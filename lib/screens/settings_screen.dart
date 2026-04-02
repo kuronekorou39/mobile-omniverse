@@ -144,18 +144,6 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             value: !settings.hideUserInfo,
             onChanged: (value) => notifier.setHideUserInfo(!value),
           ),
-          SwitchListTile(
-            title: const Text('アカウント選択モーダル'),
-            subtitle: const Text('いいね/RT 時にアカウントを選択する'),
-            value: settings.showAccountPickerOnEngagement,
-            onChanged: (value) => notifier.setShowAccountPicker(value),
-          ),
-          SwitchListTile(
-            title: const Text('コンパクトボタン'),
-            subtitle: const Text('いいね/RT ボタンを小さく表示'),
-            value: settings.compactEngagement,
-            onChanged: (value) => notifier.setCompactEngagement(value),
-          ),
 
           const Divider(),
 

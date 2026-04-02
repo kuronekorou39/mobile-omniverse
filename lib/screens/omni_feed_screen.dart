@@ -227,38 +227,21 @@ class _OmniFeedScreenState extends ConsumerState<OmniFeedScreen>
   }
 
   Future<Account?> _resolveAccount(Post post, String actionLabel) async {
-    final settings = ref.read(settingsProvider);
-    if (settings.showAccountPickerOnEngagement) {
-      final picked = await showAccountPickerModal(
-        context,
-        service: post.source,
-        actionLabel: actionLabel,
-      );
-      return picked;
-    }
-    return _getAccountForPost(post);
+    return showAccountPickerModal(
+      context,
+      service: post.source,
+      actionLabel: actionLabel,
+      fetchedByAccountId: post.accountId,
+    );
   }
 
   Future<void> _handleLike(Post post) async {
     final account = await _resolveAccount(post, 'いいね');
     if (account == null) return;
 
-    final settings = ref.read(settingsProvider);
-    // マルチアカウントモード: 常にいいね実行（アカウントごとの状態は追跡しないため）
-    final wasLiked = settings.showAccountPickerOnEngagement ? false : post.isLiked;
-    final action = wasLiked ? ActivityAction.unlike : ActivityAction.like;
     final postSummary = post.body.length > 40
         ? '${post.body.substring(0, 40)}...'
         : post.body;
-
-    // Optimistic update（シングルアカウントモードのみ）
-    if (!settings.showAccountPickerOnEngagement) {
-      ref.read(feedProvider.notifier).updatePostEngagement(
-            post.id,
-            isLiked: !wasLiked,
-            likeCount: wasLiked ? post.likeCount - 1 : post.likeCount + 1,
-          );
-    }
 
     try {
       bool success = false;
@@ -268,29 +251,23 @@ class _OmniFeedScreenState extends ConsumerState<OmniFeedScreen>
       if (post.source == SnsService.x) {
         final creds = account.xCredentials;
         final tweetId = post.id.replaceFirst('x_', '');
-        final result = wasLiked
-            ? await XApiService.instance.unlikeTweetWithDetail(creds, tweetId)
-            : await XApiService.instance.likeTweetWithDetail(creds, tweetId);
+        final result = await XApiService.instance.likeTweetWithDetail(creds, tweetId);
         success = result.success;
         statusCode = result.statusCode;
         responseSnippet = result.bodySnippet;
       } else if (post.source == SnsService.bluesky) {
         final creds = account.blueskyCredentials;
-        if (wasLiked) {
-          success = true;
-        } else {
-          final postUri = post.uri;
-          final postCid = post.cid;
-          if (postUri != null && postCid != null && postCid.isNotEmpty) {
-            final result = await BlueskyApiService.instance.likePost(
-                creds, postUri, postCid);
-            success = result != null;
-          }
+        final postUri = post.uri;
+        final postCid = post.cid;
+        if (postUri != null && postCid != null && postCid.isNotEmpty) {
+          final result = await BlueskyApiService.instance.likePost(
+              creds, postUri, postCid);
+          success = result != null;
         }
       }
 
       ref.read(activityLogProvider.notifier).logAction(
-            action: action,
+            action: ActivityAction.like,
             platform: post.source,
             accountHandle: account.handle,
             accountId: account.id,
@@ -300,17 +277,9 @@ class _OmniFeedScreenState extends ConsumerState<OmniFeedScreen>
             statusCode: statusCode,
             responseSnippet: responseSnippet,
           );
-
-      if (!success && !settings.showAccountPickerOnEngagement) {
-        ref.read(feedProvider.notifier).updatePostEngagement(
-              post.id,
-              isLiked: wasLiked,
-              likeCount: post.likeCount,
-            );
-      }
     } catch (e) {
       ref.read(activityLogProvider.notifier).logAction(
-            action: action,
+            action: ActivityAction.like,
             platform: post.source,
             accountHandle: account.handle,
             accountId: account.id,
@@ -319,13 +288,6 @@ class _OmniFeedScreenState extends ConsumerState<OmniFeedScreen>
             success: false,
             errorMessage: e.toString(),
           );
-      if (!settings.showAccountPickerOnEngagement) {
-        ref.read(feedProvider.notifier).updatePostEngagement(
-              post.id,
-              isLiked: wasLiked,
-              likeCount: post.likeCount,
-            );
-      }
     }
   }
 
@@ -333,24 +295,9 @@ class _OmniFeedScreenState extends ConsumerState<OmniFeedScreen>
     final account = await _resolveAccount(post, 'リポスト');
     if (account == null) return;
 
-    final settings = ref.read(settingsProvider);
-    // マルチアカウントモード: 常にリポスト実行（アカウントごとの状態は追跡しないため）
-    final wasReposted = settings.showAccountPickerOnEngagement ? false : post.isReposted;
-    final action =
-        wasReposted ? ActivityAction.unrepost : ActivityAction.repost;
     final postSummary = post.body.length > 40
         ? '${post.body.substring(0, 40)}...'
         : post.body;
-
-    // Optimistic update（シングルアカウントモードのみ）
-    if (!settings.showAccountPickerOnEngagement) {
-      ref.read(feedProvider.notifier).updatePostEngagement(
-            post.id,
-            isReposted: !wasReposted,
-            repostCount:
-                wasReposted ? post.repostCount - 1 : post.repostCount + 1,
-          );
-    }
 
     try {
       bool success = false;
@@ -360,29 +307,23 @@ class _OmniFeedScreenState extends ConsumerState<OmniFeedScreen>
       if (post.source == SnsService.x) {
         final creds = account.xCredentials;
         final tweetId = post.id.replaceFirst('x_', '');
-        final result = wasReposted
-            ? await XApiService.instance.unretweetWithDetail(creds, tweetId)
-            : await XApiService.instance.retweetWithDetail(creds, tweetId);
+        final result = await XApiService.instance.retweetWithDetail(creds, tweetId);
         success = result.success;
         statusCode = result.statusCode;
         responseSnippet = result.bodySnippet;
       } else if (post.source == SnsService.bluesky) {
         final creds = account.blueskyCredentials;
-        if (wasReposted) {
-          success = true;
-        } else {
-          final postUri = post.uri;
-          final postCid = post.cid;
-          if (postUri != null && postCid != null && postCid.isNotEmpty) {
-            final result = await BlueskyApiService.instance.repost(
-                creds, postUri, postCid);
-            success = result != null;
-          }
+        final postUri = post.uri;
+        final postCid = post.cid;
+        if (postUri != null && postCid != null && postCid.isNotEmpty) {
+          final result = await BlueskyApiService.instance.repost(
+              creds, postUri, postCid);
+          success = result != null;
         }
       }
 
       ref.read(activityLogProvider.notifier).logAction(
-            action: action,
+            action: ActivityAction.repost,
             platform: post.source,
             accountHandle: account.handle,
             accountId: account.id,
@@ -392,17 +333,9 @@ class _OmniFeedScreenState extends ConsumerState<OmniFeedScreen>
             statusCode: statusCode,
             responseSnippet: responseSnippet,
           );
-
-      if (!success && !settings.showAccountPickerOnEngagement) {
-        ref.read(feedProvider.notifier).updatePostEngagement(
-              post.id,
-              isReposted: wasReposted,
-              repostCount: post.repostCount,
-            );
-      }
     } catch (e) {
       ref.read(activityLogProvider.notifier).logAction(
-            action: action,
+            action: ActivityAction.repost,
             platform: post.source,
             accountHandle: account.handle,
             accountId: account.id,
@@ -411,13 +344,6 @@ class _OmniFeedScreenState extends ConsumerState<OmniFeedScreen>
             success: false,
             errorMessage: e.toString(),
           );
-      if (!settings.showAccountPickerOnEngagement) {
-        ref.read(feedProvider.notifier).updatePostEngagement(
-              post.id,
-              isReposted: wasReposted,
-              repostCount: post.repostCount,
-            );
-      }
     }
   }
 
@@ -511,10 +437,6 @@ class _OmniFeedScreenState extends ConsumerState<OmniFeedScreen>
     }
   }
 
-  Account? _getAccountForPost(Post post) {
-    if (post.accountId == null) return null;
-    return AccountStorageService.instance.getAccount(post.accountId!);
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -940,7 +862,7 @@ class _OmniFeedScreenState extends ConsumerState<OmniFeedScreen>
               key: ValueKey(post.id),
               post: post,
               hideSensitive: !settings.showSensitiveContent,
-              compactEngagement: settings.compactEngagement,
+              compactEngagement: true,
               imageMaxHeight: settings.imagePreviewSize.singleImageMaxHeight,
               imageGridHeight: settings.imagePreviewSize.gridImageHeight,
               videoHeight: settings.imagePreviewSize.videoHeight,

@@ -418,9 +418,16 @@ class FeedNotifier extends StateNotifier<FeedState> {
       }
     }
 
-    // stateは1回だけ更新（複数回のsetStateによるUI再構築を防止）
+    // 投稿リストが実際に変わったかチェック（変わっていなければpostsを更新しない）
+    // → リスト参照が同一のままなのでUI再構築が発生せずスクロールが途切れない
+    final oldPosts = state.posts;
+    final postsChanged = sorted.length != oldPosts.length ||
+        (sorted.isNotEmpty && oldPosts.isNotEmpty &&
+            (sorted.first.id != oldPosts.first.id ||
+             sorted.last.id != oldPosts.last.id));
+
     state = state.copyWith(
-      posts: sorted,
+      posts: postsChanged ? sorted : null,
       isLoading: false,
       isFetching: false,
       clearError: true,

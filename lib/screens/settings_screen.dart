@@ -150,7 +150,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
           // ── メディア ──
           const _SectionHeader(title: 'メディア'),
           ListTile(
-            title: const Text('画像プレビューサイズ'),
+            title: const Text('プレビューサイズ'),
             subtitle: Text(settings.imagePreviewSize.label),
             trailing: SegmentedButton<ImagePreviewSize>(
               segments: const [

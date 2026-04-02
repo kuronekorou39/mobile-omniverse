@@ -423,10 +423,11 @@ class FeedNotifier extends StateNotifier<FeedState> {
       }
     }
 
-    // キャッシュ保存とオーバーレイ同期は次フレームに遅延（現フレームのカクつき防止）
-    Future.microtask(() {
+    // オーバーレイ同期は次フレームに遅延
+    Future.microtask(() => _syncToOverlay());
+    // キャッシュ保存は少し遅延（150件のJSON化がメインスレッドをブロックするため）
+    Future.delayed(const Duration(milliseconds: 500), () {
       TimelineCacheService.instance.saveTimeline(sorted);
-      _syncToOverlay();
     });
   }
 

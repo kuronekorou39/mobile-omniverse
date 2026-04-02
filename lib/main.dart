@@ -42,11 +42,13 @@ class OmniVerseApp extends ConsumerWidget {
         colorSchemeSeed: const Color(0xFF6750A4),
         useMaterial3: true,
         brightness: Brightness.light,
+        fontFamily: settings.fontFamily.isEmpty ? null : settings.fontFamily,
       ),
       darkTheme: ThemeData(
         colorSchemeSeed: const Color(0xFF6750A4),
         useMaterial3: true,
         brightness: Brightness.dark,
+        fontFamily: settings.fontFamily.isEmpty ? null : settings.fontFamily,
       ),
       builder: (context, child) {
         // Apply font scale from settings

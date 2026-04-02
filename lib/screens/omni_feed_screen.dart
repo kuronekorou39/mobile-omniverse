@@ -978,6 +978,16 @@ class _OmniFeedScreenState extends ConsumerState<OmniFeedScreen>
               },
               onLike: () => _handleLike(post),
               onRepost: () => _handleRepost(post),
+              onReply: () async {
+                final posted = await Navigator.of(context).push<bool>(
+                  MaterialPageRoute(
+                    builder: (_) => ComposeScreen(inReplyToPost: post),
+                  ),
+                );
+                if (posted == true) {
+                  ref.read(feedProvider.notifier).refresh();
+                }
+              },
             );
 
             if (_animatingPostIds.contains(post.id)) {

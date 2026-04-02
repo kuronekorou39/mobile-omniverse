@@ -20,6 +20,7 @@ class PostCard extends StatelessWidget {
     this.onLike,
     this.onRepost,
     this.onQuoteRepost,
+    this.onReply,
     this.hideSensitive = true,
     this.compactEngagement = true,
     this.imageMaxHeight,
@@ -33,6 +34,7 @@ class PostCard extends StatelessWidget {
   final VoidCallback? onLike;
   final VoidCallback? onRepost;
   final VoidCallback? onQuoteRepost;
+  final VoidCallback? onReply;
   final bool hideSensitive;
   final bool compactEngagement;
   final double? imageMaxHeight;
@@ -442,6 +444,7 @@ class PostCard extends StatelessWidget {
           iconSize: iconSize,
           fontSize: fontSize,
           compact: compact,
+          onTap: onReply,
         ),
         const Spacer(),
         // Repost

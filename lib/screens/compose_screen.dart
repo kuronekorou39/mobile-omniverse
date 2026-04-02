@@ -16,9 +16,10 @@ import '../widgets/sns_badge.dart';
 import 'browser_post_debug_screen.dart';
 
 class ComposeScreen extends ConsumerStatefulWidget {
-  const ComposeScreen({super.key, this.quotedPost});
+  const ComposeScreen({super.key, this.quotedPost, this.inReplyToPost});
 
   final Post? quotedPost;
+  final Post? inReplyToPost;
 
   @override
   ConsumerState<ComposeScreen> createState() => _ComposeScreenState();
@@ -31,10 +32,10 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
 
   List<Account> get _accounts {
     final all = AccountStorageService.instance.accounts.where((a) => a.isEnabled).toList();
-    // 引用リポスト時は同じプラットフォームのアカウントのみ表示
-    final quoted = widget.quotedPost;
-    if (quoted != null) {
-      return all.where((a) => a.service == quoted.source).toList();
+    // 引用リポスト/リプライ時は同じプラットフォームのアカウントのみ表示
+    final targetPost = widget.quotedPost ?? widget.inReplyToPost;
+    if (targetPost != null) {
+      return all.where((a) => a.service == targetPost.source).toList();
     }
     return all;
   }
@@ -75,11 +76,16 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
       if (account.service == SnsService.x) {
         // WebView 経由で投稿 (ブラウザ環境を利用してbot検知を回避)
         String? attachmentUrl;
+        String? inReplyToId;
         if (widget.quotedPost != null && widget.quotedPost!.permalink != null) {
           attachmentUrl = widget.quotedPost!.permalink;
         }
+        if (widget.inReplyToPost != null) {
+          inReplyToId = widget.inReplyToPost!.id.replaceFirst('x_', '');
+        }
         final wvResult = await XWebViewActionService.instance
-            .createTweet(account.xCredentials, text, attachmentUrl: attachmentUrl);
+            .createTweet(account.xCredentials, text,
+                attachmentUrl: attachmentUrl, inReplyToId: inReplyToId);
         success = wvResult.success;
         statusCode = wvResult.statusCode;
         responseSnippet = '[WebView] ${wvResult.body.length > 500 ? '${wvResult.body.substring(0, 500)}...' : wvResult.body}';
@@ -90,9 +96,16 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
           quoteUri = widget.quotedPost!.uri;
           quoteCid = widget.quotedPost!.cid;
         }
+        String? replyUri;
+        String? replyCid;
+        if (widget.inReplyToPost != null) {
+          replyUri = widget.inReplyToPost!.uri;
+          replyCid = widget.inReplyToPost!.cid;
+        }
         success = await BlueskyApiService.instance
             .createPost(account.blueskyCredentials, text,
-                quoteUri: quoteUri, quoteCid: quoteCid);
+                quoteUri: quoteUri, quoteCid: quoteCid,
+                replyUri: replyUri, replyCid: replyCid);
       }
 
       ref.read(activityLogProvider.notifier).logAction(
@@ -144,7 +157,11 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Text(widget.quotedPost != null ? '引用リポスト' : '投稿'),
+        title: Text(widget.inReplyToPost != null
+            ? 'リプライ'
+            : widget.quotedPost != null
+                ? '引用リポスト'
+                : '投稿'),
         actions: [
           // ブラウザ投稿デバッグ（Xアカウント選択時のみ）
           if (_selectedAccount?.service == SnsService.x)
@@ -261,6 +278,52 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
                     '${_selectedAccount!.displayName} (${_selectedAccount!.handle})',
                     style: TextStyle(color: Colors.grey[600]),
                   ),
+                ],
+              ),
+            ),
+
+          // リプライ先プレビュー
+          if (widget.inReplyToPost != null)
+            Container(
+              margin: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: Theme.of(context).colorScheme.surfaceContainerHighest.withValues(alpha: 0.3),
+                borderRadius: BorderRadius.circular(8),
+                border: Border(
+                  left: BorderSide(
+                    color: Theme.of(context).colorScheme.primary,
+                    width: 3,
+                  ),
+                ),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      SnsBadge(service: widget.inReplyToPost!.source),
+                      const SizedBox(width: 6),
+                      Text(
+                        widget.inReplyToPost!.username,
+                        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                      ),
+                      const SizedBox(width: 4),
+                      Text(
+                        widget.inReplyToPost!.handle,
+                        style: TextStyle(color: Colors.grey[600], fontSize: 12),
+                      ),
+                    ],
+                  ),
+                  if (widget.inReplyToPost!.body.isNotEmpty) ...[
+                    const SizedBox(height: 4),
+                    Text(
+                      widget.inReplyToPost!.body,
+                      maxLines: 3,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(color: Colors.grey[700], fontSize: 13),
+                    ),
+                  ],
                 ],
               ),
             ),

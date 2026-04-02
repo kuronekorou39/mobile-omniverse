@@ -17,6 +17,7 @@ import '../services/bookmark_service.dart';
 import '../services/x_api_service.dart';
 import '../widgets/account_picker_modal.dart';
 import '../widgets/post_card.dart';
+import 'compose_screen.dart';
 import '../widgets/post_media.dart';
 import '../widgets/sns_badge.dart';
 import 'user_profile_screen.dart';
@@ -193,6 +194,14 @@ class _PostDetailScreenState extends ConsumerState<PostDetailScreen> {
                     },
                     onLike: () => _handleLike(reply),
                     onRepost: () => _handleRepost(reply),
+                    onReply: () async {
+                      final posted = await Navigator.of(context).push<bool>(
+                        MaterialPageRoute(
+                          builder: (_) => ComposeScreen(inReplyToPost: reply),
+                        ),
+                      );
+                      if (posted == true) _loadReplies();
+                    },
                   );
                 },
               ),
@@ -336,6 +345,18 @@ class _PostDetailScreenState extends ConsumerState<PostDetailScreen> {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceAround,
             children: [
+              IconButton(
+                icon: const Icon(Icons.chat_bubble_outline),
+                onPressed: () async {
+                  final posted = await Navigator.of(context).push<bool>(
+                    MaterialPageRoute(
+                      builder: (_) => ComposeScreen(inReplyToPost: post),
+                    ),
+                  );
+                  if (posted == true) _loadReplies();
+                },
+                tooltip: 'リプライ',
+              ),
               IconButton(
                 icon: Icon(
                   post.isReposted ? Icons.repeat_on : Icons.repeat,

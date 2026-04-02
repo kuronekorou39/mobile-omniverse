@@ -271,7 +271,8 @@ class BlueskyApiService {
 
   /// 投稿を作成
   Future<bool> createPost(BlueskyCredentials creds, String text,
-      {String? quoteUri, String? quoteCid}) async {
+      {String? quoteUri, String? quoteCid,
+       String? replyUri, String? replyCid, String? replyRootUri, String? replyRootCid}) async {
     final uri = Uri.parse(
       '${creds.pdsUrl}/xrpc/com.atproto.repo.createRecord',
     );
@@ -281,6 +282,20 @@ class BlueskyApiService {
       'text': text,
       'createdAt': DateTime.now().toUtc().toIso8601String(),
     };
+
+    // リプライ
+    if (replyUri != null && replyCid != null) {
+      record['reply'] = {
+        'root': {
+          'uri': replyRootUri ?? replyUri,
+          'cid': replyRootCid ?? replyCid,
+        },
+        'parent': {
+          'uri': replyUri,
+          'cid': replyCid,
+        },
+      };
+    }
 
     // 引用リポスト
     if (quoteUri != null && quoteCid != null) {

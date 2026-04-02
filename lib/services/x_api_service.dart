@@ -113,6 +113,10 @@ class XApiService {
     http.Response response,
     Stopwatch sw,
   ) {
+    // response.bodyの参照を保持しない（500KB+のGC遅延を防止）
+    final bodySnippet = response.body.length > 2048
+        ? '${response.body.substring(0, 2048)}... [${response.body.length} bytes]'
+        : response.body;
     DebugLogService.instance.logHttp(
       tag: 'XApi',
       method: method,
@@ -121,7 +125,7 @@ class XApiService {
       requestBody: requestBody,
       statusCode: response.statusCode,
       responseHeaders: response.headers,
-      responseBody: response.body,
+      responseBody: bodySnippet,
       duration: sw.elapsed,
       extra: {'label': label},
     );
@@ -253,8 +257,7 @@ class XApiService {
         );
       }
 
-      final body = await compute(_jsonDecodeInIsolate, response.body);
-      final result = parseTimelineWithCursor(body, accountId);
+      final result = await compute(_parseXTimelineInIsolate, (response.body, accountId));
 
       // queryId品質チェック: ユーザー情報が大量に欠けていたらデフォルトに戻す
       if (result.posts.length >= 3) {
@@ -1608,7 +1611,15 @@ class XAuthException implements Exception {
   String toString() => 'XAuthException: $message';
 }
 
-/// compute() 用: json.decodeだけを別Isolateで実行（最も重い処理）
+/// compute() 用: json.decode + タイムラインパースを別Isolateで実行
+({List<Post> posts, String? cursor}) _parseXTimelineInIsolate(
+    (String responseBody, String? accountId) args) {
+  final body = json.decode(args.$1) as Map<String, dynamic>;
+  // parseTweet等は純粋関数（インスタンス状態を使わない）ので安全
+  return XApiService.instance.parseTimelineWithCursor(body, args.$2);
+}
+
+/// compute() 用: json.decodeだけを別Isolateで実行
 Map<String, dynamic> _jsonDecodeInIsolate(String responseBody) {
   return json.decode(responseBody) as Map<String, dynamic>;
 }

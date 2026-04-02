@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter/scheduler.dart';
 import 'package:flutter_cache_manager/flutter_cache_manager.dart';
 import 'package:flutter_overlay_window/flutter_overlay_window.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -264,6 +265,12 @@ class FeedNotifier extends StateNotifier<FeedState> {
   }
 
   void _onPostsFetched(List<Post> newPosts) {
+    // UIフレームの合間に処理（フレームをブロックしない）
+    SchedulerBinding.instance.scheduleTask(
+        () => _processNewPosts(newPosts), Priority.touch);
+  }
+
+  void _processNewPosts(List<Post> newPosts) {
     final existing = Map<String, Post>.fromEntries(
       state.posts.map((p) => MapEntry(p.id, p)),
     );

@@ -25,7 +25,7 @@ class DebugLogService {
     }
     // 起動時に既存ログが上限超過ならローテーション
     if (_logBytes > _maxLogSize) {
-      _rotate();
+      await _rotate();
     }
   }
 
@@ -198,41 +198,56 @@ class DebugLogService {
   }
 
   Future<void> _append(String text) async {
-    if (_logFile == null) return;
+    if (_logFile == null || _isRotating) return;
     try {
-      await _logFile!.writeAsString(text, mode: FileMode.append);
-      _logBytes += text.length;
+      final bytes = text.codeUnits;
+      await _logFile!.writeAsBytes(bytes, mode: FileMode.append);
+      _logBytes += bytes.length;
       // 上限超過でローテーション
-      if (_logBytes > _maxLogSize && !_isRotating) {
-        _rotate();
+      if (_logBytes > _maxLogSize) {
+        await _rotate();
       }
     } catch (e) {
       debugPrint('[DebugLog] write error: $e');
     }
   }
 
-  /// 古いログを切り捨てて直近分のみ保持
+  /// ログローテーション
+  /// 巨大ファイル（上限の2倍超）は全削除、それ以外は末尾を保持
   Future<void> _rotate() async {
     if (_logFile == null || _isRotating) return;
     _isRotating = true;
     try {
-      final content = await _logFile!.readAsString();
-      if (content.length <= _rotateKeepSize) {
-        _isRotating = false;
-        return;
+      final fileSize = await _logFile!.length();
+
+      if (fileSize > _maxLogSize * 2) {
+        // 巨大ファイルはメモリに読まず全削除（OOM防止）
+        await _logFile!.writeAsString('', mode: FileMode.write);
+        _logBytes = 0;
+        debugPrint('[DebugLog] Rotated: file was too large (${fileSize ~/ 1024 ~/ 1024}MB), cleared');
+      } else {
+        // 通常ローテーション: 末尾を保持
+        final content = await _logFile!.readAsString();
+        final keepFrom = content.length - _rotateKeepSize;
+        if (keepFrom <= 0) {
+          _isRotating = false;
+          return;
+        }
+        final separatorIndex = content.indexOf('═══', keepFrom);
+        final cutAt = separatorIndex >= 0 ? separatorIndex : keepFrom;
+        final trimmed = content.substring(cutAt);
+        await _logFile!.writeAsString(trimmed, mode: FileMode.write);
+        _logBytes = trimmed.length;
+        debugPrint('[DebugLog] Rotated: kept ${logSizeLabel}');
       }
-      // _rotateKeepSize 分だけ末尾を残す
-      final keepFrom = content.length - _rotateKeepSize;
-      // エントリ区切り（═══）の位置まで進めて中途半端なエントリを避ける
-      final separatorIndex = content.indexOf('═══', keepFrom);
-      final cutAt = separatorIndex >= 0 ? separatorIndex : keepFrom;
-      final trimmed = content.substring(cutAt);
-      await _logFile!.writeAsString(trimmed, mode: FileMode.write);
-      _logBytes = trimmed.length;
-      debugPrint('[DebugLog] Rotated: kept ${logSizeLabel}');
       onLogSizeWarning?.call(logSizeLabel);
     } catch (e) {
       debugPrint('[DebugLog] rotate error: $e');
+      // ローテーション失敗時も安全に: ファイルをクリアしてやり直す
+      try {
+        await _logFile!.writeAsString('', mode: FileMode.write);
+        _logBytes = 0;
+      } catch (_) {}
     } finally {
       _isRotating = false;
     }

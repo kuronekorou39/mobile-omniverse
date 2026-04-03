@@ -433,6 +433,37 @@ class _OmniFeedScreenState extends ConsumerState<OmniFeedScreen>
     ));
   }
 
+  /// AppBarカスタムボタンの定義
+  static const appBarButtonDefs = {
+    'sensitive': ('センシティブ表示', Icons.visibility_off, Icons.visibility),
+    'userInfo': ('ユーザー情報', Icons.person_off_outlined, Icons.person_outline),
+  };
+
+  List<Widget> _buildAppBarCustomButtons(SettingsState settings) {
+    final buttons = <Widget>[];
+    final notifier = ref.read(settingsProvider.notifier);
+
+    if (settings.appBarButtons.contains('sensitive')) {
+      final isShowing = settings.showSensitiveContent;
+      buttons.add(IconButton(
+        icon: Icon(isShowing ? Icons.visibility : Icons.visibility_off, size: 20),
+        tooltip: isShowing ? 'センシティブ: 表示中' : 'センシティブ: 非表示',
+        onPressed: () => notifier.setShowSensitiveContent(!isShowing),
+      ));
+    }
+
+    if (settings.appBarButtons.contains('userInfo')) {
+      final isHiding = settings.hideUserInfo;
+      buttons.add(IconButton(
+        icon: Icon(isHiding ? Icons.person_off_outlined : Icons.person_outline, size: 20),
+        tooltip: isHiding ? 'ユーザー情報: 非表示中' : 'ユーザー情報: 表示中',
+        onPressed: () => notifier.setHideUserInfo(!isHiding),
+      ));
+    }
+
+    return buttons;
+  }
+
   void _openSettingsScreen(BuildContext context) {
     Navigator.of(context).push(PageRouteBuilder(
       pageBuilder: (context, anim1, anim2) => const SettingsScreen(),
@@ -557,6 +588,8 @@ class _OmniFeedScreenState extends ConsumerState<OmniFeedScreen>
                 )
               : null,
           actions: [
+            // カスタムAppBarボタン
+            ..._buildAppBarCustomButtons(settings),
             IconButton(
               icon: const Icon(Icons.picture_in_picture_alt),
               tooltip: 'オーバーレイ',

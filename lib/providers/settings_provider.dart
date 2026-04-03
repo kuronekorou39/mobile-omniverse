@@ -44,6 +44,7 @@ class SettingsState {
     this.imagePreviewSize = ImagePreviewSize.medium,
     this.hideUserInfo = false,
     this.fontFamily = '',
+    this.appBarButtons = const {},
   });
 
   final int fetchIntervalSeconds;
@@ -66,6 +67,8 @@ class SettingsState {
   final bool hideUserInfo;
   /// フォントファミリー（空文字=システムデフォルト）
   final String fontFamily;
+  /// AppBarに表示するカスタムボタン
+  final Set<String> appBarButtons;
 
   SettingsState copyWith({
     int? fetchIntervalSeconds,
@@ -80,6 +83,7 @@ class SettingsState {
     ImagePreviewSize? imagePreviewSize,
     bool? hideUserInfo,
     String? fontFamily,
+    Set<String>? appBarButtons,
   }) {
     return SettingsState(
       fetchIntervalSeconds: fetchIntervalSeconds ?? this.fetchIntervalSeconds,
@@ -94,6 +98,7 @@ class SettingsState {
       imagePreviewSize: imagePreviewSize ?? this.imagePreviewSize,
       hideUserInfo: hideUserInfo ?? this.hideUserInfo,
       fontFamily: fontFamily ?? this.fontFamily,
+      appBarButtons: appBarButtons ?? this.appBarButtons,
     );
   }
 }
@@ -114,6 +119,7 @@ class SettingsNotifier extends StateNotifier<SettingsState> {
   static const _keyImagePreviewSize = 'settings_image_preview_size';
   static const _keyHideUserInfo = 'settings_hide_user_info';
   static const _keyFontFamily = 'settings_font_family';
+  static const _keyAppBarButtons = 'settings_appbar_buttons';
 
   final _scheduler = TimelineFetchScheduler.instance;
 
@@ -130,6 +136,7 @@ class SettingsNotifier extends StateNotifier<SettingsState> {
     final imagePreviewSizeIndex = prefs.getInt(_keyImagePreviewSize) ?? ImagePreviewSize.medium.index;
     final hideUserInfo = prefs.getBool(_keyHideUserInfo) ?? false;
     final fontFamily = prefs.getString(_keyFontFamily) ?? '';
+    final appBarButtons = prefs.getStringList(_keyAppBarButtons)?.toSet() ?? {};
 
     state = state.copyWith(
       fetchIntervalSeconds: interval,
@@ -143,6 +150,7 @@ class SettingsNotifier extends StateNotifier<SettingsState> {
       imagePreviewSize: ImagePreviewSize.values[imagePreviewSizeIndex.clamp(0, 2)],
       hideUserInfo: hideUserInfo,
       fontFamily: fontFamily,
+      appBarButtons: appBarButtons,
     );
 
     // #3: デフォルトフェッチONの場合、起動時にスケジューラを開始
@@ -166,6 +174,7 @@ class SettingsNotifier extends StateNotifier<SettingsState> {
     await prefs.setInt(_keyImagePreviewSize, state.imagePreviewSize.index);
     await prefs.setBool(_keyHideUserInfo, state.hideUserInfo);
     await prefs.setString(_keyFontFamily, state.fontFamily);
+    await prefs.setStringList(_keyAppBarButtons, state.appBarButtons.toList());
   }
 
   void setInterval(int seconds) {
@@ -231,6 +240,17 @@ class SettingsNotifier extends StateNotifier<SettingsState> {
 
   void setFontFamily(String value) {
     state = state.copyWith(fontFamily: value);
+    _saveToPrefs();
+  }
+
+  void toggleAppBarButton(String buttonId) {
+    final current = Set<String>.from(state.appBarButtons);
+    if (current.contains(buttonId)) {
+      current.remove(buttonId);
+    } else {
+      current.add(buttonId);
+    }
+    state = state.copyWith(appBarButtons: current);
     _saveToPrefs();
   }
 

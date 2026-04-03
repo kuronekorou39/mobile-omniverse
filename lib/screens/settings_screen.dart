@@ -113,6 +113,32 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       appBar: AppBar(title: const Text('設定')),
       body: ListView(
         children: [
+          // ── ヘッダーボタン ──
+          const _SectionHeader(title: 'ヘッダーボタン'),
+          const Padding(
+            padding: EdgeInsets.symmetric(horizontal: 16),
+            child: Text(
+              'AppBarに表示するクイックトグルを選択',
+              style: TextStyle(color: Colors.grey, fontSize: 12),
+            ),
+          ),
+          CheckboxListTile(
+            title: const Text('センシティブ切替'),
+            subtitle: const Text('メディアの表示/非表示をすぐ切替'),
+            value: settings.appBarButtons.contains('sensitive'),
+            onChanged: (_) => notifier.toggleAppBarButton('sensitive'),
+            dense: true,
+          ),
+          CheckboxListTile(
+            title: const Text('ユーザー情報切替'),
+            subtitle: const Text('アイコン・名前の表示/非表示をすぐ切替'),
+            value: settings.appBarButtons.contains('userInfo'),
+            onChanged: (_) => notifier.toggleAppBarButton('userInfo'),
+            dense: true,
+          ),
+
+          const Divider(),
+
           // ── タイムライン ──
           const _SectionHeader(title: 'タイムライン'),
           ListTile(

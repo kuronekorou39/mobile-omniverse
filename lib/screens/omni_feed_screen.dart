@@ -109,17 +109,20 @@ class _OmniFeedScreenState extends ConsumerState<OmniFeedScreen>
   void _startCountdownTimer() {
     _countdownTimer = Timer.periodic(const Duration(seconds: 1), (_) {
       if (!mounted) return;
-      final feed = ref.read(feedProvider);
+      final isFetching = ref.read(feedProvider).isFetching;
 
       // フェッチ完了時にカウントダウンをリセット
-      if (_wasFetching && !feed.isFetching) {
-        final interval = ref.read(settingsProvider).fetchIntervalSeconds;
-        setState(() => _remainingSeconds = interval);
+      if (_wasFetching && !isFetching) {
+        _remainingSeconds = ref.read(settingsProvider).fetchIntervalSeconds;
       }
-      _wasFetching = feed.isFetching;
+      _wasFetching = isFetching;
 
-      if (!feed.isFetching && _remainingSeconds > 0) {
-        setState(() => _remainingSeconds--);
+      if (!isFetching && _remainingSeconds > 0) {
+        _remainingSeconds--;
+      }
+      // タイマー表示が有効な場合のみ再描画（スクロールへの影響を最小化）
+      if (ref.read(settingsProvider).showFetchTimer) {
+        setState(() {});
       }
     });
   }
@@ -472,7 +475,7 @@ class _OmniFeedScreenState extends ConsumerState<OmniFeedScreen>
         'fetch': {
           'remaining': 0,
           'total': settings.fetchIntervalSeconds,
-          'isFetching': feed.isFetching,
+          'isFetching': ref.read(feedProvider).isFetching,
         },
         'showFetchTimer': settings.showFetchTimer,
       }));
@@ -493,7 +496,14 @@ class _OmniFeedScreenState extends ConsumerState<OmniFeedScreen>
 
   @override
   Widget build(BuildContext context) {
-    final feed = ref.watch(feedProvider);
+    // posts/pendingCount が変わった時だけ rebuild（isFetchingの変更では rebuild しない）
+    final feed = ref.watch(feedProvider.select((f) => (
+          posts: f.posts,
+          pendingCount: f.pendingCount,
+          isLoading: f.isLoading,
+          isLoadingMore: f.isLoadingMore,
+          error: f.error,
+        )));
     final settings = ref.watch(settingsProvider);
     final accounts = ref.watch(accountProvider);
 
@@ -541,7 +551,7 @@ class _OmniFeedScreenState extends ConsumerState<OmniFeedScreen>
                       onPressed: () => _openAccountsScreen(context),
                     ),
                     const SizedBox(width: 4),
-                    _buildFetchIndicator(context, feed, settings),
+                    _buildFetchIndicator(context, settings),
                   ],
                 )
               : IconButton(
@@ -568,7 +578,7 @@ class _OmniFeedScreenState extends ConsumerState<OmniFeedScreen>
             IconButton(
               icon: const Icon(Icons.picture_in_picture_alt),
               tooltip: 'オーバーレイ',
-              onPressed: () => _launchOverlay(feed),
+              onPressed: () => _launchOverlay(ref.read(feedProvider)),
             ),
             IconButton(
               icon: const Icon(Icons.settings_outlined),
@@ -578,7 +588,7 @@ class _OmniFeedScreenState extends ConsumerState<OmniFeedScreen>
           ],
         ),
         ..._buildSliverBody(
-            context, feed, settings, accounts, enabledAccountIds),
+            context, ref.read(feedProvider), settings, accounts, enabledAccountIds),
       ],
     );
 
@@ -589,7 +599,7 @@ class _OmniFeedScreenState extends ConsumerState<OmniFeedScreen>
       );
     }
 
-    final showBanner = feed.pendingCount > ref.read(feedProvider.notifier).dripThreshold;
+    final showBanner = ref.read(feedProvider).pendingCount > ref.read(feedProvider.notifier).dripThreshold;
 
     return Scaffold(
       body: Stack(
@@ -638,9 +648,9 @@ class _OmniFeedScreenState extends ConsumerState<OmniFeedScreen>
   }
 
   Widget _buildFetchIndicator(
-      BuildContext context, FeedState feed, SettingsState settings) {
+      BuildContext context, SettingsState settings) {
     final total = settings.fetchIntervalSeconds;
-    final remaining = feed.isFetching ? 0 : _remainingSeconds.clamp(0, total);
+    final remaining = _remainingSeconds.clamp(0, total);
     final progress = total > 0 ? remaining / total : 0.0;
 
     return Row(
@@ -649,21 +659,21 @@ class _OmniFeedScreenState extends ConsumerState<OmniFeedScreen>
         SizedBox(
           width: 18,
           height: 18,
-            child: feed.isFetching
+            child: remaining == 0
                 ? const CircularProgressIndicator(strokeWidth: 2)
                 : CircularProgressIndicator(
-                    value: progress,
+                    value: progress.toDouble(),
                     strokeWidth: 2,
                     backgroundColor:
                         Theme.of(context).colorScheme.surfaceContainerHighest,
                   ),
           ),
-          if (feed.pendingCount > 0 &&
-              feed.pendingCount <= ref.read(feedProvider.notifier).dripThreshold)
+          if (ref.read(feedProvider).pendingCount > 0 &&
+              ref.read(feedProvider).pendingCount <= ref.read(feedProvider.notifier).dripThreshold)
             Padding(
               padding: const EdgeInsets.only(left: 4),
               child: Text(
-                '+${feed.pendingCount}',
+                '+${ref.read(feedProvider).pendingCount}',
                 style: TextStyle(
                   fontSize: 11,
                   color: Theme.of(context).colorScheme.primary,

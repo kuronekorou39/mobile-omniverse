@@ -446,8 +446,12 @@ class _OmniFeedScreenState extends ConsumerState<OmniFeedScreen>
     if (settings.appBarButtons.contains('sensitive')) {
       final isShowing = settings.showSensitiveContent;
       buttons.add(IconButton(
-        icon: Icon(isShowing ? Icons.visibility : Icons.visibility_off, size: 20),
-        tooltip: isShowing ? 'センシティブ: 表示中' : 'センシティブ: 非表示',
+        icon: Icon(
+          isShowing ? Icons.shield_outlined : Icons.shield,
+          size: 20,
+          color: isShowing ? null : Theme.of(context).colorScheme.primary,
+        ),
+        tooltip: isShowing ? 'センシティブ警告: OFF' : 'センシティブ警告: ON',
         onPressed: () => notifier.setShowSensitiveContent(!isShowing),
       ));
     }
@@ -455,8 +459,12 @@ class _OmniFeedScreenState extends ConsumerState<OmniFeedScreen>
     if (settings.appBarButtons.contains('userInfo')) {
       final isHiding = settings.hideUserInfo;
       buttons.add(IconButton(
-        icon: Icon(isHiding ? Icons.person_off_outlined : Icons.person_outline, size: 20),
-        tooltip: isHiding ? 'ユーザー情報: 非表示中' : 'ユーザー情報: 表示中',
+        icon: Icon(
+          isHiding ? Icons.label_off_outlined : Icons.label_outline,
+          size: 20,
+          color: isHiding ? Theme.of(context).colorScheme.primary : null,
+        ),
+        tooltip: isHiding ? '匿名モード: ON' : '匿名モード: OFF',
         onPressed: () => notifier.setHideUserInfo(!isHiding),
       ));
     }

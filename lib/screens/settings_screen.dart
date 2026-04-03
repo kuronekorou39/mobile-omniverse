@@ -113,25 +113,21 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       appBar: AppBar(title: const Text('設定')),
       body: ListView(
         children: [
-          // ── ヘッダーボタン ──
-          const _SectionHeader(title: 'ヘッダーボタン'),
-          const Padding(
-            padding: EdgeInsets.symmetric(horizontal: 16),
-            child: Text(
-              'AppBarに表示するクイックトグルを選択',
-              style: TextStyle(color: Colors.grey, fontSize: 12),
-            ),
+          // ── ヘッダー ──
+          const _SectionHeader(title: 'ヘッダー'),
+          SwitchListTile(
+            title: const Text('フェッチタイマー'),
+            value: settings.showFetchTimer,
+            onChanged: (value) => notifier.setShowFetchTimer(value),
           ),
           CheckboxListTile(
-            title: const Text('センシティブ切替'),
-            subtitle: const Text('メディアの表示/非表示をすぐ切替'),
+            title: const Text('センシティブ切替ボタン'),
             value: settings.appBarButtons.contains('sensitive'),
             onChanged: (_) => notifier.toggleAppBarButton('sensitive'),
             dense: true,
           ),
           CheckboxListTile(
-            title: const Text('ユーザー情報切替'),
-            subtitle: const Text('アイコン・名前の表示/非表示をすぐ切替'),
+            title: const Text('匿名モード切替ボタン'),
             value: settings.appBarButtons.contains('userInfo'),
             onChanged: (_) => notifier.toggleAppBarButton('userInfo'),
             dense: true,
@@ -143,7 +139,6 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
           const _SectionHeader(title: 'タイムライン'),
           ListTile(
             title: const Text('フェッチ間隔'),
-            subtitle: Text('${settings.fetchIntervalSeconds} 秒ごとに取得'),
             trailing: DropdownButton<int>(
               value: settings.fetchIntervalSeconds,
               items: const [
@@ -158,17 +153,20 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
               },
             ),
           ),
-          SwitchListTile(
-            title: const Text('フェッチタイマー表示'),
-            subtitle: const Text('AppBar にカウントダウンを表示'),
-            value: settings.showFetchTimer,
-            onChanged: (value) => notifier.setShowFetchTimer(value),
-          ),
-          SwitchListTile(
-            title: const Text('ユーザー情報を表示'),
-            subtitle: const Text('アイコン・名前・ハンドルを表示する'),
-            value: !settings.hideUserInfo,
-            onChanged: (value) => notifier.setHideUserInfo(!value),
+          ListTile(
+            title: const Text('匿名モード'),
+            trailing: SegmentedButton<bool>(
+              segments: const [
+                ButtonSegment(value: false, label: Text('通常表示')),
+                ButtonSegment(value: true, label: Text('匿名表示')),
+              ],
+              selected: {settings.hideUserInfo},
+              onSelectionChanged: (value) =>
+                  notifier.setHideUserInfo(value.first),
+              style: const ButtonStyle(
+                visualDensity: VisualDensity.compact,
+              ),
+            ),
           ),
 
           const Divider(),
@@ -177,7 +175,6 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
           const _SectionHeader(title: 'メディア'),
           ListTile(
             title: const Text('プレビューサイズ'),
-            subtitle: Text(settings.imagePreviewSize.label),
             trailing: SegmentedButton<ImagePreviewSize>(
               segments: const [
                 ButtonSegment(value: ImagePreviewSize.small, label: Text('小')),
@@ -192,11 +189,20 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
               ),
             ),
           ),
-          SwitchListTile(
-            title: const Text('センシティブ警告を表示'),
-            subtitle: const Text('センシティブなメディアをぼかす'),
-            value: !settings.showSensitiveContent,
-            onChanged: (value) => notifier.setShowSensitiveContent(!value),
+          ListTile(
+            title: const Text('センシティブ'),
+            trailing: SegmentedButton<bool>(
+              segments: const [
+                ButtonSegment(value: true, label: Text('フィルター')),
+                ButtonSegment(value: false, label: Text('そのまま')),
+              ],
+              selected: {!settings.showSensitiveContent},
+              onSelectionChanged: (value) =>
+                  notifier.setShowSensitiveContent(!value.first),
+              style: const ButtonStyle(
+                visualDensity: VisualDensity.compact,
+              ),
+            ),
           ),
 
           const Divider(),
@@ -205,14 +211,14 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
           const _SectionHeader(title: '文章'),
           ListTile(
             title: const Text('フォント'),
-            subtitle: Text(settings.fontFamily.isEmpty ? 'システムデフォルト' : settings.fontFamily),
             trailing: DropdownButton<String>(
               value: settings.fontFamily,
               items: const [
-                DropdownMenuItem(value: '', child: Text('システムデフォルト')),
-                DropdownMenuItem(value: 'Noto Sans JP', child: Text('Noto Sans JP')),
-                DropdownMenuItem(value: 'Roboto', child: Text('Roboto')),
+                DropdownMenuItem(value: '', child: Text('デフォルト')),
+                DropdownMenuItem(value: 'serif', child: Text('明朝体')),
                 DropdownMenuItem(value: 'monospace', child: Text('等幅')),
+                DropdownMenuItem(value: 'sans-serif-condensed', child: Text('コンデンス')),
+                DropdownMenuItem(value: 'cursive', child: Text('手書き風')),
               ],
               onChanged: (value) {
                 if (value != null) notifier.setFontFamily(value);
@@ -220,8 +226,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             ),
           ),
           ListTile(
-            title: const Text('フォントサイズ'),
-            subtitle: Text('${(settings.fontScale * 100).round()}%'),
+            title: Text('サイズ ${(settings.fontScale * 100).round()}%'),
           ),
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -234,7 +239,6 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                     min: 0.8,
                     max: 1.5,
                     divisions: 7,
-                    label: '${(settings.fontScale * 100).round()}%',
                     onChanged: (value) => notifier.setFontScale(value),
                   ),
                 ),
@@ -249,7 +253,6 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
           const _SectionHeader(title: '外観'),
           ListTile(
             title: const Text('テーマ'),
-            subtitle: Text(_themeModeLabel(settings.themeMode)),
             trailing: DropdownButton<ThemeMode>(
               value: settings.themeMode,
               items: const [
@@ -391,6 +394,15 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       ThemeMode.dark => 'ダーク',
     };
   }
+
+  String _fontLabel(String family) => switch (family) {
+        '' => 'デフォルト',
+        'serif' => '明朝体',
+        'monospace' => '等幅',
+        'sans-serif-condensed' => 'コンデンス',
+        'cursive' => '手書き風',
+        _ => family,
+      };
 
   String _formatTime(DateTime dt) {
     return '${dt.month}/${dt.day} ${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}';

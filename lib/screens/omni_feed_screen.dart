@@ -30,7 +30,10 @@ import 'settings_screen.dart';
 import 'post_detail_screen.dart';
 
 class OmniFeedScreen extends ConsumerStatefulWidget {
-  const OmniFeedScreen({super.key});
+  const OmniFeedScreen({super.key, this.onRegisterTimelineTap});
+
+  /// タイムラインタブ再タップ時のコールバック登録
+  final void Function(VoidCallback)? onRegisterTimelineTap;
 
   @override
   ConsumerState<OmniFeedScreen> createState() => _OmniFeedScreenState();
@@ -65,6 +68,15 @@ class _OmniFeedScreenState extends ConsumerState<OmniFeedScreen>
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     _scrollController.addListener(_onScroll);
+
+    // タイムラインタブ再タップ → トップにスクロール
+    widget.onRegisterTimelineTap?.call(() {
+      _scrollController.animateTo(
+        0,
+        duration: const Duration(milliseconds: 300),
+        curve: Curves.easeOutCubic,
+      );
+    });
     _startCountdownTimer();
     // スケジューラのサイクル完了時に通知バッジをチェック
     TimelineFetchScheduler.instance.onCycleComplete = () {
@@ -538,43 +550,13 @@ class _OmniFeedScreenState extends ConsumerState<OmniFeedScreen>
             style: TextStyle(fontWeight: FontWeight.bold),
           ),
           centerTitle: true,
-          leadingWidth: (settings.isFetchingActive && settings.showFetchTimer)
-              ? 104
-              : null,
           leading: (settings.isFetchingActive && settings.showFetchTimer)
-              ? Row(
-                  children: [
-                    const SizedBox(width: 8),
-                    IconButton(
-                      icon: const Icon(Icons.people_outline),
-                      tooltip: 'アカウント',
-                      onPressed: () => _openAccountsScreen(context),
-                    ),
-                    const SizedBox(width: 4),
-                    _buildFetchIndicator(context, settings),
-                  ],
+              ? Padding(
+                  padding: const EdgeInsets.only(left: 12),
+                  child: _buildFetchIndicator(context, settings),
                 )
-              : IconButton(
-                  icon: const Icon(Icons.people_outline),
-                  tooltip: 'アカウント',
-                  onPressed: () => _openAccountsScreen(context),
-                ),
+              : null,
           actions: [
-            IconButton(
-              icon: Badge(
-                isLabelVisible: ref.watch(notificationBadgeProvider),
-                smallSize: 8,
-                child: const Icon(Icons.notifications_outlined),
-              ),
-              tooltip: '通知',
-              onPressed: () {
-                ref.read(notificationBadgeProvider.notifier).markSeen();
-                Navigator.of(context).push(
-                  MaterialPageRoute(
-                      builder: (_) => const NotificationsScreen()),
-                );
-              },
-            ),
             IconButton(
               icon: const Icon(Icons.picture_in_picture_alt),
               tooltip: 'オーバーレイ',

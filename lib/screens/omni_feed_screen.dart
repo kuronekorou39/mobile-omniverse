@@ -444,15 +444,15 @@ class _OmniFeedScreenState extends ConsumerState<OmniFeedScreen>
     final notifier = ref.read(settingsProvider.notifier);
 
     if (settings.appBarButtons.contains('sensitive')) {
-      final isShowing = settings.showSensitiveContent;
+      final isFiltering = !settings.showSensitiveContent;
       buttons.add(IconButton(
         icon: Icon(
-          isShowing ? Icons.shield_outlined : Icons.shield,
+          isFiltering ? Icons.blur_on : Icons.blur_off,
           size: 20,
-          color: isShowing ? null : Theme.of(context).colorScheme.primary,
+          color: isFiltering ? Theme.of(context).colorScheme.primary : null,
         ),
-        tooltip: isShowing ? 'センシティブ警告: OFF' : 'センシティブ警告: ON',
-        onPressed: () => notifier.setShowSensitiveContent(!isShowing),
+        tooltip: isFiltering ? 'モザイク: ON' : 'モザイク: OFF',
+        onPressed: () => notifier.setShowSensitiveContent(!settings.showSensitiveContent),
       ));
     }
 
@@ -460,7 +460,7 @@ class _OmniFeedScreenState extends ConsumerState<OmniFeedScreen>
       final isHiding = settings.hideUserInfo;
       buttons.add(IconButton(
         icon: Icon(
-          isHiding ? Icons.label_off_outlined : Icons.label_outline,
+          Icons.incognito,
           size: 20,
           color: isHiding ? Theme.of(context).colorScheme.primary : null,
         ),

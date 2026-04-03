@@ -460,7 +460,7 @@ class _OmniFeedScreenState extends ConsumerState<OmniFeedScreen>
       final isHiding = settings.hideUserInfo;
       buttons.add(IconButton(
         icon: Icon(
-          Icons.incognito,
+          Icons.privacy_tip_outlined,
           size: 20,
           color: isHiding ? Theme.of(context).colorScheme.primary : null,
         ),

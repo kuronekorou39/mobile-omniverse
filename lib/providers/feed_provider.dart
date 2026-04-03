@@ -258,26 +258,20 @@ class FeedNotifier extends StateNotifier<FeedState> {
   }
 
   void _onFetchStart() {
-    debugPrint('[Perf] _onFetchStart called');
     _remainingSeconds = 0;
     state = state.copyWith(isFetching: true);
-    debugPrint('[Perf] _onFetchStart done');
   }
 
   void _onPostsFetched(List<Post> newPosts) {
-    debugPrint('[Perf] _onPostsFetched received ${newPosts.length} posts');
+    // UIのタッチ/アニメーションより低い優先度で処理
     SchedulerBinding.instance.scheduleTask(
-        () => _processNewPosts(newPosts), Priority.touch);
+        () => _processNewPosts(newPosts), Priority.idle);
   }
 
   void _processNewPosts(List<Post> newPosts) {
-    final sw = Stopwatch()..start();
-
     final existing = Map<String, Post>.fromEntries(
       state.posts.map((p) => MapEntry(p.id, p)),
     );
-    final t1 = sw.elapsedMilliseconds;
-    debugPrint('[Perf] Map.fromEntries(${existing.length}): ${t1}ms');
 
     final newToQueue = <String, Post>{};
 
@@ -350,9 +344,6 @@ class FeedNotifier extends StateNotifier<FeedState> {
       }
     }
 
-    final t2 = sw.elapsedMilliseconds;
-    debugPrint('[Perf] Merge loop: ${t2 - t1}ms');
-
     final newPending = newToQueue.values.toList();
 
     // 初回ロード・手動リフレッシュ・loadMore・起動後初回フェッチはドリップせず即時反映
@@ -370,8 +361,6 @@ class FeedNotifier extends StateNotifier<FeedState> {
     // 既存投稿の即時更新を反映
     final sorted = _trimPosts(existing.values.toList()
       ..sort((a, b) => b.timestamp.compareTo(a.timestamp)));
-    final t3 = sw.elapsedMilliseconds;
-    debugPrint('[Perf] Sort+trim(${sorted.length}): ${t3 - t2}ms');
 
     // IDセットを1回だけ計算（複数箇所で再利用）
     final sortedIds = sorted.map((p) => p.id).toSet();
@@ -423,15 +412,12 @@ class FeedNotifier extends StateNotifier<FeedState> {
       }
     }
 
-    final t4 = sw.elapsedMilliseconds;
-    debugPrint('[Perf] Queue+filter: ${t4 - t3}ms');
-
-    // 投稿リストが実際に変わったかチェック
+    // 新規投稿の追加/削除があったかチェック（先頭IDか件数が変わった場合のみ更新）
+    // エンゲージメント更新(いいね数等)はupdatePostEngagement()で個別に反映される
     final oldPosts = state.posts;
     final postsChanged = sorted.length != oldPosts.length ||
         (sorted.isNotEmpty && oldPosts.isNotEmpty &&
-            (sorted.first.id != oldPosts.first.id ||
-             sorted.last.id != oldPosts.last.id));
+            sorted.first.id != oldPosts.first.id);
 
     state = state.copyWith(
       posts: postsChanged ? sorted : null,
@@ -441,9 +427,6 @@ class FeedNotifier extends StateNotifier<FeedState> {
       pendingCount: newPendingCount,
     );
 
-    final t5 = sw.elapsedMilliseconds;
-    debugPrint('[Perf] state.copyWith (postsChanged=$postsChanged): ${t5 - t4}ms');
-    debugPrint('[Perf] _processNewPosts TOTAL: ${t5}ms');
 
     // ドリップ開始判定（メインかオーバーレイのどちらかがトップにいれば開始）
     if (_pendingQueue.isNotEmpty && _dripTimer == null) {

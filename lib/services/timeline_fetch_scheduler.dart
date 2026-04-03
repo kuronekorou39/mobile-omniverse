@@ -80,7 +80,6 @@ class TimelineFetchScheduler {
 
   /// 全有効アカウントのタイムラインを並列取得 (最新)
   Future<void> fetchAll() async {
-    final totalSw = Stopwatch()..start();
     onFetchStart?.call();
 
     final accounts = AccountStorageService.instance.accounts
@@ -94,7 +93,6 @@ class TimelineFetchScheduler {
 
     final futures = accounts.map((account) => _fetchForAccount(account));
     final results = await Future.wait(futures, eagerError: false);
-    debugPrint('[Perf] fetchAll HTTP+parse: ${totalSw.elapsedMilliseconds}ms');
 
     final allPosts = <Post>[];
     for (final posts in results) {

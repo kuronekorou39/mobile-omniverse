@@ -110,10 +110,19 @@ class PostCard extends StatelessWidget {
               Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // Avatar column
+                  // Left column: Avatar + SNS badge + Via avatars
                   if (!hideUserInfo) ...[
-                    _buildAvatar(context),
+                    Column(
+                      children: [
+                        _buildAvatar(context),
+                        const SizedBox(height: 4),
+                        _buildLeftColumnInfo(),
+                      ],
+                    ),
                     const SizedBox(width: 10),
+                  ] else ...[
+                    // 匿名モード: 左に余白
+                    const SizedBox(width: 16),
                   ],
                   // Content column
                   Expanded(
@@ -329,49 +338,74 @@ class PostCard extends StatelessWidget {
   Widget _buildAvatar(BuildContext context) {
     return GestureDetector(
       onTap: () => navigateToUserProfile(context, post: post),
-      child: Stack(
-        clipBehavior: Clip.none,
-        children: [
-          Hero(
-            tag: 'avatar_${post.id}',
-            child: post.avatarUrl != null
-                ? CachedNetworkImage(
-                    imageUrl: post.avatarUrl!,
-                    httpHeaders: kImageHeaders,
-                    fadeInDuration: Duration.zero,
-                    memCacheWidth: 80,
-                    memCacheHeight: 80,
-                    imageBuilder: (context, imageProvider) => CircleAvatar(
-                      radius: 20,
-                      backgroundImage: imageProvider,
-                    ),
-                    placeholder: (context, url) => const CircleAvatar(
-                      radius: 20,
-                      backgroundColor: Colors.grey,
-                    ),
-                    errorWidget: (context, url, error) => CircleAvatar(
-                      radius: 20,
-                      child: Text(
-                        post.username.isNotEmpty
-                            ? post.username[0].toUpperCase()
-                            : '?',
-                      ),
-                    ),
-                  )
-                : CircleAvatar(
-                    radius: 20,
-                    child: Text(
-                      post.username.isNotEmpty
-                          ? post.username[0].toUpperCase()
-                          : '?',
-                    ),
+      child: Hero(
+        tag: 'avatar_${post.id}',
+        child: post.avatarUrl != null
+            ? CachedNetworkImage(
+                imageUrl: post.avatarUrl!,
+                httpHeaders: kImageHeaders,
+                fadeInDuration: Duration.zero,
+                memCacheWidth: 80,
+                memCacheHeight: 80,
+                imageBuilder: (context, imageProvider) => CircleAvatar(
+                  radius: 20,
+                  backgroundImage: imageProvider,
+                ),
+                placeholder: (context, url) => const CircleAvatar(
+                  radius: 20,
+                  backgroundColor: Colors.grey,
+                ),
+                errorWidget: (context, url, error) => CircleAvatar(
+                  radius: 20,
+                  child: Text(
+                    post.username.isNotEmpty
+                        ? post.username[0].toUpperCase()
+                        : '?',
                   ),
-          ),
-          Positioned(
-            top: -4,
-            left: -6,
-            child: SnsBadge(service: post.source, size: 10),
-          ),
+                ),
+              )
+            : CircleAvatar(
+                radius: 20,
+                child: Text(
+                  post.username.isNotEmpty
+                      ? post.username[0].toUpperCase()
+                      : '?',
+                ),
+              ),
+      ),
+    );
+  }
+
+  /// 左列のSNSバッジ + 取得元アバター（アバターの下に配置）
+  Widget _buildLeftColumnInfo() {
+    final ids = post.fetchedByAccountIds.toList();
+    final hasVia = ids.isNotEmpty;
+
+    return SizedBox(
+      width: 40, // アバター幅に合わせる
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          SnsBadge(service: post.source, size: 12),
+          if (hasVia) ...[
+            const SizedBox(width: 2),
+            // 2つまで並べる、3つ以上は1つ+残数
+            if (ids.length <= 2)
+              ...ids.map((id) => Padding(
+                    padding: const EdgeInsets.only(left: 1),
+                    child: _buildViaAvatar(id),
+                  ))
+            else ...[
+              Padding(
+                padding: const EdgeInsets.only(left: 1),
+                child: _buildViaAvatar(ids[0]),
+              ),
+              Text(
+                '+${ids.length - 1}',
+                style: TextStyle(fontSize: 8, color: Colors.grey[500]),
+              ),
+            ],
+          ],
         ],
       ),
     );
@@ -437,9 +471,6 @@ class PostCard extends StatelessWidget {
 
     return Row(
       children: [
-        // 取得元アカウントアバター（固定幅）
-        if (post.fetchedByAccountIds.isNotEmpty)
-          _buildViaAvatars(),
         // Reply
         _EngagementButton(
           icon: Icons.chat_bubble_outline,
@@ -496,51 +527,6 @@ class PostCard extends StatelessWidget {
           ),
         ),
       ],
-    );
-  }
-
-  /// 取得元アカウントアバター（固定幅36px）
-  /// 1-2個: 並べて表示、3個以上: 2個重ねて+N表示
-  Widget _buildViaAvatars() {
-    final ids = post.fetchedByAccountIds.toList();
-    const fixedWidth = 36.0;
-    const radius = 7.0;
-
-    if (ids.length <= 2) {
-      return SizedBox(
-        width: fixedWidth,
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            for (var i = 0; i < ids.length; i++) ...[
-              if (i > 0) const SizedBox(width: 2),
-              _buildViaAvatar(ids[i]),
-            ],
-          ],
-        ),
-      );
-    }
-
-    // 3個以上: 先頭2つを重ねて表示 + 残数
-    return SizedBox(
-      width: fixedWidth,
-      child: Stack(
-        clipBehavior: Clip.none,
-        children: [
-          _buildViaAvatar(ids[0]),
-          Positioned(
-            left: 10,
-            child: _buildViaAvatar(ids[1]),
-          ),
-          Positioned(
-            left: 22,
-            child: Text(
-              '+${ids.length - 2}',
-              style: TextStyle(fontSize: 9, color: Colors.grey[500]),
-            ),
-          ),
-        ],
-      ),
     );
   }
 

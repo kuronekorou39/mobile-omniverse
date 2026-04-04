@@ -332,71 +332,79 @@ class PostCard extends StatelessWidget {
   Widget _buildAvatar(BuildContext context) {
     return GestureDetector(
       onTap: () => navigateToUserProfile(context, post: post),
-      child: Hero(
-        tag: 'avatar_${post.id}',
-        child: post.avatarUrl != null
-            ? CachedNetworkImage(
-                imageUrl: post.avatarUrl!,
-                httpHeaders: kImageHeaders,
-                fadeInDuration: Duration.zero,
-                memCacheWidth: 80,
-                memCacheHeight: 80,
-                imageBuilder: (context, imageProvider) => CircleAvatar(
-                  radius: 20,
-                  backgroundImage: imageProvider,
-                ),
-                placeholder: (context, url) => const CircleAvatar(
-                  radius: 20,
-                  backgroundColor: Colors.grey,
-                ),
-                errorWidget: (context, url, error) => CircleAvatar(
-                  radius: 20,
-                  child: Text(
-                    post.username.isNotEmpty
-                        ? post.username[0].toUpperCase()
-                        : '?',
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          Hero(
+            tag: 'avatar_${post.id}',
+            child: post.avatarUrl != null
+                ? CachedNetworkImage(
+                    imageUrl: post.avatarUrl!,
+                    httpHeaders: kImageHeaders,
+                    fadeInDuration: Duration.zero,
+                    memCacheWidth: 80,
+                    memCacheHeight: 80,
+                    imageBuilder: (context, imageProvider) => CircleAvatar(
+                      radius: 20,
+                      backgroundImage: imageProvider,
+                    ),
+                    placeholder: (context, url) => const CircleAvatar(
+                      radius: 20,
+                      backgroundColor: Colors.grey,
+                    ),
+                    errorWidget: (context, url, error) => CircleAvatar(
+                      radius: 20,
+                      child: Text(
+                        post.username.isNotEmpty
+                            ? post.username[0].toUpperCase()
+                            : '?',
+                      ),
+                    ),
+                  )
+                : CircleAvatar(
+                    radius: 20,
+                    child: Text(
+                      post.username.isNotEmpty
+                          ? post.username[0].toUpperCase()
+                          : '?',
+                    ),
                   ),
-                ),
-              )
-            : CircleAvatar(
-                radius: 20,
-                child: Text(
-                  post.username.isNotEmpty
-                      ? post.username[0].toUpperCase()
-                      : '?',
-                ),
-              ),
+          ),
+          Positioned(
+            top: -4,
+            left: -6,
+            child: SnsBadge(service: post.source, size: 10),
+          ),
+        ],
       ),
     );
   }
 
-  /// SNSバッジ + 取得元アバター（エンゲージメント行の左端）
+  /// 取得元アバター（エンゲージメント行の左端、固定幅）
   Widget _buildSourceInfo() {
-    final ids = hideUserInfo ? <String>[] : post.fetchedByAccountIds.toList();
+    if (hideUserInfo) return const SizedBox(width: 50);
+
+    final ids = post.fetchedByAccountIds.toList();
+    if (ids.isEmpty) return const SizedBox(width: 50);
 
     return SizedBox(
-      width: 50, // 固定幅
+      width: 50,
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          SnsBadge(service: post.source, size: 12),
-          if (ids.isNotEmpty) ...[
-            const SizedBox(width: 3),
-            if (ids.length <= 2)
-              ...ids.map((id) => Padding(
-                    padding: const EdgeInsets.only(left: 1),
-                    child: _buildViaAvatar(id),
-                  ))
-            else ...[
-              Padding(
-                padding: const EdgeInsets.only(left: 1),
-                child: _buildViaAvatar(ids[0]),
-              ),
-              Text(
-                '+${ids.length - 1}',
-                style: TextStyle(fontSize: 8, color: Colors.grey[500]),
-              ),
-            ],
+          if (ids.length <= 2)
+            ...ids.map((id) => Padding(
+                  padding: const EdgeInsets.only(right: 2),
+                  child: _buildViaAvatar(id),
+                ))
+          else ...[
+            _buildViaAvatar(ids[0]),
+            const SizedBox(width: 2),
+            _buildViaAvatar(ids[1]),
+            Text(
+              '+${ids.length - 2}',
+              style: TextStyle(fontSize: 8, color: Colors.grey[500]),
+            ),
           ],
         ],
       ),
@@ -406,6 +414,7 @@ class PostCard extends StatelessWidget {
   Widget _buildAnonymousNameRow(BuildContext context) {
     return Row(
       children: [
+        SnsBadge(service: post.source, size: 14),
         const Spacer(),
         Text(
           _formatTimestamp(post.timestamp),

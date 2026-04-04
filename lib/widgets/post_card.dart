@@ -110,18 +110,11 @@ class PostCard extends StatelessWidget {
               Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // Left column: Avatar + SNS badge + Via avatars
+                  // Left column: Avatar
                   if (!hideUserInfo) ...[
-                    Column(
-                      children: [
-                        _buildAvatar(context),
-                        const SizedBox(height: 4),
-                        _buildLeftColumnInfo(),
-                      ],
-                    ),
+                    _buildAvatar(context),
                     const SizedBox(width: 10),
                   ] else ...[
-                    // 匿名モード: 左に余白
                     const SizedBox(width: 16),
                   ],
                   // Content column
@@ -186,14 +179,15 @@ class PostCard extends StatelessWidget {
                           ),
                         ],
 
-                        // Engagement row
-                        SizedBox(height: compactEngagement ? 8 : 12),
-                        _buildEngagementRow(context),
                       ],
                     ),
                   ),
                 ],
               ),
+
+              // Engagement row（全幅: 左にSNS+取得元、右にリアクション）
+              SizedBox(height: compactEngagement ? 8 : 12),
+              _buildEngagementRow(context),
             ],
           ),
         ),
@@ -376,20 +370,18 @@ class PostCard extends StatelessWidget {
     );
   }
 
-  /// 左列のSNSバッジ + 取得元アバター（アバターの下に配置）
-  Widget _buildLeftColumnInfo() {
-    final ids = post.fetchedByAccountIds.toList();
-    final hasVia = ids.isNotEmpty;
+  /// SNSバッジ + 取得元アバター（エンゲージメント行の左端）
+  Widget _buildSourceInfo() {
+    final ids = hideUserInfo ? <String>[] : post.fetchedByAccountIds.toList();
 
     return SizedBox(
-      width: 40, // アバター幅に合わせる
+      width: 50, // 固定幅
       child: Row(
-        mainAxisAlignment: MainAxisAlignment.center,
+        mainAxisSize: MainAxisSize.min,
         children: [
           SnsBadge(service: post.source, size: 12),
-          if (hasVia) ...[
-            const SizedBox(width: 2),
-            // 2つまで並べる、3つ以上は1つ+残数
+          if (ids.isNotEmpty) ...[
+            const SizedBox(width: 3),
             if (ids.length <= 2)
               ...ids.map((id) => Padding(
                     padding: const EdgeInsets.only(left: 1),
@@ -414,7 +406,6 @@ class PostCard extends StatelessWidget {
   Widget _buildAnonymousNameRow(BuildContext context) {
     return Row(
       children: [
-        SnsBadge(service: post.source, size: 14),
         const Spacer(),
         Text(
           _formatTimestamp(post.timestamp),
@@ -471,6 +462,8 @@ class PostCard extends StatelessWidget {
 
     return Row(
       children: [
+        // SNSバッジ + 取得元アカウント（左端固定幅）
+        _buildSourceInfo(),
         // Reply
         _EngagementButton(
           icon: Icons.chat_bubble_outline,

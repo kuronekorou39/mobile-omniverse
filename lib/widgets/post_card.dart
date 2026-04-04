@@ -437,6 +437,9 @@ class PostCard extends StatelessWidget {
 
     return Row(
       children: [
+        // 取得元アカウントアバター（固定幅）
+        if (post.fetchedByAccountIds.isNotEmpty)
+          _buildViaAvatars(),
         // Reply
         _EngagementButton(
           icon: Icons.chat_bubble_outline,
@@ -492,22 +495,52 @@ class PostCard extends StatelessWidget {
             child: Icon(Icons.share_outlined, size: iconSize, color: iconColor),
           ),
         ),
-        // 取得元アカウントのアバター一覧
-        if (post.fetchedByAccountIds.isNotEmpty)
-          Padding(
-            padding: const EdgeInsets.only(left: 6),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                for (final id in post.fetchedByAccountIds) ...[
-                  if (id != post.fetchedByAccountIds.first)
-                    const SizedBox(width: 2),
-                  _buildViaAvatar(id),
-                ],
-              ],
+      ],
+    );
+  }
+
+  /// 取得元アカウントアバター（固定幅36px）
+  /// 1-2個: 並べて表示、3個以上: 2個重ねて+N表示
+  Widget _buildViaAvatars() {
+    final ids = post.fetchedByAccountIds.toList();
+    const fixedWidth = 36.0;
+    const radius = 7.0;
+
+    if (ids.length <= 2) {
+      return SizedBox(
+        width: fixedWidth,
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            for (var i = 0; i < ids.length; i++) ...[
+              if (i > 0) const SizedBox(width: 2),
+              _buildViaAvatar(ids[i]),
+            ],
+          ],
+        ),
+      );
+    }
+
+    // 3個以上: 先頭2つを重ねて表示 + 残数
+    return SizedBox(
+      width: fixedWidth,
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          _buildViaAvatar(ids[0]),
+          Positioned(
+            left: 10,
+            child: _buildViaAvatar(ids[1]),
+          ),
+          Positioned(
+            left: 22,
+            child: Text(
+              '+${ids.length - 2}',
+              style: TextStyle(fontSize: 9, color: Colors.grey[500]),
             ),
           ),
-      ],
+        ],
+      ),
     );
   }
 

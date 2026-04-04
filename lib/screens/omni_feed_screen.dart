@@ -439,9 +439,14 @@ class _OmniFeedScreenState extends ConsumerState<OmniFeedScreen>
     'userInfo': ('ユーザー情報', Icons.person_off_outlined, Icons.person_outline),
   };
 
-  List<Widget> _buildAppBarCustomButtons(SettingsState settings) {
+  List<Widget> _buildAppBarLeftButtons(SettingsState settings) {
     final buttons = <Widget>[];
     final notifier = ref.read(settingsProvider.notifier);
+
+    // フェッチタイマー
+    if (settings.isFetchingActive && settings.showFetchTimer) {
+      buttons.add(_buildFetchIndicator(context, settings));
+    }
 
     if (settings.appBarButtons.contains('sensitive')) {
       final isFiltering = !settings.showSensitiveContent;
@@ -449,7 +454,6 @@ class _OmniFeedScreenState extends ConsumerState<OmniFeedScreen>
         icon: Icon(
           isFiltering ? Icons.blur_on : Icons.blur_off,
           size: 20,
-          color: isFiltering ? Theme.of(context).colorScheme.primary : null,
         ),
         tooltip: isFiltering ? 'モザイク: ON' : 'モザイク: OFF',
         onPressed: () => notifier.setShowSensitiveContent(!settings.showSensitiveContent),
@@ -460,9 +464,8 @@ class _OmniFeedScreenState extends ConsumerState<OmniFeedScreen>
       final isHiding = settings.hideUserInfo;
       buttons.add(IconButton(
         icon: Icon(
-          Icons.face_retouching_off,
+          isHiding ? Icons.face_retouching_off : Icons.face_retouching_natural,
           size: 20,
-          color: isHiding ? Theme.of(context).colorScheme.primary : null,
         ),
         tooltip: isHiding ? '匿名モード: ON' : '匿名モード: OFF',
         onPressed: () => notifier.setHideUserInfo(!isHiding),
@@ -584,31 +587,35 @@ class _OmniFeedScreenState extends ConsumerState<OmniFeedScreen>
         SliverAppBar(
           floating: true,
           snap: false,
-          title: const Text(
-            'OmniVerse',
-            style: TextStyle(fontWeight: FontWeight.bold),
+          leadingWidth: 0,
+          leading: const SizedBox.shrink(),
+          titleSpacing: 8,
+          title: Row(
+            children: [
+              // 左側: カスタムボタン群（フェッチタイマー・センシティブ・匿名）
+              ..._buildAppBarLeftButtons(settings),
+              const Spacer(),
+              // 中央: ロゴ
+              const Text(
+                'OmniVerse',
+                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
+              ),
+              const Spacer(),
+              // 右側: オーバーレイ・設定
+              IconButton(
+                icon: const Icon(Icons.picture_in_picture_alt, size: 20),
+                tooltip: 'オーバーレイ',
+                onPressed: () => _launchOverlay(ref.read(feedProvider)),
+                visualDensity: VisualDensity.compact,
+              ),
+              IconButton(
+                icon: const Icon(Icons.settings_outlined, size: 20),
+                tooltip: '設定',
+                onPressed: () => _openSettingsScreen(context),
+                visualDensity: VisualDensity.compact,
+              ),
+            ],
           ),
-          centerTitle: true,
-          leading: (settings.isFetchingActive && settings.showFetchTimer)
-              ? Padding(
-                  padding: const EdgeInsets.only(left: 12),
-                  child: _buildFetchIndicator(context, settings),
-                )
-              : null,
-          actions: [
-            // カスタムAppBarボタン
-            ..._buildAppBarCustomButtons(settings),
-            IconButton(
-              icon: const Icon(Icons.picture_in_picture_alt),
-              tooltip: 'オーバーレイ',
-              onPressed: () => _launchOverlay(ref.read(feedProvider)),
-            ),
-            IconButton(
-              icon: const Icon(Icons.settings_outlined),
-              tooltip: '設定',
-              onPressed: () => _openSettingsScreen(context),
-            ),
-          ],
         ),
         ..._buildSliverBody(
             context, ref.read(feedProvider), settings, accounts, enabledAccountIds),

@@ -115,19 +115,23 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
         children: [
           // ── ヘッダー ──
           const _SectionHeader(title: 'ヘッダー'),
-          SwitchListTile(
+          CheckboxListTile(
+            secondary: const Icon(Icons.timer_outlined, size: 20),
             title: const Text('フェッチタイマー'),
             value: settings.showFetchTimer,
-            onChanged: (value) => notifier.setShowFetchTimer(value),
+            onChanged: (value) => notifier.setShowFetchTimer(value ?? true),
+            dense: true,
           ),
           CheckboxListTile(
-            title: const Text('センシティブ切替ボタン'),
+            secondary: const Icon(Icons.blur_on, size: 20),
+            title: const Text('センシティブ切替'),
             value: settings.appBarButtons.contains('sensitive'),
             onChanged: (_) => notifier.toggleAppBarButton('sensitive'),
             dense: true,
           ),
           CheckboxListTile(
-            title: const Text('匿名モード切替ボタン'),
+            secondary: const Icon(Icons.face_retouching_off, size: 20),
+            title: const Text('匿名モード切替'),
             value: settings.appBarButtons.contains('userInfo'),
             onChanged: (_) => notifier.toggleAppBarButton('userInfo'),
             dense: true,
@@ -193,8 +197,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             title: const Text('センシティブ'),
             trailing: SegmentedButton<bool>(
               segments: const [
-                ButtonSegment(value: true, label: Text('ぼかす')),
-                ButtonSegment(value: false, label: Text('表示')),
+                ButtonSegment(value: true, label: Text('隠す')),
+                ButtonSegment(value: false, label: Text('全て表示')),
               ],
               selected: {!settings.showSensitiveContent},
               onSelectionChanged: (value) =>

@@ -110,12 +110,16 @@ class PostCard extends StatelessWidget {
               Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // Left column: Avatar
                   if (!hideUserInfo) ...[
+                    // 通常モード: アバター + コンテンツ
                     _buildAvatar(context),
                     const SizedBox(width: 10),
                   ] else ...[
-                    const SizedBox(width: 16),
+                    // 匿名モード: 左余白にSNSバッジ
+                    Padding(
+                      padding: const EdgeInsets.only(top: 2, right: 8),
+                      child: SnsBadge(service: post.source, size: 14),
+                    ),
                   ],
                   // Content column
                   Expanded(
@@ -123,11 +127,10 @@ class PostCard extends StatelessWidget {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         // Name / Handle / Timestamp
-                        if (hideUserInfo)
-                          _buildAnonymousNameRow(context)
-                        else
+                        if (!hideUserInfo) ...[
                           _buildNameRow(context),
-                        const SizedBox(height: 4),
+                          const SizedBox(height: 4),
+                        ],
 
                         // Body text, images, video
                         _SensitiveOverlay(
@@ -182,10 +185,19 @@ class PostCard extends StatelessWidget {
                       ],
                     ),
                   ),
+                  // 匿名モード: 右余白にタイムスタンプ
+                  if (hideUserInfo)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 2, left: 8),
+                      child: Text(
+                        _formatTimestamp(post.timestamp),
+                        style: TextStyle(color: Colors.grey[500], fontSize: 12),
+                      ),
+                    ),
                 ],
               ),
 
-              // Engagement row（全幅: 左にSNS+取得元、右にリアクション）
+              // Engagement row
               SizedBox(height: compactEngagement ? 8 : 12),
               _buildEngagementRow(context),
             ],
@@ -408,23 +420,6 @@ class PostCard extends StatelessWidget {
           ],
         ],
       ),
-    );
-  }
-
-  Widget _buildAnonymousNameRow(BuildContext context) {
-    return Row(
-      children: [
-        // SNSバッジをテキスト行頭より左に飛び出して配置
-        Transform.translate(
-          offset: const Offset(-12, 0),
-          child: SnsBadge(service: post.source, size: 14),
-        ),
-        const Spacer(),
-        Text(
-          _formatTimestamp(post.timestamp),
-          style: TextStyle(color: Colors.grey[500], fontSize: 12),
-        ),
-      ],
     );
   }
 

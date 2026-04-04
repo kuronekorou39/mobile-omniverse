@@ -414,7 +414,11 @@ class PostCard extends StatelessWidget {
   Widget _buildAnonymousNameRow(BuildContext context) {
     return Row(
       children: [
-        SnsBadge(service: post.source, size: 14),
+        // SNSバッジをテキスト行頭より左に飛び出して配置
+        Transform.translate(
+          offset: const Offset(-12, 0),
+          child: SnsBadge(service: post.source, size: 14),
+        ),
         const Spacer(),
         Text(
           _formatTimestamp(post.timestamp),

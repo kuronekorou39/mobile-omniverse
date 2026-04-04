@@ -115,10 +115,13 @@ class PostCard extends StatelessWidget {
                     _buildAvatar(context),
                     const SizedBox(width: 10),
                   ] else ...[
-                    // 匿名モード: 左余白にSNSバッジ
+                    // 匿名モード: 左余白にSNSバッジ（半透明）
                     Padding(
                       padding: const EdgeInsets.only(top: 2, right: 8),
-                      child: SnsBadge(service: post.source, size: 14),
+                      child: Opacity(
+                        opacity: 0.5,
+                        child: SnsBadge(service: post.source, size: 14),
+                      ),
                     ),
                   ],
                   // Content column

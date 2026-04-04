@@ -263,9 +263,9 @@ class FeedNotifier extends StateNotifier<FeedState> {
   }
 
   void _onPostsFetched(List<Post> newPosts) {
-    // UIのタッチ/アニメーションより低い優先度で処理
+    // アニメーションフレーム間で処理（idleだと起動直後に実行されない）
     SchedulerBinding.instance.scheduleTask(
-        () => _processNewPosts(newPosts), Priority.idle);
+        () => _processNewPosts(newPosts), Priority.animation);
   }
 
   void _processNewPosts(List<Post> newPosts) {

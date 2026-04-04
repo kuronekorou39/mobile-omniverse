@@ -193,8 +193,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             title: const Text('センシティブ'),
             trailing: SegmentedButton<bool>(
               segments: const [
-                ButtonSegment(value: true, label: Text('フィルター')),
-                ButtonSegment(value: false, label: Text('そのまま')),
+                ButtonSegment(value: true, label: Text('ぼかす')),
+                ButtonSegment(value: false, label: Text('表示')),
               ],
               selected: {!settings.showSensitiveContent},
               onSelectionChanged: (value) =>

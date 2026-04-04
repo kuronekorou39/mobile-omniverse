@@ -457,6 +457,8 @@ class _OmniFeedScreenState extends ConsumerState<OmniFeedScreen>
         ),
         tooltip: isFiltering ? 'モザイク: ON' : 'モザイク: OFF',
         onPressed: () => notifier.setShowSensitiveContent(!settings.showSensitiveContent),
+        constraints: const BoxConstraints(minWidth: 40, minHeight: 40),
+        padding: EdgeInsets.zero,
       ));
     }
 
@@ -469,6 +471,8 @@ class _OmniFeedScreenState extends ConsumerState<OmniFeedScreen>
         ),
         tooltip: isHiding ? '匿名モード: ON' : '匿名モード: OFF',
         onPressed: () => notifier.setHideUserInfo(!isHiding),
+        constraints: const BoxConstraints(minWidth: 40, minHeight: 40),
+        padding: EdgeInsets.zero,
       ));
     }
 
@@ -589,30 +593,33 @@ class _OmniFeedScreenState extends ConsumerState<OmniFeedScreen>
           snap: false,
           leadingWidth: 0,
           leading: const SizedBox.shrink(),
-          titleSpacing: 8,
+          titleSpacing: 16,
           title: Row(
             children: [
               // 左側: カスタムボタン群（フェッチタイマー・センシティブ・匿名）
               ..._buildAppBarLeftButtons(settings),
               const Spacer(),
               // 中央: ロゴ
-              const Text(
-                'OmniVerse',
-                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
+              Image.asset(
+                'assets/logo.png',
+                height: 24,
+                fit: BoxFit.contain,
               ),
               const Spacer(),
-              // 右側: オーバーレイ・設定
+              // 右側: オーバーレイ・設定（左と同じ間隔）
               IconButton(
                 icon: const Icon(Icons.picture_in_picture_alt, size: 20),
                 tooltip: 'オーバーレイ',
                 onPressed: () => _launchOverlay(ref.read(feedProvider)),
-                visualDensity: VisualDensity.compact,
+                constraints: const BoxConstraints(minWidth: 40, minHeight: 40),
+                padding: EdgeInsets.zero,
               ),
               IconButton(
                 icon: const Icon(Icons.settings_outlined, size: 20),
                 tooltip: '設定',
                 onPressed: () => _openSettingsScreen(context),
-                visualDensity: VisualDensity.compact,
+                constraints: const BoxConstraints(minWidth: 40, minHeight: 40),
+                padding: EdgeInsets.zero,
               ),
             ],
           ),
@@ -682,36 +689,46 @@ class _OmniFeedScreenState extends ConsumerState<OmniFeedScreen>
     final total = settings.fetchIntervalSeconds;
     final remaining = _remainingSeconds.clamp(0, total);
     final progress = total > 0 ? remaining / total : 0.0;
+    final pendingCount = ref.read(feedProvider).pendingCount;
+    final showPending = pendingCount > 0 &&
+        pendingCount <= ref.read(feedProvider.notifier).dripThreshold;
 
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        SizedBox(
-          width: 18,
-          height: 18,
-            child: remaining == 0
-                ? const CircularProgressIndicator(strokeWidth: 2)
-                : CircularProgressIndicator(
-                    value: progress.toDouble(),
-                    strokeWidth: 2,
-                    backgroundColor:
-                        Theme.of(context).colorScheme.surfaceContainerHighest,
+    // 固定幅でレイアウトのずれを防止
+    return SizedBox(
+      width: 40,
+      height: 40,
+      child: Center(
+        child: Stack(
+          alignment: Alignment.center,
+          children: [
+            SizedBox(
+              width: 20,
+              height: 20,
+              child: remaining == 0
+                  ? const CircularProgressIndicator(strokeWidth: 2)
+                  : CircularProgressIndicator(
+                      value: progress.toDouble(),
+                      strokeWidth: 2,
+                      backgroundColor:
+                          Theme.of(context).colorScheme.surfaceContainerHighest,
+                    ),
+            ),
+            if (showPending)
+              Positioned(
+                right: 2,
+                top: 4,
+                child: Text(
+                  '+$pendingCount',
+                  style: TextStyle(
+                    fontSize: 9,
+                    color: Theme.of(context).colorScheme.primary,
+                    fontWeight: FontWeight.bold,
                   ),
-          ),
-          if (ref.read(feedProvider).pendingCount > 0 &&
-              ref.read(feedProvider).pendingCount <= ref.read(feedProvider.notifier).dripThreshold)
-            Padding(
-              padding: const EdgeInsets.only(left: 4),
-              child: Text(
-                '+${ref.read(feedProvider).pendingCount}',
-                style: TextStyle(
-                  fontSize: 11,
-                  color: Theme.of(context).colorScheme.primary,
-                  fontWeight: FontWeight.bold,
                 ),
               ),
-            ),
-        ],
+          ],
+        ),
+      ),
     );
   }
 

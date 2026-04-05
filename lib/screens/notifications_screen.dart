@@ -18,6 +18,127 @@ import '../widgets/sns_badge.dart';
 import 'post_detail_screen.dart';
 import 'user_profile_screen.dart';
 
+// ─── 通知タイプの共通定義 ───
+
+const _typeOrder = [
+  NotificationType.like,
+  NotificationType.repost,
+  NotificationType.reply,
+  NotificationType.mention,
+  NotificationType.quote,
+  NotificationType.follow,
+  NotificationType.unknown,
+];
+
+IconData _typeIcon(NotificationType type) => switch (type) {
+      NotificationType.like => Icons.favorite,
+      NotificationType.repost => Icons.repeat,
+      NotificationType.reply => Icons.reply,
+      NotificationType.mention => Icons.alternate_email,
+      NotificationType.quote => Icons.format_quote,
+      NotificationType.follow => Icons.person_add,
+      NotificationType.unknown => Icons.notifications,
+    };
+
+Color _typeColor(NotificationType type) => switch (type) {
+      NotificationType.like => Colors.pink,
+      NotificationType.repost => Colors.green,
+      NotificationType.reply => Colors.blue,
+      NotificationType.follow => Colors.purple,
+      NotificationType.mention => Colors.orange,
+      NotificationType.quote => Colors.teal,
+      NotificationType.unknown => Colors.grey,
+    };
+
+String _typeLabel(NotificationType type) => switch (type) {
+      NotificationType.like => 'いいね',
+      NotificationType.repost => 'リポスト',
+      NotificationType.reply => 'リプライ',
+      NotificationType.mention => 'メンション',
+      NotificationType.quote => '引用',
+      NotificationType.follow => 'フォロー',
+      NotificationType.unknown => 'その他',
+    };
+
+/// 通知タイプフィルタ行（共通ウィジェット）
+/// [hiddenTypes] に含まれるタイプは非表示。空=全表示。
+class _NotificationTypeFilter extends StatelessWidget {
+  const _NotificationTypeFilter({
+    required this.availableTypes,
+    required this.hiddenTypes,
+    required this.onToggle,
+    required this.onToggleAll,
+  });
+
+  final List<NotificationType> availableTypes;
+  final Set<NotificationType> hiddenTypes;
+  final void Function(NotificationType type) onToggle;
+  final void Function(bool showAll) onToggleAll;
+
+  @override
+  Widget build(BuildContext context) {
+    if (availableTypes.length <= 1) return const SizedBox.shrink();
+
+    final allVisible = hiddenTypes.isEmpty;
+
+    return SizedBox(
+      height: 44,
+      child: Row(
+        children: [
+          // 全ON/OFF ボタン
+          Padding(
+            padding: const EdgeInsets.only(left: 8),
+            child: InkWell(
+              onTap: () => onToggleAll(!allVisible),
+              borderRadius: BorderRadius.circular(12),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+                child: Icon(
+                  allVisible ? Icons.visibility : Icons.visibility_off,
+                  size: 18,
+                  color: allVisible ? Theme.of(context).colorScheme.primary : Colors.grey[400],
+                ),
+              ),
+            ),
+          ),
+          Container(
+            width: 1, height: 20, color: Colors.grey.withValues(alpha: 0.2),
+            margin: const EdgeInsets.symmetric(horizontal: 4),
+          ),
+          // タイプ別アイコン
+          Expanded(
+            child: ListView(
+              scrollDirection: Axis.horizontal,
+              padding: const EdgeInsets.symmetric(horizontal: 4),
+              children: availableTypes.map((type) {
+                final isVisible = !hiddenTypes.contains(type);
+                return Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 4),
+                  child: InkWell(
+                    onTap: () => onToggle(type),
+                    borderRadius: BorderRadius.circular(12),
+                    child: Tooltip(
+                      message: _typeLabel(type),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 8),
+                        child: Icon(
+                          _typeIcon(type),
+                          size: 20,
+                          color: isVisible ? _typeColor(type) : Colors.grey[400]?.withValues(alpha: 0.4),
+                        ),
+                      ),
+                    ),
+                  ),
+                );
+              }).toList(),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class NotificationsScreen extends ConsumerStatefulWidget {
   const NotificationsScreen({super.key});
 
@@ -147,48 +268,18 @@ class _NotificationListState extends ConsumerState<_NotificationList>
   bool _isLoadingMore = false;
   bool _isFetching = false;
 
-  /// フィルタ: 表示するタイプ（空 = 全表示）
-  final Set<NotificationType> _activeFilters = {};
+  /// フィルタ: 非表示にするタイプ（空 = 全表示）
+  final Set<NotificationType> _hiddenTypes = {};
 
   List<NotificationItem> get _filteredNotifications {
-    if (_activeFilters.isEmpty) return _notifications;
-    return _notifications.where((n) => _activeFilters.contains(n.type)).toList();
+    if (_hiddenTypes.isEmpty) return _notifications;
+    return _notifications.where((n) => !_hiddenTypes.contains(n.type)).toList();
   }
 
-  /// 通知リストに含まれるタイプ一覧（表示順固定）
   List<NotificationType> get _availableTypes {
-    const order = [
-      NotificationType.like,
-      NotificationType.repost,
-      NotificationType.reply,
-      NotificationType.mention,
-      NotificationType.quote,
-      NotificationType.follow,
-      NotificationType.unknown,
-    ];
     final present = _notifications.map((n) => n.type).toSet();
-    return order.where((t) => present.contains(t)).toList();
+    return _typeOrder.where((t) => present.contains(t)).toList();
   }
-
-  String _typeLabel(NotificationType type) => switch (type) {
-        NotificationType.like => 'いいね',
-        NotificationType.repost => 'リポスト',
-        NotificationType.reply => 'リプライ',
-        NotificationType.mention => 'メンション',
-        NotificationType.quote => '引用',
-        NotificationType.follow => 'フォロー',
-        NotificationType.unknown => 'その他',
-      };
-
-  IconData _typeIcon(NotificationType type) => switch (type) {
-        NotificationType.like => Icons.favorite,
-        NotificationType.repost => Icons.repeat,
-        NotificationType.reply => Icons.reply,
-        NotificationType.mention => Icons.alternate_email,
-        NotificationType.quote => Icons.format_quote,
-        NotificationType.follow => Icons.person_add,
-        NotificationType.unknown => Icons.notifications,
-      };
 
   @override
   bool get wantKeepAlive => true;
@@ -402,43 +493,28 @@ class _NotificationListState extends ConsumerState<_NotificationList>
 
     final types = _availableTypes;
     final filtered = _filteredNotifications;
-    final isFiltered = _activeFilters.isNotEmpty;
+    final isFiltered = _hiddenTypes.isNotEmpty;
 
     return Column(
       children: [
-        // フィルタチップ
-        if (types.length > 1)
-          SizedBox(
-            height: 48,
-            child: ListView(
-              scrollDirection: Axis.horizontal,
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-              children: types.map((type) {
-                final isActive = _activeFilters.contains(type);
-                return Padding(
-                  padding: const EdgeInsets.only(right: 6),
-                  child: FilterChip(
-                    label: Icon(_typeIcon(type), size: 16),
-                    selected: isActive,
-                    onSelected: (_) {
-                      setState(() {
-                        if (isActive) {
-                          _activeFilters.remove(type);
-                        } else {
-                          _activeFilters.add(type);
-                        }
-                      });
-                    },
-                    tooltip: _typeLabel(type),
-                    visualDensity: VisualDensity.compact,
-                    materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                    padding: const EdgeInsets.symmetric(horizontal: 4),
-                    labelPadding: EdgeInsets.zero,
-                  ),
-                );
-              }).toList(),
-            ),
-          ),
+        _NotificationTypeFilter(
+          availableTypes: types,
+          hiddenTypes: _hiddenTypes,
+          onToggle: (type) => setState(() {
+            if (_hiddenTypes.contains(type)) {
+              _hiddenTypes.remove(type);
+            } else {
+              _hiddenTypes.add(type);
+            }
+          }),
+          onToggleAll: (showAll) => setState(() {
+            if (showAll) {
+              _hiddenTypes.clear();
+            } else {
+              _hiddenTypes.addAll(types);
+            }
+          }),
+        ),
 
         // 通知リスト
         Expanded(
@@ -722,8 +798,7 @@ class _UnifiedNotificationListState
   bool _isFetching = false;
   List<NotificationItem> _allNotifications = [];
 
-  final Set<NotificationType> _activeTypeFilters = {};
-  final Set<String> _activeAccountFilters = {};
+  final Set<NotificationType> _hiddenTypes = {};
 
   final _cacheService = NotificationCacheService.instance;
 
@@ -731,50 +806,14 @@ class _UnifiedNotificationListState
   bool get wantKeepAlive => true;
 
   List<NotificationItem> get _filteredNotifications {
-    var list = _allNotifications;
-    if (_activeTypeFilters.isNotEmpty) {
-      list = list.where((n) => _activeTypeFilters.contains(n.type)).toList();
-    }
-    if (_activeAccountFilters.isNotEmpty) {
-      list = list.where((n) =>
-          n.accountId != null && _activeAccountFilters.contains(n.accountId)).toList();
-    }
-    return list;
+    if (_hiddenTypes.isEmpty) return _allNotifications;
+    return _allNotifications.where((n) => !_hiddenTypes.contains(n.type)).toList();
   }
 
   List<NotificationType> get _availableTypes {
-    const order = [
-      NotificationType.like,
-      NotificationType.repost,
-      NotificationType.reply,
-      NotificationType.mention,
-      NotificationType.quote,
-      NotificationType.follow,
-      NotificationType.unknown,
-    ];
     final present = _allNotifications.map((n) => n.type).toSet();
-    return order.where((t) => present.contains(t)).toList();
+    return _typeOrder.where((t) => present.contains(t)).toList();
   }
-
-  String _typeLabel(NotificationType type) => switch (type) {
-        NotificationType.like => 'いいね',
-        NotificationType.repost => 'リポスト',
-        NotificationType.reply => 'リプライ',
-        NotificationType.mention => 'メンション',
-        NotificationType.quote => '引用',
-        NotificationType.follow => 'フォロー',
-        NotificationType.unknown => 'その他',
-      };
-
-  IconData _typeIcon(NotificationType type) => switch (type) {
-        NotificationType.like => Icons.favorite,
-        NotificationType.repost => Icons.repeat,
-        NotificationType.reply => Icons.reply,
-        NotificationType.mention => Icons.alternate_email,
-        NotificationType.quote => Icons.format_quote,
-        NotificationType.follow => Icons.person_add,
-        NotificationType.unknown => Icons.notifications,
-      };
 
   @override
   void initState() {
@@ -864,87 +903,24 @@ class _UnifiedNotificationListState
 
     return Column(
       children: [
-        // フィルタ行
-        SizedBox(
-          height: 48,
-          child: ListView(
-            scrollDirection: Axis.horizontal,
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-            children: [
-              // タイプフィルタ
-              ...types.map((type) {
-                final isActive = _activeTypeFilters.contains(type);
-                return Padding(
-                  padding: const EdgeInsets.only(right: 6),
-                  child: FilterChip(
-                    label: Icon(_typeIcon(type), size: 16),
-                    selected: isActive,
-                    onSelected: (_) {
-                      setState(() {
-                        if (isActive) {
-                          _activeTypeFilters.remove(type);
-                        } else {
-                          _activeTypeFilters.add(type);
-                        }
-                      });
-                    },
-                    tooltip: _typeLabel(type),
-                    visualDensity: VisualDensity.compact,
-                    materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                    padding: const EdgeInsets.symmetric(horizontal: 4),
-                    labelPadding: EdgeInsets.zero,
-                  ),
-                );
-              }),
-              // 区切り
-              if (widget.accounts.length > 1) ...[
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 4),
-                  child: Container(
-                    width: 1,
-                    height: 24,
-                    color: Colors.grey.withValues(alpha: 0.3),
-                  ),
-                ),
-                // アカウントフィルタ
-                ...widget.accounts.map((account) {
-                  final isActive = _activeAccountFilters.contains(account.id);
-                  return Padding(
-                    padding: const EdgeInsets.only(right: 6),
-                    child: FilterChip(
-                      label: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          SnsBadge(service: account.service, size: 10),
-                          const SizedBox(width: 4),
-                          Text(
-                            account.displayName.length > 6
-                                ? '${account.displayName.substring(0, 6)}…'
-                                : account.displayName,
-                            style: const TextStyle(fontSize: 11),
-                          ),
-                        ],
-                      ),
-                      selected: isActive,
-                      onSelected: (_) {
-                        setState(() {
-                          if (isActive) {
-                            _activeAccountFilters.remove(account.id);
-                          } else {
-                            _activeAccountFilters.add(account.id);
-                          }
-                        });
-                      },
-                      visualDensity: VisualDensity.compact,
-                      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                    ),
-                  );
-                }),
-              ],
-            ],
-          ),
+        _NotificationTypeFilter(
+          availableTypes: types,
+          hiddenTypes: _hiddenTypes,
+          onToggle: (type) => setState(() {
+            if (_hiddenTypes.contains(type)) {
+              _hiddenTypes.remove(type);
+            } else {
+              _hiddenTypes.add(type);
+            }
+          }),
+          onToggleAll: (showAll) => setState(() {
+            if (showAll) {
+              _hiddenTypes.clear();
+            } else {
+              _hiddenTypes.addAll(types);
+            }
+          }),
         ),
-        // 通知リスト
         Expanded(
           child: RefreshIndicator(
             onRefresh: _fetchAll,

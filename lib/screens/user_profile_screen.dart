@@ -12,8 +12,10 @@ import '../services/bluesky_api_service.dart';
 import '../services/x_api_service.dart';
 import '../utils/image_headers.dart';
 import '../providers/settings_provider.dart';
+import '../widgets/account_picker_modal.dart';
 import '../widgets/post_card.dart';
 import '../widgets/sns_badge.dart';
+import 'compose_screen.dart';
 import 'post_detail_screen.dart';
 
 class UserProfileScreen extends ConsumerStatefulWidget {
@@ -431,6 +433,20 @@ class _UserProfileScreenState extends ConsumerState<UserProfileScreen>
               },
               onLike: () => _handleLike(post),
               onRepost: () => _handleRepost(post),
+              onQuoteRepost: () async {
+                await Navigator.of(context).push<bool>(
+                  MaterialPageRoute(
+                    builder: (_) => ComposeScreen(quotedPost: post),
+                  ),
+                );
+              },
+              onReply: () async {
+                await Navigator.of(context).push<bool>(
+                  MaterialPageRoute(
+                    builder: (_) => ComposeScreen(inReplyToPost: post),
+                  ),
+                );
+              },
             );
           },
         ),
@@ -454,8 +470,17 @@ class _UserProfileScreenState extends ConsumerState<UserProfileScreen>
     });
   }
 
+  Future<Account?> _resolveAccount(Post post, String actionLabel) async {
+    return showAccountPickerModal(
+      context,
+      service: post.source,
+      actionLabel: actionLabel,
+      fetchedByAccountId: post.accountId,
+    );
+  }
+
   Future<void> _handleLike(Post post) async {
-    final account = _account;
+    final account = await _resolveAccount(post, 'いいね');
     if (account == null) return;
 
     final wasLiked = post.isLiked;
@@ -530,7 +555,7 @@ class _UserProfileScreenState extends ConsumerState<UserProfileScreen>
   }
 
   Future<void> _handleRepost(Post post) async {
-    final account = _account;
+    final account = await _resolveAccount(post, 'リポスト');
     if (account == null) return;
 
     final wasReposted = post.isReposted;

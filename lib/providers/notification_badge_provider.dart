@@ -10,18 +10,25 @@ import '../services/notification_cache_service.dart';
 import '../services/x_api_service.dart';
 
 final notificationBadgeProvider =
-    StateNotifierProvider<NotificationBadgeNotifier, bool>(
+    StateNotifierProvider<NotificationBadgeNotifier, Set<String>>(
   (ref) => NotificationBadgeNotifier(),
 );
 
 /// 通知バッジ（未読ドット）の管理 + バックグラウンド通知フェッチ
-class NotificationBadgeNotifier extends StateNotifier<bool> {
-  NotificationBadgeNotifier() : super(false);
+/// state = 新着通知があるアカウントIDの集合
+class NotificationBadgeNotifier extends StateNotifier<Set<String>> {
+  NotificationBadgeNotifier() : super({});
 
   int _fetchCycleCount = 0;
   static const _checkEveryNCycles = 3; // 3回に1回チェック
   static const _prefsPrefix = 'notif_last_seen_';
   final _cache = NotificationCacheService.instance;
+
+  /// 全体で未読があるかどうか（home_screen のバッジ用）
+  bool get hasUnread => state.isNotEmpty;
+
+  /// 特定アカウントに未読があるか
+  bool hasUnreadFor(String accountId) => state.contains(accountId);
 
   /// スケジューラのフェッチサイクルごとに呼ばれる
   /// N回に1回だけ実際の通知チェック+フェッチを行う
@@ -39,7 +46,7 @@ class NotificationBadgeNotifier extends StateNotifier<bool> {
     if (accounts.isEmpty) return;
 
     final prefs = await SharedPreferences.getInstance();
-    bool hasNew = false;
+    final newUnread = <String>{...state};
 
     for (final account in accounts) {
       try {
@@ -69,7 +76,7 @@ class NotificationBadgeNotifier extends StateNotifier<bool> {
         if (fetched.isNotEmpty) {
           final lastSeen = prefs.getString('$_prefsPrefix${account.id}');
           if (lastSeen != fetched.first.id) {
-            hasNew = true;
+            newUnread.add(account.id);
           }
         }
       } catch (e) {
@@ -77,12 +84,12 @@ class NotificationBadgeNotifier extends StateNotifier<bool> {
       }
     }
 
-    if (hasNew && !state) state = true;
+    if (newUnread != state) state = newUnread;
   }
 
   /// 通知画面を開いたとき、バッジを消して既読マーク
   Future<void> markSeen() async {
-    state = false;
+    state = {};
 
     final accounts = AccountStorageService.instance.accounts
         .where((a) => a.isEnabled)

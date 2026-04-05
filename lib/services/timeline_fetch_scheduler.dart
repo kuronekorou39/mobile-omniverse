@@ -31,9 +31,9 @@ class TimelineFetchScheduler {
   /// フェッチ開始時のコールバック
   void Function()? onFetchStart;
 
-  /// TL 取得完了時のログコールバック (accountHandle, platform, success, postCount)
-  void Function(String accountHandle, SnsService platform, bool success,
-      int postCount, String? error)? onFetchLog;
+  /// TL 取得完了時のログコールバック (accountId, accountHandle, platform, success, postCount)
+  void Function(String accountId, String accountHandle, SnsService platform,
+      bool success, int postCount, String? error)? onFetchLog;
 
   /// フェッチサイクル完了時のコールバック（通知バッジチェック等）
   void Function()? onCycleComplete;
@@ -139,11 +139,11 @@ class TimelineFetchScheduler {
           posts = await _fetchX(account);
       }
       onFetchLog?.call(
-          account.handle, account.service, true, posts.length, null);
+          account.id, account.handle, account.service, true, posts.length, null);
       return posts;
     } catch (e) {
       debugPrint('[Scheduler] Error fetching for ${account.handle}: $e');
-      onFetchLog?.call(account.handle, account.service, false, 0, '$e');
+      onFetchLog?.call(account.id, account.handle, account.service, false, 0, '$e');
       return [];
     }
   }

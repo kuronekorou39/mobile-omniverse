@@ -42,6 +42,24 @@ class AccountNotifier extends StateNotifier<List<Account>> {
     state = _storage.accounts;
   }
 
+  Future<void> enableAll() async {
+    for (final account in _storage.accounts) {
+      if (!account.isEnabled) {
+        await _storage.updateAccount(account.copyWith(isEnabled: true));
+      }
+    }
+    state = _storage.accounts;
+  }
+
+  Future<void> disableAll() async {
+    for (final account in _storage.accounts) {
+      if (account.isEnabled) {
+        await _storage.updateAccount(account.copyWith(isEnabled: false));
+      }
+    }
+    state = _storage.accounts;
+  }
+
   List<Account> accountsForService(SnsService service) {
     return state.where((a) => a.service == service).toList();
   }

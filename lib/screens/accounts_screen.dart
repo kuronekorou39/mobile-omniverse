@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/account.dart';
 import '../models/sns_service.dart';
 import '../providers/account_provider.dart';
+import '../providers/fetch_status_provider.dart';
 import '../providers/settings_provider.dart';
 import '../services/timeline_fetch_scheduler.dart';
 import '../widgets/sns_badge.dart';
@@ -54,11 +55,35 @@ class AccountsScreen extends ConsumerWidget {
                 const SizedBox(height: 16),
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                  child: Text(
-                    'アカウント',
-                    style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                          fontWeight: FontWeight.bold,
+                  child: Row(
+                    children: [
+                      Text(
+                        'アカウント',
+                        style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                              fontWeight: FontWeight.bold,
+                            ),
+                      ),
+                      const Spacer(),
+                      TextButton(
+                        onPressed: () => ref.read(accountProvider.notifier).enableAll(),
+                        style: TextButton.styleFrom(
+                          minimumSize: Size.zero,
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                         ),
+                        child: const Text('全ON'),
+                      ),
+                      const SizedBox(width: 4),
+                      TextButton(
+                        onPressed: () => ref.read(accountProvider.notifier).disableAll(),
+                        style: TextButton.styleFrom(
+                          minimumSize: Size.zero,
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                        ),
+                        child: const Text('全OFF'),
+                      ),
+                    ],
                   ),
                 ),
                 const SizedBox(height: 4),
@@ -148,19 +173,59 @@ class _AccountTile extends ConsumerWidget {
 
   final Account account;
 
+  static Color _healthColor(AccountHealth health) {
+    switch (health) {
+      case AccountHealth.good:
+        return Colors.green;
+      case AccountHealth.warning:
+        return Colors.orange;
+      case AccountHealth.error:
+        return Colors.red;
+      case AccountHealth.unknown:
+        return Colors.grey;
+    }
+  }
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final fetchStatus = ref.watch(fetchStatusProvider);
+    final status = fetchStatus[account.id];
+    final health = account.isEnabled
+        ? (status?.health ?? AccountHealth.unknown)
+        : AccountHealth.unknown;
+
     return ListTile(
-      leading: CircleAvatar(
-        backgroundImage:
-            account.avatarUrl != null ? NetworkImage(account.avatarUrl!) : null,
-        child: account.avatarUrl == null
-            ? Text(
-                account.displayName.isNotEmpty
-                    ? account.displayName[0].toUpperCase()
-                    : '?',
-              )
-            : null,
+      leading: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          CircleAvatar(
+            backgroundImage:
+                account.avatarUrl != null ? NetworkImage(account.avatarUrl!) : null,
+            child: account.avatarUrl == null
+                ? Text(
+                    account.displayName.isNotEmpty
+                        ? account.displayName[0].toUpperCase()
+                        : '?',
+                  )
+                : null,
+          ),
+          Positioned(
+            left: -2,
+            bottom: -2,
+            child: Container(
+              width: 12,
+              height: 12,
+              decoration: BoxDecoration(
+                color: _healthColor(health),
+                shape: BoxShape.circle,
+                border: Border.all(
+                  color: Theme.of(context).scaffoldBackgroundColor,
+                  width: 2,
+                ),
+              ),
+            ),
+          ),
+        ],
       ),
       title: Row(
         children: [

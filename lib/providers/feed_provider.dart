@@ -11,6 +11,7 @@ import '../models/activity_log.dart';
 import '../models/post.dart';
 import '../models/sns_service.dart';
 import '../providers/activity_log_provider.dart';
+import '../providers/fetch_status_provider.dart';
 import '../providers/settings_provider.dart';
 import '../services/timeline_cache_service.dart';
 import '../services/timeline_fetch_scheduler.dart';
@@ -63,7 +64,7 @@ class FeedNotifier extends StateNotifier<FeedState> {
     super.state = value;
   }
 
-  FeedNotifier(this._logNotifier, this._settingsReader) : super(const FeedState()) {
+  FeedNotifier(this._logNotifier, this._settingsReader, this._fetchStatusNotifier) : super(const FeedState()) {
     TimelineFetchScheduler.instance.onPostsFetched = _onPostsFetched;
     TimelineFetchScheduler.instance.onFetchStart = _onFetchStart;
     TimelineFetchScheduler.instance.onFetchLog = _onFetchLog;
@@ -165,6 +166,7 @@ class FeedNotifier extends StateNotifier<FeedState> {
   }
 
   void _onTokenExpired(String accountId, String handle) {
+    _fetchStatusNotifier?.setExpired(accountId);
     onTokenExpired?.call(accountId, handle);
   }
 
@@ -195,9 +197,10 @@ class FeedNotifier extends StateNotifier<FeedState> {
   }
 
   final ActivityLogNotifier? _logNotifier;
+  final FetchStatusNotifier? _fetchStatusNotifier;
 
-  void _onFetchLog(String accountHandle, SnsService platform, bool success,
-      int postCount, String? error) {
+  void _onFetchLog(String accountId, String accountHandle, SnsService platform,
+      bool success, int postCount, String? error) {
     _logNotifier?.logAction(
       action: ActivityAction.timelineFetch,
       platform: platform,
@@ -206,6 +209,7 @@ class FeedNotifier extends StateNotifier<FeedState> {
       targetSummary: success ? '$postCount 件取得' : null,
       errorMessage: error,
     );
+    _fetchStatusNotifier?.update(accountId, success);
   }
 
   /// 投稿リストの変更フラグ（trueなら次の同期でフルデータを送信）
@@ -686,6 +690,7 @@ class FeedNotifier extends StateNotifier<FeedState> {
 final feedProvider = StateNotifierProvider<FeedNotifier, FeedState>(
   (ref) {
     final logNotifier = ref.read(activityLogProvider.notifier);
-    return FeedNotifier(logNotifier, () => ref.read(settingsProvider));
+    final fetchStatusNotifier = ref.read(fetchStatusProvider.notifier);
+    return FeedNotifier(logNotifier, () => ref.read(settingsProvider), fetchStatusNotifier);
   },
 );

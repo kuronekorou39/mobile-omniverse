@@ -693,40 +693,41 @@ class _OmniFeedScreenState extends ConsumerState<OmniFeedScreen>
     final showPending = pendingCount > 0 &&
         pendingCount <= ref.read(feedProvider.notifier).dripThreshold;
 
-    // 固定幅でレイアウトのずれを防止
-    return SizedBox(
-      width: 40,
-      height: 40,
+    // IconButtonと同じconstraints/paddingで間隔を統一
+    return ConstrainedBox(
+      constraints: const BoxConstraints(minWidth: 40, minHeight: 40),
       child: Center(
-        child: Stack(
-          alignment: Alignment.center,
-          children: [
-            SizedBox(
-              width: 20,
-              height: 20,
-              child: remaining == 0
-                  ? const CircularProgressIndicator(strokeWidth: 2)
-                  : CircularProgressIndicator(
-                      value: progress.toDouble(),
-                      strokeWidth: 2,
-                      backgroundColor:
-                          Theme.of(context).colorScheme.surfaceContainerHighest,
+        child: SizedBox(
+          width: 24,
+          height: 24,
+          child: Stack(
+            alignment: Alignment.center,
+            children: [
+              SizedBox(
+                width: 20,
+                height: 20,
+                child: remaining == 0
+                    ? const CircularProgressIndicator(strokeWidth: 2)
+                    : CircularProgressIndicator(
+                        value: progress.toDouble(),
+                        strokeWidth: 2,
+                        backgroundColor:
+                            Theme.of(context).colorScheme.surfaceContainerHighest,
+                      ),
+              ),
+              if (showPending)
+                Center(
+                  child: Text(
+                    '+$pendingCount',
+                    style: TextStyle(
+                      fontSize: 9,
+                      color: Theme.of(context).colorScheme.primary,
+                      fontWeight: FontWeight.bold,
                     ),
-            ),
-            if (showPending)
-              Positioned(
-                right: 2,
-                top: 4,
-                child: Text(
-                  '+$pendingCount',
-                  style: TextStyle(
-                    fontSize: 9,
-                    color: Theme.of(context).colorScheme.primary,
-                    fontWeight: FontWeight.bold,
                   ),
                 ),
-              ),
-          ],
+            ],
+          ),
         ),
       ),
     );

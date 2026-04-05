@@ -21,7 +21,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final hasUnread = ref.watch(notificationBadgeProvider);
+    final hasUnread = ref.watch(notificationBadgeProvider).isNotEmpty;
 
     return Scaffold(
       body: IndexedStack(

@@ -9,6 +9,7 @@ import '../models/post.dart';
 import '../models/sns_service.dart';
 import '../providers/account_provider.dart';
 import '../providers/activity_log_provider.dart';
+import '../providers/notification_badge_provider.dart';
 import '../services/account_storage_service.dart';
 import '../services/bluesky_api_service.dart';
 import '../services/notification_cache_service.dart';
@@ -52,6 +53,8 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen>
       _tabController = TabController(length: accounts.length, vsync: this);
     }
 
+    final unreadAccountIds = ref.watch(notificationBadgeProvider);
+
     return Scaffold(
       appBar: AppBar(
         title: const Text('通知'),
@@ -60,6 +63,7 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen>
                 controller: _tabController,
                 isScrollable: accounts.length > 3,
                 tabs: accounts.map((a) {
+                  final hasNew = unreadAccountIds.contains(a.id);
                   return Tab(
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
@@ -72,6 +76,17 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen>
                             overflow: TextOverflow.ellipsis,
                           ),
                         ),
+                        if (hasNew) ...[
+                          const SizedBox(width: 6),
+                          Container(
+                            width: 8,
+                            height: 8,
+                            decoration: BoxDecoration(
+                              color: Theme.of(context).colorScheme.primary,
+                              shape: BoxShape.circle,
+                            ),
+                          ),
+                        ],
                       ],
                     ),
                   );
@@ -356,8 +371,7 @@ class _NotificationListState extends ConsumerState<_NotificationList>
                 return Padding(
                   padding: const EdgeInsets.only(right: 6),
                   child: FilterChip(
-                    avatar: Icon(_typeIcon(type), size: 16),
-                    label: Text(_typeLabel(type), style: const TextStyle(fontSize: 12)),
+                    label: Icon(_typeIcon(type), size: 16),
                     selected: isActive,
                     onSelected: (_) {
                       setState(() {
@@ -368,8 +382,11 @@ class _NotificationListState extends ConsumerState<_NotificationList>
                         }
                       });
                     },
+                    tooltip: _typeLabel(type),
                     visualDensity: VisualDensity.compact,
                     materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    padding: const EdgeInsets.symmetric(horizontal: 4),
+                    labelPadding: EdgeInsets.zero,
                   ),
                 );
               }).toList(),

@@ -603,10 +603,11 @@ class _NotificationTile extends StatelessWidget {
       return;
     }
 
-    // ローディング表示
+    // ローディング表示（ルートNavigatorで表示）
     showDialog(
       context: context,
       barrierDismissible: false,
+      useRootNavigator: true,
       builder: (_) => const Center(child: CircularProgressIndicator()),
     );
 
@@ -627,7 +628,7 @@ class _NotificationTile extends StatelessWidget {
       }
 
       if (!context.mounted) return;
-      Navigator.of(context).pop(); // ローディングを閉じる
+      Navigator.of(context, rootNavigator: true).pop(); // ローディングを閉じる
 
       if (posts.isNotEmpty) {
         Navigator.of(context).push(
@@ -642,7 +643,7 @@ class _NotificationTile extends StatelessWidget {
       }
     } catch (e) {
       if (!context.mounted) return;
-      Navigator.of(context).pop(); // ローディングを閉じる
+      Navigator.of(context, rootNavigator: true).pop(); // ローディングを閉じる
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('投稿の読み込みに失敗しました: $e')),
       );

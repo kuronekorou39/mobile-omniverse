@@ -76,6 +76,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         onTimelineTap?.call();
       }
     } else {
+      // 切替元のタブをルートに戻す
+      _navigatorKeys[_currentIndex].currentState?.popUntil((route) => route.isFirst);
+
       if (index == 2 && _currentIndex != 2) {
         ref.read(notificationBadgeProvider.notifier).markSeen();
       }

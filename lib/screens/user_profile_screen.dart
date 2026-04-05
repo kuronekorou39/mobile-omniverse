@@ -824,10 +824,11 @@ Future<void> _fetchThenNavigate(BuildContext context, Post post) async {
     return;
   }
 
-  // ローディング表示
+  // ローディング表示（ルートNavigatorで表示）
   showDialog(
     context: context,
     barrierDismissible: false,
+    useRootNavigator: true,
     builder: (_) => const Center(child: CircularProgressIndicator()),
   );
 
@@ -846,7 +847,7 @@ Future<void> _fetchThenNavigate(BuildContext context, Post post) async {
     }
 
     if (!context.mounted) return;
-    Navigator.of(context).pop(); // ローディングを閉じる
+    Navigator.of(context, rootNavigator: true).pop(); // ローディングを閉じる
 
     // 取得した投稿からユーザー情報を取り出す
     final found = fetched.where((p) => p.id == post.id).firstOrNull;
@@ -859,7 +860,7 @@ Future<void> _fetchThenNavigate(BuildContext context, Post post) async {
     }
   } catch (e) {
     if (!context.mounted) return;
-    Navigator.of(context).pop(); // ローディングを閉じる
+    Navigator.of(context, rootNavigator: true).pop(); // ローディングを閉じる
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text('取得失敗: $e')),
     );

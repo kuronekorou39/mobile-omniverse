@@ -280,10 +280,22 @@ class _NotificationListState extends ConsumerState<_NotificationList>
       );
 
       if (!mounted) return;
-      setState(() {
-        _error = '$e';
-        _isLoading = false;
-      });
+
+      // キャッシュデータがあればエラーを表示せず既存データを維持
+      if (_notifications.isNotEmpty) {
+        // 一時エラー → 無視して既存データで継続
+        debugPrint('[Notifications] Transient error, keeping cached data');
+        setState(() => _isLoading = false);
+      } else {
+        // 初回ロードで失敗 → エラー表示 + 自動リトライ
+        setState(() {
+          _error = '$e';
+          _isLoading = false;
+        });
+        Future.delayed(const Duration(seconds: 10), () {
+          if (mounted && _error != null) _fetch();
+        });
+      }
     }
   }
 

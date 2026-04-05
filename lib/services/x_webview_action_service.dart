@@ -11,6 +11,8 @@ import 'x_query_id_service.dart';
 /// X の CDN が x-client-transaction-id を暗号学的に検証するエンドポイント
 /// (CreateTweet, CreateRetweet, DeleteRetweet 等) を、隠し WebView 経由で実行するサービス。
 /// WebView はブラウザとして正規のヘッダーを自動生成するため、検証を通過できる。
+///
+/// アカウントごとに全 cookie を保持し、切替時に保存・復元する。
 class XWebViewActionService {
   XWebViewActionService._();
   static final instance = XWebViewActionService._();
@@ -19,13 +21,23 @@ class XWebViewActionService {
   InAppWebViewController? _controller;
   bool _isReady = false;
   Completer<void>? _readyCompleter;
-  String? _currentAuthToken; // 現在初期化中のアカウント
+  String? _currentAuthToken;
+
+  /// アカウントごとの全 cookie を保持 (authToken → cookie list)
+  final Map<String, List<Cookie>> _accountCookies = {};
 
   /// WebView を初期化 (x.com にアクセスして Cookie を設定)
-  /// アカウントが変わった場合は再初期化する
+  /// アカウントが変わった場合は現アカウントの cookie を保存してから再初期化
   Future<void> init(XCredentials creds) async {
     // 同一アカウントで初期化済みならスキップ
     if (_isReady && _currentAuthToken == creds.authToken) return;
+
+    final cookieManager = CookieManager.instance();
+
+    // 現アカウントの cookie を保存
+    if (_currentAuthToken != null) {
+      await _saveCookies(_currentAuthToken!);
+    }
 
     // 別アカウント or 未初期化 → 再初期化
     if (_isReady || _webView != null) {
@@ -34,26 +46,43 @@ class XWebViewActionService {
 
     _currentAuthToken = creds.authToken;
     _readyCompleter = Completer<void>();
-    debugPrint('[XWebView] init: clearing old cookies, setting new ones');
 
-    // 前アカウントの Cookie を完全クリアしてから新しく設定
-    final cookieManager = CookieManager.instance();
+    // cookie をクリアしてアカウントの cookie を復元
     await cookieManager.deleteAllCookies();
 
-    final cookies = creds.allCookies.split('; ');
-    for (final cookie in cookies) {
-      final idx = cookie.indexOf('=');
-      if (idx <= 0) continue;
-      final name = cookie.substring(0, idx);
-      final value = cookie.substring(idx + 1);
-      await cookieManager.setCookie(
-        url: WebUri('https://x.com'),
-        name: name,
-        value: value,
-        domain: '.x.com',
-      );
+    final saved = _accountCookies[creds.authToken];
+    if (saved != null && saved.isNotEmpty) {
+      // 保存済みの全 cookie を復元
+      debugPrint('[XWebView] init: restoring ${saved.length} saved cookies for ${creds.authToken.substring(0, 8)}...');
+      for (final cookie in saved) {
+        await cookieManager.setCookie(
+          url: WebUri('https://x.com'),
+          name: cookie.name,
+          value: cookie.value,
+          domain: cookie.domain ?? '.x.com',
+          path: cookie.path ?? '/',
+          isSecure: cookie.isSecure,
+          isHttpOnly: cookie.isHttpOnly,
+          expiresDate: cookie.expiresDate,
+        );
+      }
+    } else {
+      // 初回: creds.allCookies から設定
+      debugPrint('[XWebView] init: setting cookies from credentials for ${creds.authToken.substring(0, 8)}...');
+      final cookies = creds.allCookies.split('; ');
+      for (final cookie in cookies) {
+        final idx = cookie.indexOf('=');
+        if (idx <= 0) continue;
+        final name = cookie.substring(0, idx);
+        final value = cookie.substring(idx + 1);
+        await cookieManager.setCookie(
+          url: WebUri('https://x.com'),
+          name: name,
+          value: value,
+          domain: '.x.com',
+        );
+      }
     }
-    debugPrint('[XWebView] init: set ${cookies.length} cookies for ${creds.authToken.substring(0, 8)}...');
 
     _webView = HeadlessInAppWebView(
       initialUrlRequest: URLRequest(url: WebUri('https://x.com')),
@@ -86,8 +115,45 @@ class XWebViewActionService {
       },
     );
 
+    // ページロード後、X の JS が cookie やトークンを更新する時間を待つ
+    await Future.delayed(const Duration(seconds: 2));
+
+    // 更新された cookie を保存
+    await _saveCookies(creds.authToken);
+
     DebugLogService.instance.log('XWebView',
-        'init complete: cookies=${cookies.length} authToken=${creds.authToken.substring(0, 8)}... isReady=$_isReady timedOut=$timedOut');
+        'init complete: authToken=${creds.authToken.substring(0, 8)}... '
+        'isReady=$_isReady timedOut=$timedOut '
+        'savedCookies=${_accountCookies[creds.authToken]?.length ?? 0}');
+  }
+
+  /// 現在の WebView の全 cookie を保存
+  Future<void> _saveCookies(String authToken) async {
+    try {
+      final cookies = await CookieManager.instance().getCookies(
+        url: WebUri('https://x.com'),
+      );
+      _accountCookies[authToken] = cookies;
+      debugPrint('[XWebView] saved ${cookies.length} cookies for ${authToken.substring(0, 8)}...');
+    } catch (e) {
+      debugPrint('[XWebView] Failed to save cookies: $e');
+    }
+  }
+
+  /// WebView の CookieManager から実際の ct0 を取得
+  Future<String> _getWebViewCt0(XCredentials creds) async {
+    try {
+      final cookie = await CookieManager.instance().getCookie(
+        url: WebUri('https://x.com'),
+        name: 'ct0',
+      );
+      if (cookie != null && cookie.value.isNotEmpty) {
+        return cookie.value;
+      }
+    } catch (e) {
+      debugPrint('[XWebView] Failed to read ct0 cookie: $e');
+    }
+    return creds.ct0;
   }
 
   /// WebView 内の fetch() でツイート投稿
@@ -140,23 +206,6 @@ class XWebViewActionService {
       'source_tweet_id': tweetId,
       'dark_request': false,
     });
-  }
-
-  /// WebView の CookieManager から実際の ct0 を取得
-  /// (x.com ロード時にJSが更新するため、creds.ct0 と乖離する)
-  Future<String> _getWebViewCt0(XCredentials creds) async {
-    try {
-      final cookie = await CookieManager.instance().getCookie(
-        url: WebUri('https://x.com'),
-        name: 'ct0',
-      );
-      if (cookie != null && cookie.value.isNotEmpty) {
-        return cookie.value;
-      }
-    } catch (e) {
-      debugPrint('[XWebView] Failed to read ct0 cookie: $e');
-    }
-    return creds.ct0; // フォールバック
   }
 
   /// features 付きミューテーション (CreateTweet 用)
@@ -219,6 +268,9 @@ class XWebViewActionService {
 
       final rawValue = jsResult?.value?.toString();
       debugPrint('[XWebView] $operationName: raw=$rawValue');
+
+      // ミューテーション後に cookie を保存（ct0 等が更新される可能性）
+      await _saveCookies(creds.authToken);
 
       if (jsResult?.value == null) {
         DebugLogService.instance.logWebView(
@@ -338,6 +390,9 @@ class XWebViewActionService {
       final result = await _controller!.evaluateJavascript(source: js);
       sw.stop();
 
+      // ミューテーション後に cookie を保存
+      await _saveCookies(creds.authToken);
+
       if (result == null) {
         DebugLogService.instance.logWebView(
           tag: 'XWebView',
@@ -387,9 +442,11 @@ class XWebViewActionService {
     }
   }
 
-  String get tweetId => ''; // unused, needed for log label
-
   void dispose() {
+    // dispose 前に cookie を保存
+    if (_currentAuthToken != null) {
+      _saveCookies(_currentAuthToken!);
+    }
     _webView?.dispose();
     _webView = null;
     _controller = null;

@@ -162,28 +162,39 @@ class XWebViewActionService {
 
     try {
       // 1. 投稿画面をロード
-      String composeUrl = 'https://x.com/compose/post';
       if (inReplyToId != null) {
-        composeUrl += '?reply_to=$inReplyToId';
-      } else if (attachmentUrl != null) {
-        composeUrl += '?quote_tweet_id=${_extractTweetId(attachmentUrl)}';
+        // リプライ: 元ツイートのページを開いてリプライボタンを押す
+        debugPrint('[XWebView] createTweet: reply to $inReplyToId');
+        final replyResult = await _loadReplyEditor(inReplyToId);
+        if (!replyResult) {
+          sw.stop();
+          const msg = 'Failed to open reply editor';
+          DebugLogService.instance.log('XWebView', 'createTweet FAIL: $msg');
+          return (success: false, statusCode: 0, body: msg);
+        }
+      } else {
+        // 通常投稿 / 引用RT
+        String composeUrl = 'https://x.com/compose/post';
+        if (attachmentUrl != null) {
+          composeUrl += '?quote_tweet_id=${_extractTweetId(attachmentUrl)}';
+        }
+
+        debugPrint('[XWebView] createTweet: loading $composeUrl');
+
+        _isReady = false;
+        _readyCompleter = Completer<void>();
+        await _controller!.loadUrl(
+          urlRequest: URLRequest(url: WebUri(composeUrl)),
+        );
+
+        await _readyCompleter!.future.timeout(
+          const Duration(seconds: 15),
+          onTimeout: () {
+            _isReady = true;
+            debugPrint('[XWebView] Timeout waiting for compose page');
+          },
+        );
       }
-
-      debugPrint('[XWebView] createTweet: loading $composeUrl');
-
-      _isReady = false;
-      _readyCompleter = Completer<void>();
-      await _controller!.loadUrl(
-        urlRequest: URLRequest(url: WebUri(composeUrl)),
-      );
-
-      await _readyCompleter!.future.timeout(
-        const Duration(seconds: 15),
-        onTimeout: () {
-          _isReady = true;
-          debugPrint('[XWebView] Timeout waiting for compose page');
-        },
-      );
 
       // 2. エディタが表示されるまで待つ
       final editorReady = await _waitForElement(
@@ -198,23 +209,21 @@ class XWebViewActionService {
         return (success: false, statusCode: 0, body: msg);
       }
 
-      // 3. テキストを入力（contenteditable divに対してInputEventを発火）
-      final textEscaped = json.encode(text); // JSの文字列リテラル用にエスケープ
+      // 3. テキストを入力
+      final textEscaped = json.encode(text);
       await _controller!.evaluateJavascript(source: '''
         (function() {
           var editor = document.querySelector('[data-testid="tweetTextarea_0"]')
                     || document.querySelector('[role="textbox"][contenteditable="true"]');
           if (!editor) return;
           editor.focus();
-          // テキストを挿入
           document.execCommand('insertText', false, $textEscaped);
         })()
       ''');
 
-      // 入力が反映されるまで少し待つ
       await Future.delayed(const Duration(milliseconds: 500));
 
-      // 4. 投稿ボタンを探してクリック
+      // 4. 投稿ボタンをクリック
       final buttonReady = await _waitForElement(
         '[data-testid="tweetButton"]:not([disabled]), [data-testid="tweetButtonInline"]:not([disabled])',
         timeoutSeconds: 5,
@@ -277,6 +286,48 @@ class XWebViewActionService {
       DebugLogService.instance.log('XWebView', 'createTweet ERROR: $e (${sw.elapsedMilliseconds}ms)');
       return (success: false, statusCode: 0, body: e.toString());
     }
+  }
+
+  /// 元ツイートのページを開いてリプライエディタを表示する
+  Future<bool> _loadReplyEditor(String tweetId) async {
+    // ツイート詳細ページを開く
+    final tweetUrl = 'https://x.com/i/status/$tweetId';
+    _isReady = false;
+    _readyCompleter = Completer<void>();
+    await _controller!.loadUrl(
+      urlRequest: URLRequest(url: WebUri(tweetUrl)),
+    );
+
+    await _readyCompleter!.future.timeout(
+      const Duration(seconds: 15),
+      onTimeout: () {
+        _isReady = true;
+      },
+    );
+
+    // リプライボタンが表示されるまで待つ
+    final replyBtnReady = await _waitForElement(
+      '[data-testid="reply"]',
+      timeoutSeconds: 10,
+    );
+    if (!replyBtnReady) {
+      debugPrint('[XWebView] Reply button not found on tweet page');
+      return false;
+    }
+
+    // リプライボタンをクリック
+    await _controller!.evaluateJavascript(source: '''
+      (function() {
+        var btn = document.querySelector('[data-testid="reply"]');
+        if (btn) btn.click();
+      })()
+    ''');
+
+    // リプライエディタが開くまで待つ
+    return _waitForElement(
+      '[data-testid="tweetTextarea_0"], [role="textbox"][contenteditable="true"]',
+      timeoutSeconds: 10,
+    );
   }
 
   /// permalink URL からツイートIDを抽出

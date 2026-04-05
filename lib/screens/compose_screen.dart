@@ -155,8 +155,11 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
+    return PopScope(
+      canPop: !_isPosting,
+      child: Scaffold(
       appBar: AppBar(
+        leading: _isPosting ? const SizedBox.shrink() : null,
         title: Text(widget.inReplyToPost != null
             ? 'リプライ'
             : widget.quotedPost != null
@@ -194,7 +197,13 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
           const SizedBox(width: 8),
         ],
       ),
-      body: Column(
+      body: Stack(
+        children: [
+          AbsorbPointer(
+            absorbing: _isPosting,
+            child: Opacity(
+              opacity: _isPosting ? 0.5 : 1.0,
+              child: Column(
         children: [
           // アカウント選択
           if (_accounts.length > 1)
@@ -472,6 +481,22 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
           ),
         ],
       ),
+            ),
+          ),
+          if (_isPosting)
+            const Center(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  CircularProgressIndicator(),
+                  SizedBox(height: 16),
+                  Text('投稿中...', style: TextStyle(fontSize: 16)),
+                ],
+              ),
+            ),
+        ],
+      ),
+    ),
     );
   }
 }

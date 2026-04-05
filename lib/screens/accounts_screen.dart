@@ -254,10 +254,7 @@ class _AccountTile extends ConsumerWidget {
               ref.read(accountProvider.notifier).toggleAccount(account.id);
             },
           ),
-          IconButton(
-            icon: const Icon(Icons.chevron_right),
-            onPressed: () => _openDetail(context),
-          ),
+          const Icon(Icons.chevron_right, size: 20),
         ],
       ),
       onTap: () => _openDetail(context),
@@ -308,6 +305,18 @@ class _AccountDetailScreen extends ConsumerWidget {
     return Scaffold(
       appBar: AppBar(
         title: Text(account.displayName),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.refresh),
+            tooltip: 'セッション更新',
+            onPressed: () => _openSessionRefresh(context, ref, account),
+          ),
+          IconButton(
+            icon: const Icon(Icons.delete_outline, color: Colors.red),
+            tooltip: 'アカウント削除',
+            onPressed: () => _confirmDelete(context, ref, account),
+          ),
+        ],
       ),
       body: ListView(
         children: [
@@ -355,7 +364,7 @@ class _AccountDetailScreen extends ConsumerWidget {
           // 有効/無効
           SwitchListTile(
             title: const Text('タイムライン取得'),
-            subtitle: const Text('このアカウントのタイムラインを Omni-Feed に含める'),
+            subtitle: const Text('このアカウントの投稿をフィードに表示する'),
             value: account.isEnabled,
             onChanged: (_) {
               ref.read(accountProvider.notifier).toggleAccount(account.id);
@@ -363,54 +372,12 @@ class _AccountDetailScreen extends ConsumerWidget {
           ),
           // RT/リポスト非表示
           SwitchListTile(
-            title: const Text('RT/リポスト非表示'),
-            subtitle: const Text('このアカウントの RT を非表示にする'),
+            title: const Text('フォロー先の RT を非表示'),
+            subtitle: const Text('このアカウントのフィードから他ユーザーの RT/リポストを除外する'),
             value: ref.watch(settingsProvider).hideRetweetsAccountIds.contains(account.id),
             onChanged: (_) {
               ref.read(settingsProvider.notifier).toggleHideRetweets(account.id);
             },
-          ),
-          const Divider(),
-          // 情報
-          ListTile(
-            title: const Text('サービス'),
-            trailing: Text(account.service.label),
-          ),
-          ListTile(
-            title: const Text('追加日時'),
-            trailing: Text(
-              '${account.createdAt.year}/${account.createdAt.month.toString().padLeft(2, '0')}/${account.createdAt.day.toString().padLeft(2, '0')}',
-            ),
-          ),
-          ListTile(
-            title: const Text('アカウント ID'),
-            trailing: Text(
-              account.id,
-              style: TextStyle(fontSize: 12, color: Colors.grey[500]),
-            ),
-          ),
-          const Divider(),
-          // セッション更新ボタン
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-            child: OutlinedButton.icon(
-              onPressed: () => _openSessionRefresh(context, ref, account),
-              icon: const Icon(Icons.refresh),
-              label: const Text('セッション更新'),
-            ),
-          ),
-          // 削除ボタン
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-            child: OutlinedButton.icon(
-              onPressed: () => _confirmDelete(context, ref, account),
-              icon: const Icon(Icons.delete_outline, color: Colors.red),
-              label: const Text('アカウントを削除',
-                  style: TextStyle(color: Colors.red)),
-              style: OutlinedButton.styleFrom(
-                side: const BorderSide(color: Colors.red),
-              ),
-            ),
           ),
         ],
       ),

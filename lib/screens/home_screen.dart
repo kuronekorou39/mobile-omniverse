@@ -42,7 +42,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     if (index == 1 && _currentIndex == 1) {
       onTimelineTap?.call();
     } else if (index == 2 && _currentIndex != 2) {
-      ref.read(notificationBadgeProvider.notifier).markSeen();
+      // 通知画面のアカウント別ドットが見えるよう、少し遅延してから既読化
+      Future.delayed(const Duration(seconds: 3), () {
+        if (mounted) ref.read(notificationBadgeProvider.notifier).markSeen();
+      });
     }
     setState(() => _currentIndex = index);
   }

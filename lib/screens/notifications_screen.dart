@@ -586,15 +586,7 @@ class _NotificationTile extends StatelessWidget {
         NotificationType.unknown => Icons.notifications,
       };
 
-  Color get _iconColor => switch (notification.type) {
-        NotificationType.like => Colors.pink,
-        NotificationType.repost => Colors.green,
-        NotificationType.reply => Colors.blue,
-        NotificationType.follow => Colors.purple,
-        NotificationType.mention => Colors.orange,
-        NotificationType.quote => Colors.teal,
-        NotificationType.unknown => Colors.grey,
-      };
+  Color get _iconColor => _typeColor(notification.type);
 
   @override
   Widget build(BuildContext context) {

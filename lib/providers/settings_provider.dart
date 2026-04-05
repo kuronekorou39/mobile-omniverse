@@ -135,7 +135,13 @@ class SettingsNotifier extends StateNotifier<SettingsState> {
     final compactEngagement = prefs.getBool(_keyCompactEngagement) ?? true;
     final imagePreviewSizeIndex = prefs.getInt(_keyImagePreviewSize) ?? ImagePreviewSize.medium.index;
     final hideUserInfo = prefs.getBool(_keyHideUserInfo) ?? false;
-    final fontFamily = prefs.getString(_keyFontFamily) ?? '';
+    var fontFamily = prefs.getString(_keyFontFamily) ?? '';
+    // 旧システムフォント値をリセット（Google Fonts非対応）
+    const legacyFonts = {'serif', 'monospace', 'sans-serif-condensed', 'cursive'};
+    if (legacyFonts.contains(fontFamily)) {
+      fontFamily = '';
+      prefs.setString(_keyFontFamily, '');
+    }
     final appBarButtons = prefs.getStringList(_keyAppBarButtons)?.toSet() ?? {};
 
     state = state.copyWith(

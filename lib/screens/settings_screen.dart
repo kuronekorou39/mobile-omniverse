@@ -244,7 +244,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
           const Divider(),
 
           // ── ヘッダー ──
-          const _SectionHeader(title: 'ヘッダー'),
+          const _SectionHeader(title: 'ヘッダー', subtitle: 'タイムライン画面のヘッダーに表示するボタン'),
           CheckboxListTile(
             secondary: const Icon(Icons.timer_outlined, size: 20),
             title: const Text('フェッチタイマー'),
@@ -485,21 +485,35 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
 }
 
 class _SectionHeader extends StatelessWidget {
-  const _SectionHeader({required this.title});
+  const _SectionHeader({required this.title, this.subtitle});
 
   final String title;
+  final String? subtitle;
 
   @override
   Widget build(BuildContext context) {
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 16, 16, 4),
-      child: Text(
-        title,
-        style: TextStyle(
-          fontSize: 13,
-          fontWeight: FontWeight.bold,
-          color: Theme.of(context).colorScheme.primary,
-        ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            title,
+            style: TextStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.bold,
+              color: Theme.of(context).colorScheme.primary,
+            ),
+          ),
+          if (subtitle != null)
+            Padding(
+              padding: const EdgeInsets.only(top: 2),
+              child: Text(
+                subtitle!,
+                style: TextStyle(fontSize: 12, color: Colors.grey[500]),
+              ),
+            ),
+        ],
       ),
     );
   }

@@ -12,7 +12,8 @@ import 'x_query_id_service.dart';
 /// (CreateTweet, CreateRetweet, DeleteRetweet 等) を、隠し WebView 経由で実行するサービス。
 /// WebView はブラウザとして正規のヘッダーを自動生成するため、検証を通過できる。
 ///
-/// アカウントごとに全 cookie を保持し、切替時に保存・復元する。
+/// WebView インスタンスは使い回し、アカウント切替時はcookie入替+リロードのみ。
+/// localStorage/sessionStorage/ブラウザ指紋を維持し、正規ブラウザと同じ状態を保つ。
 class XWebViewActionService {
   XWebViewActionService._();
   static final instance = XWebViewActionService._();
@@ -26,33 +27,58 @@ class XWebViewActionService {
   /// アカウントごとの全 cookie を保持 (authToken → cookie list)
   final Map<String, List<Cookie>> _accountCookies = {};
 
-  /// WebView を初期化 (x.com にアクセスして Cookie を設定)
-  /// アカウントが変わった場合は現アカウントの cookie を保存してから再初期化
+  /// WebView の初回作成（まだ存在しない場合のみ）
+  Future<void> _ensureWebView() async {
+    if (_webView != null) return;
+
+    _readyCompleter = Completer<void>();
+    _isReady = false;
+
+    _webView = HeadlessInAppWebView(
+      initialUrlRequest: URLRequest(url: WebUri('about:blank')),
+      initialSettings: InAppWebViewSettings(
+        javaScriptEnabled: true,
+        userAgent:
+            'Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36',
+      ),
+      onLoadStop: (controller, url) {
+        debugPrint('[XWebView] onLoadStop: $url');
+        _controller = controller;
+        if (!_isReady && url.toString() != 'about:blank') {
+          _isReady = true;
+          if (_readyCompleter != null && !_readyCompleter!.isCompleted) {
+            _readyCompleter!.complete();
+          }
+        }
+      },
+    );
+
+    await _webView!.run();
+  }
+
+  /// アカウントの cookie をセットして x.com をロード（または既にロード済みならスキップ）
   Future<void> init(XCredentials creds) async {
     // 同一アカウントで初期化済みならスキップ
     if (_isReady && _currentAuthToken == creds.authToken) return;
 
+    // WebView がなければ作成（初回のみ）
+    await _ensureWebView();
+
     final cookieManager = CookieManager.instance();
 
     // 現アカウントの cookie を保存
-    if (_currentAuthToken != null) {
+    if (_currentAuthToken != null && _isReady) {
       await _saveCookies(_currentAuthToken!);
     }
 
-    // 別アカウント or 未初期化 → 再初期化
-    if (_isReady || _webView != null) {
-      dispose();
-    }
-
     _currentAuthToken = creds.authToken;
-    _readyCompleter = Completer<void>();
 
-    // cookie をクリアしてアカウントの cookie を復元
-    await cookieManager.deleteAllCookies();
+    // x.com の cookie をクリア（全体ではなくドメイン限定）
+    await cookieManager.deleteCookies(url: WebUri('https://x.com'));
 
+    // アカウントの cookie を復元
     final saved = _accountCookies[creds.authToken];
     if (saved != null && saved.isNotEmpty) {
-      // 保存済みの全 cookie を復元
       debugPrint('[XWebView] init: restoring ${saved.length} saved cookies for ${creds.authToken.substring(0, 8)}...');
       for (final cookie in saved) {
         await cookieManager.setCookie(
@@ -67,7 +93,6 @@ class XWebViewActionService {
         );
       }
     } else {
-      // 初回: creds.allCookies から設定
       debugPrint('[XWebView] init: setting cookies from credentials for ${creds.authToken.substring(0, 8)}...');
       final cookies = creds.allCookies.split('; ');
       for (final cookie in cookies) {
@@ -84,26 +109,12 @@ class XWebViewActionService {
       }
     }
 
-    _webView = HeadlessInAppWebView(
-      initialUrlRequest: URLRequest(url: WebUri('https://x.com')),
-      initialSettings: InAppWebViewSettings(
-        javaScriptEnabled: true,
-        userAgent:
-            'Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36',
-      ),
-      onLoadStop: (controller, url) {
-        debugPrint('[XWebView] onLoadStop: $url');
-        _controller = controller;
-        if (!_isReady) {
-          _isReady = true;
-          if (_readyCompleter != null && !_readyCompleter!.isCompleted) {
-            _readyCompleter!.complete();
-          }
-        }
-      },
+    // x.com をロード（WebView は維持したまま）
+    _isReady = false;
+    _readyCompleter = Completer<void>();
+    await _controller!.loadUrl(
+      urlRequest: URLRequest(url: WebUri('https://x.com')),
     );
-
-    await _webView!.run();
 
     // 最大 15 秒待機
     bool timedOut = false;
@@ -112,6 +123,7 @@ class XWebViewActionService {
       onTimeout: () {
         timedOut = true;
         debugPrint('[XWebView] Timeout waiting for page load');
+        _isReady = true; // タイムアウトでも続行
       },
     );
 
@@ -217,7 +229,7 @@ class XWebViewActionService {
     Map<String, dynamic> variables,
     String featuresJson,
   ) async {
-    if (_controller == null || _currentAuthToken != creds.authToken) {
+    if (!_isReady || _currentAuthToken != creds.authToken) {
       await init(creds);
     }
     if (_controller == null) {
@@ -226,14 +238,12 @@ class XWebViewActionService {
 
     final ct0 = await _getWebViewCt0(creds);
 
-    // リクエストボディ全体を Dart 側で構築して JS に文字列として渡す
     final requestBody = json.encode({
       'variables': variables,
       'features': json.decode(featuresJson),
       'queryId': queryId,
     });
 
-    // callAsyncJavaScript を使って Promise を正しく await する
     final jsBody = '''
       try {
         var url = "https://x.com/i/api/graphql/" + queryId_ + "/$operationName";
@@ -269,7 +279,7 @@ class XWebViewActionService {
       final rawValue = jsResult?.value?.toString();
       debugPrint('[XWebView] $operationName: raw=$rawValue');
 
-      // ミューテーション後に cookie を保存（ct0 等が更新される可能性）
+      // ミューテーション後に cookie を保存
       await _saveCookies(creds.authToken);
 
       if (jsResult?.value == null) {
@@ -294,7 +304,6 @@ class XWebViewActionService {
 
       debugPrint('[XWebView] $operationName: status=$statusCode body=${body.length > 300 ? '${body.substring(0, 300)}...' : body}');
 
-      // 成功判定（200でもerrors配列があれば失敗）
       bool success = statusCode == 200;
       if (statusCode == 200) {
         try {
@@ -346,7 +355,7 @@ class XWebViewActionService {
     String operationName,
     Map<String, dynamic> variables,
   ) async {
-    if (_controller == null || _currentAuthToken != creds.authToken) {
+    if (!_isReady || _currentAuthToken != creds.authToken) {
       await init(creds);
     }
     if (_controller == null) {
@@ -443,7 +452,6 @@ class XWebViewActionService {
   }
 
   void dispose() {
-    // dispose 前に cookie を保存
     if (_currentAuthToken != null) {
       _saveCookies(_currentAuthToken!);
     }

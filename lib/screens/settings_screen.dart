@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:google_fonts/google_fonts.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
@@ -116,32 +117,6 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       appBar: AppBar(title: const Text('設定')),
       body: ListView(
         children: [
-          // ── ヘッダー ──
-          const _SectionHeader(title: 'ヘッダー'),
-          CheckboxListTile(
-            secondary: const Icon(Icons.timer_outlined, size: 20),
-            title: const Text('フェッチタイマー'),
-            value: settings.showFetchTimer,
-            onChanged: (value) => notifier.setShowFetchTimer(value ?? true),
-            dense: true,
-          ),
-          CheckboxListTile(
-            secondary: const Icon(Icons.blur_on, size: 20),
-            title: const Text('センシティブ切替'),
-            value: settings.appBarButtons.contains('sensitive'),
-            onChanged: (_) => notifier.toggleAppBarButton('sensitive'),
-            dense: true,
-          ),
-          CheckboxListTile(
-            secondary: const Icon(Icons.face_retouching_off, size: 20),
-            title: const Text('匿名モード切替'),
-            value: settings.appBarButtons.contains('userInfo'),
-            onChanged: (_) => notifier.toggleAppBarButton('userInfo'),
-            dense: true,
-          ),
-
-          const Divider(),
-
           // ── タイムライン ──
           const _SectionHeader(title: 'タイムライン'),
           ListTile(
@@ -218,19 +193,11 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
           const _SectionHeader(title: '文章'),
           ListTile(
             title: const Text('フォント'),
-            trailing: DropdownButton<String>(
-              value: settings.fontFamily,
-              items: const [
-                DropdownMenuItem(value: '', child: Text('デフォルト')),
-                DropdownMenuItem(value: 'serif', child: Text('明朝体')),
-                DropdownMenuItem(value: 'monospace', child: Text('等幅')),
-                DropdownMenuItem(value: 'sans-serif-condensed', child: Text('コンデンス')),
-                DropdownMenuItem(value: 'cursive', child: Text('手書き風')),
-              ],
-              onChanged: (value) {
-                if (value != null) notifier.setFontFamily(value);
-              },
-            ),
+            subtitle: Text(settings.fontFamily.isEmpty
+                ? 'デフォルト'
+                : settings.fontFamily),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () => _openFontPicker(context, settings, notifier),
           ),
           ListTile(
             title: Text('サイズ ${(settings.fontScale * 100).round()}%'),
@@ -271,6 +238,32 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 if (value != null) notifier.setThemeMode(value);
               },
             ),
+          ),
+
+          const Divider(),
+
+          // ── ヘッダー ──
+          const _SectionHeader(title: 'ヘッダー'),
+          CheckboxListTile(
+            secondary: const Icon(Icons.timer_outlined, size: 20),
+            title: const Text('フェッチタイマー'),
+            value: settings.showFetchTimer,
+            onChanged: (value) => notifier.setShowFetchTimer(value ?? true),
+            dense: true,
+          ),
+          CheckboxListTile(
+            secondary: const Icon(Icons.blur_on, size: 20),
+            title: const Text('センシティブ切替'),
+            value: settings.appBarButtons.contains('sensitive'),
+            onChanged: (_) => notifier.toggleAppBarButton('sensitive'),
+            dense: true,
+          ),
+          CheckboxListTile(
+            secondary: const Icon(Icons.face_retouching_off, size: 20),
+            title: const Text('匿名モード切替'),
+            value: settings.appBarButtons.contains('userInfo'),
+            onChanged: (_) => notifier.toggleAppBarButton('userInfo'),
+            dense: true,
           ),
 
           const Divider(),
@@ -397,6 +390,67 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     );
   }
 
+  /// 利用可能な日本語フォント定義
+  static const _japaneseFonts = <({String name, String label})>[
+    (name: '', label: 'デフォルト'),
+    (name: 'Noto Sans JP', label: 'Noto Sans JP（ゴシック）'),
+    (name: 'Noto Serif JP', label: 'Noto Serif JP（明朝）'),
+    (name: 'M PLUS Rounded 1c', label: 'M PLUS Rounded（丸ゴシック）'),
+    (name: 'Zen Maru Gothic', label: 'Zen Maru Gothic（丸ゴシック）'),
+    (name: 'Klee One', label: 'Klee One（教科書体）'),
+    (name: 'Shippori Mincho', label: 'しっぽり明朝'),
+    (name: 'Hachi Maru Pop', label: 'はちまるポップ（手書き）'),
+    (name: 'DotGothic16', label: 'DotGothic16（ドット）'),
+  ];
+
+  /// Google Fonts のキャッシュディレクトリにフォントファイルが存在するかチェック
+  Future<bool> _isFontCached(String fontName) async {
+    if (fontName.isEmpty) return true; // デフォルトは常にOK
+    try {
+      final dir = await getApplicationSupportDirectory();
+      final fontDir = Directory('${dir.path}/google_fonts');
+      if (!await fontDir.exists()) return false;
+      final files = await fontDir.list().toList();
+      final prefix = fontName.replaceAll(' ', '');
+      return files.any((f) => f.path.contains(prefix));
+    } catch (_) {
+      return false;
+    }
+  }
+
+  /// フォントのキャッシュを削除して再ダウンロード可能にする
+  Future<void> _clearFontCache(String fontName) async {
+    try {
+      final dir = await getApplicationSupportDirectory();
+      final fontDir = Directory('${dir.path}/google_fonts');
+      if (!await fontDir.exists()) return;
+      final prefix = fontName.replaceAll(' ', '');
+      final files = await fontDir.list().toList();
+      for (final f in files) {
+        if (f.path.contains(prefix)) {
+          await f.delete();
+        }
+      }
+    } catch (_) {}
+  }
+
+  void _openFontPicker(BuildContext context, SettingsState settings, SettingsNotifier notifier) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      builder: (ctx) => _FontPickerSheet(
+        currentFont: settings.fontFamily,
+        fonts: _japaneseFonts,
+        isFontCached: _isFontCached,
+        clearFontCache: _clearFontCache,
+        onSelect: (name) {
+          notifier.setFontFamily(name);
+          Navigator.of(ctx).pop();
+        },
+      ),
+    );
+  }
+
   String _themeModeLabel(ThemeMode mode) {
     return switch (mode) {
       ThemeMode.system => 'システム設定に従う',
@@ -435,6 +489,186 @@ class _SectionHeader extends StatelessWidget {
           fontWeight: FontWeight.bold,
           color: Theme.of(context).colorScheme.primary,
         ),
+      ),
+    );
+  }
+}
+
+/// フォント選択ボトムシート
+class _FontPickerSheet extends StatefulWidget {
+  const _FontPickerSheet({
+    required this.currentFont,
+    required this.fonts,
+    required this.isFontCached,
+    required this.clearFontCache,
+    required this.onSelect,
+  });
+
+  final String currentFont;
+  final List<({String name, String label})> fonts;
+  final Future<bool> Function(String) isFontCached;
+  final Future<void> Function(String) clearFontCache;
+  final void Function(String) onSelect;
+
+  @override
+  State<_FontPickerSheet> createState() => _FontPickerSheetState();
+}
+
+class _FontPickerSheetState extends State<_FontPickerSheet> {
+  final Map<String, bool> _cacheStatus = {};
+  String? _downloading;
+
+  @override
+  void initState() {
+    super.initState();
+    _checkAllCache();
+  }
+
+  Future<void> _checkAllCache() async {
+    for (final font in widget.fonts) {
+      final cached = await widget.isFontCached(font.name);
+      if (mounted) setState(() => _cacheStatus[font.name] = cached);
+    }
+  }
+
+  Future<void> _downloadAndSelect(String fontName) async {
+    setState(() => _downloading = fontName);
+    try {
+      // Google Fonts をプリロード
+      await GoogleFonts.pendingFonts([
+        GoogleFonts.getFont(fontName),
+      ]);
+      if (!mounted) return;
+      widget.onSelect(fontName);
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('ダウンロード失敗: $e')),
+      );
+      setState(() => _downloading = null);
+    }
+  }
+
+  void _onFontTap(String fontName) {
+    // デフォルト
+    if (fontName.isEmpty) {
+      widget.onSelect('');
+      return;
+    }
+
+    final isCached = _cacheStatus[fontName] ?? false;
+
+    if (isCached) {
+      // キャッシュ済み → 即適用
+      widget.onSelect(fontName);
+    } else {
+      // 未キャッシュ → 確認モーダル
+      showDialog(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Text('フォントのダウンロード'),
+          content: Text('「$fontName」をダウンロードしますか？\n（初回のみ、以降はキャッシュから読み込みます）'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(),
+              child: const Text('キャンセル'),
+            ),
+            FilledButton(
+              onPressed: () {
+                Navigator.of(ctx).pop();
+                _downloadAndSelect(fontName);
+              },
+              child: const Text('ダウンロード'),
+            ),
+          ],
+        ),
+      );
+    }
+  }
+
+  void _onFontLongPress(String fontName) {
+    if (fontName.isEmpty) return;
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(fontName),
+        content: const Text('キャッシュを削除して再ダウンロードしますか？\nフォントが正しく表示されない場合にお試しください。'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: const Text('キャンセル'),
+          ),
+          FilledButton(
+            onPressed: () async {
+              Navigator.of(ctx).pop();
+              await widget.clearFontCache(fontName);
+              setState(() => _cacheStatus[fontName] = false);
+              if (mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('キャッシュを削除しました。再度タップでダウンロードできます。')),
+                );
+              }
+            },
+            child: const Text('削除して再ダウンロード'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return SafeArea(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Padding(
+            padding: EdgeInsets.all(16),
+            child: Text(
+              'フォント選択',
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+            ),
+          ),
+          Flexible(
+            child: ListView.builder(
+              shrinkWrap: true,
+              itemCount: widget.fonts.length,
+              itemBuilder: (context, index) {
+                final font = widget.fonts[index];
+                final isSelected = font.name == widget.currentFont;
+                final isCached = _cacheStatus[font.name] ?? (font.name.isEmpty);
+                final isDownloading = _downloading == font.name;
+
+                return ListTile(
+                  leading: font.name.isEmpty
+                      ? const Icon(Icons.text_fields)
+                      : isCached
+                          ? const Icon(Icons.check_circle, color: Colors.green)
+                          : const Icon(Icons.cloud_download_outlined),
+                  title: Text(font.label),
+                  trailing: isDownloading
+                      ? const SizedBox(
+                          width: 20, height: 20,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : isSelected
+                          ? Icon(Icons.radio_button_checked,
+                              color: Theme.of(context).colorScheme.primary)
+                          : const Icon(Icons.radio_button_unchecked),
+                  onTap: isDownloading ? null : () => _onFontTap(font.name),
+                  onLongPress: font.name.isEmpty ? null : () => _onFontLongPress(font.name),
+                );
+              },
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+            child: Text(
+              '長押しでキャッシュ削除・再ダウンロード',
+              style: TextStyle(fontSize: 12, color: Colors.grey[500]),
+            ),
+          ),
+        ],
       ),
     );
   }

@@ -34,43 +34,67 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           const NotificationsScreen(),
         ],
       ),
-      bottomNavigationBar: NavigationBar(
-        selectedIndex: _currentIndex,
-        onDestinationSelected: (index) {
-          if (index == 1 && _currentIndex == 1) {
-            // タイムラインタブを再タップ → トップにスクロール
-            onTimelineTap?.call();
-          } else if (index == 2 && _currentIndex != 2) {
-            // 通知タブに切替 → 既読マーク
-            ref.read(notificationBadgeProvider.notifier).markSeen();
-          }
-          setState(() => _currentIndex = index);
-        },
-        destinations: [
-          const NavigationDestination(
-            icon: Icon(Icons.people_outline),
-            selectedIcon: Icon(Icons.people),
-            label: 'アカウント',
+      bottomNavigationBar: _buildBottomBar(hasUnread),
+    );
+  }
+
+  void _onTabTap(int index) {
+    if (index == 1 && _currentIndex == 1) {
+      onTimelineTap?.call();
+    } else if (index == 2 && _currentIndex != 2) {
+      ref.read(notificationBadgeProvider.notifier).markSeen();
+    }
+    setState(() => _currentIndex = index);
+  }
+
+  Widget _buildBottomBar(bool hasUnread) {
+    final colorScheme = Theme.of(context).colorScheme;
+
+    Widget buildTab(int index, IconData icon, IconData selectedIcon, {bool showBadge = false, int flex = 1}) {
+      final isSelected = _currentIndex == index;
+      Widget iconWidget = Icon(
+        isSelected ? selectedIcon : icon,
+        color: isSelected ? colorScheme.primary : colorScheme.onSurfaceVariant,
+        size: 24,
+      );
+      if (showBadge) {
+        iconWidget = Badge(
+          isLabelVisible: hasUnread,
+          smallSize: 8,
+          child: iconWidget,
+        );
+      }
+
+      return Expanded(
+        flex: flex,
+        child: InkWell(
+          onTap: () => _onTabTap(index),
+          child: SizedBox(
+            height: 52,
+            child: Center(child: iconWidget),
           ),
-          const NavigationDestination(
-            icon: Icon(Icons.home_outlined),
-            selectedIcon: Icon(Icons.home),
-            label: 'タイムライン',
+        ),
+      );
+    }
+
+    return Container(
+      decoration: BoxDecoration(
+        border: Border(
+          top: BorderSide(
+            color: colorScheme.outlineVariant.withValues(alpha: 0.3),
           ),
-          NavigationDestination(
-            icon: Badge(
-              isLabelVisible: hasUnread,
-              smallSize: 8,
-              child: const Icon(Icons.notifications_outlined),
-            ),
-            selectedIcon: Badge(
-              isLabelVisible: hasUnread,
-              smallSize: 8,
-              child: const Icon(Icons.notifications),
-            ),
-            label: '通知',
-          ),
-        ],
+        ),
+        color: colorScheme.surface,
+      ),
+      child: SafeArea(
+        top: false,
+        child: Row(
+          children: [
+            buildTab(0, Icons.people_outline, Icons.people),
+            buildTab(1, Icons.home_outlined, Icons.home, flex: 2),
+            buildTab(2, Icons.notifications_outlined, Icons.notifications, showBadge: true),
+          ],
+        ),
       ),
     );
   }

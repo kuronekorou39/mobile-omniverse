@@ -38,7 +38,7 @@ class SettingsState {
     this.fontScale = 1.0,
     this.hideRetweetsAccountIds = const {},
     this.showAccountPickerOnEngagement = false,
-    this.showFetchTimer = true,
+    this.showFetchTimer = false,
     this.showSensitiveContent = false,
     this.compactEngagement = true,
     this.imagePreviewSize = ImagePreviewSize.medium,
@@ -130,7 +130,7 @@ class SettingsNotifier extends StateNotifier<SettingsState> {
     final fontScale = prefs.getDouble(_keyFontScale) ?? 1.0;
     final hideRtList = prefs.getStringList(_keyHideRetweetsAccounts) ?? [];
     final showAccountPicker = prefs.getBool(_keyShowAccountPicker) ?? false;
-    final showFetchTimer = prefs.getBool(_keyShowFetchTimer) ?? true;
+    final showFetchTimer = prefs.getBool(_keyShowFetchTimer) ?? false;
     final showSensitiveContent = prefs.getBool(_keyShowSensitiveContent) ?? false;
     final compactEngagement = prefs.getBool(_keyCompactEngagement) ?? true;
     final imagePreviewSizeIndex = prefs.getInt(_keyImagePreviewSize) ?? ImagePreviewSize.medium.index;

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:google_fonts/google_fonts.dart';
 
 import 'providers/settings_provider.dart';
 import 'screens/overlay_timeline_screen.dart';
@@ -34,22 +35,35 @@ class OmniVerseApp extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final settings = ref.watch(settingsProvider);
 
+    final baseLight = ThemeData(
+      colorSchemeSeed: const Color(0xFF6750A4),
+      useMaterial3: true,
+      brightness: Brightness.light,
+    );
+    final baseDark = ThemeData(
+      colorSchemeSeed: const Color(0xFF6750A4),
+      useMaterial3: true,
+      brightness: Brightness.dark,
+    );
+
+    final fontFamily = settings.fontFamily;
+    final lightTheme = fontFamily.isEmpty
+        ? baseLight
+        : baseLight.copyWith(
+            textTheme: GoogleFonts.getTextTheme(fontFamily, baseLight.textTheme),
+          );
+    final darkTheme = fontFamily.isEmpty
+        ? baseDark
+        : baseDark.copyWith(
+            textTheme: GoogleFonts.getTextTheme(fontFamily, baseDark.textTheme),
+          );
+
     return MaterialApp(
       title: 'OmniVerse',
       debugShowCheckedModeBanner: false,
       themeMode: settings.themeMode,
-      theme: ThemeData(
-        colorSchemeSeed: const Color(0xFF6750A4),
-        useMaterial3: true,
-        brightness: Brightness.light,
-        fontFamily: settings.fontFamily.isEmpty ? null : settings.fontFamily,
-      ),
-      darkTheme: ThemeData(
-        colorSchemeSeed: const Color(0xFF6750A4),
-        useMaterial3: true,
-        brightness: Brightness.dark,
-        fontFamily: settings.fontFamily.isEmpty ? null : settings.fontFamily,
-      ),
+      theme: lightTheme,
+      darkTheme: darkTheme,
       builder: (context, child) {
         // Apply font scale from settings
         final mediaQuery = MediaQuery.of(context);

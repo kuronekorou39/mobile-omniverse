@@ -753,14 +753,17 @@ void navigateToUserProfile(
   BuildContext context, {
   required Post post,
 }) {
-  // ユーザーデータが欠けている場合はナビゲーションしない
-  if (post.username.isEmpty || post.handle == '@') {
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('ユーザー情報を取得できません')),
-    );
+  // ユーザーデータが揃っている → 即遷移
+  if (post.username.isNotEmpty && post.handle != '@') {
+    _pushProfileScreen(context, post);
     return;
   }
 
+  // ユーザーデータが欠けている → ツイート詳細から取得を試みる
+  _fetchThenNavigate(context, post);
+}
+
+void _pushProfileScreen(BuildContext context, Post post) {
   Navigator.of(context).push(
     MaterialPageRoute(
       builder: (_) => UserProfileScreen(
@@ -772,4 +775,68 @@ void navigateToUserProfile(
       ),
     ),
   );
+}
+
+/// ユーザーデータが欠けた投稿のツイート詳細を取得し、
+/// ユーザー情報を補完してからプロフィール画面に遷移する
+Future<void> _fetchThenNavigate(BuildContext context, Post post) async {
+  // accountId から使えるアカウントを探す
+  Account? account;
+  if (post.accountId != null) {
+    account = AccountStorageService.instance.getAccount(post.accountId!);
+  }
+  // accountId で見つからなければ同じサービスの有効アカウントを探す
+  account ??= AccountStorageService.instance.accounts
+      .where((a) => a.service == post.source && a.isEnabled)
+      .firstOrNull;
+
+  if (account == null) {
+    if (context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('ユーザー情報を取得できません')),
+      );
+    }
+    return;
+  }
+
+  // ローディング表示
+  showDialog(
+    context: context,
+    barrierDismissible: false,
+    builder: (_) => const Center(child: CircularProgressIndicator()),
+  );
+
+  try {
+    final tweetId = post.id.replaceFirst('x_', '');
+    List<Post> fetched;
+
+    if (post.source == SnsService.x) {
+      fetched = await XApiService.instance.getTweetDetail(
+        account.xCredentials, tweetId, accountId: account.id,
+      );
+    } else {
+      fetched = await BlueskyApiService.instance.getPostThread(
+        account.blueskyCredentials, tweetId, accountId: account.id,
+      );
+    }
+
+    if (!context.mounted) return;
+    Navigator.of(context).pop(); // ローディングを閉じる
+
+    // 取得した投稿からユーザー情報を取り出す
+    final found = fetched.where((p) => p.id == post.id).firstOrNull;
+    if (found != null && found.username.isNotEmpty && found.handle != '@') {
+      _pushProfileScreen(context, found);
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('ユーザー情報を取得できません')),
+      );
+    }
+  } catch (e) {
+    if (!context.mounted) return;
+    Navigator.of(context).pop(); // ローディングを閉じる
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('取得失敗: $e')),
+    );
+  }
 }

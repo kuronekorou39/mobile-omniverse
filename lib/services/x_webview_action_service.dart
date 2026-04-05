@@ -227,9 +227,8 @@ class XWebViewActionService {
     String queryId,
     String operationName,
     Map<String, dynamic> variables,
-    String featuresJson, {
-    bool isRetry = false,
-  }) async {
+    String featuresJson,
+  ) async {
     if (!_isReady || _currentAuthToken != creds.authToken) {
       await init(creds);
     }
@@ -329,19 +328,15 @@ class XWebViewActionService {
         statusCode: statusCode,
         responseBody: body,
         duration: sw.elapsed,
-        extra: {'isReady': _isReady, 'success': success, 'authToken': creds.authToken.substring(0, 8), 'isRetry': isRetry},
+        extra: {'isReady': _isReady, 'success': success, 'authToken': creds.authToken.substring(0, 8)},
       );
 
-      // 226 (automated detection) → saved cookie を破棄してフレッシュ再init + リトライ1回
-      if (!success && !isRetry && body.contains('"code":226')) {
-        debugPrint('[XWebView] 226 detected, clearing saved cookies and retrying fresh');
+      // 226 (automated detection) → saved cookie を破棄して次回の手動投稿でフレッシュinitさせる
+      if (!success && body.contains('"code":226')) {
+        debugPrint('[XWebView] 226 detected, clearing saved cookies for next attempt');
         _accountCookies.remove(creds.authToken);
-        _currentAuthToken = null; // 強制再init
+        _currentAuthToken = null;
         _isReady = false;
-        return _executeMutationWithFeatures(
-          creds, queryId, operationName, variables, featuresJson,
-          isRetry: true,
-        );
       }
 
       return (success: success, statusCode: statusCode, body: body);

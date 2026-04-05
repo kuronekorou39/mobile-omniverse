@@ -1380,8 +1380,19 @@ class XApiService {
 
       final userLegacy = userResult?['legacy'] as Map<String, dynamic>?;
 
-      final username = userLegacy?['name'] as String? ?? '';
-      final screenName = userLegacy?['screen_name'] as String? ?? '';
+      // ユーザー名: legacy → core → userResult直下 の順にフォールバック
+      var username = userLegacy?['name'] as String? ?? '';
+      var screenName = userLegacy?['screen_name'] as String? ?? '';
+      if (username.isEmpty) {
+        username = core?['name'] as String?
+            ?? userResult?['core']?['name'] as String?
+            ?? '';
+      }
+      if (screenName.isEmpty) {
+        screenName = core?['screen_name'] as String?
+            ?? userResult?['core']?['screen_name'] as String?
+            ?? '';
+      }
 
       // --- 通常RT検出: legacy.retweeted_status_result ---
       final retweetedStatusResult =
@@ -1411,8 +1422,10 @@ class XApiService {
       var fullText = legacy['full_text'] as String? ?? '';
       final createdAt = legacy['created_at'] as String? ?? '';
 
-      final avatarUrlRaw =
+      // アバター: legacy → userResult.avatar → core の順にフォールバック
+      var avatarUrlRaw =
           userLegacy?['profile_image_url_https'] as String?;
+      avatarUrlRaw ??= (userResult?['avatar'] as Map<String, dynamic>?)?['image_url'] as String?;
       // _normal (48x48) → _400x400 に置換して高解像度版を取得
       final avatarUrl = avatarUrlRaw?.replaceFirst('_normal', '_400x400');
 

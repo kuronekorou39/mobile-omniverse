@@ -753,6 +753,14 @@ void navigateToUserProfile(
   BuildContext context, {
   required Post post,
 }) {
+  // ユーザーデータが欠けている場合はナビゲーションしない
+  if (post.username.isEmpty || post.handle == '@') {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('ユーザー情報を取得できません')),
+    );
+    return;
+  }
+
   Navigator.of(context).push(
     MaterialPageRoute(
       builder: (_) => UserProfileScreen(

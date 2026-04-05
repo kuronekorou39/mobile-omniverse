@@ -540,21 +540,24 @@ class PostCard extends StatelessWidget {
     if (url == null) {
       return const CircleAvatar(radius: 7, backgroundColor: Colors.grey);
     }
-    return CachedNetworkImage(
-      imageUrl: url,
-      httpHeaders: kImageHeaders,
-      fadeInDuration: Duration.zero,
-      imageBuilder: (context, imageProvider) => CircleAvatar(
-        radius: 7,
-        backgroundImage: imageProvider,
-      ),
-      placeholder: (context, url) => const CircleAvatar(
-        radius: 7,
-        backgroundColor: Colors.grey,
-      ),
-      errorWidget: (context, url, error) => const CircleAvatar(
-        radius: 7,
-        backgroundColor: Colors.grey,
+    return Opacity(
+      opacity: 0.5,
+      child: CachedNetworkImage(
+        imageUrl: url,
+        httpHeaders: kImageHeaders,
+        fadeInDuration: Duration.zero,
+        imageBuilder: (context, imageProvider) => CircleAvatar(
+          radius: 7,
+          backgroundImage: imageProvider,
+        ),
+        placeholder: (context, url) => const CircleAvatar(
+          radius: 7,
+          backgroundColor: Colors.grey,
+        ),
+        errorWidget: (context, url, error) => const CircleAvatar(
+          radius: 7,
+          backgroundColor: Colors.grey,
+        ),
       ),
     );
   }

@@ -1,6 +1,9 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:package_info_plus/package_info_plus.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 
 import '../models/account.dart';
@@ -346,8 +349,11 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                   if (path == null) return;
                   final now = DateTime.now();
                   final ts = '${now.year}${now.month.toString().padLeft(2, '0')}${now.day.toString().padLeft(2, '0')}_${now.hour.toString().padLeft(2, '0')}${now.minute.toString().padLeft(2, '0')}';
+                  final tmpDir = await getTemporaryDirectory();
+                  final tmpPath = '${tmpDir.path}/omniverse_debug_$ts.log';
+                  await File(path).copy(tmpPath);
                   await Share.shareXFiles(
-                    [XFile(path, name: 'omniverse_debug_$ts.log')],
+                    [XFile(tmpPath)],
                     text: 'OmniVerse デバッグログ ($ts)',
                   );
                 },

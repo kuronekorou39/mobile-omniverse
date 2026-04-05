@@ -20,15 +20,20 @@ class NotificationCacheService {
       _cache[accountId] != null && _cache[accountId]!.notifications.isNotEmpty;
 
   /// 新規フェッチ結果をマージ（重複排除、新しいものを先頭に）
+  /// 各通知に accountId を注入する
   int merge(String accountId, List<NotificationItem> fetched, {String? cursor}) {
+    // accountId を注入
+    final stamped = fetched.map((n) =>
+        n.accountId == accountId ? n : n.copyWith(accountId: accountId)).toList();
+
     final existing = _cache[accountId];
     if (existing == null || existing.notifications.isEmpty) {
-      _cache[accountId] = _AccountNotifications(List.of(fetched), cursor);
-      return fetched.length;
+      _cache[accountId] = _AccountNotifications(List.of(stamped), cursor);
+      return stamped.length;
     }
 
     final existingIds = existing.notifications.map((n) => n.id).toSet();
-    final newItems = fetched.where((n) => !existingIds.contains(n.id)).toList();
+    final newItems = stamped.where((n) => !existingIds.contains(n.id)).toList();
     if (newItems.isNotEmpty) {
       existing.notifications.insertAll(0, newItems);
     }
@@ -53,6 +58,16 @@ class NotificationCacheService {
   void markSeen(String accountId) {
     final notifications = get(accountId);
     _seenIds[accountId] = notifications.map((n) => n.id).toSet();
+  }
+
+  /// 全アカウントの通知を時系列でマージして返す
+  List<NotificationItem> getAllMerged(List<String> accountIds) {
+    final all = <NotificationItem>[];
+    for (final id in accountIds) {
+      all.addAll(get(id));
+    }
+    all.sort((a, b) => b.timestamp.compareTo(a.timestamp));
+    return all;
   }
 
   /// この通知が「新着」（前回画面を開いた後に追加された）かどうか

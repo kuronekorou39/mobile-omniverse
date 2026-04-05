@@ -47,61 +47,83 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen>
       );
     }
 
-    // タブ数が変わったらコントローラを再作成
-    if (_tabController == null || _tabController!.length != accounts.length) {
+    // タブ数: 「すべて」+ 各アカウント
+    final tabCount = accounts.length + 1;
+    if (_tabController == null || _tabController!.length != tabCount) {
       _tabController?.dispose();
-      _tabController = TabController(length: accounts.length, vsync: this);
+      _tabController = TabController(length: tabCount, vsync: this);
     }
 
     final unreadAccountIds = ref.watch(notificationBadgeProvider);
+    final hasAnyUnread = unreadAccountIds.isNotEmpty;
 
     return Scaffold(
       appBar: AppBar(
         title: const Text('通知'),
-        bottom: accounts.length > 1
-            ? TabBar(
-                controller: _tabController,
-                isScrollable: accounts.length > 3,
-                tabs: accounts.map((a) {
-                  final hasNew = unreadAccountIds.contains(a.id);
-                  return Tab(
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        SnsBadge(service: a.service),
-                        const SizedBox(width: 6),
-                        Flexible(
-                          child: Text(
-                            a.displayName,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ),
-                        if (hasNew) ...[
-                          const SizedBox(width: 6),
-                          Container(
-                            width: 8,
-                            height: 8,
-                            decoration: BoxDecoration(
-                              color: Theme.of(context).colorScheme.primary,
-                              shape: BoxShape.circle,
-                            ),
-                          ),
-                        ],
-                      ],
+        bottom: TabBar(
+          controller: _tabController,
+          isScrollable: true,
+          tabs: [
+            // 「すべて」タブ
+            Tab(
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Text('すべて'),
+                  if (hasAnyUnread) ...[
+                    const SizedBox(width: 6),
+                    Container(
+                      width: 8,
+                      height: 8,
+                      decoration: BoxDecoration(
+                        color: Theme.of(context).colorScheme.primary,
+                        shape: BoxShape.circle,
+                      ),
                     ),
-                  );
-                }).toList(),
-              )
-            : null,
-      ),
-      body: accounts.length == 1
-          ? _NotificationList(account: accounts.first)
-          : TabBarView(
-              controller: _tabController,
-              children: accounts
-                  .map((a) => _NotificationList(account: a))
-                  .toList(),
+                  ],
+                ],
+              ),
             ),
+            // 各アカウントタブ
+            ...accounts.map((a) {
+              final hasNew = unreadAccountIds.contains(a.id);
+              return Tab(
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    SnsBadge(service: a.service),
+                    const SizedBox(width: 6),
+                    Flexible(
+                      child: Text(
+                        a.displayName,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    if (hasNew) ...[
+                      const SizedBox(width: 6),
+                      Container(
+                        width: 8,
+                        height: 8,
+                        decoration: BoxDecoration(
+                          color: Theme.of(context).colorScheme.primary,
+                          shape: BoxShape.circle,
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              );
+            }),
+          ],
+        ),
+      ),
+      body: TabBarView(
+        controller: _tabController,
+        children: [
+          _UnifiedNotificationList(accounts: accounts),
+          ...accounts.map((a) => _NotificationList(account: a)),
+        ],
+      ),
     );
   }
 }
@@ -470,10 +492,13 @@ class _NotificationTile extends StatelessWidget {
     required this.notification,
     required this.account,
     this.isNew = false,
+    this.showRecipient = false,
   });
   final NotificationItem notification;
   final Account account;
   final bool isNew;
+  /// 統合ビューで「どのアカウント宛か」を表示する
+  final bool showRecipient;
 
   IconData get _icon => switch (notification.type) {
         NotificationType.like => Icons.favorite,
@@ -552,14 +577,33 @@ class _NotificationTile extends StatelessWidget {
           ],
         ),
       ),
-      subtitle: notification.targetPostBody != null
-          ? Text(
+      subtitle: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          if (notification.targetPostBody != null)
+            Text(
               notification.targetPostBody!,
               maxLines: 2,
               overflow: TextOverflow.ellipsis,
               style: TextStyle(color: Colors.grey[600], fontSize: 13),
-            )
-          : null,
+            ),
+          if (showRecipient) ...[
+            const SizedBox(height: 2),
+            Row(
+              children: [
+                Icon(Icons.arrow_forward, size: 10, color: Colors.grey[500]),
+                const SizedBox(width: 4),
+                SnsBadge(service: account.service, size: 10),
+                const SizedBox(width: 4),
+                Text(
+                  account.handle,
+                  style: TextStyle(color: Colors.grey[500], fontSize: 11),
+                ),
+              ],
+            ),
+          ],
+        ],
+      ),
       trailing: Text(
         timeAgo,
         style: TextStyle(color: Colors.grey[500], fontSize: 12),
@@ -657,5 +701,270 @@ class _NotificationTile extends StatelessWidget {
     if (diff.inHours < 24) return '${diff.inHours}時間';
     if (diff.inDays < 7) return '${diff.inDays}日';
     return '${ts.month}/${ts.day}';
+  }
+}
+
+// ─── 統合通知リスト（「すべて」タブ） ───
+
+class _UnifiedNotificationList extends ConsumerStatefulWidget {
+  const _UnifiedNotificationList({required this.accounts});
+  final List<Account> accounts;
+
+  @override
+  ConsumerState<_UnifiedNotificationList> createState() =>
+      _UnifiedNotificationListState();
+}
+
+class _UnifiedNotificationListState
+    extends ConsumerState<_UnifiedNotificationList>
+    with AutomaticKeepAliveClientMixin {
+  bool _isLoading = true;
+  bool _isFetching = false;
+  List<NotificationItem> _allNotifications = [];
+
+  final Set<NotificationType> _activeTypeFilters = {};
+  final Set<String> _activeAccountFilters = {};
+
+  final _cacheService = NotificationCacheService.instance;
+
+  @override
+  bool get wantKeepAlive => true;
+
+  List<NotificationItem> get _filteredNotifications {
+    var list = _allNotifications;
+    if (_activeTypeFilters.isNotEmpty) {
+      list = list.where((n) => _activeTypeFilters.contains(n.type)).toList();
+    }
+    if (_activeAccountFilters.isNotEmpty) {
+      list = list.where((n) =>
+          n.accountId != null && _activeAccountFilters.contains(n.accountId)).toList();
+    }
+    return list;
+  }
+
+  List<NotificationType> get _availableTypes {
+    const order = [
+      NotificationType.like,
+      NotificationType.repost,
+      NotificationType.reply,
+      NotificationType.mention,
+      NotificationType.quote,
+      NotificationType.follow,
+      NotificationType.unknown,
+    ];
+    final present = _allNotifications.map((n) => n.type).toSet();
+    return order.where((t) => present.contains(t)).toList();
+  }
+
+  String _typeLabel(NotificationType type) => switch (type) {
+        NotificationType.like => 'いいね',
+        NotificationType.repost => 'リポスト',
+        NotificationType.reply => 'リプライ',
+        NotificationType.mention => 'メンション',
+        NotificationType.quote => '引用',
+        NotificationType.follow => 'フォロー',
+        NotificationType.unknown => 'その他',
+      };
+
+  IconData _typeIcon(NotificationType type) => switch (type) {
+        NotificationType.like => Icons.favorite,
+        NotificationType.repost => Icons.repeat,
+        NotificationType.reply => Icons.reply,
+        NotificationType.mention => Icons.alternate_email,
+        NotificationType.quote => Icons.format_quote,
+        NotificationType.follow => Icons.person_add,
+        NotificationType.unknown => Icons.notifications,
+      };
+
+  @override
+  void initState() {
+    super.initState();
+    _loadFromCache();
+    _fetchAll();
+  }
+
+  void _loadFromCache() {
+    final accountIds = widget.accounts.map((a) => a.id).toList();
+    _allNotifications = _cacheService.getAllMerged(accountIds);
+    if (_allNotifications.isNotEmpty) {
+      _isLoading = false;
+    }
+  }
+
+  Future<void> _fetchAll() async {
+    if (_isFetching) return;
+    _isFetching = true;
+
+    try {
+      final futures = widget.accounts.map((account) async {
+        try {
+          if (account.service == SnsService.x) {
+            final results = await Future.wait([
+              XApiService.instance.getNotifications(account.xCredentials),
+              XApiService.instance.getMentionNotifications(account.xCredentials),
+            ]);
+            final notifResult = results[0] as ({List<NotificationItem> notifications, String? cursor, String? responseSnippet});
+            final mentions = results[1] as List<NotificationItem>;
+            final merged = [...notifResult.notifications, ...mentions];
+            final seen = <String>{};
+            merged.retainWhere((n) => seen.add(n.id));
+            merged.sort((a, b) => b.timestamp.compareTo(a.timestamp));
+            _cacheService.merge(account.id, merged, cursor: notifResult.cursor);
+          } else {
+            final result = await BlueskyApiService.instance
+                .getNotificationsWithRefresh(account.blueskyCredentials);
+            _cacheService.merge(account.id, result.notifications, cursor: result.cursor);
+            if (result.updatedCreds != null) {
+              ref.read(accountProvider.notifier)
+                  .updateCredentials(account.id, result.updatedCreds!);
+            }
+          }
+        } catch (e) {
+          debugPrint('[UnifiedNotif] Error fetching ${account.handle}: $e');
+        }
+      });
+
+      await Future.wait(futures);
+
+      if (!mounted) return;
+      _loadFromCache();
+      setState(() {
+        _isLoading = false;
+      });
+    } finally {
+      _isFetching = false;
+    }
+  }
+
+  Account? _accountForNotification(NotificationItem n) {
+    if (n.accountId == null) return null;
+    return widget.accounts.where((a) => a.id == n.accountId).firstOrNull;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    super.build(context);
+
+    // バックグラウンドフェッチで新着がある場合、自動リフェッチ
+    final unreadAccountIds = ref.watch(notificationBadgeProvider);
+    if (unreadAccountIds.isNotEmpty && !_isFetching) {
+      Future.microtask(() => _fetchAll());
+    }
+
+    if (_isLoading) {
+      return const Center(child: CircularProgressIndicator());
+    }
+
+    if (_allNotifications.isEmpty) {
+      return const Center(child: Text('通知はありません'));
+    }
+
+    final types = _availableTypes;
+    final filtered = _filteredNotifications;
+
+    return Column(
+      children: [
+        // フィルタ行
+        SizedBox(
+          height: 48,
+          child: ListView(
+            scrollDirection: Axis.horizontal,
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+            children: [
+              // タイプフィルタ
+              ...types.map((type) {
+                final isActive = _activeTypeFilters.contains(type);
+                return Padding(
+                  padding: const EdgeInsets.only(right: 6),
+                  child: FilterChip(
+                    label: Icon(_typeIcon(type), size: 16),
+                    selected: isActive,
+                    onSelected: (_) {
+                      setState(() {
+                        if (isActive) {
+                          _activeTypeFilters.remove(type);
+                        } else {
+                          _activeTypeFilters.add(type);
+                        }
+                      });
+                    },
+                    tooltip: _typeLabel(type),
+                    visualDensity: VisualDensity.compact,
+                    materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    padding: const EdgeInsets.symmetric(horizontal: 4),
+                    labelPadding: EdgeInsets.zero,
+                  ),
+                );
+              }),
+              // 区切り
+              if (widget.accounts.length > 1) ...[
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 4),
+                  child: Container(
+                    width: 1,
+                    height: 24,
+                    color: Colors.grey.withValues(alpha: 0.3),
+                  ),
+                ),
+                // アカウントフィルタ
+                ...widget.accounts.map((account) {
+                  final isActive = _activeAccountFilters.contains(account.id);
+                  return Padding(
+                    padding: const EdgeInsets.only(right: 6),
+                    child: FilterChip(
+                      label: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          SnsBadge(service: account.service, size: 10),
+                          const SizedBox(width: 4),
+                          Text(
+                            account.displayName.length > 6
+                                ? '${account.displayName.substring(0, 6)}…'
+                                : account.displayName,
+                            style: const TextStyle(fontSize: 11),
+                          ),
+                        ],
+                      ),
+                      selected: isActive,
+                      onSelected: (_) {
+                        setState(() {
+                          if (isActive) {
+                            _activeAccountFilters.remove(account.id);
+                          } else {
+                            _activeAccountFilters.add(account.id);
+                          }
+                        });
+                      },
+                      visualDensity: VisualDensity.compact,
+                      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    ),
+                  );
+                }),
+              ],
+            ],
+          ),
+        ),
+        // 通知リスト
+        Expanded(
+          child: RefreshIndicator(
+            onRefresh: _fetchAll,
+            child: ListView.builder(
+              itemCount: filtered.length,
+              itemBuilder: (context, index) {
+                final n = filtered[index];
+                final account = _accountForNotification(n);
+                if (account == null) return const SizedBox.shrink();
+                return _NotificationTile(
+                  notification: n,
+                  account: account,
+                  isNew: _cacheService.isNew(account.id, n.id),
+                  showRecipient: true,
+                );
+              },
+            ),
+          ),
+        ),
+      ],
+    );
   }
 }

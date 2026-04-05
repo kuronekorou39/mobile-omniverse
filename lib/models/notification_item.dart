@@ -23,6 +23,7 @@ class NotificationItem {
     this.targetPostBody,
     this.targetPostId,
     this.isRead = false,
+    this.accountId,
   });
 
   final String id;
@@ -41,7 +42,10 @@ class NotificationItem {
   final DateTime timestamp;
   final bool isRead;
 
-  NotificationItem copyWith({String? targetPostBody}) {
+  /// この通知を受け取ったアカウントのID
+  final String? accountId;
+
+  NotificationItem copyWith({String? targetPostBody, String? accountId}) {
     return NotificationItem(
       id: id,
       type: type,
@@ -53,6 +57,7 @@ class NotificationItem {
       targetPostId: targetPostId,
       timestamp: timestamp,
       isRead: isRead,
+      accountId: accountId ?? this.accountId,
     );
   }
 

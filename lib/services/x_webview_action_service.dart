@@ -161,14 +161,15 @@ class XWebViewActionService {
     final sw = Stopwatch()..start();
 
     try {
-      // 1. 投稿画面をロード
+      // 1. 投稿画面をロード（すべて intent URL を使用）
       String composeUrl;
       if (inReplyToId != null) {
-        // リプライ: intent URL で直接リプライエディタを開く
+        // リプライ
         composeUrl = 'https://x.com/intent/post?in_reply_to=$inReplyToId';
       } else if (attachmentUrl != null) {
-        // 引用RT
-        composeUrl = 'https://x.com/compose/post?quote_tweet_id=${_extractTweetId(attachmentUrl)}';
+        // 引用RT: 元ツイートのURLを添付
+        final encodedUrl = Uri.encodeComponent(attachmentUrl);
+        composeUrl = 'https://x.com/intent/post?url=$encodedUrl';
       } else {
         // 通常投稿
         composeUrl = 'https://x.com/compose/post';

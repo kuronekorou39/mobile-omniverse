@@ -77,10 +77,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       }
     } else {
       if (index == 2 && _currentIndex != 2) {
-        // 通知タブに切替 → 遅延既読化
-        Future.delayed(const Duration(seconds: 3), () {
-          if (mounted) ref.read(notificationBadgeProvider.notifier).markSeen();
-        });
+        ref.read(notificationBadgeProvider.notifier).markSeen();
       }
       setState(() => _currentIndex = index);
     }

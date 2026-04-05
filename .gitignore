@@ -44,5 +44,11 @@ app.*.map.json
 /android/app/profile
 /android/app/release
 
+# Build artifacts
+*.apk
+
+# Screenshots / images (debug)
+Screenshot_*.png
+
 # Claude Code
 .claude/

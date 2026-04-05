@@ -19,35 +19,71 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   /// タイムラインタブを再タップ時にトップへスクロールするためのコールバック
   VoidCallback? onTimelineTap;
 
+  /// 各タブのNavigatorキー
+  final _navigatorKeys = [
+    GlobalKey<NavigatorState>(),
+    GlobalKey<NavigatorState>(),
+    GlobalKey<NavigatorState>(),
+  ];
+
   @override
   Widget build(BuildContext context) {
     final hasUnread = ref.watch(notificationBadgeProvider).isNotEmpty;
 
-    return Scaffold(
-      body: IndexedStack(
-        index: _currentIndex,
-        children: [
-          const AccountsScreen(),
-          OmniFeedScreen(
-            onRegisterTimelineTap: (callback) => onTimelineTap = callback,
-          ),
-          const NotificationsScreen(),
-        ],
+    // 端末の戻るボタンでタブ内のNavigatorを戻す
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, _) {
+        if (didPop) return;
+        final navigator = _navigatorKeys[_currentIndex].currentState;
+        if (navigator != null && navigator.canPop()) {
+          navigator.pop();
+        }
+      },
+      child: Scaffold(
+        body: IndexedStack(
+          index: _currentIndex,
+          children: [
+            _buildTabNavigator(0, const AccountsScreen()),
+            _buildTabNavigator(1, OmniFeedScreen(
+              onRegisterTimelineTap: (callback) => onTimelineTap = callback,
+            )),
+            _buildTabNavigator(2, const NotificationsScreen()),
+          ],
+        ),
+        bottomNavigationBar: _buildBottomBar(hasUnread),
       ),
-      bottomNavigationBar: _buildBottomBar(hasUnread),
+    );
+  }
+
+  /// 各タブを独自のNavigatorで囲む
+  Widget _buildTabNavigator(int index, Widget child) {
+    return Navigator(
+      key: _navigatorKeys[index],
+      onGenerateRoute: (_) => MaterialPageRoute(
+        builder: (_) => child,
+      ),
     );
   }
 
   void _onTabTap(int index) {
-    if (index == 1 && _currentIndex == 1) {
-      onTimelineTap?.call();
-    } else if (index == 2 && _currentIndex != 2) {
-      // 通知画面のアカウント別ドットが見えるよう、少し遅延してから既読化
-      Future.delayed(const Duration(seconds: 3), () {
-        if (mounted) ref.read(notificationBadgeProvider.notifier).markSeen();
-      });
+    if (index == _currentIndex) {
+      // 同じタブを再タップ → ルートまで戻す
+      _navigatorKeys[index].currentState?.popUntil((route) => route.isFirst);
+
+      // タイムラインタブならトップへスクロール
+      if (index == 1) {
+        onTimelineTap?.call();
+      }
+    } else {
+      if (index == 2 && _currentIndex != 2) {
+        // 通知タブに切替 → 遅延既読化
+        Future.delayed(const Duration(seconds: 3), () {
+          if (mounted) ref.read(notificationBadgeProvider.notifier).markSeen();
+        });
+      }
+      setState(() => _currentIndex = index);
     }
-    setState(() => _currentIndex = index);
   }
 
   Widget _buildBottomBar(bool hasUnread) {

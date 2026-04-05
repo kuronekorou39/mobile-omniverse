@@ -1,8 +1,6 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 
-import '../models/notification_item.dart';
 import '../models/sns_service.dart';
 import '../services/account_storage_service.dart';
 import '../services/bluesky_api_service.dart';
@@ -45,12 +43,11 @@ class NotificationBadgeNotifier extends StateNotifier<Set<String>> {
         .toList();
     if (accounts.isEmpty) return;
 
-    final prefs = await SharedPreferences.getInstance();
     final newUnread = <String>{...state};
 
     for (final account in accounts) {
       try {
-        List<NotificationItem> fetched;
+        int newCount;
 
         if (account.service == SnsService.x) {
           final results = await Future.wait([
@@ -63,21 +60,16 @@ class NotificationBadgeNotifier extends StateNotifier<Set<String>> {
           final seen = <String>{};
           merged.retainWhere((n) => seen.add(n.id));
           merged.sort((a, b) => b.timestamp.compareTo(a.timestamp));
-          fetched = merged;
-          _cache.merge(account.id, fetched, cursor: notifResult.cursor);
+          newCount = _cache.merge(account.id, merged, cursor: notifResult.cursor);
         } else {
           final result = await BlueskyApiService.instance
               .getNotificationsWithRefresh(account.blueskyCredentials);
-          fetched = result.notifications;
-          _cache.merge(account.id, fetched, cursor: result.cursor);
+          newCount = _cache.merge(account.id, result.notifications, cursor: result.cursor);
         }
 
-        // バッジチェック
-        if (fetched.isNotEmpty) {
-          final lastSeen = prefs.getString('$_prefsPrefix${account.id}');
-          if (lastSeen != fetched.first.id) {
-            newUnread.add(account.id);
-          }
+        // 実際にキャッシュに新規追加された件数でバッジ判定
+        if (newCount > 0) {
+          newUnread.add(account.id);
         }
       } catch (e) {
         debugPrint('[NotifBadge] Error fetching ${account.handle}: $e');
@@ -94,19 +86,9 @@ class NotificationBadgeNotifier extends StateNotifier<Set<String>> {
     final accounts = AccountStorageService.instance.accounts
         .where((a) => a.isEnabled)
         .toList();
-    if (accounts.isEmpty) return;
-
-    final prefs = await SharedPreferences.getInstance();
 
     for (final account in accounts) {
-      // キャッシュ内の現在の通知を既読として記録
       _cache.markSeen(account.id);
-
-      final notifications = _cache.get(account.id);
-      if (notifications.isNotEmpty) {
-        await prefs.setString(
-            '$_prefsPrefix${account.id}', notifications.first.id);
-      }
     }
   }
 }

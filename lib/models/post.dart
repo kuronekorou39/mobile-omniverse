@@ -89,6 +89,9 @@ class Post {
   }
 
   Post copyWith({
+    String? username,
+    String? handle,
+    String? avatarUrl,
     DateTime? timestamp,
     int? likeCount,
     int? replyCount,
@@ -105,11 +108,11 @@ class Post {
     return Post(
       id: id,
       source: source,
-      username: username,
-      handle: handle,
+      username: username ?? this.username,
+      handle: handle ?? this.handle,
       body: body,
       timestamp: timestamp ?? this.timestamp,
-      avatarUrl: avatarUrl,
+      avatarUrl: avatarUrl ?? this.avatarUrl,
       accountId: accountId,
       likeCount: likeCount ?? this.likeCount,
       replyCount: replyCount ?? this.replyCount,

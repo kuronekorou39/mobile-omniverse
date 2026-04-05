@@ -88,6 +88,21 @@ class _UserProfileScreenState extends ConsumerState<UserProfileScreen>
     );
   }
 
+  /// UserTweets APIではユーザーデータが省略されることがあるため、
+  /// プロフィール情報で補完する
+  List<Post> _backfillUserData(List<Post> posts) {
+    return posts.map((p) {
+      if (p.username.isEmpty || p.handle == '@') {
+        return p.copyWith(
+          username: widget.username,
+          handle: widget.handle,
+          avatarUrl: widget.avatarUrl,
+        );
+      }
+      return p;
+    }).toList();
+  }
+
   @override
   void initState() {
     super.initState();
@@ -224,7 +239,7 @@ class _UserProfileScreenState extends ConsumerState<UserProfileScreen>
         );
         if (mounted) {
           setState(() {
-            _posts = result.posts;
+            _posts = _backfillUserData(result.posts);
             _nextCursor = result.cursor;
             _hasMore = result.cursor != null;
             _isLoadingPosts = false;
@@ -280,7 +295,7 @@ class _UserProfileScreenState extends ConsumerState<UserProfileScreen>
         );
         if (mounted) {
           setState(() {
-            _posts = [..._posts, ...result.posts];
+            _posts = [..._posts, ..._backfillUserData(result.posts)];
             _nextCursor = result.cursor;
             _hasMore = result.cursor != null && result.posts.isNotEmpty;
             _isLoadingMore = false;

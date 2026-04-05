@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:package_info_plus/package_info_plus.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 
@@ -403,32 +404,41 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     (name: 'DotGothic16', label: 'DotGothic16（ドット）'),
   ];
 
-  /// Google Fonts のキャッシュディレクトリにフォントファイルが存在するかチェック
+  static const _prefsCachedFontsKey = 'cached_google_fonts';
+
+  /// ダウンロード済みフォントをSharedPreferencesで管理
   Future<bool> _isFontCached(String fontName) async {
-    if (fontName.isEmpty) return true; // デフォルトは常にOK
-    try {
-      final dir = await getApplicationSupportDirectory();
-      final fontDir = Directory('${dir.path}/google_fonts');
-      if (!await fontDir.exists()) return false;
-      final files = await fontDir.list().toList();
-      final prefix = fontName.replaceAll(' ', '');
-      return files.any((f) => f.path.contains(prefix));
-    } catch (_) {
-      return false;
+    if (fontName.isEmpty) return true;
+    final prefs = await SharedPreferences.getInstance();
+    final cached = prefs.getStringList(_prefsCachedFontsKey) ?? [];
+    return cached.contains(fontName);
+  }
+
+  Future<void> _markFontCached(String fontName) async {
+    final prefs = await SharedPreferences.getInstance();
+    final cached = prefs.getStringList(_prefsCachedFontsKey) ?? [];
+    if (!cached.contains(fontName)) {
+      cached.add(fontName);
+      await prefs.setStringList(_prefsCachedFontsKey, cached);
     }
   }
 
-  /// フォントのキャッシュを削除して再ダウンロード可能にする
   Future<void> _clearFontCache(String fontName) async {
+    // SharedPreferencesから削除
+    final prefs = await SharedPreferences.getInstance();
+    final cached = prefs.getStringList(_prefsCachedFontsKey) ?? [];
+    cached.remove(fontName);
+    await prefs.setStringList(_prefsCachedFontsKey, cached);
+    // ファイルシステム上のキャッシュも削除を試みる
     try {
       final dir = await getApplicationSupportDirectory();
-      final fontDir = Directory('${dir.path}/google_fonts');
-      if (!await fontDir.exists()) return;
-      final prefix = fontName.replaceAll(' ', '');
-      final files = await fontDir.list().toList();
-      for (final f in files) {
-        if (f.path.contains(prefix)) {
-          await f.delete();
+      for (final subDir in ['google_fonts', 'fonts']) {
+        final fontDir = Directory('${dir.path}/$subDir');
+        if (!await fontDir.exists()) continue;
+        final prefix = fontName.replaceAll(' ', '');
+        final files = await fontDir.list().toList();
+        for (final f in files) {
+          if (f.path.contains(prefix)) await f.delete();
         }
       }
     } catch (_) {}
@@ -442,6 +452,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
         currentFont: settings.fontFamily,
         fonts: _japaneseFonts,
         isFontCached: _isFontCached,
+        markFontCached: _markFontCached,
         clearFontCache: _clearFontCache,
         onSelect: (name) {
           notifier.setFontFamily(name);
@@ -500,6 +511,7 @@ class _FontPickerSheet extends StatefulWidget {
     required this.currentFont,
     required this.fonts,
     required this.isFontCached,
+    required this.markFontCached,
     required this.clearFontCache,
     required this.onSelect,
   });
@@ -507,6 +519,7 @@ class _FontPickerSheet extends StatefulWidget {
   final String currentFont;
   final List<({String name, String label})> fonts;
   final Future<bool> Function(String) isFontCached;
+  final Future<void> Function(String) markFontCached;
   final Future<void> Function(String) clearFontCache;
   final void Function(String) onSelect;
 
@@ -534,10 +547,10 @@ class _FontPickerSheetState extends State<_FontPickerSheet> {
   Future<void> _downloadAndSelect(String fontName) async {
     setState(() => _downloading = fontName);
     try {
-      // Google Fonts をプリロード
       await GoogleFonts.pendingFonts([
         GoogleFonts.getFont(fontName),
       ]);
+      await widget.markFontCached(fontName);
       if (!mounted) return;
       widget.onSelect(fontName);
     } catch (e) {

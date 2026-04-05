@@ -142,6 +142,23 @@ class XWebViewActionService {
     });
   }
 
+  /// WebView の CookieManager から実際の ct0 を取得
+  /// (x.com ロード時にJSが更新するため、creds.ct0 と乖離する)
+  Future<String> _getWebViewCt0(XCredentials creds) async {
+    try {
+      final cookie = await CookieManager.instance().getCookie(
+        url: WebUri('https://x.com'),
+        name: 'ct0',
+      );
+      if (cookie != null && cookie.value.isNotEmpty) {
+        return cookie.value;
+      }
+    } catch (e) {
+      debugPrint('[XWebView] Failed to read ct0 cookie: $e');
+    }
+    return creds.ct0; // フォールバック
+  }
+
   /// features 付きミューテーション (CreateTweet 用)
   Future<({bool success, int statusCode, String body})>
       _executeMutationWithFeatures(
@@ -158,7 +175,7 @@ class XWebViewActionService {
       return (success: false, statusCode: 0, body: 'WebView not ready');
     }
 
-    final ct0 = creds.ct0;
+    final ct0 = await _getWebViewCt0(creds);
 
     // リクエストボディ全体を Dart 側で構築して JS に文字列として渡す
     final requestBody = json.encode({
@@ -285,7 +302,7 @@ class XWebViewActionService {
     }
 
     final variablesJson = json.encode(variables);
-    final ct0 = creds.ct0;
+    final ct0 = await _getWebViewCt0(creds);
 
     final js = '''
       (async function() {

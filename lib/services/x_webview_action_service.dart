@@ -227,8 +227,9 @@ class XWebViewActionService {
     String queryId,
     String operationName,
     Map<String, dynamic> variables,
-    String featuresJson,
-  ) async {
+    String featuresJson, {
+    bool isRetry = false,
+  }) async {
     if (!_isReady || _currentAuthToken != creds.authToken) {
       await init(creds);
     }
@@ -328,8 +329,20 @@ class XWebViewActionService {
         statusCode: statusCode,
         responseBody: body,
         duration: sw.elapsed,
-        extra: {'isReady': _isReady, 'success': success, 'authToken': creds.authToken.substring(0, 8)},
+        extra: {'isReady': _isReady, 'success': success, 'authToken': creds.authToken.substring(0, 8), 'isRetry': isRetry},
       );
+
+      // 226 (automated detection) → saved cookie を破棄してフレッシュ再init + リトライ1回
+      if (!success && !isRetry && body.contains('"code":226')) {
+        debugPrint('[XWebView] 226 detected, clearing saved cookies and retrying fresh');
+        _accountCookies.remove(creds.authToken);
+        _currentAuthToken = null; // 強制再init
+        _isReady = false;
+        return _executeMutationWithFeatures(
+          creds, queryId, operationName, variables, featuresJson,
+          isRetry: true,
+        );
+      }
 
       return (success: success, statusCode: statusCode, body: body);
     } catch (e) {

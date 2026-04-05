@@ -123,6 +123,7 @@ class _NotificationListState extends ConsumerState<_NotificationList>
   String? _error;
   String? _cursor;
   bool _isLoadingMore = false;
+  bool _isFetching = false;
 
   /// フィルタ: 表示するタイプ（空 = 全表示）
   final Set<NotificationType> _activeFilters = {};
@@ -185,6 +186,9 @@ class _NotificationListState extends ConsumerState<_NotificationList>
   }
 
   Future<void> _fetch() async {
+    if (_isFetching) return;
+    _isFetching = true;
+
     final isRefresh = _notifications.isNotEmpty;
     if (!isRefresh) {
       setState(() {
@@ -257,6 +261,8 @@ class _NotificationListState extends ConsumerState<_NotificationList>
       // キャッシュに同期
       _cacheService.merge(widget.account.id, fetched, cursor: newCursor);
 
+      _isFetching = false;
+
       ref.read(activityLogProvider.notifier).logAction(
         action: ActivityAction.notificationFetch,
         platform: widget.account.service,
@@ -279,6 +285,7 @@ class _NotificationListState extends ConsumerState<_NotificationList>
         errorMessage: '$e',
       );
 
+      _isFetching = false;
       if (!mounted) return;
 
       // キャッシュデータがあればエラーを表示せず既存データを維持
@@ -343,6 +350,12 @@ class _NotificationListState extends ConsumerState<_NotificationList>
   @override
   Widget build(BuildContext context) {
     super.build(context);
+
+    // バックグラウンドフェッチで新着がある場合、自動リフェッチ
+    final unreadAccountIds = ref.watch(notificationBadgeProvider);
+    if (unreadAccountIds.contains(widget.account.id) && !_isFetching) {
+      Future.microtask(() => _fetch());
+    }
 
     if (_isLoading) {
       return const Center(child: CircularProgressIndicator());

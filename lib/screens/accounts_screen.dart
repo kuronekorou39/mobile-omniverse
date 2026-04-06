@@ -20,6 +20,7 @@ class AccountsScreen extends ConsumerWidget {
     final accounts = ref.watch(accountProvider);
 
     return Scaffold(
+      appBar: accounts.isNotEmpty ? AppBar(toolbarHeight: 0) : null,
       body: accounts.isEmpty
           ? Center(
               child: Padding(

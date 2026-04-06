@@ -185,7 +185,56 @@ class _LoginWebViewScreenState extends State<LoginWebViewScreen> {
                 useShouldOverrideUrlLoading: true,
                 thirdPartyCookiesEnabled: true,
                 javaScriptCanOpenWindowsAutomatically: true,
+                supportMultipleWindows: true,
               ),
+              // Google OAuth: ポップアップウィンドウ内のWebViewを作成し、
+              // 認証完了後にpostMessageで親に返すフローを処理
+              onCreateWindow: (controller, createWindowAction) async {
+                showDialog(
+                  context: context,
+                  builder: (ctx) => Dialog(
+                    insetPadding: const EdgeInsets.all(16),
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(12),
+                      child: SizedBox(
+                        width: double.infinity,
+                        height: MediaQuery.of(context).size.height * 0.8,
+                        child: InAppWebView(
+                          windowId: createWindowAction.windowId,
+                          initialSettings: InAppWebViewSettings(
+                            userAgent:
+                                'Mozilla/5.0 (Linux; Android 14; Pixel 8) '
+                                'AppleWebKit/537.36 (KHTML, like Gecko) '
+                                'Chrome/131.0.0.0 Mobile Safari/537.36',
+                            javaScriptEnabled: true,
+                            domStorageEnabled: true,
+                            thirdPartyCookiesEnabled: true,
+                          ),
+                          onLoadStop: (ctrl, url) {
+                            final urlStr = url?.toString() ?? '';
+                            debugPrint('[LoginWebView] popup onLoadStop: $urlStr');
+                          },
+                          onCloseWindow: (ctrl) {
+                            // 認証完了でpostMessageが親に返り、ポップアップが閉じられた
+                            debugPrint('[LoginWebView] popup onCloseWindow');
+                            if (Navigator.of(ctx).canPop()) {
+                              Navigator.of(ctx).pop();
+                            }
+                            // 親WebViewをリロードし、少し待ってからcookieを確認
+                            controller.loadUrl(
+                              urlRequest: URLRequest(url: WebUri('https://x.com/home')),
+                            );
+                            Future.delayed(const Duration(seconds: 3), () {
+                              if (mounted) _checkLoginState();
+                            });
+                          },
+                        ),
+                      ),
+                    ),
+                  ),
+                );
+                return true;
+              },
               shouldOverrideUrlLoading: (controller, navigationAction) async {
                 final url = navigationAction.request.url?.toString() ?? '';
                 debugPrint('[LoginWebView] shouldOverrideUrlLoading: $url');

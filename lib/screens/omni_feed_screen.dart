@@ -594,32 +594,42 @@ class _OmniFeedScreenState extends ConsumerState<OmniFeedScreen>
           leadingWidth: 0,
           leading: const SizedBox.shrink(),
           titleSpacing: 16,
-          title: Row(
+          title: Stack(
+            clipBehavior: Clip.none,
             children: [
-              // 左側: カスタムボタン群（フェッチタイマー・センシティブ・匿名）
-              ..._buildAppBarLeftButtons(settings),
-              const Spacer(),
-              // 中央: ロゴ
-              Image.asset(
-                'assets/logo.png',
-                height: 24,
-                fit: BoxFit.contain,
+              // ロゴ: 中央やや右に固定（Oの位置が画面中央）
+              Positioned.fill(
+                child: Align(
+                  alignment: const Alignment(0.15, 0.0),
+                  child: IgnorePointer(
+                    child: Image.asset(
+                      'assets/logo.png',
+                      height: 36,
+                      fit: BoxFit.contain,
+                    ),
+                  ),
+                ),
               ),
-              const Spacer(),
-              // 右側: オーバーレイ・設定（左と同じ間隔）
-              IconButton(
-                icon: const Icon(Icons.picture_in_picture_alt, size: 20),
-                tooltip: 'オーバーレイ',
-                onPressed: () => _launchOverlay(ref.read(feedProvider)),
-                constraints: const BoxConstraints(minWidth: 40, minHeight: 40),
-                padding: EdgeInsets.zero,
-              ),
-              IconButton(
-                icon: const Icon(Icons.settings_outlined, size: 20),
-                tooltip: '設定',
-                onPressed: () => _openSettingsScreen(context),
-                constraints: const BoxConstraints(minWidth: 40, minHeight: 40),
-                padding: EdgeInsets.zero,
+              // 左右のボタン群（ロゴの上に配置）
+              Row(
+                children: [
+                  ..._buildAppBarLeftButtons(settings),
+                  const Spacer(),
+                  IconButton(
+                    icon: const Icon(Icons.picture_in_picture_alt, size: 20),
+                    tooltip: 'オーバーレイ',
+                    onPressed: () => _launchOverlay(ref.read(feedProvider)),
+                    constraints: const BoxConstraints(minWidth: 40, minHeight: 40),
+                    padding: EdgeInsets.zero,
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.settings_outlined, size: 20),
+                    tooltip: '設定',
+                    onPressed: () => _openSettingsScreen(context),
+                    constraints: const BoxConstraints(minWidth: 40, minHeight: 40),
+                    padding: EdgeInsets.zero,
+                  ),
+                ],
               ),
             ],
           ),

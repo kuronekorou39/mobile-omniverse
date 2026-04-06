@@ -184,8 +184,6 @@ class _LoginWebViewScreenState extends State<LoginWebViewScreen> {
                 domStorageEnabled: true,
                 useShouldOverrideUrlLoading: true,
                 thirdPartyCookiesEnabled: true,
-                // X-Requested-With ヘッダーを送信しない（Google OAuth のWebView検知を回避）
-                requestedWithHeaderMode: RequestedWithHeaderMode.NO_HEADER,
               ),
               shouldOverrideUrlLoading: (controller, navigationAction) async {
                 return NavigationActionPolicy.ALLOW;

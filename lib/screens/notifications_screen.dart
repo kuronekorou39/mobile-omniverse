@@ -162,8 +162,25 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen>
     final accounts = ref.watch(accountProvider).where((a) => a.isEnabled).toList();
 
     if (accounts.isEmpty) {
-      return const Scaffold(
-        body: Center(child: Text('有効なアカウントがありません')),
+      return Scaffold(
+        body: Center(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text('🔔', style: TextStyle(fontSize: 48)),
+              const SizedBox(height: 12),
+              Text(
+                'シーン...',
+                style: TextStyle(fontSize: 16, color: Colors.grey[500]),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                'アカウントを追加すると通知が届きます',
+                style: TextStyle(fontSize: 13, color: Colors.grey[400]),
+              ),
+            ],
+          ),
+        ),
       );
     }
 

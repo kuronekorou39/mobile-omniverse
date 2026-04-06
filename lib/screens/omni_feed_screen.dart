@@ -812,9 +812,21 @@ class _OmniFeedScreenState extends ConsumerState<OmniFeedScreen>
         SliverFillRemaining(
           hasScrollBody: false,
           child: Center(
-            child: Text(
-              'アカウントタブからアカウントを追加してください',
-              style: TextStyle(color: Colors.grey[500]),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text('🌊', style: const TextStyle(fontSize: 48)),
+                const SizedBox(height: 12),
+                Text(
+                  '静かな海です...',
+                  style: TextStyle(fontSize: 16, color: Colors.grey[500]),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  'アカウントを追加すると投稿が届きます',
+                  style: TextStyle(fontSize: 13, color: Colors.grey[400]),
+                ),
+              ],
             ),
           ),
         ),

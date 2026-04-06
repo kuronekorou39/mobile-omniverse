@@ -24,10 +24,11 @@ class XWebViewActionService {
   /// アカウントごとの全 cookie を保持 (authToken → cookie list)
   final Map<String, List<Cookie>> _accountCookies = {};
 
-  /// WebView の初回作成
+  /// WebView の初回作成（_controller が使えるまで待機）
   Future<void> _ensureWebView() async {
-    if (_webView != null) return;
+    if (_webView != null && _controller != null) return;
 
+    final controllerCompleter = Completer<void>();
     _readyCompleter = Completer<void>();
     _isReady = false;
 
@@ -42,6 +43,9 @@ class XWebViewActionService {
       onLoadStop: (controller, url) {
         debugPrint('[XWebView] onLoadStop: $url');
         _controller = controller;
+        if (!controllerCompleter.isCompleted) {
+          controllerCompleter.complete();
+        }
         if (!_isReady && url.toString() != 'about:blank') {
           _isReady = true;
           if (_readyCompleter != null && !_readyCompleter!.isCompleted) {
@@ -52,6 +56,14 @@ class XWebViewActionService {
     );
 
     await _webView!.run();
+
+    // _controller がセットされるまで待機
+    await controllerCompleter.future.timeout(
+      const Duration(seconds: 10),
+      onTimeout: () {
+        debugPrint('[XWebView] Timeout waiting for controller');
+      },
+    );
   }
 
   /// アカウントの cookie をセットして x.com をロード

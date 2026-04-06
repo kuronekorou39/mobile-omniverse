@@ -274,7 +274,7 @@ class _LoginWebViewScreenState extends State<LoginWebViewScreen> {
     debugPrint('[LoginWebView] Opening Google auth in Chrome Custom Tab: $url');
 
     final browser = _GoogleAuthBrowser(
-      onClosed: () {
+      onBrowserClosed: () {
         debugPrint('[LoginWebView] Chrome Custom Tab closed');
         // Chrome Custom Tab が閉じられたら WebView をリロードして cookie を確認
         if (_controller != null && mounted) {

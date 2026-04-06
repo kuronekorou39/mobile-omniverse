@@ -13,6 +13,7 @@ import '../services/x_api_service.dart';
 import '../utils/image_headers.dart';
 import '../providers/settings_provider.dart';
 import '../widgets/account_picker_modal.dart';
+import '../widgets/image_viewer.dart';
 import '../widgets/post_card.dart';
 import '../widgets/sns_badge.dart';
 import 'compose_screen.dart';
@@ -628,24 +629,35 @@ class _UserProfileScreenState extends ConsumerState<UserProfileScreen>
     }
   }
 
+  void _openImageViewer(List<String> urls) {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => ImageViewer(imageUrls: urls),
+      ),
+    );
+  }
+
   Widget _buildProfileHeader() {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         // Banner image
         if (_bannerUrl != null)
-          SizedBox(
-            height: 120,
-            width: double.infinity,
-            child: CachedNetworkImage(
-              imageUrl: _bannerUrl!,
-              httpHeaders: kImageHeaders,
-              fit: BoxFit.cover,
-              placeholder: (context, url) => Container(
-                color: Colors.grey[300],
-              ),
-              errorWidget: (context, url, error) => Container(
-                color: Colors.grey[300],
+          GestureDetector(
+            onTap: () => _openImageViewer([_bannerUrl!]),
+            child: SizedBox(
+              height: 120,
+              width: double.infinity,
+              child: CachedNetworkImage(
+                imageUrl: _bannerUrl!,
+                httpHeaders: kImageHeaders,
+                fit: BoxFit.cover,
+                placeholder: (context, url) => Container(
+                  color: Colors.grey[300],
+                ),
+                errorWidget: (context, url, error) => Container(
+                  color: Colors.grey[300],
+                ),
               ),
             ),
           )
@@ -663,20 +675,25 @@ class _UserProfileScreenState extends ConsumerState<UserProfileScreen>
               Row(
                 children: [
                   // Avatar
-                  CircleAvatar(
-                    radius: 36,
-                    backgroundImage: widget.avatarUrl != null
-                        ? CachedNetworkImageProvider(widget.avatarUrl!,
-                            headers: kImageHeaders)
+                  GestureDetector(
+                    onTap: widget.avatarUrl != null
+                        ? () => _openImageViewer([widget.avatarUrl!])
                         : null,
-                    child: widget.avatarUrl == null
-                        ? Text(
-                            widget.username.isNotEmpty
-                                ? widget.username[0].toUpperCase()
-                                : '?',
-                            style: const TextStyle(fontSize: 28),
-                          )
-                        : null,
+                    child: CircleAvatar(
+                      radius: 36,
+                      backgroundImage: widget.avatarUrl != null
+                          ? CachedNetworkImageProvider(widget.avatarUrl!,
+                              headers: kImageHeaders)
+                          : null,
+                      child: widget.avatarUrl == null
+                          ? Text(
+                              widget.username.isNotEmpty
+                                  ? widget.username[0].toUpperCase()
+                                  : '?',
+                              style: const TextStyle(fontSize: 28),
+                            )
+                          : null,
+                    ),
                   ),
                   const Spacer(),
                 ],

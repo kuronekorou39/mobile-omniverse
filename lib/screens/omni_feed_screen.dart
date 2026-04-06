@@ -298,6 +298,11 @@ class _OmniFeedScreenState extends ConsumerState<OmniFeedScreen>
             statusCode: statusCode,
             responseSnippet: responseSnippet,
           );
+      if (!success && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('いいねに失敗しました')),
+        );
+      }
     } catch (e) {
       ref.read(activityLogProvider.notifier).logAction(
             action: ActivityAction.like,
@@ -309,6 +314,11 @@ class _OmniFeedScreenState extends ConsumerState<OmniFeedScreen>
             success: false,
             errorMessage: e.toString(),
           );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('いいねに失敗: $e')),
+        );
+      }
     }
   }
 
@@ -354,6 +364,11 @@ class _OmniFeedScreenState extends ConsumerState<OmniFeedScreen>
             statusCode: statusCode,
             responseSnippet: responseSnippet,
           );
+      if (!success && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('リポストに失敗しました')),
+        );
+      }
     } catch (e) {
       ref.read(activityLogProvider.notifier).logAction(
             action: ActivityAction.repost,
@@ -365,6 +380,11 @@ class _OmniFeedScreenState extends ConsumerState<OmniFeedScreen>
             success: false,
             errorMessage: e.toString(),
           );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('リポストに失敗: $e')),
+        );
+      }
     }
   }
 

@@ -70,7 +70,7 @@ class DebugLogService {
     if (requestHeaders != null && requestHeaders.isNotEmpty) {
       buf.writeln('── Request Headers ──');
       for (final e in requestHeaders.entries) {
-        buf.writeln('${e.key}: ${e.value}');
+        buf.writeln('${e.key}: ${_maskHeaderValue(e.key, e.value)}');
       }
       buf.writeln('');
     }
@@ -132,7 +132,7 @@ class DebugLogService {
     buf.writeln('[$tag] ${now.toIso8601String()}');
     buf.writeln('WebView: $operation');
     if (queryId != null) buf.writeln('queryId: $queryId');
-    if (ct0 != null) buf.writeln('ct0: $ct0');
+    if (ct0 != null) buf.writeln('ct0: ${ct0.length > 8 ? '${ct0.substring(0, 8)}****' : '****'}');
     if (duration != null) {
       buf.writeln('Duration: ${duration.inMilliseconds}ms');
     }
@@ -195,6 +195,22 @@ class DebugLogService {
       buf.writeln(body);
     }
     buf.writeln('');
+  }
+
+  /// 認証関連ヘッダーの値をマスクする
+  static String _maskHeaderValue(String key, String value) {
+    final lower = key.toLowerCase();
+    if (lower == 'authorization' || lower == 'x-csrf-token') {
+      return value.length > 8 ? '${value.substring(0, 8)}****' : '****';
+    }
+    if (lower == 'cookie') {
+      // 各Cookie値の先頭4文字のみ残す
+      return value.replaceAllMapped(
+        RegExp(r'(auth_token|ct0|kdt|att)=([^;]{4})[^;]*'),
+        (m) => '${m.group(1)}=${m.group(2)}****',
+      );
+    }
+    return value;
   }
 
   Future<void> _append(String text) async {

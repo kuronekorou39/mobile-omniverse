@@ -516,7 +516,9 @@ class _UserProfileScreenState extends ConsumerState<UserProfileScreen>
       } else if (post.source == SnsService.bluesky) {
         final creds = account.blueskyCredentials;
         if (wasLiked) {
-          success = true;
+          if (post.bskyLikeUri != null) {
+            success = await BlueskyApiService.instance.unlikePost(creds, post.bskyLikeUri!);
+          }
         } else {
           final postUri = post.uri;
           final postCid = post.cid;
@@ -590,7 +592,9 @@ class _UserProfileScreenState extends ConsumerState<UserProfileScreen>
       } else if (post.source == SnsService.bluesky) {
         final creds = account.blueskyCredentials;
         if (wasReposted) {
-          success = true;
+          if (post.bskyRepostUri != null) {
+            success = await BlueskyApiService.instance.deleteRepost(creds, post.bskyRepostUri!);
+          }
         } else {
           final postUri = post.uri;
           final postCid = post.cid;

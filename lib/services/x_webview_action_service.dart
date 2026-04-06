@@ -295,12 +295,6 @@ class XWebViewActionService {
     }
   }
 
-  /// permalink URL からツイートIDを抽出
-  String _extractTweetId(String url) {
-    final match = RegExp(r'/status/(\d+)').firstMatch(url);
-    return match?.group(1) ?? url;
-  }
-
   /// 指定セレクタの要素が出現するまでポーリング
   Future<bool> _waitForElement(String selector, {int timeoutSeconds = 10}) async {
     final deadline = DateTime.now().add(Duration(seconds: timeoutSeconds));
@@ -455,8 +449,9 @@ class XWebViewActionService {
   }
 
   void dispose() {
+    // Cookie保存は非同期だがdisposeはsyncなのでベストエフォート
     if (_currentAuthToken != null) {
-      _saveCookies(_currentAuthToken!);
+      _saveCookies(_currentAuthToken!).ignore();
     }
     _webView?.dispose();
     _webView = null;

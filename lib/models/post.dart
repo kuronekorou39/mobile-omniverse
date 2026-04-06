@@ -27,6 +27,8 @@ class Post {
     this.retweetedByHandle,
     this.quotedPost,
     this.isSensitive = false,
+    this.bskyLikeUri,
+    this.bskyRepostUri,
     Set<String>? fetchedByAccountIds,
   }) : fetchedByAccountIds = fetchedByAccountIds ??
             (accountId != null ? {accountId} : {});
@@ -66,6 +68,10 @@ class Post {
   final String? retweetedByHandle;
   final Post? quotedPost;
 
+  // Bluesky viewer URIs (for unlike/unrepost)
+  final String? bskyLikeUri;
+  final String? bskyRepostUri;
+
   // Sensitive content flag
   final bool isSensitive;
 
@@ -104,6 +110,8 @@ class Post {
     Post? quotedPost,
     bool? isSensitive,
     Set<String>? fetchedByAccountIds,
+    String? bskyLikeUri,
+    String? bskyRepostUri,
   }) {
     return Post(
       id: id,
@@ -132,6 +140,8 @@ class Post {
       quotedPost: quotedPost ?? this.quotedPost,
       isSensitive: isSensitive ?? this.isSensitive,
       fetchedByAccountIds: fetchedByAccountIds ?? this.fetchedByAccountIds,
+      bskyLikeUri: bskyLikeUri ?? this.bskyLikeUri,
+      bskyRepostUri: bskyRepostUri ?? this.bskyRepostUri,
     );
   }
 
@@ -161,6 +171,8 @@ class Post {
         'retweetedByHandle': retweetedByHandle,
         'isSensitive': isSensitive,
         'fetchedByAccountIds': fetchedByAccountIds.toList(),
+        'bskyLikeUri': bskyLikeUri,
+        'bskyRepostUri': bskyRepostUri,
         if (quotedPost != null) 'quotedPost': quotedPost!.toJson(),
       };
 
@@ -211,6 +223,8 @@ class Post {
       fetchedByAccountIds: (json['fetchedByAccountIds'] as List<dynamic>?)
               ?.map((e) => e as String)
               .toSet(),
+      bskyLikeUri: json['bskyLikeUri'] as String?,
+      bskyRepostUri: json['bskyRepostUri'] as String?,
     );
   }
 

@@ -215,6 +215,28 @@ class BlueskyApiService {
     return response.statusCode == 200;
   }
 
+  /// リポスト解除
+  Future<bool> deleteRepost(BlueskyCredentials creds, String repostUri) async {
+    final rkey = repostUri.split('/').last;
+    final uri = Uri.parse(
+      '${creds.pdsUrl}/xrpc/com.atproto.repo.deleteRecord',
+    );
+    final hdrs = {
+      'Authorization': 'Bearer ${creds.accessJwt}',
+      'Content-Type': 'application/json',
+    };
+    final reqBody = json.encode({
+      'repo': creds.did,
+      'collection': 'app.bsky.feed.repost',
+      'rkey': rkey,
+    });
+    final sw = Stopwatch()..start();
+    final response = await _client.post(uri, headers: hdrs, body: reqBody);
+    sw.stop();
+    _logResponse('deleteRepost', 'POST', uri, hdrs, reqBody, response, sw);
+    return response.statusCode == 200;
+  }
+
   /// リポスト
   Future<String?> repost(
     BlueskyCredentials creds,
@@ -482,6 +504,8 @@ class BlueskyApiService {
     final viewer = post['viewer'] as Map<String, dynamic>? ?? {};
     final isLiked = viewer['like'] != null;
     final isReposted = viewer['repost'] != null;
+    final bskyLikeUri = viewer['like'] as String?;
+    final bskyRepostUri = viewer['repost'] as String?;
 
     // Reply info
     final replyRef = record['reply'] as Map<String, dynamic>?;
@@ -539,6 +563,8 @@ class BlueskyApiService {
       cid: postCid,
       quotedPost: quotedPost,
       isSensitive: isSensitive,
+      bskyLikeUri: bskyLikeUri,
+      bskyRepostUri: bskyRepostUri,
     );
   }
 

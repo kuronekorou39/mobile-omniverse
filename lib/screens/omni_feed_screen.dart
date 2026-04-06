@@ -600,8 +600,15 @@ class _OmniFeedScreenState extends ConsumerState<OmniFeedScreen>
               // ロゴ: 中央やや右に固定（Oの位置が画面中央）
               Positioned.fill(
                 child: Align(
-                  alignment: const Alignment(0.15, 0.0),
-                  child: IgnorePointer(
+                  alignment: const Alignment(0.05, 0.0),
+                  child: GestureDetector(
+                    onTap: () {
+                      _scrollController.animateTo(
+                        0,
+                        duration: const Duration(milliseconds: 400),
+                        curve: Curves.easeOutCubic,
+                      );
+                    },
                     child: Image.asset(
                       'assets/logo.png',
                       height: 36,

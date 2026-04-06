@@ -592,6 +592,13 @@ class _NotificationTile extends StatelessWidget {
   /// 統合ビューで「どのアカウント宛か」を表示する
   final bool showRecipient;
 
+  /// システム通知かどうか（actorHandleが自分自身のアカウント）
+  bool get _isSystemNotification {
+    final actorHandle = notification.actorHandle.replaceFirst('@', '').toLowerCase();
+    final myHandle = account.handle.replaceFirst('@', '').toLowerCase();
+    return actorHandle == myHandle || actorHandle.isEmpty;
+  }
+
   IconData get _icon => switch (notification.type) {
         NotificationType.like => Icons.favorite,
         NotificationType.repost => Icons.repeat,
@@ -613,7 +620,7 @@ class _NotificationTile extends StatelessWidget {
           ? Theme.of(context).colorScheme.primaryContainer.withValues(alpha: 0.15)
           : null,
       leading: GestureDetector(
-        onTap: () => _navigateToActorProfile(context),
+        onTap: _isSystemNotification ? null : () => _navigateToActorProfile(context),
         child: SizedBox(
           width: 44,
           child: Stack(
@@ -694,6 +701,17 @@ class _NotificationTile extends StatelessWidget {
       ),
       contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
       onTap: () {
+        if (_isSystemNotification) {
+          // システム通知 → 全文をスナックバーで表示
+          final fullText = '${notification.actorName} ${notification.targetPostBody ?? ''}';
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(fullText),
+              duration: const Duration(seconds: 5),
+            ),
+          );
+          return;
+        }
         if (notification.type == NotificationType.follow ||
             notification.targetPostId == null) {
           _navigateToActorProfile(context);

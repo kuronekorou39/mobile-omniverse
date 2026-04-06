@@ -575,7 +575,7 @@ class _OmniFeedScreenState extends ConsumerState<OmniFeedScreen>
     final currentPostIds = feed.posts.map((p) => p.id).toSet();
     if (_prevPostIds.isNotEmpty) {
       final newIds = currentPostIds.difference(_prevPostIds);
-      if (newIds.isNotEmpty && newIds.length <= ref.read(feedProvider.notifier).dripThreshold) {
+      if (newIds.isNotEmpty && newIds.length <= 5) { // 少数のドリップのみアニメーション
         _animatingPostIds.addAll(newIds);
       }
     }
@@ -636,16 +636,8 @@ class _OmniFeedScreenState extends ConsumerState<OmniFeedScreen>
       );
     }
 
-    final showBanner = ref.read(feedProvider).pendingCount > ref.read(feedProvider.notifier).dripThreshold;
-
     return Scaffold(
-      body: Stack(
-        children: [
-          body,
-          if (showBanner)
-            _buildNewPostsBanner(context, feed.pendingCount),
-        ],
-      ),
+      body: body,
       floatingActionButton: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
@@ -690,8 +682,7 @@ class _OmniFeedScreenState extends ConsumerState<OmniFeedScreen>
     final remaining = _remainingSeconds.clamp(0, total);
     final progress = total > 0 ? remaining / total : 0.0;
     final pendingCount = ref.read(feedProvider).pendingCount;
-    final showPending = pendingCount > 0 &&
-        pendingCount <= ref.read(feedProvider.notifier).dripThreshold;
+    final showPending = pendingCount > 0;
 
     // IconButtonと同じconstraints/paddingで間隔を統一
     return ConstrainedBox(

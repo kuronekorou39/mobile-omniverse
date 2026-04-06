@@ -78,8 +78,8 @@ class FeedNotifier extends StateNotifier<FeedState> {
     }
   }
 
-  /// ドリップ→バナー切替の閾値（フェッチ間隔秒数と同じ）
-  int get dripThreshold => _settingsReader().fetchIntervalSeconds;
+  /// キューの上限（これを超えた古い投稿は切り捨て）
+  static const int _maxQueueSize = 100;
 
   /// タイムラインの投稿保持上限（これを超えた古い投稿は破棄）
   static const int _maxPosts = 500;
@@ -94,7 +94,6 @@ class FeedNotifier extends StateNotifier<FeedState> {
   Timer? _dripDelayTimer;
   Timer? _countdownTimer;
   bool _bypassDrip = false;
-  bool _firstFetch = true;
   bool _isAtTop = true;
   bool _overlayActive = false;
   bool _overlayAtTop = true;
@@ -350,10 +349,9 @@ class FeedNotifier extends StateNotifier<FeedState> {
 
     final newPending = newToQueue.values.toList();
 
-    // 初回ロード・手動リフレッシュ・loadMore・起動後初回フェッチはドリップせず即時反映
-    final shouldBypassDrip = _bypassDrip || _firstFetch || state.posts.isEmpty;
+    // 手動リフレッシュ・loadMore・初回（キャッシュ空）はドリップせず即時反映
+    final shouldBypassDrip = _bypassDrip || state.posts.isEmpty;
     _bypassDrip = false;
-    _firstFetch = false;
 
     if (shouldBypassDrip && newPending.isNotEmpty) {
       _precachePostsImages(newPending);
@@ -435,7 +433,7 @@ class FeedNotifier extends StateNotifier<FeedState> {
     // ドリップ開始判定（メインかオーバーレイのどちらかがトップにいれば開始）
     if (_pendingQueue.isNotEmpty && _dripTimer == null) {
       final canDrip = _isAtTop || (_overlayActive && _overlayAtTop);
-      if (canDrip && _pendingQueue.length <= dripThreshold) {
+      if (canDrip) {
         _startDrip();
       }
     }
@@ -455,16 +453,31 @@ class FeedNotifier extends StateNotifier<FeedState> {
   void _startDrip() {
     _dripTimer?.cancel();
     if (_pendingQueue.isEmpty) return;
-    if (_pendingQueue.length > dripThreshold) return; // バナーモードではドリップしない
+
+    // キューが上限を超えたら古い投稿を切り捨て
+    if (_pendingQueue.length > _maxQueueSize) {
+      _pendingQueue.sort((a, b) => b.timestamp.compareTo(a.timestamp));
+      final removed = _pendingQueue.sublist(_maxQueueSize);
+      for (final p in removed) {
+        _pendingIds.remove(p.id);
+      }
+      _pendingQueue.removeRange(_maxQueueSize, _pendingQueue.length);
+    }
 
     // 古い順にソート → 各ドリップが常にリスト先頭に挿入されるように
     _pendingQueue.sort((a, b) => a.timestamp.compareTo(b.timestamp));
 
-    // フェッチ間隔 ÷ キュー件数 (300ms〜2000ms)
-    final schedulerIntervalMs =
-        TimelineFetchScheduler.instance.interval.inMilliseconds;
-    final intervalMs =
-        (schedulerIntervalMs / _pendingQueue.length).round().clamp(200, 3000);
+    // 動的速度: ≤30件=通常、31〜100件=高速(200ms)
+    int intervalMs;
+    if (_pendingQueue.length <= 30) {
+      final schedulerIntervalMs =
+          TimelineFetchScheduler.instance.interval.inMilliseconds;
+      intervalMs =
+          (schedulerIntervalMs / _pendingQueue.length).round().clamp(200, 3000);
+    } else {
+      intervalMs = 200; // 高速ドリップ: 5件/秒
+    }
+
     _dripTimer = Timer.periodic(Duration(milliseconds: intervalMs), (_) {
       _dripOne();
     });
@@ -493,9 +506,7 @@ class FeedNotifier extends StateNotifier<FeedState> {
       // 少し待ってからドリップ再開
       _dripDelayTimer = Timer(const Duration(milliseconds: 500), () {
         _isAtTop = true;
-        // トップに戻ったらドリップ再開
-        if (_pendingQueue.isNotEmpty && _dripTimer == null &&
-            _pendingQueue.length <= dripThreshold) {
+        if (_pendingQueue.isNotEmpty && _dripTimer == null) {
           _startDrip();
         }
       });
@@ -587,8 +598,7 @@ class FeedNotifier extends StateNotifier<FeedState> {
     TimelineCacheService.instance.saveTimeline(sorted);
     _syncToOverlay();
 
-    // ペンディングが残っていてドリップ閾値以下ならドリップ再開
-    if (_pendingQueue.isNotEmpty && _pendingQueue.length <= dripThreshold) {
+    if (_pendingQueue.isNotEmpty && _isAtTop) {
       _startDrip();
     }
 

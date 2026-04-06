@@ -184,21 +184,21 @@ class _LoginWebViewScreenState extends State<LoginWebViewScreen> {
                 domStorageEnabled: true,
                 useShouldOverrideUrlLoading: true,
                 thirdPartyCookiesEnabled: true,
-                // Google OAuth のポップアップウィンドウ対応
-                supportMultipleWindows: true,
                 javaScriptCanOpenWindowsAutomatically: true,
               ),
-              // ポップアップウィンドウを同じWebViewで開く
-              onCreateWindow: (controller, createWindowAction) async {
-                // ポップアップのURLを現在のWebViewで開く
-                final url = createWindowAction.request.url;
-                if (url != null) {
-                  await controller.loadUrl(urlRequest: URLRequest(url: url));
-                }
-                return true;
-              },
               shouldOverrideUrlLoading: (controller, navigationAction) async {
+                final url = navigationAction.request.url?.toString() ?? '';
+                debugPrint('[LoginWebView] shouldOverrideUrlLoading: $url');
                 return NavigationActionPolicy.ALLOW;
+              },
+              onLoadError: (controller, url, code, message) {
+                debugPrint('[LoginWebView] onLoadError: $url code=$code msg=$message');
+              },
+              onReceivedHttpError: (controller, request, response) {
+                debugPrint('[LoginWebView] HTTP error: ${request.url} status=${response.statusCode}');
+              },
+              onConsoleMessage: (controller, consoleMessage) {
+                debugPrint('[LoginWebView] console: ${consoleMessage.message}');
               },
               // X の場合: fetch をインターセプトしてユーザー情報をキャプチャ
               initialUserScripts: widget.service == SnsService.x

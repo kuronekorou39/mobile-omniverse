@@ -391,8 +391,7 @@ class _UserProfileScreenState extends ConsumerState<UserProfileScreen>
       },
       child: NotificationListener<ScrollNotification>(
         onNotification: (notification) {
-          if (!isMediaTab &&
-              notification is ScrollEndNotification &&
+          if (notification is ScrollEndNotification &&
               notification.metrics.pixels >=
                   notification.metrics.maxScrollExtent - 200) {
             _loadMorePosts();
@@ -403,7 +402,7 @@ class _UserProfileScreenState extends ConsumerState<UserProfileScreen>
           context: context,
           removeTop: true,
           child: ListView.builder(
-          itemCount: posts.length + (_hasMore && !isMediaTab ? 1 : 0),
+          itemCount: posts.length + (_hasMore ? 1 : 0),
           itemBuilder: (context, index) {
             if (index >= posts.length) {
               // ローディングインジケータ

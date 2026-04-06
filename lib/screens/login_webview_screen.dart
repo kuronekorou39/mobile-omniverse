@@ -187,30 +187,20 @@ class _LoginWebViewScreenState extends State<LoginWebViewScreen> {
                 // 3rd party cookies (Google OAuth に必要)
                 thirdPartyCookiesEnabled: true,
               ),
-              // Google OAuth リダイレクト等を適切に処理
+              // Google OAuth → Chrome Custom Tabs で開く
               shouldOverrideUrlLoading: (controller, navigationAction) async {
                 final url = navigationAction.request.url?.toString() ?? '';
-                // Google OAuth, Apple ID など外部認証プロバイダのドメインは許可
-                final allowedDomains = [
-                  'accounts.google.com',
-                  'accounts.youtube.com',
-                  'appleid.apple.com',
-                  'x.com',
-                  'twitter.com',
-                  'api.twitter.com',
-                  'bsky.app',
-                  'bsky.social',
-                ];
                 final uri = Uri.tryParse(url);
                 if (uri != null) {
                   final host = uri.host;
-                  for (final domain in allowedDomains) {
-                    if (host == domain || host.endsWith('.$domain')) {
-                      return NavigationActionPolicy.ALLOW;
-                    }
+                  // Google認証はWebView内でブロックされるため
+                  // Chrome Custom Tabsで開く
+                  if (host == 'accounts.google.com' ||
+                      host.endsWith('.google.com')) {
+                    _openGoogleAuthInCustomTab(url);
+                    return NavigationActionPolicy.CANCEL;
                   }
                 }
-                // その他の URL も基本的に許可（リダイレクトチェーンを壊さない）
                 return NavigationActionPolicy.ALLOW;
               },
               // X の場合: fetch をインターセプトしてユーザー情報をキャプチャ
@@ -275,6 +265,31 @@ class _LoginWebViewScreenState extends State<LoginWebViewScreen> {
               ),
             ),
         ],
+      ),
+    );
+  }
+
+  /// Google認証をChrome Custom Tabsで開く
+  Future<void> _openGoogleAuthInCustomTab(String url) async {
+    debugPrint('[LoginWebView] Opening Google auth in Chrome Custom Tab: $url');
+
+    final browser = _GoogleAuthBrowser(
+      onClosed: () {
+        debugPrint('[LoginWebView] Chrome Custom Tab closed');
+        // Chrome Custom Tab が閉じられたら WebView をリロードして cookie を確認
+        if (_controller != null && mounted) {
+          _controller!.loadUrl(
+            urlRequest: URLRequest(url: WebUri(widget.service.homeUrl)),
+          );
+        }
+      },
+    );
+
+    await browser.open(
+      url: WebUri(url),
+      settings: ChromeSafariBrowserSettings(
+        shareState: CustomTabsShareState.SHARE_STATE_OFF,
+        barCollapsingEnabled: true,
       ),
     );
   }
@@ -671,6 +686,24 @@ class _LoginWebViewScreenState extends State<LoginWebViewScreen> {
     await cookieManager.deleteAllCookies();
 
     if (mounted) Navigator.of(context).pop(loginResult);
+  }
+}
+
+/// Google認証用Chrome Custom Tabsブラウザ
+class _GoogleAuthBrowser extends ChromeSafariBrowser {
+  _GoogleAuthBrowser({required this.onClosed});
+
+  final VoidCallback onClosed;
+
+  @override
+  void onOpened() {
+    debugPrint('[GoogleAuth] Chrome Custom Tab opened');
+  }
+
+  @override
+  void onClosed() {
+    debugPrint('[GoogleAuth] Chrome Custom Tab closed');
+    onClosed();
   }
 }
 

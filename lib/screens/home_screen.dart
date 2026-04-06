@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../providers/notification_badge_provider.dart';
+import '../services/account_storage_service.dart';
 import 'accounts_screen.dart';
 import 'notifications_screen.dart';
 import 'omni_feed_screen.dart';
@@ -15,7 +16,8 @@ class HomeScreen extends ConsumerStatefulWidget {
 }
 
 class _HomeScreenState extends ConsumerState<HomeScreen> {
-  int _currentIndex = 1; // デフォルト: タイムライン
+  // アカウントがなければアカウントタブ、あればタイムラインタブ
+  int _currentIndex = AccountStorageService.instance.accounts.isEmpty ? 0 : 1;
 
   /// タイムラインタブを再タップ時にトップへスクロールするためのコールバック
   VoidCallback? onTimelineTap;

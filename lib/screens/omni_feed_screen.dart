@@ -443,8 +443,9 @@ class _OmniFeedScreenState extends ConsumerState<OmniFeedScreen>
     final buttons = <Widget>[];
     final notifier = ref.read(settingsProvider.notifier);
 
-    // フェッチタイマー
-    if (settings.isFetchingActive && settings.showFetchTimer) {
+    // フェッチタイマー（アカウントがある場合のみ）
+    final hasAccounts = ref.read(accountProvider).isNotEmpty;
+    if (hasAccounts && settings.isFetchingActive && settings.showFetchTimer) {
       buttons.add(_buildFetchIndicator(context, settings));
     }
 
@@ -653,9 +654,12 @@ class _OmniFeedScreenState extends ConsumerState<OmniFeedScreen>
       );
     }
 
+    final hasAccounts = accounts.isNotEmpty;
+
     return Scaffold(
       body: body,
-      floatingActionButton: Column(
+      floatingActionButton: hasAccounts
+          ? Column(
         mainAxisSize: MainAxisSize.min,
         children: [
           AnimatedScale(
@@ -689,7 +693,8 @@ class _OmniFeedScreenState extends ConsumerState<OmniFeedScreen>
             child: const Icon(Icons.edit),
           ),
         ],
-      ),
+      )
+          : null,
     );
   }
 
@@ -807,31 +812,9 @@ class _OmniFeedScreenState extends ConsumerState<OmniFeedScreen>
         SliverFillRemaining(
           hasScrollBody: false,
           child: Center(
-            child: Padding(
-              padding: const EdgeInsets.all(32),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(Icons.rss_feed, size: 64, color: Colors.grey[400]),
-                  const SizedBox(height: 16),
-                  const Text(
-                    'OmniVerse',
-                    style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
-                  ),
-                  const SizedBox(height: 8),
-                  const Text(
-                    'アカウントを追加してタイムラインを取得しましょう',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(color: Colors.grey),
-                  ),
-                  const SizedBox(height: 24),
-                  FilledButton.icon(
-                    onPressed: () => _openAccountsScreen(context),
-                    icon: const Icon(Icons.person_add),
-                    label: const Text('アカウント追加'),
-                  ),
-                ],
-              ),
+            child: Text(
+              'アカウントタブからアカウントを追加してください',
+              style: TextStyle(color: Colors.grey[500]),
             ),
           ),
         ),
@@ -843,36 +826,9 @@ class _OmniFeedScreenState extends ConsumerState<OmniFeedScreen>
         SliverFillRemaining(
           hasScrollBody: false,
           child: Center(
-            child: Padding(
-              padding: const EdgeInsets.all(32),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(Icons.rss_feed, size: 64, color: Colors.grey[400]),
-                  const SizedBox(height: 16),
-                  const Text(
-                    'OmniVerse',
-                    style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
-                  ),
-                  const SizedBox(height: 8),
-                  const Text(
-                    '設定画面でフェッチを有効にしてください',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(color: Colors.grey),
-                  ),
-                  const SizedBox(height: 24),
-                  FilledButton.icon(
-                    onPressed: () {
-                      Navigator.of(context).push(
-                        MaterialPageRoute(
-                            builder: (_) => const SettingsScreen()),
-                      );
-                    },
-                    icon: const Icon(Icons.settings),
-                    label: const Text('設定を開く'),
-                  ),
-                ],
-              ),
+            child: Text(
+              'フェッチが停止中です',
+              style: TextStyle(color: Colors.grey[500]),
             ),
           ),
         ),

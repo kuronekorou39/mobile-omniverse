@@ -399,7 +399,10 @@ class _UserProfileScreenState extends ConsumerState<UserProfileScreen>
           }
           return false;
         },
-        child: ListView.builder(
+        child: MediaQuery.removePadding(
+          context: context,
+          removeTop: true,
+          child: ListView.builder(
           itemCount: posts.length + (_hasMore && !isMediaTab ? 1 : 0),
           itemBuilder: (context, index) {
             if (index >= posts.length) {
@@ -450,6 +453,7 @@ class _UserProfileScreenState extends ConsumerState<UserProfileScreen>
               },
             );
           },
+        ),
         ),
       ),
     );

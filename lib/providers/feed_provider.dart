@@ -435,8 +435,13 @@ class FeedNotifier extends StateNotifier<FeedState> {
     // ドリップ開始判定（メインかオーバーレイのどちらかがトップにいれば開始）
     if (_pendingQueue.isNotEmpty && _dripTimer == null) {
       final canDrip = _isAtTop || (_overlayActive && _overlayAtTop);
-      if (canDrip && _pendingQueue.length <= dripThreshold) {
-        _startDrip();
+      if (canDrip) {
+        if (_pendingQueue.length <= dripThreshold) {
+          _startDrip();
+        } else {
+          // 閾値超えでもトップにいるなら自動flush
+          flushPending();
+        }
       }
     }
 
@@ -494,9 +499,12 @@ class FeedNotifier extends StateNotifier<FeedState> {
       _dripDelayTimer = Timer(const Duration(milliseconds: 500), () {
         _isAtTop = true;
         // トップに戻ったらドリップ再開
-        if (_pendingQueue.isNotEmpty && _dripTimer == null &&
-            _pendingQueue.length <= dripThreshold) {
-          _startDrip();
+        if (_pendingQueue.isNotEmpty && _dripTimer == null) {
+          if (_pendingQueue.length <= dripThreshold) {
+            _startDrip();
+          } else {
+            flushPending();
+          }
         }
       });
     } else {

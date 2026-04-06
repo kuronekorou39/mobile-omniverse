@@ -115,6 +115,7 @@ class _LoginWebViewScreenState extends State<LoginWebViewScreen> {
   double _progress = 0;
   bool _isExtracting = false;
   bool _cookiesCleared = false;
+  bool _loginDetected = false;
 
   @override
   void initState() {
@@ -230,13 +231,13 @@ class _LoginWebViewScreenState extends State<LoginWebViewScreen> {
               },
               onLoadStop: (controller, url) {
                 debugPrint('[LoginWebView] onLoadStop: $url');
-                // Google OAuth 完了後に元のサイトに戻った場合を検出
                 final urlStr = url?.toString() ?? '';
                 if (urlStr.contains(widget.service.domain)) {
                   debugPrint('[LoginWebView] Returned to ${widget.service.domain}');
+                  // ログイン自動検知
+                  _checkLoginState();
                 }
                 // X の場合: fetch interceptor を再注入
-                // (Google OAuth リダイレクト後にスクリプトが消えることがある)
                 if (widget.service == SnsService.x &&
                     urlStr.contains('x.com')) {
                   controller.evaluateJavascript(
@@ -273,6 +274,59 @@ class _LoginWebViewScreenState extends State<LoginWebViewScreen> {
                 ),
               ),
             ),
+        ],
+      ),
+    );
+  }
+
+  /// ログイン状態を自動チェックしてモーダルを表示
+  Future<void> _checkLoginState() async {
+    if (_loginDetected || _isExtracting) return;
+
+    bool loggedIn = false;
+
+    if (widget.service == SnsService.x) {
+      final cookies = await CookieManager.instance().getCookies(
+        url: WebUri('https://x.com'),
+      );
+      final hasAuth = cookies.any((c) => c.name == 'auth_token');
+      final hasCt0 = cookies.any((c) => c.name == 'ct0');
+      loggedIn = hasAuth && hasCt0;
+    } else {
+      // Bluesky: ログイン後にbsky.appドメインでセッション情報がlocalStorageに保存される
+      if (_controller != null) {
+        final session = await _controller!.evaluateJavascript(
+          source: 'localStorage.getItem("BSKY_STORAGE") || ""',
+        );
+        loggedIn = session != null && session.toString().contains('accessJwt');
+      }
+    }
+
+    if (!loggedIn || !mounted) return;
+
+    _loginDetected = true;
+
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => AlertDialog(
+        title: const Text('ログインを確認しました'),
+        content: const Text('このアカウントを追加しますか？'),
+        actions: [
+          TextButton(
+            onPressed: () {
+              Navigator.of(ctx).pop();
+              _loginDetected = false; // キャンセル後に再検知可能に
+            },
+            child: const Text('キャンセル'),
+          ),
+          FilledButton(
+            onPressed: () {
+              Navigator.of(ctx).pop();
+              _onDonePressed();
+            },
+            child: const Text('アカウントを追加'),
+          ),
         ],
       ),
     );

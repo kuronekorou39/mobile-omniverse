@@ -75,10 +75,10 @@ class _SplashScreenState extends State<SplashScreen>
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                Icon(
-                  Icons.rss_feed,
-                  size: 80,
-                  color: colorScheme.primary,
+                Image.asset(
+                  'assets/splash_logo.png',
+                  width: 160,
+                  fit: BoxFit.contain,
                 ),
                 const SizedBox(height: 16),
                 Text(

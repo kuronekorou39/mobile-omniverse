@@ -184,7 +184,19 @@ class _LoginWebViewScreenState extends State<LoginWebViewScreen> {
                 domStorageEnabled: true,
                 useShouldOverrideUrlLoading: true,
                 thirdPartyCookiesEnabled: true,
+                // Google OAuth のポップアップウィンドウ対応
+                supportMultipleWindows: true,
+                javaScriptCanOpenWindowsAutomatically: true,
               ),
+              // ポップアップウィンドウを同じWebViewで開く
+              onCreateWindow: (controller, createWindowAction) async {
+                // ポップアップのURLを現在のWebViewで開く
+                final url = createWindowAction.request.url;
+                if (url != null) {
+                  await controller.loadUrl(urlRequest: URLRequest(url: url));
+                }
+                return true;
+              },
               shouldOverrideUrlLoading: (controller, navigationAction) async {
                 return NavigationActionPolicy.ALLOW;
               },

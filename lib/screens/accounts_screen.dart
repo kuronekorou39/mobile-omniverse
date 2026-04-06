@@ -175,7 +175,7 @@ class AccountsScreen extends ConsumerWidget {
 }
 
 class _AccountTile extends ConsumerWidget {
-  const _AccountTile({required this.account});
+  const _AccountTile({super.key, required this.account});
 
   final Account account;
 

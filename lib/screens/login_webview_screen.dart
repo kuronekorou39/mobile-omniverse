@@ -691,9 +691,9 @@ class _LoginWebViewScreenState extends State<LoginWebViewScreen> {
 
 /// Google認証用Chrome Custom Tabsブラウザ
 class _GoogleAuthBrowser extends ChromeSafariBrowser {
-  _GoogleAuthBrowser({required this.onClosed});
+  _GoogleAuthBrowser({required this.onBrowserClosed});
 
-  final VoidCallback onClosed;
+  final VoidCallback onBrowserClosed;
 
   @override
   void onOpened() {
@@ -703,7 +703,7 @@ class _GoogleAuthBrowser extends ChromeSafariBrowser {
   @override
   void onClosed() {
     debugPrint('[GoogleAuth] Chrome Custom Tab closed');
-    onClosed();
+    onBrowserClosed();
   }
 }
 

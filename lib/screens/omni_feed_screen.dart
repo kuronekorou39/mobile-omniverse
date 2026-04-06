@@ -25,7 +25,6 @@ import '../widgets/post_card.dart';
 import '../widgets/update_dialog.dart';
 import 'accounts_screen.dart';
 import 'compose_screen.dart';
-import 'notifications_screen.dart';
 import 'settings_screen.dart';
 import 'post_detail_screen.dart';
 

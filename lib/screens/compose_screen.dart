@@ -210,7 +210,7 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
               child: DropdownButtonFormField<Account>(
-                initialValue: _selectedAccount,
+                value: _selectedAccount,
                 isExpanded: true,
                 decoration: const InputDecoration(
                   labelText: '投稿アカウント',

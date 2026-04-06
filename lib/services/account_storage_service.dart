@@ -87,6 +87,13 @@ class AccountStorageService {
     }
   }
 
+  Future<void> reorder(int oldIndex, int newIndex) async {
+    if (newIndex > oldIndex) newIndex--;
+    final item = _accounts.removeAt(oldIndex);
+    _accounts.insert(newIndex, item);
+    await _save();
+  }
+
   Account? getAccount(String accountId) {
     try {
       return _accounts.firstWhere((a) => a.id == accountId);

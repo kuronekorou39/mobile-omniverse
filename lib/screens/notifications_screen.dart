@@ -162,9 +162,8 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen>
     final accounts = ref.watch(accountProvider).where((a) => a.isEnabled).toList();
 
     if (accounts.isEmpty) {
-      return Scaffold(
-        appBar: AppBar(title: const Text('通知')),
-        body: const Center(child: Text('有効なアカウントがありません')),
+      return const Scaffold(
+        body: Center(child: Text('有効なアカウントがありません')),
       );
     }
 
@@ -180,7 +179,7 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen>
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('通知'),
+        toolbarHeight: 0,
         bottom: TabBar(
           controller: _tabController,
           isScrollable: true,

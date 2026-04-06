@@ -50,20 +50,13 @@ class AccountsScreen extends ConsumerWidget {
                 ),
               ),
             )
-          : ListView(
+          : Column(
               children: [
-                const SizedBox(height: 16),
+                // 全ON/OFF + 追加ボタン
                 Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
                   child: Row(
                     children: [
-                      Text(
-                        'アカウント',
-                        style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                              fontWeight: FontWeight.bold,
-                            ),
-                      ),
-                      const Spacer(),
                       TextButton(
                         onPressed: () => ref.read(accountProvider.notifier).enableAll(),
                         style: TextButton.styleFrom(
@@ -83,20 +76,33 @@ class AccountsScreen extends ConsumerWidget {
                         ),
                         child: const Text('全OFF'),
                       ),
+                      const Spacer(),
+                      TextButton.icon(
+                        onPressed: () => _showAddAccountDialog(context, ref),
+                        icon: const Icon(Icons.add, size: 18),
+                        label: const Text('追加'),
+                        style: TextButton.styleFrom(
+                          minimumSize: Size.zero,
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                        ),
+                      ),
                     ],
                   ),
                 ),
-                const SizedBox(height: 4),
-                ...accounts.map(
-                  (account) => _AccountTile(account: account),
-                ),
-                Padding(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                  child: OutlinedButton.icon(
-                    onPressed: () => _showAddAccountDialog(context, ref),
-                    icon: const Icon(Icons.add),
-                    label: const Text('アカウント追加'),
+                // 並び替え可能なアカウントリスト
+                Expanded(
+                  child: ReorderableListView.builder(
+                    itemCount: accounts.length,
+                    onReorder: (oldIndex, newIndex) {
+                      ref.read(accountProvider.notifier).reorder(oldIndex, newIndex);
+                    },
+                    itemBuilder: (context, index) {
+                      return _AccountTile(
+                        key: ValueKey(accounts[index].id),
+                        account: accounts[index],
+                      );
+                    },
                   ),
                 ),
               ],

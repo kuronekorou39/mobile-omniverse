@@ -60,6 +60,11 @@ class AccountNotifier extends StateNotifier<List<Account>> {
     state = _storage.accounts;
   }
 
+  Future<void> reorder(int oldIndex, int newIndex) async {
+    await _storage.reorder(oldIndex, newIndex);
+    state = _storage.accounts;
+  }
+
   List<Account> accountsForService(SnsService service) {
     return state.where((a) => a.service == service).toList();
   }

@@ -196,7 +196,7 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen>
 
     return Scaffold(
       appBar: AppBar(
-        toolbarHeight: 0,
+        toolbarHeight: 8,
         bottom: TabBar(
           controller: _tabController,
           isScrollable: true,

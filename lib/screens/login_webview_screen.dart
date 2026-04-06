@@ -70,7 +70,7 @@ const _xFetchInterceptorScript = '''
               window.__xCapturedUser = window.__xCapturedUser || {};
               window.__xCapturedUser.screenName = legacy.screen_name || window.__xCapturedUser.screenName;
               window.__xCapturedUser.name = legacy.name;
-              window.__xCapturedUser.avatar = legacy.profile_image_url_https;
+              window.__xCapturedUser.avatar = (legacy.profile_image_url_https || '').replace('_normal', '_400x400');
             } catch(e) {}
           }).catch(function(){});
         }
@@ -98,7 +98,7 @@ const _xFetchInterceptorScript = '''
                 window.__xCapturedUser = window.__xCapturedUser || {};
                 window.__xCapturedUser.screenName = legacy.screen_name || v.screen_name;
                 window.__xCapturedUser.name = legacy.name || v.name;
-                window.__xCapturedUser.avatar = legacy.profile_image_url_https;
+                window.__xCapturedUser.avatar = (legacy.profile_image_url_https || '').replace('_normal', '_400x400');
               }
             } catch(e) {}
           }).catch(function(){});
@@ -602,12 +602,15 @@ class _LoginWebViewScreenState extends State<LoginWebViewScreen> {
 
     debugPrint('[LoginWebView] X login: $handle ($displayName)');
 
+    // _normal (48x48) → _400x400 に置換して高解像度版を保存
+    final hiResAvatar = avatarUrl?.replaceFirst('_normal', '_400x400');
+
     final loginResult = LoginResult(
       service: SnsService.x,
       credentials: creds,
       displayName: displayName,
       handle: handle,
-      avatarUrl: avatarUrl,
+      avatarUrl: hiResAvatar,
     );
 
     // 全 Cookie をクリア（次回ログイン時に別アカウントと干渉しないように）

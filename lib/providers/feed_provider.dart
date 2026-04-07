@@ -413,6 +413,8 @@ class FeedNotifier extends StateNotifier<FeedState> {
           _precachePostsImages(drippable);
           _pendingQueue.addAll(drippable);
           _pendingIds.addAll(drippable.map((p) => p.id));
+          // ドリップ中に追加された場合も古い順を維持（順序崩れで2番目に挿入される問題を防止）
+          _pendingQueue.sort((a, b) => a.timestamp.compareTo(b.timestamp));
         }
 
         newPendingCount = _pendingQueue.length;

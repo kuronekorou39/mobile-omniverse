@@ -24,6 +24,7 @@ class FeedState {
     this.isLoadingMore = false,
     this.isFetching = false,
     this.pendingCount = 0,
+    this.fastDripActive = false,
     this.error,
   });
 
@@ -32,6 +33,7 @@ class FeedState {
   final bool isLoadingMore;
   final bool isFetching;
   final int pendingCount;
+  final bool fastDripActive;
   final String? error;
 
   FeedState copyWith({
@@ -40,6 +42,7 @@ class FeedState {
     bool? isLoadingMore,
     bool? isFetching,
     int? pendingCount,
+    bool? fastDripActive,
     String? error,
     bool clearError = false,
   }) {
@@ -49,6 +52,7 @@ class FeedState {
       isLoadingMore: isLoadingMore ?? this.isLoadingMore,
       isFetching: isFetching ?? this.isFetching,
       pendingCount: pendingCount ?? this.pendingCount,
+      fastDripActive: fastDripActive ?? this.fastDripActive,
       error: clearError ? null : (error ?? this.error),
     );
   }
@@ -79,7 +83,7 @@ class FeedNotifier extends StateNotifier<FeedState> {
   }
 
   /// キューの上限（これを超えた古い投稿は切り捨て）
-  static const int _maxQueueSize = 100;
+  static const int _maxQueueSize = 1000;
 
   /// タイムラインの投稿保持上限（これを超えた古い投稿は破棄）
   static const int _maxPosts = 500;
@@ -94,6 +98,7 @@ class FeedNotifier extends StateNotifier<FeedState> {
   Timer? _dripDelayTimer;
   Timer? _countdownTimer;
   bool _bypassDrip = false;
+  bool _fastDripActive = false;
   bool _isAtTop = true;
   bool _overlayActive = false;
   bool _overlayAtTop = true;
@@ -467,15 +472,21 @@ class FeedNotifier extends StateNotifier<FeedState> {
     // 古い順にソート → 各ドリップが常にリスト先頭に挿入されるように
     _pendingQueue.sort((a, b) => a.timestamp.compareTo(b.timestamp));
 
-    // 動的速度: ≤30件=通常、31〜100件=高速(200ms)
+    final schedulerIntervalMs =
+        TimelineFetchScheduler.instance.interval.inMilliseconds;
     int intervalMs;
-    if (_pendingQueue.length <= 30) {
-      final schedulerIntervalMs =
-          TimelineFetchScheduler.instance.interval.inMilliseconds;
-      intervalMs =
-          (schedulerIntervalMs / _pendingQueue.length).round().clamp(200, 3000);
+    if (_fastDripActive) {
+      // 高速ドリップ: 動的速度（最速200ms = 5件/秒）
+      if (_pendingQueue.length <= 30) {
+        intervalMs =
+            (schedulerIntervalMs / _pendingQueue.length).round().clamp(200, 3000);
+      } else {
+        intervalMs = 200;
+      }
     } else {
-      intervalMs = 200; // 高速ドリップ: 5件/秒
+      // 通常モード: 最速1000ms = 1件/秒
+      intervalMs =
+          (schedulerIntervalMs / _pendingQueue.length).round().clamp(1000, 3000);
     }
 
     _dripTimer = Timer.periodic(Duration(milliseconds: intervalMs), (_) {
@@ -519,6 +530,7 @@ class FeedNotifier extends StateNotifier<FeedState> {
     if (_pendingQueue.isEmpty) {
       _dripTimer?.cancel();
       _dripTimer = null;
+      _deactivateFastDrip();
       return;
     }
     // メインもオーバーレイもトップにいないならスキップ
@@ -568,6 +580,23 @@ class FeedNotifier extends StateNotifier<FeedState> {
     _syncToOverlay();
   }
 
+  /// 高速ドリップを一時的に有効化（キュー消化で自動解除）
+  void activateFastDrip() {
+    _fastDripActive = true;
+    state = state.copyWith(fastDripActive: true);
+    if (_pendingQueue.isNotEmpty) {
+      _startDrip();
+    }
+  }
+
+  void _deactivateFastDrip() {
+    if (!_fastDripActive) return;
+    _fastDripActive = false;
+    if (mounted) {
+      state = state.copyWith(fastDripActive: false);
+    }
+  }
+
   /// ペンディングキューに投稿があるか
   bool get hasPending => _pendingQueue.isNotEmpty;
 
@@ -610,6 +639,7 @@ class FeedNotifier extends StateNotifier<FeedState> {
     if (_pendingQueue.isEmpty) return;
     _dripTimer?.cancel();
     _dripTimer = null;
+    _deactivateFastDrip();
 
     final existing = Map<String, Post>.fromEntries(
       state.posts.map((p) => MapEntry(p.id, p)),

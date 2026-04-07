@@ -215,6 +215,7 @@ class _OmniFeedScreenState extends ConsumerState<OmniFeedScreen>
     if (atTop != _lastAtTop) {
       _lastAtTop = atTop;
       ref.read(feedProvider.notifier).setScrollAtTop(atTop);
+      setState(() {}); // バナー表示切替のため
     }
 
     // スクロールトップボタンの表示制御（変化時のみsetState）
@@ -517,16 +518,72 @@ class _OmniFeedScreenState extends ConsumerState<OmniFeedScreen>
     ));
   }
 
+  /// オーバーレイ権限の付与手順を案内するガイドを表示。
+  /// 設定画面で権限が付与された場合 true を返す。
+  Future<bool?> _showOverlayPermissionGuide() {
+    return showModalBottomSheet<bool>(
+      context: context,
+      builder: (ctx) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(20, 20, 20, 12),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'オーバーレイ権限が必要です',
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 8),
+              const Text(
+                'ストア外アプリは「制限付き設定」の解除が必要です。',
+                style: TextStyle(fontSize: 13, color: Colors.grey),
+              ),
+              const SizedBox(height: 16),
+              const Text('1. 設定 → アプリ → OmniVerse を選択',
+                  style: TextStyle(fontSize: 14)),
+              const SizedBox(height: 4),
+              const Text('2. 右上の「⋮」メニュー →「制限付き設定を許可」',
+                  style: TextStyle(fontSize: 14)),
+              const SizedBox(height: 4),
+              const Text('3. PIN / 生体認証で確認',
+                  style: TextStyle(fontSize: 14)),
+              const SizedBox(height: 4),
+              const Text('4. 下のボタンから権限を ON にする',
+                  style: TextStyle(fontSize: 14)),
+              const SizedBox(height: 20),
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton.icon(
+                  icon: const Icon(Icons.settings),
+                  label: const Text('オーバーレイ権限の設定を開く'),
+                  onPressed: () async {
+                    await FlutterOverlayWindow.requestPermission();
+                    final granted =
+                        await FlutterOverlayWindow.isPermissionGranted();
+                    if (ctx.mounted) Navigator.of(ctx).pop(granted);
+                  },
+                ),
+              ),
+              const SizedBox(height: 4),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   Future<void> _launchOverlay(FeedState feed) async {
     final messenger = ScaffoldMessenger.of(context);
 
-    final granted = await FlutterOverlayWindow.isPermissionGranted();
+    var granted = await FlutterOverlayWindow.isPermissionGranted();
     if (!granted) {
-      messenger.showSnackBar(
-        const SnackBar(content: Text('権限未許可 → 設定画面を開きます')),
-      );
-      await FlutterOverlayWindow.requestPermission();
-      return;
+      if (!mounted) return;
+      final result = await _showOverlayPermissionGuide();
+      if (result == true) {
+        granted = await FlutterOverlayWindow.isPermissionGranted();
+      }
+      if (!granted) return;
     }
 
     final isActive = await FlutterOverlayWindow.isActive();
@@ -574,10 +631,11 @@ class _OmniFeedScreenState extends ConsumerState<OmniFeedScreen>
 
   @override
   Widget build(BuildContext context) {
-    // posts/pendingCount が変わった時だけ rebuild（isFetchingの変更では rebuild しない）
+    // posts/pendingCount/fastDripActive が変わった時だけ rebuild
     final feed = ref.watch(feedProvider.select((f) => (
           posts: f.posts,
           pendingCount: f.pendingCount,
+          fastDripActive: f.fastDripActive,
           isLoading: f.isLoading,
           isLoadingMore: f.isLoadingMore,
           error: f.error,
@@ -673,6 +731,19 @@ class _OmniFeedScreenState extends ConsumerState<OmniFeedScreen>
       );
     }
 
+    // バナー表示条件: (トップにいない かつ pending > 0) or (pending >= 100)
+    final showBanner = feed.pendingCount > 0 &&
+        (!_lastAtTop || feed.pendingCount >= 100);
+
+    if (showBanner) {
+      body = Stack(
+        children: [
+          body,
+          _buildNewPostsBanner(context, feed.pendingCount, feed.fastDripActive),
+        ],
+      );
+    }
+
     final hasAccounts = accounts.isNotEmpty;
 
     return Scaffold(
@@ -765,7 +836,8 @@ class _OmniFeedScreenState extends ConsumerState<OmniFeedScreen>
     );
   }
 
-  Widget _buildNewPostsBanner(BuildContext context, int count) {
+  Widget _buildNewPostsBanner(BuildContext context, int count, bool fastDripActive) {
+    final showFastDrip = count >= 100;
     return Positioned(
       top: MediaQuery.of(context).padding.top + kToolbarHeight + 8,
       left: 0,
@@ -773,46 +845,104 @@ class _OmniFeedScreenState extends ConsumerState<OmniFeedScreen>
       child: Center(
         child: Material(
           color: Colors.transparent,
-          child: InkWell(
-            onTap: () {
-              ref.read(feedProvider.notifier).flushPending();
-              _scrollController.animateTo(
-                0,
-                duration: const Duration(milliseconds: 300),
-                curve: Curves.easeOutCubic,
-              );
-            },
-            borderRadius: BorderRadius.circular(20),
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-              decoration: BoxDecoration(
-                color: Theme.of(context).colorScheme.primary,
-                borderRadius: BorderRadius.circular(20),
-                boxShadow: const [
-                  BoxShadow(
-                    color: Colors.black26,
-                    blurRadius: 8,
-                    offset: Offset(0, 2),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              // メインバナー: タップでトップへ
+              InkWell(
+                onTap: () {
+                  ref.read(feedProvider.notifier).flushPending();
+                  _scrollController.animateTo(
+                    0,
+                    duration: const Duration(milliseconds: 300),
+                    curve: Curves.easeOutCubic,
+                  );
+                },
+                borderRadius: BorderRadius.horizontal(
+                  left: const Radius.circular(20),
+                  right: Radius.circular(showFastDrip ? 0 : 20),
+                ),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                  decoration: BoxDecoration(
+                    color: Theme.of(context).colorScheme.primary,
+                    borderRadius: BorderRadius.horizontal(
+                      left: const Radius.circular(20),
+                      right: Radius.circular(showFastDrip ? 0 : 20),
+                    ),
+                    boxShadow: const [
+                      BoxShadow(
+                        color: Colors.black26,
+                        blurRadius: 8,
+                        offset: Offset(0, 2),
+                      ),
+                    ],
                   ),
-                ],
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(Icons.arrow_upward, size: 16, color: Colors.white),
+                      const SizedBox(width: 4),
+                      Text(
+                        '$count件の新しい投稿',
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 13,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
               ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const Icon(Icons.arrow_upward,
-                      size: 16, color: Colors.white),
-                  const SizedBox(width: 4),
-                  Text(
-                    '$count件の新しい投稿',
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 13,
-                      fontWeight: FontWeight.bold,
+              // ⚡高速ドリップボタン（100件以上）
+              if (showFastDrip)
+                InkWell(
+                  onTap: () {
+                    final notifier = ref.read(feedProvider.notifier);
+                    if (fastDripActive) {
+                      // すでに高速中 → トップへ（解除は flushPending 内で行われる）
+                      notifier.flushPending();
+                      _scrollController.animateTo(
+                        0,
+                        duration: const Duration(milliseconds: 300),
+                        curve: Curves.easeOutCubic,
+                      );
+                    } else {
+                      notifier.activateFastDrip();
+                    }
+                  },
+                  borderRadius: const BorderRadius.horizontal(
+                    right: Radius.circular(20),
+                  ),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    decoration: BoxDecoration(
+                      color: fastDripActive
+                          ? Colors.orange
+                          : Theme.of(context).colorScheme.primary.withValues(alpha: 0.85),
+                      borderRadius: const BorderRadius.horizontal(
+                        right: Radius.circular(20),
+                      ),
+                      boxShadow: const [
+                        BoxShadow(
+                          color: Colors.black26,
+                          blurRadius: 8,
+                          offset: Offset(0, 2),
+                        ),
+                      ],
+                    ),
+                    child: Text(
+                      fastDripActive ? '⚡高速中' : '⚡高速で流す',
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 12,
+                        fontWeight: FontWeight.bold,
+                      ),
                     ),
                   ),
-                ],
-              ),
-            ),
+                ),
+            ],
           ),
         ),
       ),

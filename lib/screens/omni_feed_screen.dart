@@ -200,6 +200,7 @@ class _OmniFeedScreenState extends ConsumerState<OmniFeedScreen>
   }
 
   bool _lastAtTop = true;
+  bool _lastDripAtTop = true;
 
   void _onScroll() {
     if (_scrollController.position.pixels >=
@@ -210,12 +211,18 @@ class _OmniFeedScreenState extends ConsumerState<OmniFeedScreen>
       }
     }
 
-    // スクロール位置をフィードに通知（変化時のみ）
+    // バナー表示用（50px の余裕）
     final atTop = _scrollController.offset <= 50;
     if (atTop != _lastAtTop) {
       _lastAtTop = atTop;
-      ref.read(feedProvider.notifier).setScrollAtTop(atTop);
       setState(() {}); // バナー表示切替のため
+    }
+
+    // ドリップ制御用（5px — 少しでもスクロールしたらドリップ停止）
+    final dripAtTop = _scrollController.offset <= 5;
+    if (dripAtTop != _lastDripAtTop) {
+      _lastDripAtTop = dripAtTop;
+      ref.read(feedProvider.notifier).setScrollAtTop(dripAtTop);
     }
 
     // スクロールトップボタンの表示制御（変化時のみsetState）
@@ -228,20 +235,25 @@ class _OmniFeedScreenState extends ConsumerState<OmniFeedScreen>
   Future<void> _handleRefresh() async {
     final notifier = ref.read(feedProvider.notifier);
     if (notifier.hasPending) {
-      // ペンディングがある場合: バッチ読み込み＋スクロール位置維持
-      final oldOffset = _scrollController.offset;
-      final oldMaxExtent = _scrollController.position.maxScrollExtent;
+      if (_lastAtTop) {
+        // トップにいる場合: 全件フラッシュ（バナータップと同じ挙動）
+        notifier.flushPending();
+      } else {
+        // スクロール途中: バッチ読み込み＋スクロール位置維持
+        final oldOffset = _scrollController.offset;
+        final oldMaxExtent = _scrollController.position.maxScrollExtent;
 
-      notifier.flushPendingBatch(20);
+        notifier.flushPendingBatch(20);
 
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (!mounted) return;
-        final newMaxExtent = _scrollController.position.maxScrollExtent;
-        final delta = newMaxExtent - oldMaxExtent;
-        if (delta > 0) {
-          _scrollController.jumpTo(oldOffset + delta);
-        }
-      });
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!mounted) return;
+          final newMaxExtent = _scrollController.position.maxScrollExtent;
+          final delta = newMaxExtent - oldMaxExtent;
+          if (delta > 0) {
+            _scrollController.jumpTo(oldOffset + delta);
+          }
+        });
+      }
     } else {
       await notifier.refresh();
     }
@@ -837,7 +849,50 @@ class _OmniFeedScreenState extends ConsumerState<OmniFeedScreen>
   }
 
   Widget _buildNewPostsBanner(BuildContext context, int count, bool fastDripActive) {
-    final showFastDrip = count >= 100;
+    final canFastDrip = count >= 100;
+
+    // 状態に応じたアイコン・テキスト・色を決定
+    final IconData icon;
+    final String label;
+    final Color bgColor;
+    final VoidCallback onTap;
+
+    if (fastDripActive) {
+      // 高速ドリップ中 → タップで全件フラッシュ＆トップへ
+      icon = Icons.bolt;
+      label = '高速中 $count件';
+      bgColor = Colors.orange.withValues(alpha: 0.88);
+      onTap = () {
+        ref.read(feedProvider.notifier).flushPending();
+        _scrollController.animateTo(
+          0,
+          duration: const Duration(milliseconds: 300),
+          curve: Curves.easeOutCubic,
+        );
+      };
+    } else if (canFastDrip) {
+      // 100件以上 → タップで高速ドリップ開始
+      icon = Icons.bolt;
+      label = '$count件の新しい投稿';
+      bgColor = Theme.of(context).colorScheme.primary.withValues(alpha: 0.88);
+      onTap = () {
+        ref.read(feedProvider.notifier).activateFastDrip();
+      };
+    } else {
+      // 通常 → タップで全件フラッシュ＆トップへ
+      icon = Icons.arrow_upward;
+      label = '$count件の新しい投稿';
+      bgColor = Theme.of(context).colorScheme.primary.withValues(alpha: 0.88);
+      onTap = () {
+        ref.read(feedProvider.notifier).flushPending();
+        _scrollController.animateTo(
+          0,
+          duration: const Duration(milliseconds: 300),
+          curve: Curves.easeOutCubic,
+        );
+      };
+    }
+
     return Positioned(
       top: MediaQuery.of(context).padding.top + kToolbarHeight + 8,
       left: 0,
@@ -845,104 +900,38 @@ class _OmniFeedScreenState extends ConsumerState<OmniFeedScreen>
       child: Center(
         child: Material(
           color: Colors.transparent,
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              // メインバナー: タップでトップへ
-              InkWell(
-                onTap: () {
-                  ref.read(feedProvider.notifier).flushPending();
-                  _scrollController.animateTo(
-                    0,
-                    duration: const Duration(milliseconds: 300),
-                    curve: Curves.easeOutCubic,
-                  );
-                },
-                borderRadius: BorderRadius.horizontal(
-                  left: const Radius.circular(20),
-                  right: Radius.circular(showFastDrip ? 0 : 20),
-                ),
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                  decoration: BoxDecoration(
-                    color: Theme.of(context).colorScheme.primary,
-                    borderRadius: BorderRadius.horizontal(
-                      left: const Radius.circular(20),
-                      right: Radius.circular(showFastDrip ? 0 : 20),
-                    ),
-                    boxShadow: const [
-                      BoxShadow(
-                        color: Colors.black26,
-                        blurRadius: 8,
-                        offset: Offset(0, 2),
-                      ),
-                    ],
+          child: InkWell(
+            onTap: onTap,
+            borderRadius: BorderRadius.circular(20),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              decoration: BoxDecoration(
+                color: bgColor,
+                borderRadius: BorderRadius.circular(20),
+                boxShadow: const [
+                  BoxShadow(
+                    color: Colors.black26,
+                    blurRadius: 8,
+                    offset: Offset(0, 2),
                   ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      const Icon(Icons.arrow_upward, size: 16, color: Colors.white),
-                      const SizedBox(width: 4),
-                      Text(
-                        '$count件の新しい投稿',
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 13,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
+                ],
               ),
-              // ⚡高速ドリップボタン（100件以上）
-              if (showFastDrip)
-                InkWell(
-                  onTap: () {
-                    final notifier = ref.read(feedProvider.notifier);
-                    if (fastDripActive) {
-                      // すでに高速中 → トップへ（解除は flushPending 内で行われる）
-                      notifier.flushPending();
-                      _scrollController.animateTo(
-                        0,
-                        duration: const Duration(milliseconds: 300),
-                        curve: Curves.easeOutCubic,
-                      );
-                    } else {
-                      notifier.activateFastDrip();
-                    }
-                  },
-                  borderRadius: const BorderRadius.horizontal(
-                    right: Radius.circular(20),
-                  ),
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                    decoration: BoxDecoration(
-                      color: fastDripActive
-                          ? Colors.orange
-                          : Theme.of(context).colorScheme.primary.withValues(alpha: 0.85),
-                      borderRadius: const BorderRadius.horizontal(
-                        right: Radius.circular(20),
-                      ),
-                      boxShadow: const [
-                        BoxShadow(
-                          color: Colors.black26,
-                          blurRadius: 8,
-                          offset: Offset(0, 2),
-                        ),
-                      ],
-                    ),
-                    child: Text(
-                      fastDripActive ? '⚡高速中' : '⚡高速で流す',
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 12,
-                        fontWeight: FontWeight.bold,
-                      ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(icon, size: 16, color: Colors.white),
+                  const SizedBox(width: 4),
+                  Text(
+                    label,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 13,
+                      fontWeight: FontWeight.bold,
                     ),
                   ),
-                ),
-            ],
+                ],
+              ),
+            ),
           ),
         ),
       ),

@@ -10,6 +10,19 @@ enum NotificationType {
   unknown,
 }
 
+/// 集約された通知のアクター情報
+class NotificationActor {
+  const NotificationActor({
+    required this.name,
+    required this.handle,
+    this.avatarUrl,
+  });
+
+  final String name;
+  final String handle;
+  final String? avatarUrl;
+}
+
 /// 通知アイテム (X / Bluesky 共通)
 class NotificationItem {
   const NotificationItem({
@@ -20,6 +33,7 @@ class NotificationItem {
     required this.actorHandle,
     required this.timestamp,
     this.actorAvatarUrl,
+    this.additionalActors = const [],
     this.targetPostBody,
     this.targetPostId,
     this.isRead = false,
@@ -30,10 +44,13 @@ class NotificationItem {
   final NotificationType type;
   final SnsService source;
 
-  /// アクションを行ったユーザー
+  /// アクションを行ったユーザー（メイン）
   final String actorName;
   final String actorHandle;
   final String? actorAvatarUrl;
+
+  /// 追加のアクター（同じ通知に集約された2人目以降）
+  final List<NotificationActor> additionalActors;
 
   /// 対象の投稿 (いいね・RT・リプライ等の場合)
   final String? targetPostBody;
@@ -45,6 +62,9 @@ class NotificationItem {
   /// この通知を受け取ったアカウントのID
   final String? accountId;
 
+  /// 全アクター数
+  int get totalActorCount => 1 + additionalActors.length;
+
   NotificationItem copyWith({String? targetPostBody, String? accountId}) {
     return NotificationItem(
       id: id,
@@ -53,6 +73,7 @@ class NotificationItem {
       actorName: actorName,
       actorHandle: actorHandle,
       actorAvatarUrl: actorAvatarUrl,
+      additionalActors: additionalActors,
       targetPostBody: targetPostBody ?? this.targetPostBody,
       targetPostId: targetPostId,
       timestamp: timestamp,

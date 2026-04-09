@@ -2,7 +2,6 @@ import 'dart:convert';
 import 'dart:math';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/widgets.dart' show visibleForTesting;
-
 import 'package:http/http.dart' as http;
 
 import '../models/account.dart';
@@ -13,6 +12,17 @@ import 'debug_log_service.dart';
 import 'x_bearer_token_service.dart';
 import 'x_features.dart';
 import 'x_query_id_service.dart';
+
+/// HTML参照文字をデコード（&amp; &lt; &gt; &quot; &#39; &#数値;）
+String _decodeHtmlEntities(String text) {
+  return text
+      .replaceAll('&amp;', '&')
+      .replaceAll('&lt;', '<')
+      .replaceAll('&gt;', '>')
+      .replaceAll('&quot;', '"')
+      .replaceAll('&#39;', "'")
+      .replaceAllMapped(RegExp(r'&#(\d+);'), (m) => String.fromCharCode(int.parse(m[1]!)));
+}
 
 class XApiService {
   XApiService._();
@@ -943,7 +953,7 @@ class XApiService {
           final actorAvatarUrl = (user?['profile_image_url_https'] as String?)
               ?.replaceFirst('_normal', '_400x400');
 
-          final fullText = tweet['full_text'] as String? ?? '';
+          final fullText = _decodeHtmlEntities(tweet['full_text'] as String? ?? '');
           final createdAt = tweet['created_at'] as String?;
           final ts = createdAt != null ? parseTwitterDate(createdAt) : DateTime.now();
 
@@ -1132,17 +1142,30 @@ class XApiService {
         String actorName = '';
         String actorHandle = '';
         String? actorAvatarUrl;
+        final additionalActors = <NotificationActor>[];
 
         if (fromUserIds.isNotEmpty) {
-          final firstUserId = fromUserIds.first?['user']?['id'] as String?;
-          if (firstUserId != null) {
-            final user = users[firstUserId] as Map<String, dynamic>?;
-            if (user != null) {
-              actorName = user['name'] as String? ?? '';
-              actorHandle = '@${user['screen_name'] as String? ?? ''}';
-              actorAvatarUrl =
-                  (user['profile_image_url_https'] as String?)
-                      ?.replaceFirst('_normal', '_400x400');
+          for (var i = 0; i < fromUserIds.length; i++) {
+            final userId = fromUserIds[i]?['user']?['id'] as String?;
+            if (userId == null) continue;
+            final user = users[userId] as Map<String, dynamic>?;
+            if (user == null) continue;
+
+            final name = user['name'] as String? ?? '';
+            final handle = '@${user['screen_name'] as String? ?? ''}';
+            final avatar = (user['profile_image_url_https'] as String?)
+                ?.replaceFirst('_normal', '_400x400');
+
+            if (i == 0) {
+              actorName = name;
+              actorHandle = handle;
+              actorAvatarUrl = avatar;
+            } else {
+              additionalActors.add(NotificationActor(
+                name: name,
+                handle: handle,
+                avatarUrl: avatar,
+              ));
             }
           }
         }
@@ -1161,7 +1184,8 @@ class XApiService {
           final tweetId = targetObjects.first?['tweet']?['id'] as String?;
           if (tweetId != null) {
             final tweet = tweets[tweetId] as Map<String, dynamic>?;
-            targetPostBody = tweet?['full_text'] as String?;
+            final rawBody = tweet?['full_text'] as String?;
+            targetPostBody = rawBody != null ? _decodeHtmlEntities(rawBody) : null;
             targetPostId = tweetId;
           }
         }
@@ -1173,6 +1197,7 @@ class XApiService {
           actorName: actorName,
           actorHandle: actorHandle,
           actorAvatarUrl: actorAvatarUrl,
+          additionalActors: additionalActors,
           targetPostBody: targetPostBody,
           targetPostId: targetPostId,
           timestamp: ts,
@@ -1419,7 +1444,7 @@ class XApiService {
       }
 
       final tweetId = legacy['id_str'] as String? ?? '${result.hashCode}';
-      var fullText = legacy['full_text'] as String? ?? '';
+      var fullText = _decodeHtmlEntities(legacy['full_text'] as String? ?? '');
       final createdAt = legacy['created_at'] as String? ?? '';
 
       // アバター: legacy → userResult.avatar → core の順にフォールバック

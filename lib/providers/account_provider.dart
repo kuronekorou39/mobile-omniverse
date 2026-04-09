@@ -61,8 +61,14 @@ class AccountNotifier extends StateNotifier<List<Account>> {
   }
 
   Future<void> reorder(int oldIndex, int newIndex) async {
-    await _storage.reorder(oldIndex, newIndex);
-    state = _storage.accounts;
+    // 先にUIを更新してチラつきを防止、ストレージ保存は非同期で後追い
+    final accounts = List<Account>.of(state);
+    final adjustedNew = newIndex > oldIndex ? newIndex - 1 : newIndex;
+    final item = accounts.removeAt(oldIndex);
+    accounts.insert(adjustedNew, item);
+    state = accounts;
+    // _storage.reorderは内部でnewIndex調整するので元の値を渡す
+    _storage.reorder(oldIndex, newIndex);
   }
 
   List<Account> accountsForService(SnsService service) {

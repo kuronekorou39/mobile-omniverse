@@ -8,6 +8,7 @@ import '../models/post.dart';
 import '../screens/post_detail_screen.dart';
 import '../screens/user_profile_screen.dart';
 import '../services/account_storage_service.dart';
+import '../providers/settings_provider.dart';
 import '../utils/image_headers.dart';
 import 'post_media.dart';
 import 'sns_badge.dart';
@@ -21,7 +22,7 @@ class PostCard extends StatelessWidget {
     this.onRepost,
     this.onQuoteRepost,
     this.onReply,
-    this.hideSensitive = true,
+    this.sensitiveMode = SensitiveMode.hide,
     this.compactEngagement = true,
     this.imageMaxHeight,
     this.imageGridHeight,
@@ -35,7 +36,7 @@ class PostCard extends StatelessWidget {
   final VoidCallback? onRepost;
   final VoidCallback? onQuoteRepost;
   final VoidCallback? onReply;
-  final bool hideSensitive;
+  final SensitiveMode sensitiveMode;
   final bool compactEngagement;
   final double? imageMaxHeight;
   final double? imageGridHeight;
@@ -137,8 +138,9 @@ class PostCard extends StatelessWidget {
 
                         // Body text, images, video
                         _SensitiveOverlay(
-                          isSensitive: post.isSensitive && hideSensitive &&
-                              (post.imageUrls.isNotEmpty || post.videoUrl != null),
+                          isSensitive: (post.imageUrls.isNotEmpty || post.videoUrl != null) &&
+                              (sensitiveMode == SensitiveMode.hideAll ||
+                               (sensitiveMode == SensitiveMode.hide && post.isSensitive)),
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
@@ -331,11 +333,15 @@ class PostCard extends StatelessWidget {
           // Quoted post images
           if (quoted.imageUrls.isNotEmpty) ...[
             const SizedBox(height: 6),
-            ClipRRect(
-              borderRadius: BorderRadius.circular(6),
-              child: ConstrainedBox(
-                constraints: const BoxConstraints(maxHeight: 150),
-                child: PostImageGrid(imageUrls: quoted.imageUrls),
+            _SensitiveOverlay(
+              isSensitive: sensitiveMode == SensitiveMode.hideAll ||
+                  (sensitiveMode == SensitiveMode.hide && quoted.isSensitive),
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(6),
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxHeight: 150),
+                  child: PostImageGrid(imageUrls: quoted.imageUrls),
+                ),
               ),
             ),
           ],
@@ -680,7 +686,28 @@ class _SensitiveOverlayState extends State<_SensitiveOverlay> {
   @override
   Widget build(BuildContext context) {
     if (!widget.isSensitive || _revealed) {
-      return widget.child;
+      return Stack(
+        children: [
+          widget.child,
+          // 表示済み → タップで再度隠す
+          if (widget.isSensitive && _revealed)
+            Positioned(
+              top: 4,
+              right: 4,
+              child: GestureDetector(
+                onTap: () => setState(() => _revealed = false),
+                child: Container(
+                  padding: const EdgeInsets.all(4),
+                  decoration: BoxDecoration(
+                    color: Colors.black.withValues(alpha: 0.5),
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(Icons.visibility_off, size: 16, color: Colors.white70),
+                ),
+              ),
+            ),
+        ],
+      );
     }
 
     return ClipRRect(

@@ -30,6 +30,16 @@ enum ImagePreviewSize {
       };
 }
 
+/// センシティブコンテンツの表示モード
+enum SensitiveMode {
+  /// 全て表示（センシティブも隠さない）
+  show,
+  /// センシティブのみ隠す（デフォルト）
+  hide,
+  /// 全メディアを隠す
+  hideAll,
+}
+
 class SettingsState {
   const SettingsState({
     this.fetchIntervalSeconds = 15,
@@ -39,7 +49,7 @@ class SettingsState {
     this.hideRetweetsAccountIds = const {},
     this.showAccountPickerOnEngagement = false,
     this.showFetchTimer = true,
-    this.showSensitiveContent = false,
+    this.sensitiveMode = SensitiveMode.hide,
     this.compactEngagement = true,
     this.imagePreviewSize = ImagePreviewSize.medium,
     this.hideUserInfo = false,
@@ -57,8 +67,11 @@ class SettingsState {
   final bool showAccountPickerOnEngagement;
   /// フェッチタイマーを表示するか
   final bool showFetchTimer;
-  /// センシティブコンテンツを常に表示するか
-  final bool showSensitiveContent;
+  /// センシティブコンテンツの表示モード
+  final SensitiveMode sensitiveMode;
+
+  /// 後方互換: 既存コードの showSensitiveContent 参照用
+  bool get showSensitiveContent => sensitiveMode == SensitiveMode.show;
   /// エンゲージメントバーをコンパクトにするか
   final bool compactEngagement;
   /// 画像プレビューサイズ
@@ -78,7 +91,7 @@ class SettingsState {
     Set<String>? hideRetweetsAccountIds,
     bool? showAccountPickerOnEngagement,
     bool? showFetchTimer,
-    bool? showSensitiveContent,
+    SensitiveMode? sensitiveMode,
     bool? compactEngagement,
     ImagePreviewSize? imagePreviewSize,
     bool? hideUserInfo,
@@ -93,7 +106,7 @@ class SettingsState {
       hideRetweetsAccountIds: hideRetweetsAccountIds ?? this.hideRetweetsAccountIds,
       showAccountPickerOnEngagement: showAccountPickerOnEngagement ?? this.showAccountPickerOnEngagement,
       showFetchTimer: showFetchTimer ?? this.showFetchTimer,
-      showSensitiveContent: showSensitiveContent ?? this.showSensitiveContent,
+      sensitiveMode: sensitiveMode ?? this.sensitiveMode,
       compactEngagement: compactEngagement ?? this.compactEngagement,
       imagePreviewSize: imagePreviewSize ?? this.imagePreviewSize,
       hideUserInfo: hideUserInfo ?? this.hideUserInfo,
@@ -131,7 +144,15 @@ class SettingsNotifier extends StateNotifier<SettingsState> {
     final hideRtList = prefs.getStringList(_keyHideRetweetsAccounts) ?? [];
     final showAccountPicker = prefs.getBool(_keyShowAccountPicker) ?? false;
     final showFetchTimer = prefs.getBool(_keyShowFetchTimer) ?? true;
-    final showSensitiveContent = prefs.getBool(_keyShowSensitiveContent) ?? false;
+    // 旧bool値からの移行対応
+    final sensitiveModeIndex = prefs.getInt('settings_sensitive_mode');
+    final SensitiveMode sensitiveMode;
+    if (sensitiveModeIndex != null) {
+      sensitiveMode = SensitiveMode.values[sensitiveModeIndex.clamp(0, 2)];
+    } else {
+      final oldBool = prefs.getBool(_keyShowSensitiveContent) ?? false;
+      sensitiveMode = oldBool ? SensitiveMode.show : SensitiveMode.hide;
+    }
     final compactEngagement = prefs.getBool(_keyCompactEngagement) ?? true;
     final imagePreviewSizeIndex = prefs.getInt(_keyImagePreviewSize) ?? ImagePreviewSize.medium.index;
     final hideUserInfo = prefs.getBool(_keyHideUserInfo) ?? false;
@@ -151,7 +172,7 @@ class SettingsNotifier extends StateNotifier<SettingsState> {
       hideRetweetsAccountIds: hideRtList.toSet(),
       showAccountPickerOnEngagement: showAccountPicker,
       showFetchTimer: showFetchTimer,
-      showSensitiveContent: showSensitiveContent,
+      sensitiveMode: sensitiveMode,
       compactEngagement: compactEngagement,
       imagePreviewSize: ImagePreviewSize.values[imagePreviewSizeIndex.clamp(0, 2)],
       hideUserInfo: hideUserInfo,
@@ -175,7 +196,7 @@ class SettingsNotifier extends StateNotifier<SettingsState> {
     await prefs.setBool(
         _keyShowAccountPicker, state.showAccountPickerOnEngagement);
     await prefs.setBool(_keyShowFetchTimer, state.showFetchTimer);
-    await prefs.setBool(_keyShowSensitiveContent, state.showSensitiveContent);
+    await prefs.setInt('settings_sensitive_mode', state.sensitiveMode.index);
     await prefs.setBool(_keyCompactEngagement, state.compactEngagement);
     await prefs.setInt(_keyImagePreviewSize, state.imagePreviewSize.index);
     await prefs.setBool(_keyHideUserInfo, state.hideUserInfo);
@@ -224,9 +245,15 @@ class SettingsNotifier extends StateNotifier<SettingsState> {
     _saveToPrefs();
   }
 
-  void setShowSensitiveContent(bool value) {
-    state = state.copyWith(showSensitiveContent: value);
+  void setSensitiveMode(SensitiveMode mode) {
+    state = state.copyWith(sensitiveMode: mode);
     _saveToPrefs();
+  }
+
+  void cycleSensitiveMode() {
+    final next = SensitiveMode.values[
+        (state.sensitiveMode.index + 1) % SensitiveMode.values.length];
+    setSensitiveMode(next);
   }
 
   void setCompactEngagement(bool value) {

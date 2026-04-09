@@ -94,6 +94,7 @@ class AccountsScreen extends ConsumerWidget {
                 // 並び替え可能なアカウントリスト
                 Expanded(
                   child: ReorderableListView.builder(
+                    buildDefaultDragHandles: false,
                     itemCount: accounts.length,
                     onReorder: (oldIndex, newIndex) {
                       ref.read(accountProvider.notifier).reorder(oldIndex, newIndex);
@@ -102,6 +103,7 @@ class AccountsScreen extends ConsumerWidget {
                       return _AccountTile(
                         key: ValueKey(accounts[index].id),
                         account: accounts[index],
+                        index: index,
                       );
                     },
                   ),
@@ -176,9 +178,10 @@ class AccountsScreen extends ConsumerWidget {
 }
 
 class _AccountTile extends ConsumerWidget {
-  const _AccountTile({super.key, required this.account});
+  const _AccountTile({super.key, required this.account, required this.index});
 
   final Account account;
+  final int index;
 
   static Color _healthColor(AccountHealth health) {
     switch (health) {
@@ -202,7 +205,15 @@ class _AccountTile extends ConsumerWidget {
         : AccountHealth.unknown;
 
     return ListTile(
-      leading: Stack(
+      leading: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          ReorderableDragStartListener(
+            index: index,
+            child: const Icon(Icons.drag_handle, color: Colors.grey, size: 20),
+          ),
+          const SizedBox(width: 8),
+          Stack(
         clipBehavior: Clip.none,
         children: [
           CircleAvatar(
@@ -232,6 +243,8 @@ class _AccountTile extends ConsumerWidget {
               ),
             ),
           ),
+        ],
+      ),
         ],
       ),
       title: Row(

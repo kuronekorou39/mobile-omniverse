@@ -100,6 +100,7 @@ class FeedNotifier extends StateNotifier<FeedState> {
   bool _bypassDrip = false;
   bool _fastDripActive = false;
   bool _isAtTop = true;
+  bool _screenVisible = true;
   bool _overlayActive = false;
   bool _overlayAtTop = true;
   int _remainingSeconds = 0;
@@ -392,20 +393,23 @@ class FeedNotifier extends StateNotifier<FeedState> {
           .toList();
 
       if (filtered.isNotEmpty) {
-        // 古い投稿を分離: タイムライン先頭より古い投稿はドリップせず直接挿入
         final topTimestamp = sorted.isNotEmpty ? sorted.first.timestamp : null;
         final drippable = <Post>[];
+
         for (final p in filtered) {
           if (topTimestamp != null && p.timestamp.isBefore(topTimestamp)) {
-            // 古い投稿はsortedに直接追加
-            sorted.add(p);
+            if (_isAtTop) {
+              // トップにいる場合: 古い投稿は直接挿入（下に入るのでスクロールに影響なし）
+              sorted.add(p);
+            }
+            // スクロール中は古い投稿を捨てる（スクロール位置がずれる問題を防止）
           } else {
             drippable.add(p);
           }
         }
 
-        if (sorted.length != sortedIds.length + (filtered.length - drippable.length)) {
-          // stale投稿が追加された場合のみ再ソート
+        // 直接挿入があった場合は再ソート
+        if (_isAtTop && sorted.length > sortedIds.length) {
           sorted.sort((a, b) => b.timestamp.compareTo(a.timestamp));
         }
 
@@ -413,7 +417,6 @@ class FeedNotifier extends StateNotifier<FeedState> {
           _precachePostsImages(drippable);
           _pendingQueue.addAll(drippable);
           _pendingIds.addAll(drippable.map((p) => p.id));
-          // ドリップ中に追加された場合も古い順を維持（順序崩れで2番目に挿入される問題を防止）
           _pendingQueue.sort((a, b) => a.timestamp.compareTo(b.timestamp));
         }
 
@@ -437,12 +440,9 @@ class FeedNotifier extends StateNotifier<FeedState> {
     );
 
 
-    // ドリップ開始判定（メインかオーバーレイのどちらかがトップにいれば開始）
+    // ドリップタイマー起動（_dripOne内でトップ判定するので、ここでは常に起動）
     if (_pendingQueue.isNotEmpty && _dripTimer == null) {
-      final canDrip = _isAtTop || (_overlayActive && _overlayAtTop);
-      if (canDrip) {
-        _startDrip();
-      }
+      _startDrip();
     }
 
     // オーバーレイ同期は次フレームに遅延
@@ -471,8 +471,13 @@ class FeedNotifier extends StateNotifier<FeedState> {
       _pendingQueue.removeRange(_maxQueueSize, _pendingQueue.length);
     }
 
-    // 古い順にソート → 各ドリップが常にリスト先頭に挿入されるように
-    _pendingQueue.sort((a, b) => a.timestamp.compareTo(b.timestamp));
+    // 高速ドリップ: 新しい順（トップに見える投稿から先に表示）
+    // 通常ドリップ: 古い順（各投稿が先頭に挿入される）
+    if (_fastDripActive) {
+      _pendingQueue.sort((a, b) => b.timestamp.compareTo(a.timestamp));
+    } else {
+      _pendingQueue.sort((a, b) => a.timestamp.compareTo(b.timestamp));
+    }
 
     final schedulerIntervalMs =
         TimelineFetchScheduler.instance.interval.inMilliseconds;
@@ -494,6 +499,11 @@ class FeedNotifier extends StateNotifier<FeedState> {
     _dripTimer = Timer.periodic(Duration(milliseconds: intervalMs), (_) {
       _dripOne();
     });
+  }
+
+  /// タイムライン画面が表示されているかどうか
+  void setScreenVisible(bool visible) {
+    _screenVisible = visible;
   }
 
   void setOverlayActive(bool active) {
@@ -532,10 +542,11 @@ class FeedNotifier extends StateNotifier<FeedState> {
     if (_pendingQueue.isEmpty) {
       _dripTimer?.cancel();
       _dripTimer = null;
-      _deactivateFastDrip();
+      deactivateFastDrip();
       return;
     }
-    // メインもオーバーレイもトップにいないならスキップ
+    // 画面が見えていない、またはトップにいないならスキップ
+    if (!_screenVisible) return;
     final overlayReady = _overlayActive && _overlayAtTop;
     if (!_isAtTop && !overlayReady) return;
     if (!mounted) {
@@ -571,6 +582,12 @@ class FeedNotifier extends StateNotifier<FeedState> {
         posts[insertIndex].timestamp.isAfter(post.timestamp)) {
       insertIndex++;
     }
+    if (insertIndex > 0) {
+      debugPrint('[Drip] Non-top insert: idx=$insertIndex '
+          'post=${post.id}(${post.timestamp}) '
+          'top=${posts.first.id}(${posts.first.timestamp}) '
+          'fastDrip=$_fastDripActive queue=${_pendingQueue.length}');
+    }
     posts.insert(insertIndex, post);
 
     state = state.copyWith(posts: posts, pendingCount: _pendingQueue.length);
@@ -591,11 +608,15 @@ class FeedNotifier extends StateNotifier<FeedState> {
     }
   }
 
-  void _deactivateFastDrip() {
+  void deactivateFastDrip() {
     if (!_fastDripActive) return;
     _fastDripActive = false;
     if (mounted) {
       state = state.copyWith(fastDripActive: false);
+    }
+    // 通常ドリップに切り替え（古い順に戻す）
+    if (_pendingQueue.isNotEmpty && _dripTimer != null) {
+      _startDrip();
     }
   }
 
@@ -641,7 +662,7 @@ class FeedNotifier extends StateNotifier<FeedState> {
     if (_pendingQueue.isEmpty) return;
     _dripTimer?.cancel();
     _dripTimer = null;
-    _deactivateFastDrip();
+    deactivateFastDrip();
 
     final existing = Map<String, Post>.fromEntries(
       state.posts.map((p) => MapEntry(p.id, p)),

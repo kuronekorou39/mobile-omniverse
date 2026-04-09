@@ -158,10 +158,12 @@ class _OmniFeedScreenState extends ConsumerState<OmniFeedScreen>
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
       _checkPendingPostDetail();
-      // フォアグラウンド復帰 → フェッチ再開
-      ref.read(settingsProvider.notifier).resumeFetching();
       // メイン表示時はオーバーレイを閉じる（ドリップ状態の競合を防止）
       _closeOverlayIfActive();
+      // フォアグラウンド復帰 → UI描画完了後にフェッチ再開（ANR防止）
+      Future.delayed(const Duration(seconds: 1), () {
+        if (mounted) ref.read(settingsProvider.notifier).resumeFetching();
+      });
     } else if (state == AppLifecycleState.paused) {
       // バックグラウンド → オーバーレイも非表示ならフェッチ一時停止
       _pauseFetchingIfIdle();
@@ -193,9 +195,11 @@ class _OmniFeedScreenState extends ConsumerState<OmniFeedScreen>
       if (json == null || !mounted) return;
       final post = Post.fromCache(
           jsonDecode(json) as Map<String, dynamic>);
-      Navigator.of(context).push(
+      ref.read(feedProvider.notifier).setScreenVisible(false);
+      await Navigator.of(context).push(
         MaterialPageRoute(builder: (_) => PostDetailScreen(post: post)),
       );
+      if (mounted) ref.read(feedProvider.notifier).setScreenVisible(true);
     } catch (_) {}
   }
 
@@ -475,21 +479,16 @@ class _OmniFeedScreenState extends ConsumerState<OmniFeedScreen>
     final buttons = <Widget>[];
     final notifier = ref.read(settingsProvider.notifier);
 
-    // フェッチタイマー（アカウントがある場合のみ）
-    final hasAccounts = ref.read(accountProvider).isNotEmpty;
-    if (hasAccounts && settings.isFetchingActive && settings.showFetchTimer) {
-      buttons.add(_buildFetchIndicator(context, settings));
-    }
-
     if (settings.appBarButtons.contains('sensitive')) {
-      final isFiltering = !settings.showSensitiveContent;
+      final (icon, tooltip) = switch (settings.sensitiveMode) {
+        SensitiveMode.show => (Icons.blur_off, 'モザイク: OFF'),
+        SensitiveMode.hide => (Icons.blur_on, 'モザイク: センシティブのみ'),
+        SensitiveMode.hideAll => (Icons.blur_circular, 'モザイク: 全て隠す'),
+      };
       buttons.add(IconButton(
-        icon: Icon(
-          isFiltering ? Icons.blur_on : Icons.blur_off,
-          size: 20,
-        ),
-        tooltip: isFiltering ? 'モザイク: ON' : 'モザイク: OFF',
-        onPressed: () => notifier.setShowSensitiveContent(!settings.showSensitiveContent),
+        icon: Icon(icon, size: 20),
+        tooltip: tooltip,
+        onPressed: () => notifier.cycleSensitiveMode(),
         constraints: const BoxConstraints(minWidth: 40, minHeight: 40),
         padding: EdgeInsets.zero,
       ));
@@ -507,6 +506,12 @@ class _OmniFeedScreenState extends ConsumerState<OmniFeedScreen>
         constraints: const BoxConstraints(minWidth: 40, minHeight: 40),
         padding: EdgeInsets.zero,
       ));
+    }
+
+    // フェッチタイマー（ロゴ寄りに配置）
+    final hasAccounts = ref.read(accountProvider).isNotEmpty;
+    if (hasAccounts && settings.isFetchingActive && settings.showFetchTimer) {
+      buttons.add(_buildFetchIndicator(context, settings));
     }
 
     return buttons;
@@ -747,14 +752,14 @@ class _OmniFeedScreenState extends ConsumerState<OmniFeedScreen>
     final showBanner = feed.pendingCount > 0 &&
         (!_lastAtTop || feed.pendingCount >= 100);
 
-    if (showBanner) {
-      body = Stack(
-        children: [
-          body,
+    // 常にStackで包む（条件付きStack化はツリー構造が変わりスクロール位置がリセットされる）
+    body = Stack(
+      children: [
+        body,
+        if (showBanner)
           _buildNewPostsBanner(context, feed.pendingCount, feed.fastDripActive),
-        ],
-      );
-    }
+      ],
+    );
 
     final hasAccounts = accounts.isNotEmpty;
 
@@ -858,25 +863,28 @@ class _OmniFeedScreenState extends ConsumerState<OmniFeedScreen>
     final VoidCallback onTap;
 
     if (fastDripActive) {
-      // 高速ドリップ中 → タップで全件フラッシュ＆トップへ
+      // 高速ドリップ中 → タップで高速ドリップ解除
       icon = Icons.bolt;
       label = '高速中 $count件';
       bgColor = Colors.orange.withValues(alpha: 0.88);
       onTap = () {
-        ref.read(feedProvider.notifier).flushPending();
-        _scrollController.animateTo(
-          0,
-          duration: const Duration(milliseconds: 300),
-          curve: Curves.easeOutCubic,
-        );
+        ref.read(feedProvider.notifier).deactivateFastDrip();
       };
     } else if (canFastDrip) {
-      // 100件以上 → タップで高速ドリップ開始
+      // 100件以上 → タップで高速ドリップ開始＆ゆっくりトップへスクロール
       icon = Icons.bolt;
       label = '$count件の新しい投稿';
       bgColor = Theme.of(context).colorScheme.primary.withValues(alpha: 0.88);
       onTap = () {
         ref.read(feedProvider.notifier).activateFastDrip();
+        // 現在のスクロール位置に応じた速度でトップへ（高速ドリップに合わせた体感速度）
+        final offset = _scrollController.offset;
+        final durationMs = (offset * 0.5).clamp(500, 3000).toInt();
+        _scrollController.animateTo(
+          0,
+          duration: Duration(milliseconds: durationMs),
+          curve: Curves.easeInOut,
+        );
       };
     } else {
       // 通常 → タップで全件フラッシュ＆トップへ
@@ -894,7 +902,7 @@ class _OmniFeedScreenState extends ConsumerState<OmniFeedScreen>
     }
 
     return Positioned(
-      top: MediaQuery.of(context).padding.top + kToolbarHeight + 8,
+      top: MediaQuery.of(context).padding.top + 8,
       left: 0,
       right: 0,
       child: Center(
@@ -1053,7 +1061,7 @@ class _OmniFeedScreenState extends ConsumerState<OmniFeedScreen>
             final postCard = PostCard(
               key: ValueKey(post.id),
               post: post,
-              hideSensitive: !settings.showSensitiveContent,
+              sensitiveMode: settings.sensitiveMode,
               compactEngagement: true,
               imageMaxHeight: settings.imagePreviewSize.singleImageMaxHeight,
               imageGridHeight: settings.imagePreviewSize.gridImageHeight,
@@ -1069,8 +1077,9 @@ class _OmniFeedScreenState extends ConsumerState<OmniFeedScreen>
                   ref.read(feedProvider.notifier).refresh();
                 }
               },
-              onTap: () {
-                Navigator.of(context).push(
+              onTap: () async {
+                ref.read(feedProvider.notifier).setScreenVisible(false);
+                await Navigator.of(context).push(
                   PageRouteBuilder(
                     pageBuilder: (context, anim1, anim2) =>
                         PostDetailScreen(post: post),
@@ -1089,6 +1098,7 @@ class _OmniFeedScreenState extends ConsumerState<OmniFeedScreen>
                     },
                   ),
                 );
+                if (mounted) ref.read(feedProvider.notifier).setScreenVisible(true);
               },
               onLike: () => _handleLike(post),
               onRepost: () => _handleRepost(post),

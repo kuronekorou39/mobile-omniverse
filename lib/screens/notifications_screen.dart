@@ -85,9 +85,9 @@ class _NotificationTypeFilter extends StatelessWidget {
       height: 44,
       child: Row(
         children: [
-          // 全ON/OFF ボタン
+          // 全ON/OFF ボタン（通知タイルのテキスト開始位置に揃える）
           Padding(
-            padding: const EdgeInsets.only(left: 8),
+            padding: const EdgeInsets.only(left: 76),
             child: InkWell(
               onTap: () => onToggleAll(!allVisible),
               borderRadius: BorderRadius.circular(12),
@@ -228,7 +228,22 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen>
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    SnsBadge(service: a.service),
+                    SnsBadge(service: a.service, size: 12),
+                    const SizedBox(width: 4),
+                    CircleAvatar(
+                      radius: 10,
+                      backgroundImage: a.avatarUrl != null
+                          ? NetworkImage(a.avatarUrl!)
+                          : null,
+                      child: a.avatarUrl == null
+                          ? Text(
+                              a.displayName.isNotEmpty
+                                  ? a.displayName[0].toUpperCase()
+                                  : '?',
+                              style: const TextStyle(fontSize: 9),
+                            )
+                          : null,
+                    ),
                     const SizedBox(width: 6),
                     Flexible(
                       child: Text(
@@ -611,6 +626,34 @@ class _NotificationTile extends StatelessWidget {
 
   Color get _iconColor => _typeColor(notification.type);
 
+  List<TextSpan> _buildActorTextSpans() {
+    const bold = TextStyle(fontWeight: FontWeight.bold);
+    final actors = notification.additionalActors;
+
+    if (actors.isEmpty) {
+      return [
+        TextSpan(text: notification.actorName, style: bold),
+        TextSpan(text: ' さんが${notification.typeLabel}しました'),
+      ];
+    }
+
+    final spans = <TextSpan>[
+      TextSpan(text: notification.actorName, style: bold),
+    ];
+
+    if (actors.length == 1) {
+      spans.add(const TextSpan(text: '、'));
+      spans.add(TextSpan(text: actors[0].name, style: bold));
+    } else {
+      spans.add(const TextSpan(text: '、'));
+      spans.add(TextSpan(text: actors[0].name, style: bold));
+      spans.add(TextSpan(text: '、他${actors.length - 1}人'));
+    }
+
+    spans.add(TextSpan(text: 'が${notification.typeLabel}しました'));
+    return spans;
+  }
+
   @override
   Widget build(BuildContext context) {
     final timeAgo = _formatTimeAgo(notification.timestamp);
@@ -622,9 +665,40 @@ class _NotificationTile extends StatelessWidget {
       leading: GestureDetector(
         onTap: _isSystemNotification ? null : () => _navigateToActorProfile(context),
         child: SizedBox(
-          width: 44,
+          width: notification.additionalActors.isNotEmpty ? 56 : 44,
           child: Stack(
+            clipBehavior: Clip.none,
             children: [
+              // 追加アクターのアバター（2人目以降、右下にずらして重ねる）
+              for (var i = (notification.additionalActors.length > 2 ? 1 : notification.additionalActors.length - 1); i >= 0; i--)
+                Positioned(
+                  left: 16 + (i * 4).toDouble(),
+                  top: 10 + (i * 4).toDouble(),
+                  child: Container(
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      border: Border.all(
+                        color: Theme.of(context).scaffoldBackgroundColor,
+                        width: 1.5,
+                      ),
+                    ),
+                    child: CircleAvatar(
+                      radius: 14,
+                      backgroundImage: notification.additionalActors[i].avatarUrl != null
+                          ? NetworkImage(notification.additionalActors[i].avatarUrl!)
+                          : null,
+                      child: notification.additionalActors[i].avatarUrl == null
+                          ? Text(
+                              notification.additionalActors[i].name.isNotEmpty
+                                  ? notification.additionalActors[i].name[0].toUpperCase()
+                                  : '?',
+                              style: const TextStyle(fontSize: 10),
+                            )
+                          : null,
+                    ),
+                  ),
+                ),
+              // メインアクターのアバター（最前面）
               CircleAvatar(
                 radius: 20,
                 backgroundImage: notification.actorAvatarUrl != null
@@ -640,7 +714,7 @@ class _NotificationTile extends StatelessWidget {
               ),
               Positioned(
                 bottom: 0,
-                right: 0,
+                right: notification.additionalActors.isNotEmpty ? 12 : 0,
                 child: Container(
                   padding: const EdgeInsets.all(2),
                   decoration: BoxDecoration(
@@ -650,56 +724,58 @@ class _NotificationTile extends StatelessWidget {
                   child: Icon(_icon, size: 14, color: _iconColor),
                 ),
               ),
+              Positioned(
+                top: -4,
+                left: -6,
+                child: SnsBadge(service: notification.source, size: 10),
+              ),
             ],
           ),
         ),
       ),
-      title: RichText(
+      title: Text.rich(
+        TextSpan(children: _buildActorTextSpans()),
         maxLines: 2,
         overflow: TextOverflow.ellipsis,
-        text: TextSpan(
-          style: DefaultTextStyle.of(context).style,
-          children: [
-            TextSpan(
-              text: notification.actorName,
-              style: const TextStyle(fontWeight: FontWeight.bold),
-            ),
-            TextSpan(text: ' さんが${notification.typeLabel}しました'),
-          ],
-        ),
       ),
-      subtitle: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          if (notification.targetPostBody != null)
-            Text(
+      subtitle: notification.targetPostBody != null
+          ? Text(
               notification.targetPostBody!,
               maxLines: 2,
               overflow: TextOverflow.ellipsis,
               style: TextStyle(color: Colors.grey[600], fontSize: 13),
+            )
+          : null,
+      trailing: SizedBox(
+        width: 48,
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Text(
+              timeAgo,
+              style: TextStyle(color: Colors.grey[500], fontSize: 12),
             ),
           if (showRecipient) ...[
-            const SizedBox(height: 2),
-            Row(
-              children: [
-                Icon(Icons.arrow_forward, size: 10, color: Colors.grey[500]),
-                const SizedBox(width: 4),
-                SnsBadge(service: account.service, size: 10),
-                const SizedBox(width: 4),
-                Text(
-                  account.handle,
-                  style: TextStyle(color: Colors.grey[500], fontSize: 11),
-                ),
-              ],
+            const SizedBox(height: 4),
+            CircleAvatar(
+              radius: 10,
+              backgroundImage: account.avatarUrl != null
+                  ? NetworkImage(account.avatarUrl!)
+                  : null,
+              child: account.avatarUrl == null
+                  ? Text(
+                      account.displayName.isNotEmpty
+                          ? account.displayName[0].toUpperCase()
+                          : '?',
+                      style: const TextStyle(fontSize: 9),
+                    )
+                  : null,
             ),
           ],
         ],
+        ),
       ),
-      trailing: Text(
-        timeAgo,
-        style: TextStyle(color: Colors.grey[500], fontSize: 12),
-      ),
-      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+      contentPadding: const EdgeInsets.only(left: 16, right: 8, top: 4, bottom: 4),
       onTap: () {
         if (_isSystemNotification) {
           // システム通知 → 全文をスナックバーで表示

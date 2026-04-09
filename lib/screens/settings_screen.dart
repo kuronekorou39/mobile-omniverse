@@ -14,7 +14,6 @@ import '../providers/settings_provider.dart';
 import '../services/account_storage_service.dart';
 import '../services/app_update_service.dart';
 import '../services/debug_log_service.dart';
-import '../services/x_query_id_service.dart';
 import '../widgets/update_dialog.dart';
 import 'activity_log_screen.dart';
 
@@ -27,9 +26,6 @@ class SettingsScreen extends ConsumerStatefulWidget {
 
 class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   String _version = '...';
-
-  bool get _hasXAccount => AccountStorageService.instance.accounts
-      .any((a) => a.service == SnsService.x && a.isEnabled);
 
   @override
   void initState() {
@@ -54,59 +50,6 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
         const SnackBar(content: Text('最新バージョンです')),
       );
     }
-  }
-
-  Future<void> _refreshQueryIds() async {
-    // X アカウントの credentials を取得
-    XCredentials? creds;
-    for (final account in AccountStorageService.instance.accounts) {
-      if (account.service == SnsService.x && account.isEnabled) {
-        creds = account.xCredentials;
-        break;
-      }
-    }
-
-    // リフレッシュ前の値を記録
-    final before = Map<String, String>.from(XQueryIdService.instance.currentIds(creds: creds));
-
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('queryId を更新中...')),
-    );
-
-    final count = await XQueryIdService.instance.forceRefresh(creds);
-
-    if (!mounted) return;
-
-    final after = XQueryIdService.instance.currentIds(creds: creds);
-
-    // 前後の差分を作成
-    final lines = <String>[];
-    for (final op in after.keys) {
-      final b = before[op] ?? '(なし)';
-      final a = after[op]!;
-      final changed = b != a ? ' *' : '';
-      lines.add('$op:\n  $b → $a$changed');
-    }
-
-    // ダイアログで表示
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: Text('queryId 更新結果 ($count 件変更)'),
-        content: SingleChildScrollView(
-          child: Text(
-            lines.join('\n\n'),
-            style: const TextStyle(fontSize: 12, fontFamily: 'monospace'),
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: const Text('OK'),
-          ),
-        ],
-      ),
-    );
   }
 
   @override
@@ -174,14 +117,15 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
           ),
           ListTile(
             title: const Text('センシティブ'),
-            trailing: SegmentedButton<bool>(
+            trailing: SegmentedButton<SensitiveMode>(
               segments: const [
-                ButtonSegment(value: true, label: Text('隠す')),
-                ButtonSegment(value: false, label: Text('全て表示')),
+                ButtonSegment(value: SensitiveMode.show, label: Text('全表示')),
+                ButtonSegment(value: SensitiveMode.hide, label: Text('隠す')),
+                ButtonSegment(value: SensitiveMode.hideAll, label: Text('全隠し')),
               ],
-              selected: {!settings.showSensitiveContent},
+              selected: {settings.sensitiveMode},
               onSelectionChanged: (value) =>
-                  notifier.setShowSensitiveContent(!value.first),
+                  notifier.setSensitiveMode(value.first),
               style: const ButtonStyle(
                 visualDensity: VisualDensity.compact,
               ),
@@ -303,31 +247,6 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 subtitle: Text(settings.isFetchingActive ? '実行中' : '停止中'),
                 value: settings.isFetchingActive,
                 onChanged: (_) => notifier.toggleFetching(),
-              ),
-              ListTile(
-                leading: const Icon(Icons.refresh),
-                title: const Text('queryId 更新'),
-                subtitle: Text(
-                  _hasXAccount
-                      ? (XQueryIdService.instance.lastRefreshTime() != null
-                          ? '最終更新: ${_formatTime(XQueryIdService.instance.lastRefreshTime()!)}'
-                          : '未更新')
-                      : 'X アカウントが必要です',
-                ),
-                onTap: _hasXAccount ? _refreshQueryIds : null,
-              ),
-              ListTile(
-                leading: const Icon(Icons.delete_outline),
-                title: const Text('queryId キャッシュ消去'),
-                onTap: () async {
-                  await XQueryIdService.instance.clearCache();
-                  if (mounted) {
-                    setState(() {});
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('queryId キャッシュを消去しました')),
-                    );
-                  }
-                },
               ),
               const Divider(),
               ListTile(

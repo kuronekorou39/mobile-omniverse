@@ -214,7 +214,7 @@ class PostCard extends StatelessWidget {
 
   Widget _buildRetweetHeader(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.only(left: 32),
+      padding: const EdgeInsets.only(left: 50),
       child: Row(
         children: [
           Icon(Icons.repeat, size: 14, color: Colors.grey[500]),

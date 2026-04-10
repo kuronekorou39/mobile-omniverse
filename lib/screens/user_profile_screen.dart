@@ -423,6 +423,7 @@ class _UserProfileScreenState extends ConsumerState<UserProfileScreen>
             final s = ref.watch(settingsProvider);
             return PostCard(
               post: post,
+              sensitiveMode: s.sensitiveMode,
               compactEngagement: s.compactEngagement,
               imageMaxHeight: s.imagePreviewSize.singleImageMaxHeight,
               imageGridHeight: s.imagePreviewSize.gridImageHeight,
@@ -680,6 +681,7 @@ class _UserProfileScreenState extends ConsumerState<UserProfileScreen>
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Row(
+                crossAxisAlignment: CrossAxisAlignment.center,
                 children: [
                   // Avatar
                   GestureDetector(
@@ -702,26 +704,50 @@ class _UserProfileScreenState extends ConsumerState<UserProfileScreen>
                           : null,
                     ),
                   ),
-                  const Spacer(),
-                ],
-              ),
-              const SizedBox(height: 12),
-
-              // Username
-              Text(
-                widget.username,
-                style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
-              ),
-              const SizedBox(height: 2),
-
-              // Handle + badge
-              Row(
-                children: [
-                  SnsBadge(service: widget.service),
-                  const SizedBox(width: 6),
-                  Text(
-                    widget.handle,
-                    style: TextStyle(color: Colors.grey[600], fontSize: 15),
+                  const SizedBox(width: 14),
+                  // Name + Handle + Stats
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          widget.username,
+                          style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        const SizedBox(height: 2),
+                        Row(
+                          children: [
+                            SnsBadge(service: widget.service),
+                            const SizedBox(width: 6),
+                            Flexible(
+                              child: Text(
+                                widget.handle,
+                                style: TextStyle(color: Colors.grey[600], fontSize: 14),
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                          ],
+                        ),
+                        if (_followersCount != null || _followingCount != null) ...[
+                          const SizedBox(height: 6),
+                          Row(
+                            children: [
+                              if (_followingCount != null)
+                                _buildStat(_followingCount!, 'フォロー'),
+                              if (_followingCount != null && _followersCount != null)
+                                const SizedBox(width: 12),
+                              if (_followersCount != null)
+                                _buildStat(_followersCount!, 'フォロワー'),
+                              if (_postsCount != null) ...[
+                                const SizedBox(width: 12),
+                                _buildStat(_postsCount!, '投稿'),
+                              ],
+                            ],
+                          ),
+                        ],
+                      ],
+                    ),
                   ),
                 ],
               ),
@@ -730,25 +756,6 @@ class _UserProfileScreenState extends ConsumerState<UserProfileScreen>
               if (_bio != null && _bio!.isNotEmpty) ...[
                 const SizedBox(height: 12),
                 Text(_bio!, style: const TextStyle(fontSize: 14)),
-              ],
-
-              // Stats
-              if (_followersCount != null || _followingCount != null) ...[
-                const SizedBox(height: 12),
-                Row(
-                  children: [
-                    if (_followingCount != null)
-                      _buildStat(_followingCount!, 'フォロー'),
-                    if (_followingCount != null && _followersCount != null)
-                      const SizedBox(width: 16),
-                    if (_followersCount != null)
-                      _buildStat(_followersCount!, 'フォロワー'),
-                    if (_postsCount != null) ...[
-                      const SizedBox(width: 16),
-                      _buildStat(_postsCount!, '投稿'),
-                    ],
-                  ],
-                ),
               ],
 
               if (_isLoadingProfile) ...[

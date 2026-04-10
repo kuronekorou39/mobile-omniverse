@@ -695,7 +695,7 @@ class _OmniFeedScreenState extends ConsumerState<OmniFeedScreen>
               // ロゴ: 中央やや右に固定（Oの位置が画面中央）
               Positioned.fill(
                 child: Align(
-                  alignment: const Alignment(0.05, 0.0),
+                  alignment: const Alignment(0.1, 0.0),
                   child: GestureDetector(
                     onTap: () {
                       _scrollController.animateTo(
@@ -765,6 +765,9 @@ class _OmniFeedScreenState extends ConsumerState<OmniFeedScreen>
 
     return Scaffold(
       body: body,
+      floatingActionButtonLocation: settings.fabPosition == FabPosition.left
+          ? FloatingActionButtonLocation.startFloat
+          : FloatingActionButtonLocation.endFloat,
       floatingActionButton: hasAccounts
           ? Column(
         mainAxisSize: MainAxisSize.min,
@@ -773,31 +776,37 @@ class _OmniFeedScreenState extends ConsumerState<OmniFeedScreen>
             scale: _showScrollToTop ? 1.0 : 0.0,
             duration: const Duration(milliseconds: 200),
             child: _showScrollToTop
-                ? FloatingActionButton.small(
-                    heroTag: 'scrollTop',
-                    onPressed: () {
-                      _scrollController.animateTo(
-                        0,
-                        duration: const Duration(milliseconds: 400),
-                        curve: Curves.easeOutCubic,
-                      );
-                    },
-                    child: const Icon(Icons.arrow_upward),
+                ? Opacity(
+                    opacity: 0.75,
+                    child: FloatingActionButton.small(
+                      heroTag: 'scrollTop',
+                      onPressed: () {
+                        _scrollController.animateTo(
+                          0,
+                          duration: const Duration(milliseconds: 400),
+                          curve: Curves.easeOutCubic,
+                        );
+                      },
+                      child: const Icon(Icons.arrow_upward),
+                    ),
                   )
                 : const SizedBox.shrink(),
           ),
           if (_showScrollToTop) const SizedBox(height: 8),
-          FloatingActionButton(
-            heroTag: 'compose',
-            onPressed: () async {
-              final posted = await Navigator.of(context).push<bool>(
-                MaterialPageRoute(builder: (_) => const ComposeScreen()),
-              );
-              if (posted == true) {
-                ref.read(feedProvider.notifier).refresh();
-              }
-            },
-            child: const Icon(Icons.edit),
+          Opacity(
+            opacity: 0.75,
+            child: FloatingActionButton(
+              heroTag: 'compose',
+              onPressed: () async {
+                final posted = await Navigator.of(context).push<bool>(
+                  MaterialPageRoute(builder: (_) => const ComposeScreen()),
+                );
+                if (posted == true) {
+                  ref.read(feedProvider.notifier).refresh();
+                }
+              },
+              child: const Icon(Icons.edit),
+            ),
           ),
         ],
       )

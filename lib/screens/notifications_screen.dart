@@ -594,7 +594,7 @@ class _NotificationListState extends ConsumerState<_NotificationList>
   }
 }
 
-class _NotificationTile extends StatelessWidget {
+class _NotificationTile extends StatefulWidget {
   const _NotificationTile({
     required this.notification,
     required this.account,
@@ -604,8 +604,29 @@ class _NotificationTile extends StatelessWidget {
   final NotificationItem notification;
   final Account account;
   final bool isNew;
-  /// 統合ビューで「どのアカウント宛か」を表示する
   final bool showRecipient;
+
+  @override
+  State<_NotificationTile> createState() => _NotificationTileState();
+}
+
+class _NotificationTileState extends State<_NotificationTile> {
+  double _highlightOpacity = 0.0;
+
+  NotificationItem get notification => widget.notification;
+  Account get account => widget.account;
+  bool get showRecipient => widget.showRecipient;
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.isNew) {
+      _highlightOpacity = 1.0;
+      Future.delayed(const Duration(milliseconds: 500), () {
+        if (mounted) setState(() => _highlightOpacity = 0.0);
+      });
+    }
+  }
 
   /// システム通知かどうか（actorHandleが自分自身のアカウント）
   bool get _isSystemNotification {
@@ -658,10 +679,13 @@ class _NotificationTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final timeAgo = _formatTimeAgo(notification.timestamp);
 
-    return ListTile(
-      tileColor: isNew
-          ? Theme.of(context).colorScheme.primaryContainer.withValues(alpha: 0.15)
+    return AnimatedContainer(
+      duration: const Duration(seconds: 3),
+      curve: Curves.easeOut,
+      color: _highlightOpacity > 0
+          ? Theme.of(context).colorScheme.primaryContainer.withValues(alpha: 0.2 * _highlightOpacity)
           : null,
+      child: ListTile(
       leading: GestureDetector(
         onTap: _isSystemNotification ? null : () => _navigateToActorProfile(context),
         child: SizedBox(
@@ -795,6 +819,7 @@ class _NotificationTile extends StatelessWidget {
           _navigateToTargetPost(context);
         }
       },
+      ),
     );
   }
 

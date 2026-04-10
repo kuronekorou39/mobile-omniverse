@@ -612,8 +612,9 @@ public class OverlayService extends Service implements View.OnTouchListener {
         int visibleRight = Math.min(overlayRight, screenW);
         int visibleWidth = Math.max(0, visibleRight - visibleLeft);
 
-        // 右方向に半分以上隠れている → 最小化
-        if (visibleWidth < overlayW / 2 && overlayLeft > 0) {
+        // 半分以上隠れている → 最小化（左右両方向対応）
+        if (visibleWidth < overlayW / 2) {
+            boolean toRight = overlayLeft > screenW / 2; // 右寄りか左寄りかで方向を判定
             if (!isMinimized) {
                 savedMinimizeX = dragStartX;
                 savedMinimizeY = dragStartY;
@@ -621,10 +622,20 @@ public class OverlayService extends Service implements View.OnTouchListener {
             isMinimized = true;
             int visiblePx = dpToPx(MINIMIZE_VISIBLE_DP);
             int destX;
-            if (WindowSetup.gravity == Gravity.CENTER) {
-                destX = screenW - visiblePx - screenW / 2 + overlayW / 2;
+            if (toRight) {
+                // 右端に最小化
+                if (WindowSetup.gravity == Gravity.CENTER) {
+                    destX = screenW - visiblePx - screenW / 2 + overlayW / 2;
+                } else {
+                    destX = screenW - visiblePx;
+                }
             } else {
-                destX = screenW - visiblePx;
+                // 左端に最小化
+                if (WindowSetup.gravity == Gravity.CENTER) {
+                    destX = -(overlayW - visiblePx) - screenW / 2 + overlayW / 2;
+                } else {
+                    destX = -(overlayW - visiblePx);
+                }
             }
             animatePosition(params.x, params.y, destX, params.y, 200);
         } else if (isMinimized) {

@@ -33,6 +33,7 @@ class PostDetailScreen extends ConsumerStatefulWidget {
 
 class _PostDetailScreenState extends ConsumerState<PostDetailScreen> {
   late Post _post;
+  List<Post> _parents = [];
   List<Post> _replies = [];
   bool _isLoading = true;
   String? _error;
@@ -79,12 +80,20 @@ class _PostDetailScreenState extends ConsumerState<PostDetailScreen> {
         );
       }
 
-      // Separate the main post from replies
-      final replies = posts
-          .where((p) => p.id != widget.post.id)
-          .toList();
+      // メイン投稿を基準に、親（文脈）とリプライを分離
+      final mainTimestamp = widget.post.timestamp;
+      final others = posts.where((p) => p.id != widget.post.id).toList();
+      final parents = others
+          .where((p) => !p.timestamp.isAfter(mainTimestamp))
+          .toList()
+        ..sort((a, b) => a.timestamp.compareTo(b.timestamp)); // 古い順
+      final replies = others
+          .where((p) => p.timestamp.isAfter(mainTimestamp))
+          .toList()
+        ..sort((a, b) => a.timestamp.compareTo(b.timestamp)); // 古い順
 
       setState(() {
+        _parents = parents;
         _replies = replies;
         _isLoading = false;
       });
@@ -131,6 +140,39 @@ class _PostDetailScreenState extends ConsumerState<PostDetailScreen> {
         onRefresh: _loadReplies,
         child: ListView(
           children: [
+            // 親投稿（会話の文脈）
+            if (_parents.isNotEmpty) ...[
+              ..._parents.map((parent) {
+                final s = ref.watch(settingsProvider);
+                return PostCard(
+                  post: parent,
+                  sensitiveMode: s.sensitiveMode,
+                  compactEngagement: s.compactEngagement,
+                  imageMaxHeight: s.imagePreviewSize.singleImageMaxHeight,
+                  imageGridHeight: s.imagePreviewSize.gridImageHeight,
+                  videoHeight: s.imagePreviewSize.videoHeight,
+                  onTap: () {
+                    Navigator.of(context).push(
+                      MaterialPageRoute(
+                        builder: (_) => PostDetailScreen(post: parent),
+                      ),
+                    );
+                  },
+                );
+              }),
+              Padding(
+                padding: const EdgeInsets.only(left: 32),
+                child: Row(
+                  children: [
+                    Container(
+                      width: 2,
+                      height: 16,
+                      color: Colors.grey[300],
+                    ),
+                  ],
+                ),
+              ),
+            ],
             // Main post (expanded)
             _buildMainPost(context),
             const Divider(height: 1),

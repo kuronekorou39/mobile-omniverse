@@ -61,81 +61,22 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       appBar: AppBar(title: const Text('設定')),
       body: ListView(
         children: [
-          // ── タイムライン ──
-          const _SectionHeader(title: 'タイムライン'),
+          // ── 外観 ──
+          const _SectionHeader(title: '外観'),
           ListTile(
-            title: const Text('フェッチ間隔'),
-            trailing: DropdownButton<int>(
-              value: settings.fetchIntervalSeconds,
+            title: const Text('テーマ'),
+            trailing: DropdownButton<ThemeMode>(
+              value: settings.themeMode,
               items: const [
-                DropdownMenuItem(value: 15, child: Text('15秒')),
-                DropdownMenuItem(value: 30, child: Text('30秒')),
-                DropdownMenuItem(value: 60, child: Text('60秒')),
-                DropdownMenuItem(value: 120, child: Text('2分')),
-                DropdownMenuItem(value: 300, child: Text('5分')),
+                DropdownMenuItem(value: ThemeMode.system, child: Text('システム')),
+                DropdownMenuItem(value: ThemeMode.light, child: Text('ライト')),
+                DropdownMenuItem(value: ThemeMode.dark, child: Text('ダーク')),
               ],
               onChanged: (value) {
-                if (value != null) notifier.setInterval(value);
+                if (value != null) notifier.setThemeMode(value);
               },
             ),
           ),
-          ListTile(
-            title: const Text('匿名モード'),
-            trailing: SegmentedButton<bool>(
-              segments: const [
-                ButtonSegment(value: false, label: Text('通常表示')),
-                ButtonSegment(value: true, label: Text('匿名表示')),
-              ],
-              selected: {settings.hideUserInfo},
-              onSelectionChanged: (value) =>
-                  notifier.setHideUserInfo(value.first),
-              style: const ButtonStyle(
-                visualDensity: VisualDensity.compact,
-              ),
-            ),
-          ),
-
-          const Divider(),
-
-          // ── メディア ──
-          const _SectionHeader(title: 'メディア'),
-          ListTile(
-            title: const Text('プレビューサイズ'),
-            trailing: SegmentedButton<ImagePreviewSize>(
-              segments: const [
-                ButtonSegment(value: ImagePreviewSize.small, label: Text('小')),
-                ButtonSegment(value: ImagePreviewSize.medium, label: Text('中')),
-                ButtonSegment(value: ImagePreviewSize.large, label: Text('大')),
-              ],
-              selected: {settings.imagePreviewSize},
-              onSelectionChanged: (value) =>
-                  notifier.setImagePreviewSize(value.first),
-              style: const ButtonStyle(
-                visualDensity: VisualDensity.compact,
-              ),
-            ),
-          ),
-          ListTile(
-            title: const Text('センシティブ'),
-            trailing: SegmentedButton<SensitiveMode>(
-              segments: const [
-                ButtonSegment(value: SensitiveMode.show, label: Text('全表示')),
-                ButtonSegment(value: SensitiveMode.hide, label: Text('隠す')),
-                ButtonSegment(value: SensitiveMode.hideAll, label: Text('全隠し')),
-              ],
-              selected: {settings.sensitiveMode},
-              onSelectionChanged: (value) =>
-                  notifier.setSensitiveMode(value.first),
-              style: const ButtonStyle(
-                visualDensity: VisualDensity.compact,
-              ),
-            ),
-          ),
-
-          const Divider(),
-
-          // ── 文章 ──
-          const _SectionHeader(title: '文章'),
           ListTile(
             title: const Text('フォント'),
             subtitle: Text(settings.fontFamily.isEmpty
@@ -145,7 +86,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             onTap: () => _openFontPicker(context, settings, notifier),
           ),
           ListTile(
-            title: Text('サイズ ${(settings.fontScale * 100).round()}%'),
+            title: Text('フォントサイズ ${(settings.fontScale * 100).round()}%'),
           ),
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -168,47 +109,161 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
 
           const Divider(),
 
-          // ── 外観 ──
-          const _SectionHeader(title: '外観'),
+          // ── レイアウト ──
+          const _SectionHeader(title: 'レイアウト'),
           ListTile(
-            title: const Text('テーマ'),
-            trailing: DropdownButton<ThemeMode>(
-              value: settings.themeMode,
-              items: const [
-                DropdownMenuItem(value: ThemeMode.system, child: Text('システム')),
-                DropdownMenuItem(value: ThemeMode.light, child: Text('ライト')),
-                DropdownMenuItem(value: ThemeMode.dark, child: Text('ダーク')),
+            title: const Text('ボタン位置'),
+            trailing: SegmentedButton<FabPosition>(
+              showSelectedIcon: false,
+              segments: const [
+                ButtonSegment(value: FabPosition.left, label: Text('左')),
+                ButtonSegment(value: FabPosition.right, label: Text('右')),
               ],
-              onChanged: (value) {
-                if (value != null) notifier.setThemeMode(value);
-              },
+              selected: {settings.fabPosition},
+              onSelectionChanged: (value) =>
+                  notifier.setFabPosition(value.first),
+              style: const ButtonStyle(
+                visualDensity: VisualDensity.compact,
+              ),
             ),
           ),
 
           const Divider(),
 
-          // ── ヘッダー ──
-          const _SectionHeader(title: 'ヘッダー', subtitle: 'タイムライン画面のヘッダーに表示するボタン'),
-          CheckboxListTile(
-            secondary: const Icon(Icons.timer_outlined, size: 20),
-            title: const Text('フェッチタイマー'),
-            value: settings.showFetchTimer,
-            onChanged: (value) => notifier.setShowFetchTimer(value ?? true),
-            dense: true,
+          // ── タイムライン ──
+          const _SectionHeader(title: 'タイムライン'),
+          ListTile(
+            title: const Text('匿名モード'),
+            trailing: SegmentedButton<bool>(
+              showSelectedIcon: false,
+              segments: const [
+                ButtonSegment(value: false, label: Text('通常表示')),
+                ButtonSegment(value: true, label: Text('匿名表示')),
+              ],
+              selected: {settings.hideUserInfo},
+              onSelectionChanged: (value) =>
+                  notifier.setHideUserInfo(value.first),
+              style: const ButtonStyle(
+                visualDensity: VisualDensity.compact,
+              ),
+            ),
           ),
           CheckboxListTile(
-            secondary: const Icon(Icons.blur_on, size: 20),
-            title: const Text('センシティブ切替'),
-            value: settings.appBarButtons.contains('sensitive'),
-            onChanged: (_) => notifier.toggleAppBarButton('sensitive'),
-            dense: true,
-          ),
-          CheckboxListTile(
-            secondary: const Icon(Icons.face_retouching_off, size: 20),
-            title: const Text('匿名モード切替'),
+            title: const Text('ヘッダーに匿名切替ボタンを表示'),
             value: settings.appBarButtons.contains('userInfo'),
             onChanged: (_) => notifier.toggleAppBarButton('userInfo'),
             dense: true,
+            controlAffinity: ListTileControlAffinity.leading,
+          ),
+
+          const Divider(),
+
+          // ── メディア ──
+          const _SectionHeader(title: 'メディア'),
+          ListTile(
+            title: const Text('プレビューサイズ'),
+            trailing: SegmentedButton<ImagePreviewSize>(
+              showSelectedIcon: false,
+              segments: const [
+                ButtonSegment(value: ImagePreviewSize.small, label: Text('小')),
+                ButtonSegment(value: ImagePreviewSize.medium, label: Text('中')),
+                ButtonSegment(value: ImagePreviewSize.large, label: Text('大')),
+              ],
+              selected: {settings.imagePreviewSize},
+              onSelectionChanged: (value) =>
+                  notifier.setImagePreviewSize(value.first),
+              style: const ButtonStyle(
+                visualDensity: VisualDensity.compact,
+              ),
+            ),
+          ),
+          ListTile(
+            title: const Text('センシティブ'),
+            trailing: SegmentedButton<SensitiveMode>(
+              showSelectedIcon: false,
+              segments: const [
+                ButtonSegment(value: SensitiveMode.show, label: Text('全表示')),
+                ButtonSegment(value: SensitiveMode.hide, label: Text('隠す')),
+                ButtonSegment(value: SensitiveMode.hideAll, label: Text('全隠し')),
+              ],
+              selected: {settings.sensitiveMode},
+              onSelectionChanged: (value) =>
+                  notifier.setSensitiveMode(value.first),
+              style: const ButtonStyle(
+                visualDensity: VisualDensity.compact,
+              ),
+            ),
+          ),
+          CheckboxListTile(
+            title: const Text('ヘッダーにセンシティブ切替ボタンを表示'),
+            value: settings.appBarButtons.contains('sensitive'),
+            onChanged: (_) => notifier.toggleAppBarButton('sensitive'),
+            dense: true,
+            controlAffinity: ListTileControlAffinity.leading,
+          ),
+
+          const Divider(),
+
+          // ── フェッチ ──
+          const _SectionHeader(title: 'フェッチ', subtitle: 'SNSから投稿を取得する間隔'),
+          ListTile(
+            title: const Text('取得間隔'),
+            trailing: DropdownButton<int>(
+              value: settings.fetchIntervalSeconds,
+              items: const [
+                DropdownMenuItem(value: 15, child: Text('15秒')),
+                DropdownMenuItem(value: 30, child: Text('30秒')),
+                DropdownMenuItem(value: 60, child: Text('60秒')),
+                DropdownMenuItem(value: 120, child: Text('2分')),
+                DropdownMenuItem(value: 300, child: Text('5分')),
+              ],
+              onChanged: (value) {
+                if (value != null) notifier.setInterval(value);
+              },
+            ),
+          ),
+          ListTile(
+            title: const Text('ドリップ速度'),
+            subtitle: const Text('取得した投稿をタイムラインに流す間隔'),
+            trailing: DropdownButton<int>(
+              value: settings.dripIntervalMs,
+              items: const [
+                DropdownMenuItem(value: 500, child: Text('0.5秒')),
+                DropdownMenuItem(value: 1000, child: Text('1秒')),
+                DropdownMenuItem(value: 2000, child: Text('2秒')),
+                DropdownMenuItem(value: 3000, child: Text('3秒')),
+                DropdownMenuItem(value: 5000, child: Text('5秒')),
+              ],
+              onChanged: (value) {
+                if (value != null) notifier.setDripIntervalMs(value);
+              },
+            ),
+          ),
+          CheckboxListTile(
+            title: const Text('ヘッダーにタイマーを表示'),
+            value: settings.showFetchTimer,
+            onChanged: (value) => notifier.setShowFetchTimer(value ?? true),
+            dense: true,
+            controlAffinity: ListTileControlAffinity.leading,
+          ),
+
+          const Divider(),
+
+          // ── デバッグ ──
+          const _SectionHeader(title: 'デバッグ'),
+          SwitchListTile(
+            title: const Text('通信ログを記録'),
+            subtitle: Text(
+              settings.debugLogEnabled
+                  ? 'ON — ストレージ消費・パフォーマンス低下の可能性あり'
+                  : 'OFF — 問題発生時にONにしてください',
+              style: TextStyle(
+                fontSize: 12,
+                color: settings.debugLogEnabled ? Colors.orange : Colors.grey,
+              ),
+            ),
+            value: settings.debugLogEnabled,
+            onChanged: (value) => notifier.setDebugLogEnabled(value),
           ),
 
           const Divider(),

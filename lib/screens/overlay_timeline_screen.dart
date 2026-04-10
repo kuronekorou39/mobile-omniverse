@@ -93,9 +93,9 @@ class _OverlayTimelineScreenState extends State<OverlayTimelineScreen> {
             if (v != _hideUserInfo) { _hideUserInfo = v; needsRebuild = true; }
           }
 
-          // 投稿リストは変更時のみ送られてくる
+          // 投稿リストは変更時のみ送られてくる（トップでない時は無視）
           final postList = decoded['posts'] as List<dynamic>?;
-          if (postList != null) {
+          if (postList != null && _overlayAtTop) {
             final posts = postList
                 .map((e) => Post.tryFromCache(e as Map<String, dynamic>))
                 .whereType<Post>()
@@ -167,7 +167,7 @@ class _OverlayTimelineScreenState extends State<OverlayTimelineScreen> {
 
   void _onScroll() {
     // スクロール位置をメインアプリに通知（ドリップ制御用）
-    final atTop = _scrollController.position.pixels <= 10;
+    final atTop = _scrollController.position.pixels <= 5;
     if (atTop != _overlayAtTop) {
       _overlayAtTop = atTop;
       FlutterOverlayWindow.shareData({"cmd": "overlayScrollAtTop", "atTop": atTop});
@@ -583,6 +583,12 @@ class _OverlayTimelineScreenState extends State<OverlayTimelineScreen> {
                             child: Row(
                               mainAxisSize: MainAxisSize.min,
                               children: [
+                                Icon(
+                                  _overlayAtTop ? Icons.sync : Icons.pause,
+                                  color: _overlayAtTop ? Colors.green : _theme.textQuaternary,
+                                  size: 12,
+                                ),
+                                const SizedBox(width: 4),
                                 Icon(Icons.drag_indicator,
                                     color: _theme.iconColor, size: 16),
                                 if (_showFetchTimer) ...[

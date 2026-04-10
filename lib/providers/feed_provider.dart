@@ -246,8 +246,8 @@ class FeedNotifier extends StateNotifier<FeedState> {
         'hideUserInfo': settings.hideUserInfo,
       };
 
-      // 投稿に変更があった場合のみフルデータを送信
-      if (_overlayPostsDirty) {
+      // 投稿に変更があった場合のみフルデータを送信（トップでない時は保留）
+      if (_overlayPostsDirty && _overlayAtTop) {
         _overlayPostsDirty = false;
         final hideRtIds = settings.hideRetweetsAccountIds;
         var visiblePosts = state.posts.where((p) =>
@@ -471,13 +471,8 @@ class FeedNotifier extends StateNotifier<FeedState> {
       _pendingQueue.removeRange(_maxQueueSize, _pendingQueue.length);
     }
 
-    // 高速ドリップ: 新しい順（トップに見える投稿から先に表示）
-    // 通常ドリップ: 古い順（各投稿が先頭に挿入される）
-    if (_fastDripActive) {
-      _pendingQueue.sort((a, b) => b.timestamp.compareTo(a.timestamp));
-    } else {
-      _pendingQueue.sort((a, b) => a.timestamp.compareTo(b.timestamp));
-    }
+    // 古い順にソート → 各ドリップが常にリスト先頭に挿入される
+    _pendingQueue.sort((a, b) => a.timestamp.compareTo(b.timestamp));
 
     final schedulerIntervalMs =
         TimelineFetchScheduler.instance.interval.inMilliseconds;
@@ -491,9 +486,10 @@ class FeedNotifier extends StateNotifier<FeedState> {
         intervalMs = 200;
       }
     } else {
-      // 通常モード: 最速1000ms = 1件/秒
+      // 通常モード: 設定のドリップ間隔を使用
+      final minInterval = _settingsReader().dripIntervalMs;
       intervalMs =
-          (schedulerIntervalMs / _pendingQueue.length).round().clamp(1000, 3000);
+          (schedulerIntervalMs / _pendingQueue.length).round().clamp(minInterval, minInterval * 3);
     }
 
     _dripTimer = Timer.periodic(Duration(milliseconds: intervalMs), (_) {
@@ -545,10 +541,14 @@ class FeedNotifier extends StateNotifier<FeedState> {
       deactivateFastDrip();
       return;
     }
-    // 画面が見えていない、またはトップにいないならスキップ
+    // 画面が見えていないならスキップ
     if (!_screenVisible) return;
-    final overlayReady = _overlayActive && _overlayAtTop;
-    if (!_isAtTop && !overlayReady) return;
+    // オーバーレイ使用中はオーバーレイのスクロール位置のみで判定
+    if (_overlayActive) {
+      if (!_overlayAtTop) return;
+    } else {
+      if (!_isAtTop) return;
+    }
     if (!mounted) {
       _dripTimer?.cancel();
       _dripTimer = null;

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../services/debug_log_service.dart';
 import '../services/timeline_fetch_scheduler.dart';
 
 /// 画像プレビューサイズ
@@ -40,6 +41,9 @@ enum SensitiveMode {
   hideAll,
 }
 
+/// FABの表示位置
+enum FabPosition { right, left }
+
 class SettingsState {
   const SettingsState({
     this.fetchIntervalSeconds = 15,
@@ -55,6 +59,9 @@ class SettingsState {
     this.hideUserInfo = false,
     this.fontFamily = '',
     this.appBarButtons = const {},
+    this.fabPosition = FabPosition.right,
+    this.dripIntervalMs = 1000,
+    this.debugLogEnabled = false,
   });
 
   final int fetchIntervalSeconds;
@@ -82,6 +89,12 @@ class SettingsState {
   final String fontFamily;
   /// AppBarに表示するカスタムボタン
   final Set<String> appBarButtons;
+  /// FABの表示位置
+  final FabPosition fabPosition;
+  /// ドリップ間隔（ミリ秒）
+  final int dripIntervalMs;
+  /// デバッグログを記録するか
+  final bool debugLogEnabled;
 
   SettingsState copyWith({
     int? fetchIntervalSeconds,
@@ -97,6 +110,9 @@ class SettingsState {
     bool? hideUserInfo,
     String? fontFamily,
     Set<String>? appBarButtons,
+    FabPosition? fabPosition,
+    int? dripIntervalMs,
+    bool? debugLogEnabled,
   }) {
     return SettingsState(
       fetchIntervalSeconds: fetchIntervalSeconds ?? this.fetchIntervalSeconds,
@@ -112,6 +128,9 @@ class SettingsState {
       hideUserInfo: hideUserInfo ?? this.hideUserInfo,
       fontFamily: fontFamily ?? this.fontFamily,
       appBarButtons: appBarButtons ?? this.appBarButtons,
+      fabPosition: fabPosition ?? this.fabPosition,
+      dripIntervalMs: dripIntervalMs ?? this.dripIntervalMs,
+      debugLogEnabled: debugLogEnabled ?? this.debugLogEnabled,
     );
   }
 }
@@ -164,6 +183,10 @@ class SettingsNotifier extends StateNotifier<SettingsState> {
       prefs.setString(_keyFontFamily, '');
     }
     final appBarButtons = prefs.getStringList(_keyAppBarButtons)?.toSet() ?? {};
+    final fabPositionIndex = prefs.getInt('settings_fab_position') ?? FabPosition.right.index;
+    final fabPosition = FabPosition.values[fabPositionIndex.clamp(0, 1)];
+    final dripIntervalMs = prefs.getInt('settings_drip_interval_ms') ?? 1000;
+    final debugLogEnabled = prefs.getBool('settings_debug_log_enabled') ?? false;
 
     state = state.copyWith(
       fetchIntervalSeconds: interval,
@@ -178,7 +201,13 @@ class SettingsNotifier extends StateNotifier<SettingsState> {
       hideUserInfo: hideUserInfo,
       fontFamily: fontFamily,
       appBarButtons: appBarButtons,
+      fabPosition: fabPosition,
+      dripIntervalMs: dripIntervalMs,
+      debugLogEnabled: debugLogEnabled,
     );
+
+    // デバッグログの有効/無効を反映
+    DebugLogService.instance.enabled = state.debugLogEnabled;
 
     // #3: デフォルトフェッチONの場合、起動時にスケジューラを開始
     if (state.isFetchingActive) {
@@ -202,6 +231,9 @@ class SettingsNotifier extends StateNotifier<SettingsState> {
     await prefs.setBool(_keyHideUserInfo, state.hideUserInfo);
     await prefs.setString(_keyFontFamily, state.fontFamily);
     await prefs.setStringList(_keyAppBarButtons, state.appBarButtons.toList());
+    await prefs.setInt('settings_fab_position', state.fabPosition.index);
+    await prefs.setInt('settings_drip_interval_ms', state.dripIntervalMs);
+    await prefs.setBool('settings_debug_log_enabled', state.debugLogEnabled);
   }
 
   void setInterval(int seconds) {
@@ -273,6 +305,22 @@ class SettingsNotifier extends StateNotifier<SettingsState> {
 
   void setFontFamily(String value) {
     state = state.copyWith(fontFamily: value);
+    _saveToPrefs();
+  }
+
+  void setDebugLogEnabled(bool value) {
+    state = state.copyWith(debugLogEnabled: value);
+    DebugLogService.instance.enabled = value;
+    _saveToPrefs();
+  }
+
+  void setDripIntervalMs(int ms) {
+    state = state.copyWith(dripIntervalMs: ms);
+    _saveToPrefs();
+  }
+
+  void setFabPosition(FabPosition position) {
+    state = state.copyWith(fabPosition: position);
     _saveToPrefs();
   }
 

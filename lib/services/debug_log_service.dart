@@ -10,6 +10,7 @@ class DebugLogService {
 
   File? _logFile;
   int _logBytes = 0;
+  bool enabled = false;
 
   /// ログサイズ警告コールバック（上限に近づいた時）
   void Function(String sizeLabel)? onLogSizeWarning;
@@ -57,6 +58,7 @@ class DebugLogService {
     Duration? duration,
     Map<String, dynamic>? extra,
   }) async {
+    if (!enabled) return;
     final buf = StringBuffer();
     final now = DateTime.now();
     buf.writeln('════════════════════════════════════════════════════════════');
@@ -126,6 +128,7 @@ class DebugLogService {
     Duration? duration,
     Map<String, dynamic>? extra,
   }) async {
+    if (!enabled) return;
     final buf = StringBuffer();
     final now = DateTime.now();
     buf.writeln('════════════════════════════════════════════════════════════');
@@ -171,6 +174,7 @@ class DebugLogService {
 
   /// 汎用ログ
   Future<void> log(String tag, String message) async {
+    if (!enabled) return;
     final now = DateTime.now();
     await _append('[$tag] ${now.toIso8601String()} $message\n');
   }
@@ -178,10 +182,10 @@ class DebugLogService {
   static const int _oneGb = 1024 * 1024 * 1024;
   static const int _maxBodyLog = 2048;
 
-  /// ログファイルの上限サイズ（50MB）
-  static const int _maxLogSize = 50 * 1024 * 1024;
-  /// ローテーション時に保持するサイズ（40MB — 直近分を残す）
-  static const int _rotateKeepSize = 40 * 1024 * 1024;
+  /// ログファイルの上限サイズ（5MB）
+  static const int _maxLogSize = 5 * 1024 * 1024;
+  /// ローテーション時に保持するサイズ（2MB — 直近分を残す）
+  static const int _rotateKeepSize = 2 * 1024 * 1024;
   bool _isRotating = false;
 
   /// 大きなボディを切り詰めてログに追加
@@ -213,18 +217,29 @@ class DebugLogService {
     return value;
   }
 
+  final List<String> _writeBuffer = [];
+  bool _isWriting = false;
+
   Future<void> _append(String text) async {
     if (_logFile == null || _isRotating) return;
+    _writeBuffer.add(text);
+    if (_isWriting) return; // 既に書き込み中ならバッファに溜めるだけ
+    _isWriting = true;
     try {
-      final bytes = text.codeUnits;
-      await _logFile!.writeAsBytes(bytes, mode: FileMode.append);
-      _logBytes += bytes.length;
-      // 上限超過でローテーション
+      while (_writeBuffer.isNotEmpty) {
+        final batch = _writeBuffer.join();
+        _writeBuffer.clear();
+        final bytes = batch.codeUnits;
+        await _logFile!.writeAsBytes(bytes, mode: FileMode.append, flush: false);
+        _logBytes += bytes.length;
+      }
       if (_logBytes > _maxLogSize) {
         await _rotate();
       }
     } catch (e) {
       debugPrint('[DebugLog] write error: $e');
+    } finally {
+      _isWriting = false;
     }
   }
 

@@ -53,31 +53,11 @@ class AccountsScreen extends ConsumerWidget {
             )
           : Column(
               children: [
-                // 全ON/OFF + 追加ボタン
+                // 追加 + 全ON/OFF
                 Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+                  padding: const EdgeInsets.fromLTRB(16, 12, 8, 4),
                   child: Row(
                     children: [
-                      TextButton(
-                        onPressed: () => ref.read(accountProvider.notifier).enableAll(),
-                        style: TextButton.styleFrom(
-                          minimumSize: Size.zero,
-                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                        ),
-                        child: const Text('全ON'),
-                      ),
-                      const SizedBox(width: 4),
-                      TextButton(
-                        onPressed: () => ref.read(accountProvider.notifier).disableAll(),
-                        style: TextButton.styleFrom(
-                          minimumSize: Size.zero,
-                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                        ),
-                        child: const Text('全OFF'),
-                      ),
-                      const Spacer(),
                       TextButton.icon(
                         onPressed: () => _showAddAccountDialog(context, ref),
                         icon: const Icon(Icons.add, size: 18),
@@ -87,6 +67,26 @@ class AccountsScreen extends ConsumerWidget {
                           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                           tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                         ),
+                      ),
+                      const Spacer(),
+                      TextButton(
+                        onPressed: () => ref.read(accountProvider.notifier).enableAll(),
+                        style: TextButton.styleFrom(
+                          minimumSize: Size.zero,
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                        ),
+                        child: const Text('全ON'),
+                      ),
+                      TextButton(
+                        onPressed: () => ref.read(accountProvider.notifier).disableAll(),
+                        style: TextButton.styleFrom(
+                          minimumSize: Size.zero,
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                          foregroundColor: Colors.grey,
+                        ),
+                        child: const Text('全OFF'),
                       ),
                     ],
                   ),

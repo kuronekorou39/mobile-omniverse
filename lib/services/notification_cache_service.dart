@@ -1,3 +1,5 @@
+import 'package:shared_preferences/shared_preferences.dart';
+
 import '../models/notification_item.dart';
 
 /// アプリ全体で共有する通知キャッシュ（メモリ内）
@@ -7,8 +9,9 @@ class NotificationCacheService {
 
   final Map<String, _AccountNotifications> _cache = {};
 
-  /// 通知画面を開いた時点で見たIDセット（ハイライト判定用）
-  final Map<String, Set<String>> _seenIds = {};
+  /// 通知画面を最後に閉じた時刻（ハイライト判定用、永続化）
+  final Map<String, DateTime> _lastSeenTime = {};
+  bool _loaded = false;
 
   /// キャッシュ取得
   List<NotificationItem> get(String accountId) =>
@@ -43,11 +46,10 @@ class NotificationCacheService {
         // 同じIDだがアクター数が増えた → 更新＋新着扱い
         final idx = existing.notifications.indexOf(old);
         if (idx >= 0) existing.notifications[idx] = n;
-        newItems.add(n); // 新着として扱う（ハイライト用）
+        newItems.add(n);
       }
     }
     if (newItems.isNotEmpty) {
-      // 更新された既存アイテム以外の新規を先頭に挿入
       final newOnly = newItems.where((n) => !existingMap.containsKey(n.id)).toList();
       if (newOnly.isNotEmpty) {
         existing.notifications.insertAll(0, newOnly);
@@ -70,10 +72,32 @@ class NotificationCacheService {
     if (cursor != null) existing.cursor = cursor;
   }
 
-  /// 通知画面を開いた時に呼ぶ — 現在のIDを「既読」として記録
-  void markSeen(String accountId) {
+  /// 永続化された lastSeenTime を読み込む
+  Future<void> loadLastSeenTimes() async {
+    if (_loaded) return;
+    _loaded = true;
+    final prefs = await SharedPreferences.getInstance();
+    final keys = prefs.getKeys().where((k) => k.startsWith('notif_last_seen_'));
+    for (final key in keys) {
+      final accountId = key.replaceFirst('notif_last_seen_', '');
+      final ms = prefs.getInt(key);
+      if (ms != null) {
+        _lastSeenTime[accountId] = DateTime.fromMillisecondsSinceEpoch(ms);
+      }
+    }
+  }
+
+  /// 通知画面を離れる時に呼ぶ — 最新通知の時刻を記録＆永続化
+  Future<void> markSeen(String accountId) async {
     final notifications = get(accountId);
-    _seenIds[accountId] = notifications.map((n) => n.id).toSet();
+    if (notifications.isNotEmpty) {
+      _lastSeenTime[accountId] = notifications.first.timestamp;
+    }
+    final prefs = await SharedPreferences.getInstance();
+    final ts = _lastSeenTime[accountId];
+    if (ts != null) {
+      await prefs.setInt('notif_last_seen_$accountId', ts.millisecondsSinceEpoch);
+    }
   }
 
   /// 全アカウントの通知を時系列でマージして返す
@@ -86,11 +110,14 @@ class NotificationCacheService {
     return all;
   }
 
-  /// この通知が「新着」（前回画面を開いた後に追加された）かどうか
+  /// この通知が「新着」（前回画面を開いた時刻より新しい）かどうか
   bool isNew(String accountId, String notificationId) {
-    final seen = _seenIds[accountId];
-    if (seen == null) return false; // 一度も開いていない場合はハイライトしない
-    return !seen.contains(notificationId);
+    final lastSeen = _lastSeenTime[accountId];
+    if (lastSeen == null) return false; // 一度も開いていない
+    final notifications = get(accountId);
+    final notif = notifications.where((n) => n.id == notificationId).firstOrNull;
+    if (notif == null) return false;
+    return notif.timestamp.isAfter(lastSeen);
   }
 }
 

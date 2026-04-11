@@ -983,6 +983,154 @@ class XApiService {
     return notifications;
   }
 
+  /// メンション通知を GraphQL API で取得（REST版が空の場合のフォールバック）
+  Future<List<NotificationItem>> getMentionNotificationsGraphQL(
+    XCredentials creds, {
+    String? accountId,
+  }) async {
+    return _withTargetedQueryIdRetry(creds, 'Notifications', (queryId) async {
+      final variables = json.encode({
+        'count': 40,
+        'includePromotedContent': false,
+      });
+      final features = json.encode(XFeatures.timeline);
+
+      final uri = Uri.parse(
+        'https://x.com/i/api/graphql/$queryId/Notifications'
+        '?variables=${Uri.encodeComponent(variables)}'
+        '&features=${Uri.encodeComponent(features)}',
+      );
+
+      final hdrs = _buildHeaders(creds);
+      final sw = Stopwatch()..start();
+      final response = await _withRateLimitRetry(
+        () => _client.get(uri, headers: hdrs),
+      );
+      sw.stop();
+      _updateCt0FromResponse(creds, response);
+      _logResponse('NotificationsGQL', 'GET', uri, hdrs, null, response, sw);
+
+      if (response.statusCode != 200) return <NotificationItem>[];
+
+      try {
+        final body = json.decode(response.body) as Map<String, dynamic>;
+        return _parseGraphQLNotifications(body, accountId);
+      } catch (e) {
+        debugPrint('[XApi] Error parsing GraphQL notifications: $e');
+        return <NotificationItem>[];
+      }
+    });
+  }
+
+  List<NotificationItem> _parseGraphQLNotifications(
+      Map<String, dynamic> body, String? accountId) {
+    final notifications = <NotificationItem>[];
+    try {
+      final instructions = dig(body, [
+            'data', 'notifications', 'timeline', 'instructions',
+          ]) as List<dynamic>? ??
+          [];
+
+      for (final instruction in instructions) {
+        final map = instruction as Map<String, dynamic>;
+        if (map['type'] != 'TimelineAddEntries') continue;
+
+        final entries = map['entries'] as List<dynamic>? ?? [];
+        for (final entry in entries) {
+          final entryMap = entry as Map<String, dynamic>;
+          final entryId = entryMap['entryId'] as String? ?? '';
+          if (entryId.startsWith('cursor-')) continue;
+
+          final content = entryMap['content'] as Map<String, dynamic>?;
+          if (content == null) continue;
+
+          final entryType = content['entryType'] as String?;
+          if (entryType == 'TimelineTimelineItem') {
+            final itemContent = content['itemContent'] as Map<String, dynamic>?;
+            if (itemContent == null) continue;
+
+            // clientEventInfo からタイプ判定
+            final clientEvent = content['clientEventInfo'] as Map<String, dynamic>?;
+            final element = clientEvent?['element'] as String? ?? '';
+
+            NotificationType type;
+            if (element.contains('reply')) {
+              type = NotificationType.reply;
+            } else if (element.contains('mention')) {
+              type = NotificationType.mention;
+            } else if (element.contains('like') || element.contains('favorite')) {
+              type = NotificationType.like;
+            } else if (element.contains('retweet')) {
+              type = NotificationType.repost;
+            } else if (element.contains('follow')) {
+              type = NotificationType.follow;
+            } else {
+              // tweet_results があればリプライ/メンションとして扱う
+              final tweetResults = itemContent['tweet_results'] as Map<String, dynamic>?;
+              if (tweetResults != null) {
+                type = NotificationType.reply;
+              } else {
+                continue;
+              }
+            }
+
+            // ツイートデータを取得
+            final tweetResults = itemContent['tweet_results'] as Map<String, dynamic>?;
+            final result = tweetResults?['result'] as Map<String, dynamic>?;
+            if (result == null) continue;
+
+            final post = parseTweet(result, accountId);
+            if (post == null) continue;
+
+            notifications.add(NotificationItem(
+              id: 'x_gql_notif_${post.id}',
+              type: type,
+              source: SnsService.x,
+              actorName: post.username,
+              actorHandle: '@${post.handle}',
+              actorAvatarUrl: post.avatarUrl,
+              targetPostBody: post.body,
+              targetPostId: post.id.replaceFirst('x_', ''),
+              timestamp: post.timestamp,
+            ));
+          } else if (entryType == 'TimelineTimelineModule') {
+            // グループ化された通知
+            final items = content['items'] as List<dynamic>? ?? [];
+            for (final item in items) {
+              final itemMap = item as Map<String, dynamic>;
+              final itemContent =
+                  itemMap['item']?['itemContent'] as Map<String, dynamic>?;
+              if (itemContent == null) continue;
+              final tweetResults =
+                  itemContent['tweet_results'] as Map<String, dynamic>?;
+              if (tweetResults == null) continue;
+              final result = tweetResults['result'] as Map<String, dynamic>?;
+              if (result == null) continue;
+              final post = parseTweet(result, accountId);
+              if (post == null) continue;
+
+              notifications.add(NotificationItem(
+                id: 'x_gql_notif_${post.id}',
+                type: NotificationType.reply,
+                source: SnsService.x,
+                actorName: post.username,
+                actorHandle: '@${post.handle}',
+                actorAvatarUrl: post.avatarUrl,
+                targetPostBody: post.body,
+                targetPostId: post.id.replaceFirst('x_', ''),
+                timestamp: post.timestamp,
+              ));
+            }
+          }
+        }
+      }
+    } catch (e) {
+      debugPrint('[XApi] Error in _parseGraphQLNotifications: $e');
+    }
+    debugPrint('[XApi] GraphQL notifications parsed: ${notifications.length}');
+    return notifications;
+  }
+
   /// 通知一覧を取得 (REST v2 API)
   Future<({List<NotificationItem> notifications, String? cursor, String? responseSnippet})>
       getNotifications(

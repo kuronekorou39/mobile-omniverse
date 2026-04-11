@@ -695,7 +695,7 @@ class _OmniFeedScreenState extends ConsumerState<OmniFeedScreen>
               // ロゴ: 中央やや右に固定（Oの位置が画面中央）
               Positioned.fill(
                 child: Align(
-                  alignment: const Alignment(0.1, 0.0),
+                  alignment: const Alignment(0.03, 0.0),
                   child: GestureDetector(
                     onTap: () {
                       _scrollController.animateTo(

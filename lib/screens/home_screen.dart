@@ -85,7 +85,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       // 切替元のタブをルートに戻す
       _navigatorKeys[_currentIndex].currentState?.popUntil((route) => route.isFirst);
 
-      if (index == 2 && _currentIndex != 2) {
+      // 通知タブを離れる時に既読マーク
+      if (_currentIndex == 2 && index != 2) {
         ref.read(notificationBadgeProvider.notifier).markSeen();
       }
       setState(() => _currentIndex = index);

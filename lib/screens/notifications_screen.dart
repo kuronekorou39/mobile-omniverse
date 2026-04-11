@@ -320,8 +320,6 @@ class _NotificationListState extends ConsumerState<_NotificationList>
   @override
   void initState() {
     super.initState();
-    // 現在のキャッシュを「既読」として記録（この後のフェッチで増えた分がハイライト対象）
-    _cacheService.markSeen(widget.account.id);
     // キャッシュがあれば即表示
     if (_cacheService.hasData(widget.account.id)) {
       _notifications.addAll(_cacheService.get(widget.account.id));
@@ -508,14 +506,28 @@ class _NotificationListState extends ConsumerState<_NotificationList>
     }
 
     if (_error != null) {
+      final friendlyError = _error!.contains('429')
+          ? 'アクセスが集中しています。しばらく待ってから再読み込みしてください。'
+          : _error!.contains('401') || _error!.contains('403')
+              ? '認証エラーが発生しました。アカウントの再ログインが必要かもしれません。'
+              : '通知の取得に失敗しました。ネットワーク接続を確認してください。';
       return Center(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(_error!, style: const TextStyle(color: Colors.red)),
-            const SizedBox(height: 16),
-            FilledButton(onPressed: _fetch, child: const Text('再読み込み')),
-          ],
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.cloud_off, size: 48, color: Colors.grey[400]),
+              const SizedBox(height: 12),
+              Text(
+                friendlyError,
+                textAlign: TextAlign.center,
+                style: TextStyle(color: Colors.grey[600], fontSize: 14),
+              ),
+              const SizedBox(height: 16),
+              FilledButton(onPressed: _fetch, child: const Text('再読み込み')),
+            ],
+          ),
         ),
       );
     }
@@ -622,12 +634,23 @@ class _NotificationTileState extends State<_NotificationTile> {
   @override
   void initState() {
     super.initState();
-    if (widget.isNew) {
-      _highlightOpacity = 1.0;
-      Future.delayed(const Duration(milliseconds: 500), () {
-        if (mounted) setState(() => _highlightOpacity = 0.0);
-      });
+    _activateHighlight();
+  }
+
+  @override
+  void didUpdateWidget(covariant _NotificationTile oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.isNew && !oldWidget.isNew) {
+      _activateHighlight();
     }
+  }
+
+  void _activateHighlight() {
+    if (!widget.isNew) return;
+    setState(() => _highlightOpacity = 1.0);
+    Future.delayed(const Duration(seconds: 7), () {
+      if (mounted) setState(() => _highlightOpacity = 0.0);
+    });
   }
 
   /// システム通知かどうか（actorHandleが自分自身のアカウント）
@@ -685,7 +708,7 @@ class _NotificationTileState extends State<_NotificationTile> {
       duration: const Duration(seconds: 3),
       curve: Curves.easeOut,
       color: _highlightOpacity > 0
-          ? Theme.of(context).colorScheme.primaryContainer.withValues(alpha: 0.2 * _highlightOpacity)
+          ? Colors.amber.withValues(alpha: 0.4 * _highlightOpacity)
           : null,
       child: ListTile(
       leading: GestureDetector(
@@ -947,10 +970,6 @@ class _UnifiedNotificationListState
   @override
   void initState() {
     super.initState();
-    // 現在のキャッシュを「既読」として記録
-    for (final a in widget.accounts) {
-      _cacheService.markSeen(a.id);
-    }
     _loadFromCache();
     _fetchAll();
   }

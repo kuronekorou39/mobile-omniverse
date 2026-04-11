@@ -504,6 +504,8 @@ class PostCard extends StatelessWidget {
               ? () => _showRepostMenu(context)
               : null,
           isActive: post.isReposted,
+          activeColor: Colors.green,
+          useRotation: true,
         ),
         const Spacer(),
         // Like
@@ -516,6 +518,8 @@ class PostCard extends StatelessWidget {
           compact: compact,
           onTap: onLike,
           isActive: post.isLiked,
+          activeIcon: Icons.favorite,
+          activeColor: Colors.red,
         ),
         const Spacer(),
         // Share
@@ -578,6 +582,9 @@ class _EngagementButton extends StatefulWidget {
     required this.fontSize,
     this.onTap,
     this.isActive = false,
+    this.activeIcon,
+    this.activeColor,
+    this.useRotation = false,
     this.compact = false,
   });
 
@@ -588,6 +595,9 @@ class _EngagementButton extends StatefulWidget {
   final double fontSize;
   final VoidCallback? onTap;
   final bool isActive;
+  final IconData? activeIcon;
+  final Color? activeColor;
+  final bool useRotation;
   final bool compact;
 
   @override
@@ -595,38 +605,80 @@ class _EngagementButton extends StatefulWidget {
 }
 
 class _EngagementButtonState extends State<_EngagementButton>
-    with SingleTickerProviderStateMixin {
-  late AnimationController _controller;
+    with TickerProviderStateMixin {
+  late AnimationController _scaleController;
+  late AnimationController _rotationController;
   late Animation<double> _scaleAnimation;
+  bool _rotateForward = true;
 
   @override
   void initState() {
     super.initState();
-    _controller = AnimationController(
-      duration: const Duration(milliseconds: 300),
+    _scaleController = AnimationController(
+      duration: const Duration(milliseconds: 350),
       vsync: this,
     );
-    _scaleAnimation = TweenSequence<double>([
-      TweenSequenceItem(tween: Tween(begin: 1.0, end: 1.4), weight: 40),
-      TweenSequenceItem(tween: Tween(begin: 1.4, end: 0.9), weight: 30),
-      TweenSequenceItem(tween: Tween(begin: 0.9, end: 1.0), weight: 30),
-    ]).animate(CurvedAnimation(parent: _controller, curve: Curves.easeOut));
+    _rotationController = AnimationController(
+      duration: const Duration(milliseconds: 400),
+      vsync: this,
+    );
+    _scaleAnimation = _buildActivateScale();
+  }
+
+  Animation<double> _buildActivateScale() {
+    return TweenSequence<double>([
+      TweenSequenceItem(tween: Tween(begin: 1.0, end: 1.3), weight: 40),
+      TweenSequenceItem(tween: Tween(begin: 1.3, end: 0.95), weight: 30),
+      TweenSequenceItem(tween: Tween(begin: 0.95, end: 1.0), weight: 30),
+    ]).animate(CurvedAnimation(parent: _scaleController, curve: Curves.easeOut));
+  }
+
+  Animation<double> _buildDeactivateScale() {
+    return TweenSequence<double>([
+      TweenSequenceItem(tween: Tween(begin: 1.0, end: 0.8), weight: 50),
+      TweenSequenceItem(tween: Tween(begin: 0.8, end: 1.0), weight: 50),
+    ]).animate(CurvedAnimation(parent: _scaleController, curve: Curves.easeOut));
+  }
+
+  @override
+  void didUpdateWidget(covariant _EngagementButton oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.isActive != oldWidget.isActive) {
+      if (widget.isActive) {
+        _scaleAnimation = _buildActivateScale();
+        _scaleController.forward(from: 0);
+        if (widget.useRotation) {
+          _rotateForward = true;
+          _rotationController.forward(from: 0);
+        }
+      } else {
+        _scaleAnimation = _buildDeactivateScale();
+        _scaleController.forward(from: 0);
+        if (widget.useRotation) {
+          _rotateForward = false;
+          _rotationController.forward(from: 0);
+        }
+      }
+    }
   }
 
   @override
   void dispose() {
-    _controller.dispose();
+    _scaleController.dispose();
+    _rotationController.dispose();
     super.dispose();
   }
 
   void _handleTap() {
     if (widget.onTap == null) return;
-    _controller.forward(from: 0);
     widget.onTap!();
   }
 
   @override
   Widget build(BuildContext context) {
+    final iconData = widget.isActive ? (widget.activeIcon ?? widget.icon) : widget.icon;
+    final iconColor = widget.isActive ? (widget.activeColor ?? widget.color) : widget.color;
+
     return InkWell(
       borderRadius: BorderRadius.circular(20),
       onTap: widget.onTap != null ? _handleTap : null,
@@ -639,18 +691,34 @@ class _EngagementButtonState extends State<_EngagementButton>
           mainAxisSize: MainAxisSize.min,
           children: [
             AnimatedBuilder(
-              animation: _scaleAnimation,
+              animation: Listenable.merge([_scaleAnimation, _rotationController]),
               builder: (context, child) => Transform.scale(
                 scale: _scaleAnimation.value,
-                child: child,
+                child: Transform.rotate(
+                  angle: widget.useRotation
+                      ? _rotationController.value * 2 * 3.14159 * (_rotateForward ? 1 : -1)
+                      : 0,
+                  child: child,
+                ),
               ),
-              child: Icon(widget.icon, size: widget.iconSize, color: widget.color),
+              child: AnimatedSwitcher(
+                duration: const Duration(milliseconds: 200),
+                child: Icon(
+                  iconData,
+                  key: ValueKey(iconData),
+                  size: widget.iconSize,
+                  color: iconColor,
+                ),
+              ),
             ),
             if (widget.count > 0) ...[
               const SizedBox(width: 4),
               Text(
                 _formatCount(widget.count),
-                style: TextStyle(color: widget.color, fontSize: widget.fontSize),
+                style: TextStyle(
+                  color: iconColor,
+                  fontSize: widget.fontSize,
+                ),
               ),
             ],
           ],

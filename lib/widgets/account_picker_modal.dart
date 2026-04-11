@@ -5,14 +5,47 @@ import '../models/sns_service.dart';
 import '../services/account_storage_service.dart';
 import 'sns_badge.dart';
 
+Widget? _buildEngagementIndicator(
+  BuildContext context, {
+  required String actionLabel,
+  required bool isFetcher,
+  bool? isEngaged,
+}) {
+  if (isEngaged == null) return null;
+
+  // リプライにはステータス表示不要
+  final isLikeAction = actionLabel == 'いいね';
+  final isRepostAction = actionLabel == 'リポスト';
+  if (!isLikeAction && !isRepostAction) return null;
+
+  if (!isFetcher) {
+    return Text('?', style: TextStyle(fontSize: 14, color: Colors.grey[500]));
+  }
+
+  if (isLikeAction) {
+    return Icon(
+      isEngaged ? Icons.favorite : Icons.favorite_outline,
+      size: 18,
+      color: isEngaged ? Colors.red : Colors.grey[400],
+    );
+  }
+  return Icon(
+    isEngaged ? Icons.repeat_on : Icons.repeat,
+    size: 18,
+    color: isEngaged ? Colors.green : Colors.grey[400],
+  );
+}
+
 /// いいね/RT/リプライ時にどのアカウントで実行するかを選択するモーダル
 /// 同じサービスの有効なアカウント一覧を表示する
 /// [fetchedByAccountId] は投稿を取得したアカウントID（マーク表示用）
+/// [isEngagedByFetcher] は取得元アカウントのエンゲージメント状態（いいね済み/RT済み等）
 Future<Account?> showAccountPickerModal(
   BuildContext context, {
   required SnsService service,
   required String actionLabel,
   String? fetchedByAccountId,
+  bool? isEngagedByFetcher,
 }) async {
   final accounts = AccountStorageService.instance.accounts
       .where((a) => a.service == service && a.isEnabled)
@@ -68,6 +101,12 @@ Future<Account?> showAccountPickerModal(
                 ],
               ),
               subtitle: Text(account.handle),
+              trailing: _buildEngagementIndicator(
+                ctx,
+                actionLabel: actionLabel,
+                isFetcher: account.id == fetchedByAccountId,
+                isEngaged: isEngagedByFetcher,
+              ),
               onTap: () => Navigator.of(ctx).pop(account),
             ),
           const SizedBox(height: 8),

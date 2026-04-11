@@ -266,6 +266,14 @@ class FeedNotifier extends StateNotifier<FeedState> {
     return post.username.isEmpty || post.handle == '@';
   }
 
+  static bool _engagementChanged(Post old, Post incoming) {
+    return old.isLiked != incoming.isLiked ||
+        old.isReposted != incoming.isReposted ||
+        old.likeCount != incoming.likeCount ||
+        old.repostCount != incoming.repostCount ||
+        old.replyCount != incoming.replyCount;
+  }
+
   void _onFetchStart() {
     _remainingSeconds = 0;
     state = state.copyWith(isFetching: true);
@@ -283,6 +291,7 @@ class FeedNotifier extends StateNotifier<FeedState> {
     );
 
     final newToQueue = <String, Post>{};
+    bool existingUpdated = false;
 
     for (final post in newPosts) {
       final old = existing[post.id];
@@ -292,6 +301,9 @@ class FeedNotifier extends StateNotifier<FeedState> {
           : post.fetchedByAccountIds;
       if (old != null && _isUserDataMissing(post) && !_isUserDataMissing(old)) {
         // ユーザー情報が欠けた投稿で正常なデータを上書きしない — 即時更新
+        if (!existingUpdated) {
+          existingUpdated = _engagementChanged(old, post);
+        }
         existing[post.id] = old.copyWith(
           isLiked: post.isLiked,
           isReposted: post.isReposted,
@@ -303,6 +315,9 @@ class FeedNotifier extends StateNotifier<FeedState> {
                  old.retweetedByUsername != null && old.retweetedByUsername!.isNotEmpty &&
                  (post.retweetedByUsername == null || post.retweetedByUsername!.isEmpty)) {
         // RT投稿: リツイーター情報が欠けている場合も保護 — 即時更新
+        if (!existingUpdated) {
+          existingUpdated = _engagementChanged(old, post);
+        }
         existing[post.id] = old.copyWith(
           isLiked: post.isLiked,
           isReposted: post.isReposted,
@@ -313,6 +328,9 @@ class FeedNotifier extends StateNotifier<FeedState> {
       } else if (old != null && old.isRetweet && !post.isRetweet) {
         // RT版が既にあるのに非RT版が来た場合、RTフラグ＋タイムスタンプを保持
         // (同じツイートがRT版と直接版の両方でフェッチされるケース)
+        if (!existingUpdated) {
+          existingUpdated = _engagementChanged(old, post);
+        }
         existing[post.id] = post.copyWith(
           fetchedByAccountIds: mergedAccountIds,
           isRetweet: true,
@@ -322,6 +340,9 @@ class FeedNotifier extends StateNotifier<FeedState> {
         );
       } else if (old != null) {
         // 既存投稿の更新（エンゲージメント等）— 即時反映
+        if (!existingUpdated) {
+          existingUpdated = _engagementChanged(old, post);
+        }
         if (old.isRetweet && !post.isRetweet) {
           // 安全策: このパスに到達すべきではないがRT保護
           debugPrint('[Feed] WARNING: RT flag lost at general update for ${post.id} (old.isRT=${old.isRetweet}, new.isRT=${post.isRetweet})');
@@ -424,10 +445,10 @@ class FeedNotifier extends StateNotifier<FeedState> {
       }
     }
 
-    // 新規投稿の追加/削除があったかチェック（先頭IDか件数が変わった場合のみ更新）
-    // エンゲージメント更新(いいね数等)はupdatePostEngagement()で個別に反映される
+    // 投稿リストに変化があったかチェック（件数・先頭ID・エンゲージメント更新）
     final oldPosts = state.posts;
-    final postsChanged = sorted.length != oldPosts.length ||
+    final postsChanged = existingUpdated ||
+        sorted.length != oldPosts.length ||
         (sorted.isNotEmpty && oldPosts.isNotEmpty &&
             sorted.first.id != oldPosts.first.id);
 

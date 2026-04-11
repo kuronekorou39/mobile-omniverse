@@ -9,8 +9,8 @@ class NotificationCacheService {
 
   final Map<String, _AccountNotifications> _cache = {};
 
-  /// 通知画面を最後に閉じた時刻（ハイライト判定用、永続化）
-  final Map<String, DateTime> _lastSeenTime = {};
+  /// 画面に表示済みの通知IDセット（永続化）
+  final Map<String, Set<String>> _renderedIds = {};
   bool _loaded = false;
 
   /// キャッシュ取得
@@ -23,9 +23,7 @@ class NotificationCacheService {
       _cache[accountId] != null && _cache[accountId]!.notifications.isNotEmpty;
 
   /// 新規フェッチ結果をマージ（重複排除、新しいものを先頭に）
-  /// 各通知に accountId を注入する
   int merge(String accountId, List<NotificationItem> fetched, {String? cursor}) {
-    // accountId を注入
     final stamped = fetched.map((n) =>
         n.accountId == accountId ? n : n.copyWith(accountId: accountId)).toList();
 
@@ -40,12 +38,12 @@ class NotificationCacheService {
     for (final n in stamped) {
       final old = existingMap[n.id];
       if (old == null) {
-        // 新規
         newItems.add(n);
       } else if (n.totalActorCount > old.totalActorCount) {
-        // 同じIDだがアクター数が増えた → 更新＋新着扱い
         final idx = existing.notifications.indexOf(old);
         if (idx >= 0) existing.notifications[idx] = n;
+        // アクター増加 → 再表示対象にする（renderedIdsから削除）
+        _renderedIds[accountId]?.remove(n.id);
         newItems.add(n);
       }
     }
@@ -72,31 +70,39 @@ class NotificationCacheService {
     if (cursor != null) existing.cursor = cursor;
   }
 
-  /// 永続化された lastSeenTime を読み込む
-  Future<void> loadLastSeenTimes() async {
+  /// 永続化された表示済みIDを読み込む
+  Future<void> loadRenderedIds() async {
     if (_loaded) return;
     _loaded = true;
     final prefs = await SharedPreferences.getInstance();
-    final keys = prefs.getKeys().where((k) => k.startsWith('notif_last_seen_'));
+    final keys = prefs.getKeys().where((k) => k.startsWith('notif_rendered_'));
     for (final key in keys) {
-      final accountId = key.replaceFirst('notif_last_seen_', '');
-      final ms = prefs.getInt(key);
-      if (ms != null) {
-        _lastSeenTime[accountId] = DateTime.fromMillisecondsSinceEpoch(ms);
+      final accountId = key.replaceFirst('notif_rendered_', '');
+      final ids = prefs.getStringList(key);
+      if (ids != null) {
+        _renderedIds[accountId] = ids.toSet();
       }
     }
   }
 
-  /// 通知画面を離れる時に呼ぶ — 最新通知の時刻を記録＆永続化
+  /// 通知が画面に描画されたことを記録
+  void markRendered(String accountId, String notificationId) {
+    _renderedIds.putIfAbsent(accountId, () => {});
+    _renderedIds[accountId]!.add(notificationId);
+  }
+
+  /// 通知画面を離れる時に呼ぶ — 表示済みIDを永続化 + バッジクリア
   Future<void> markSeen(String accountId) async {
-    final notifications = get(accountId);
-    if (notifications.isNotEmpty) {
-      _lastSeenTime[accountId] = notifications.first.timestamp;
-    }
     final prefs = await SharedPreferences.getInstance();
-    final ts = _lastSeenTime[accountId];
-    if (ts != null) {
-      await prefs.setInt('notif_last_seen_$accountId', ts.millisecondsSinceEpoch);
+    final ids = _renderedIds[accountId];
+    if (ids != null) {
+      // 上限を超えたら古いIDを捨てる（メモリ節約）
+      if (ids.length > 500) {
+        final notifications = get(accountId);
+        final currentIds = notifications.map((n) => n.id).toSet();
+        ids.retainAll(currentIds);
+      }
+      await prefs.setStringList('notif_rendered_$accountId', ids.toList());
     }
   }
 
@@ -110,14 +116,11 @@ class NotificationCacheService {
     return all;
   }
 
-  /// この通知が「新着」（前回画面を開いた時刻より新しい）かどうか
+  /// この通知が「新着」（まだ画面に表示されていない）かどうか
   bool isNew(String accountId, String notificationId) {
-    final lastSeen = _lastSeenTime[accountId];
-    if (lastSeen == null) return false; // 一度も開いていない
-    final notifications = get(accountId);
-    final notif = notifications.where((n) => n.id == notificationId).firstOrNull;
-    if (notif == null) return false;
-    return notif.timestamp.isAfter(lastSeen);
+    final rendered = _renderedIds[accountId];
+    if (rendered == null) return false; // 一度もタブを開いていない
+    return !rendered.contains(notificationId);
   }
 }
 

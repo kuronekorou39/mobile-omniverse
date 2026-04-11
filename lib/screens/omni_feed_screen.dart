@@ -264,11 +264,15 @@ class _OmniFeedScreenState extends ConsumerState<OmniFeedScreen>
   }
 
   Future<Account?> _resolveAccount(Post post, String actionLabel) async {
+    bool? isEngaged;
+    if (actionLabel == 'いいね') isEngaged = post.isLiked;
+    else if (actionLabel == 'リポスト') isEngaged = post.isReposted;
     return showAccountPickerModal(
       context,
       service: post.source,
       actionLabel: actionLabel,
       fetchedByAccountId: post.accountId,
+      isEngagedByFetcher: isEngaged,
     );
   }
 
@@ -276,9 +280,21 @@ class _OmniFeedScreenState extends ConsumerState<OmniFeedScreen>
     final account = await _resolveAccount(post, 'いいね');
     if (account == null) return;
 
+    final isSameAccount = account.id == post.accountId;
+    final willUnlike = isSameAccount && post.isLiked;
+    final action = willUnlike ? ActivityAction.unlike : ActivityAction.like;
     final postSummary = post.body.length > 40
         ? '${post.body.substring(0, 40)}...'
         : post.body;
+
+    // 取得元アカウントで操作した場合のみ楽観的UIトグル
+    if (isSameAccount) {
+      ref.read(feedProvider.notifier).updatePostEngagement(
+        post.id,
+        isLiked: !post.isLiked,
+        likeCount: post.isLiked ? post.likeCount - 1 : post.likeCount + 1,
+      );
+    }
 
     try {
       bool success = false;
@@ -288,23 +304,31 @@ class _OmniFeedScreenState extends ConsumerState<OmniFeedScreen>
       if (post.source == SnsService.x) {
         final creds = account.xCredentials;
         final tweetId = post.id.replaceFirst('x_', '');
-        final result = await XApiService.instance.likeTweetWithDetail(creds, tweetId);
+        final result = willUnlike
+            ? await XApiService.instance.unlikeTweetWithDetail(creds, tweetId)
+            : await XApiService.instance.likeTweetWithDetail(creds, tweetId);
         success = result.success;
         statusCode = result.statusCode;
         responseSnippet = result.bodySnippet;
       } else if (post.source == SnsService.bluesky) {
         final creds = account.blueskyCredentials;
-        final postUri = post.uri;
-        final postCid = post.cid;
-        if (postUri != null && postCid != null && postCid.isNotEmpty) {
-          final result = await BlueskyApiService.instance.likePost(
-              creds, postUri, postCid);
-          success = result != null;
+        if (willUnlike) {
+          if (post.bskyLikeUri != null) {
+            success = await BlueskyApiService.instance.unlikePost(creds, post.bskyLikeUri!);
+          }
+        } else {
+          final postUri = post.uri;
+          final postCid = post.cid;
+          if (postUri != null && postCid != null && postCid.isNotEmpty) {
+            final result = await BlueskyApiService.instance.likePost(
+                creds, postUri, postCid);
+            success = result != null;
+          }
         }
       }
 
       ref.read(activityLogProvider.notifier).logAction(
-            action: ActivityAction.like,
+            action: action,
             platform: post.source,
             accountHandle: account.handle,
             accountId: account.id,
@@ -315,13 +339,23 @@ class _OmniFeedScreenState extends ConsumerState<OmniFeedScreen>
             responseSnippet: responseSnippet,
           );
       if (!success && mounted) {
+        if (isSameAccount) {
+          ref.read(feedProvider.notifier).updatePostEngagement(
+            post.id, isLiked: post.isLiked, likeCount: post.likeCount,
+          );
+        }
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('いいねに失敗しました')),
         );
       }
     } catch (e) {
+      if (isSameAccount) {
+        ref.read(feedProvider.notifier).updatePostEngagement(
+          post.id, isLiked: post.isLiked, likeCount: post.likeCount,
+        );
+      }
       ref.read(activityLogProvider.notifier).logAction(
-            action: ActivityAction.like,
+            action: action,
             platform: post.source,
             accountHandle: account.handle,
             accountId: account.id,
@@ -342,9 +376,20 @@ class _OmniFeedScreenState extends ConsumerState<OmniFeedScreen>
     final account = await _resolveAccount(post, 'リポスト');
     if (account == null) return;
 
+    final isSameAccount = account.id == post.accountId;
+    final willUnrepost = isSameAccount && post.isReposted;
+    final action = willUnrepost ? ActivityAction.unrepost : ActivityAction.repost;
     final postSummary = post.body.length > 40
         ? '${post.body.substring(0, 40)}...'
         : post.body;
+
+    if (isSameAccount) {
+      ref.read(feedProvider.notifier).updatePostEngagement(
+        post.id,
+        isReposted: !post.isReposted,
+        repostCount: post.isReposted ? post.repostCount - 1 : post.repostCount + 1,
+      );
+    }
 
     try {
       bool success = false;
@@ -354,23 +399,31 @@ class _OmniFeedScreenState extends ConsumerState<OmniFeedScreen>
       if (post.source == SnsService.x) {
         final creds = account.xCredentials;
         final tweetId = post.id.replaceFirst('x_', '');
-        final result = await XApiService.instance.retweetWithDetail(creds, tweetId);
+        final result = willUnrepost
+            ? await XApiService.instance.unretweetWithDetail(creds, tweetId)
+            : await XApiService.instance.retweetWithDetail(creds, tweetId);
         success = result.success;
         statusCode = result.statusCode;
         responseSnippet = result.bodySnippet;
       } else if (post.source == SnsService.bluesky) {
         final creds = account.blueskyCredentials;
-        final postUri = post.uri;
-        final postCid = post.cid;
-        if (postUri != null && postCid != null && postCid.isNotEmpty) {
-          final result = await BlueskyApiService.instance.repost(
-              creds, postUri, postCid);
-          success = result != null;
+        if (willUnrepost) {
+          if (post.bskyRepostUri != null) {
+            success = await BlueskyApiService.instance.deleteRepost(creds, post.bskyRepostUri!);
+          }
+        } else {
+          final postUri = post.uri;
+          final postCid = post.cid;
+          if (postUri != null && postCid != null && postCid.isNotEmpty) {
+            final result = await BlueskyApiService.instance.repost(
+                creds, postUri, postCid);
+            success = result != null;
+          }
         }
       }
 
       ref.read(activityLogProvider.notifier).logAction(
-            action: ActivityAction.repost,
+            action: action,
             platform: post.source,
             accountHandle: account.handle,
             accountId: account.id,
@@ -381,13 +434,23 @@ class _OmniFeedScreenState extends ConsumerState<OmniFeedScreen>
             responseSnippet: responseSnippet,
           );
       if (!success && mounted) {
+        if (isSameAccount) {
+          ref.read(feedProvider.notifier).updatePostEngagement(
+            post.id, isReposted: post.isReposted, repostCount: post.repostCount,
+          );
+        }
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('リポストに失敗しました')),
         );
       }
     } catch (e) {
+      if (isSameAccount) {
+        ref.read(feedProvider.notifier).updatePostEngagement(
+          post.id, isReposted: post.isReposted, repostCount: post.repostCount,
+        );
+      }
       ref.read(activityLogProvider.notifier).logAction(
-            action: ActivityAction.repost,
+            action: action,
             platform: post.source,
             accountHandle: account.handle,
             accountId: account.id,

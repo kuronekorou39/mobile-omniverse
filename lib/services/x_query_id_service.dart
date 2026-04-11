@@ -35,7 +35,7 @@ class XQueryIdService {
     'UserTweets': 'E3opETHurmVJflFsUBVuUQ',
     'UserMedia': 'dexO_2tohK86JDlXOGVk-w',
     'CreateTweet': 'RXKQMYyEqEjGgWpcSP6LBw',
-    'Notifications': 'z4rosVxPPZ1JmTFJlYMPog',
+    'GenericTimelineById': '2My6Exw3i3JLnuoxc4my8A',
   };
 
   /// グローバルキャッシュ (旧形式・マイグレーション用)

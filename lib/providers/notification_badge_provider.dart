@@ -19,7 +19,7 @@ class NotificationBadgeNotifier extends StateNotifier<Set<String>> {
   NotificationBadgeNotifier() : super({});
 
   int _fetchCycleCount = 0;
-  static const _checkEveryNCycles = 3; // 3回に1回チェック
+  static const _checkEveryNCycles = 5; // 5回に1回チェック
   static const _prefsPrefix = 'notif_last_seen_';
   final _cache = NotificationCacheService.instance;
 
@@ -51,17 +51,9 @@ class NotificationBadgeNotifier extends StateNotifier<Set<String>> {
         int newCount;
 
         if (account.service == SnsService.x) {
-          final results = await Future.wait([
-            XApiService.instance.getNotifications(account.xCredentials),
-            XApiService.instance.getMentionNotifications(account.xCredentials),
-          ]);
-          final notifResult = results[0] as ({List<NotificationItem> notifications, String? cursor, String? responseSnippet});
-          final mentions = results[1] as List<NotificationItem>;
-          final merged = [...notifResult.notifications, ...mentions];
-          final seen = <String>{};
-          merged.retainWhere((n) => seen.add(n.id));
-          merged.sort((a, b) => b.timestamp.compareTo(a.timestamp));
-          newCount = _cache.merge(account.id, merged, cursor: notifResult.cursor);
+          // バックグラウンドではall.jsonのみ（レート制限節約）
+          final notifResult = await XApiService.instance.getNotifications(account.xCredentials);
+          newCount = _cache.merge(account.id, notifResult.notifications, cursor: notifResult.cursor);
         } else {
           final result = await BlueskyApiService.instance
               .getNotificationsWithRefresh(account.blueskyCredentials);

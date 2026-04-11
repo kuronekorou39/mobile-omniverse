@@ -348,16 +348,18 @@ class _NotificationListState extends ConsumerState<_NotificationList>
       late final String? newCursor;
 
       if (widget.account.service == SnsService.x) {
-        // 通知 + メンション（リプライ）を並列取得
+        // REST通知 + GraphQL通知（リプライ含む）を並列取得
         final results = await Future.wait([
           XApiService.instance.getNotifications(widget.account.xCredentials),
-          XApiService.instance.getMentionNotifications(widget.account.xCredentials),
+          XApiService.instance.getNotificationsGraphQL(
+            widget.account.xCredentials,
+            accountId: widget.account.id,
+          ),
         ]);
         final notifResult = results[0] as ({List<NotificationItem> notifications, String? cursor, String? responseSnippet});
-        final mentions = results[1] as List<NotificationItem>;
+        final gqlNotifs = results[1] as List<NotificationItem>;
 
-        // 統合してタイムスタンプ順にソート
-        final merged = [...notifResult.notifications, ...mentions];
+        final merged = [...notifResult.notifications, ...gqlNotifs];
         // 重複排除（同じIDがある場合）
         final seen = <String>{};
         merged.retainWhere((n) => seen.add(n.id));
@@ -635,6 +637,13 @@ class _NotificationTileState extends State<_NotificationTile> {
   void initState() {
     super.initState();
     _activateHighlight();
+    // 描画済みとして記録（次回以降はハイライトしない）
+    if (widget.notification.accountId != null) {
+      NotificationCacheService.instance.markRendered(
+        widget.notification.accountId!,
+        widget.notification.id,
+      );
+    }
   }
 
   @override
@@ -708,7 +717,7 @@ class _NotificationTileState extends State<_NotificationTile> {
       duration: const Duration(seconds: 3),
       curve: Curves.easeOut,
       color: _highlightOpacity > 0
-          ? Colors.amber.withValues(alpha: 0.4 * _highlightOpacity)
+          ? Theme.of(context).colorScheme.primary.withValues(alpha: 0.15 * _highlightOpacity)
           : null,
       child: ListTile(
       leading: GestureDetector(
@@ -992,11 +1001,14 @@ class _UnifiedNotificationListState
           if (account.service == SnsService.x) {
             final results = await Future.wait([
               XApiService.instance.getNotifications(account.xCredentials),
-              XApiService.instance.getMentionNotifications(account.xCredentials),
+              XApiService.instance.getNotificationsGraphQL(
+                account.xCredentials,
+                accountId: account.id,
+              ),
             ]);
             final notifResult = results[0] as ({List<NotificationItem> notifications, String? cursor, String? responseSnippet});
-            final mentions = results[1] as List<NotificationItem>;
-            final merged = [...notifResult.notifications, ...mentions];
+            final gqlNotifs = results[1] as List<NotificationItem>;
+            final merged = [...notifResult.notifications, ...gqlNotifs];
             final seen = <String>{};
             merged.retainWhere((n) => seen.add(n.id));
             merged.sort((a, b) => b.timestamp.compareTo(a.timestamp));

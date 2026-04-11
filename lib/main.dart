@@ -6,7 +6,6 @@ import 'providers/settings_provider.dart';
 import 'screens/overlay_timeline_screen.dart';
 import 'screens/splash_screen.dart';
 import 'services/account_storage_service.dart';
-import 'services/bookmark_service.dart';
 import 'services/debug_log_service.dart';
 import 'services/notification_cache_service.dart';
 import 'services/x_query_id_service.dart';
@@ -24,9 +23,8 @@ void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await AccountStorageService.instance.load();
   await XQueryIdService.instance.init();
-  await BookmarkService.instance.init();
   await DebugLogService.instance.init();
-  await NotificationCacheService.instance.loadLastSeenTimes();
+  await NotificationCacheService.instance.loadRenderedIds();
   runApp(const ProviderScope(child: OmniVerseApp()));
 }
 

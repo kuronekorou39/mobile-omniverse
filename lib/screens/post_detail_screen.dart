@@ -13,7 +13,6 @@ import '../providers/feed_provider.dart';
 import '../providers/settings_provider.dart';
 import '../services/account_storage_service.dart';
 import '../services/bluesky_api_service.dart';
-import '../services/bookmark_service.dart';
 import '../services/x_api_service.dart';
 import '../widgets/account_picker_modal.dart';
 import '../widgets/post_card.dart';
@@ -80,6 +79,12 @@ class _PostDetailScreenState extends ConsumerState<PostDetailScreen> {
         );
       }
 
+      // メイン投稿を最新データで更新
+      final freshMain = posts.firstWhere(
+        (p) => p.id == widget.post.id,
+        orElse: () => _post,
+      );
+
       // メイン投稿を基準に、親（文脈）とリプライを分離
       final mainTimestamp = widget.post.timestamp;
       final others = posts.where((p) => p.id != widget.post.id).toList();
@@ -93,6 +98,7 @@ class _PostDetailScreenState extends ConsumerState<PostDetailScreen> {
         ..sort((a, b) => a.timestamp.compareTo(b.timestamp)); // 古い順
 
       setState(() {
+        _post = freshMain;
         _parents = parents;
         _replies = replies;
         _isLoading = false;
@@ -116,17 +122,6 @@ class _PostDetailScreenState extends ConsumerState<PostDetailScreen> {
       appBar: AppBar(
         title: const Text('投稿詳細'),
         actions: [
-          IconButton(
-            icon: Icon(
-              BookmarkService.instance.isBookmarked(widget.post.id)
-                  ? Icons.bookmark
-                  : Icons.bookmark_outline,
-            ),
-            onPressed: () async {
-              await BookmarkService.instance.toggle(widget.post);
-              setState(() {});
-            },
-          ),
           if (widget.post.permalink != null)
             IconButton(
               icon: const Icon(Icons.open_in_new, size: 20),
@@ -371,28 +366,16 @@ class _PostDetailScreenState extends ConsumerState<PostDetailScreen> {
           const SizedBox(height: 12),
           const Divider(),
 
-          // Engagement counts
-          Padding(
-            padding: const EdgeInsets.symmetric(vertical: 8),
-            child: Row(
-              children: [
-                _buildCountLabel(post.replyCount, 'リプライ'),
-                const SizedBox(width: 24),
-                _buildCountLabel(post.repostCount, 'リポスト'),
-                const SizedBox(width: 24),
-                _buildCountLabel(post.likeCount, 'いいね'),
-              ],
-            ),
-          ),
-
-          const Divider(),
-
-          // Action buttons
-          Row(
+          // Action buttons with counts
+          Builder(builder: (_) {
+            final showCounts = post.replyCount > 0 || post.repostCount > 0 || post.likeCount > 0;
+            return Row(
             mainAxisAlignment: MainAxisAlignment.spaceAround,
             children: [
-              IconButton(
+              _buildActionWithCount(
                 icon: const Icon(Icons.chat_bubble_outline),
+                count: post.replyCount,
+                showCounts: showCounts,
                 onPressed: () async {
                   final posted = await Navigator.of(context).push<bool>(
                     MaterialPageRoute(
@@ -401,40 +384,52 @@ class _PostDetailScreenState extends ConsumerState<PostDetailScreen> {
                   );
                   if (posted == true) _loadReplies();
                 },
-                tooltip: 'リプライ',
               ),
-              IconButton(
-                icon: Icon(
-                  post.isReposted ? Icons.repeat_on : Icons.repeat,
-                  color: post.isReposted ? Colors.green : null,
+              _buildActionWithCount(
+                icon: _AnimatedActionIcon(
+                  isActive: post.isReposted,
+                  icon: Icons.repeat,
+                  activeIcon: Icons.repeat_on,
+                  activeColor: Colors.green,
+                  useRotation: true,
                 ),
+                count: post.repostCount,
+                showCounts: showCounts,
                 onPressed: () => _handleRepost(post),
-                tooltip: 'リポスト',
               ),
-              IconButton(
-                icon: Icon(
-                  post.isLiked ? Icons.favorite : Icons.favorite_outline,
-                  color: post.isLiked ? Colors.red : null,
+              _buildActionWithCount(
+                icon: _AnimatedActionIcon(
+                  isActive: post.isLiked,
+                  icon: Icons.favorite_outline,
+                  activeIcon: Icons.favorite,
+                  activeColor: Colors.red,
                 ),
+                count: post.likeCount,
+                showCounts: showCounts,
                 onPressed: () => _handleLike(post),
-                tooltip: 'いいね',
               ),
             ],
-          ),
+          ); }),
         ],
       ),
     );
   }
 
-  Widget _buildCountLabel(int count, String label) {
-    return Row(
+  Widget _buildActionWithCount({
+    required Widget icon,
+    required int count,
+    required VoidCallback onPressed,
+    required bool showCounts,
+  }) {
+    if (!showCounts) return IconButton(icon: icon, onPressed: onPressed);
+    return Column(
+      mainAxisSize: MainAxisSize.min,
       children: [
+        IconButton(icon: icon, onPressed: onPressed),
         Text(
-          count.toString(),
-          style: const TextStyle(fontWeight: FontWeight.bold),
+          count > 0 ? count.toString() : '',
+          style: TextStyle(fontSize: 12, color: Colors.grey[600]),
         ),
-        const SizedBox(width: 4),
-        Text(label, style: TextStyle(color: Colors.grey[600], fontSize: 13)),
       ],
     );
   }
@@ -515,15 +510,16 @@ class _PostDetailScreenState extends ConsumerState<PostDetailScreen> {
   }
 
   Future<Account?> _resolveAccount(Post post, String actionLabel) async {
-    final settings = ref.read(settingsProvider);
-    if (settings.showAccountPickerOnEngagement) {
-      return showAccountPickerModal(
-        context,
-        service: post.source,
-        actionLabel: actionLabel,
-      );
-    }
-    return _getAccount();
+    bool? isEngaged;
+    if (actionLabel == 'いいね') isEngaged = post.isLiked;
+    else if (actionLabel == 'リポスト') isEngaged = post.isReposted;
+    return showAccountPickerModal(
+      context,
+      service: post.source,
+      actionLabel: actionLabel,
+      fetchedByAccountId: post.accountId,
+      isEngagedByFetcher: isEngaged,
+    );
   }
 
   void _updatePost({bool? isLiked, int? likeCount, bool? isReposted, int? repostCount}) {
@@ -549,15 +545,15 @@ class _PostDetailScreenState extends ConsumerState<PostDetailScreen> {
     final account = await _resolveAccount(post, 'いいね');
     if (account == null) return;
 
-    final settings = ref.read(settingsProvider);
-    final wasLiked = settings.showAccountPickerOnEngagement ? false : post.isLiked;
-    final action = wasLiked ? ActivityAction.unlike : ActivityAction.like;
+    final isSameAccount = account.id == post.accountId;
+    final willUnlike = isSameAccount && post.isLiked;
+    final action = willUnlike ? ActivityAction.unlike : ActivityAction.like;
     final postSummary = post.body.length > 40 ? '${post.body.substring(0, 40)}…' : post.body;
 
-    if (!settings.showAccountPickerOnEngagement) {
+    if (isSameAccount) {
       _updatePost(
-        isLiked: !wasLiked,
-        likeCount: wasLiked ? post.likeCount - 1 : post.likeCount + 1,
+        isLiked: !post.isLiked,
+        likeCount: post.isLiked ? post.likeCount - 1 : post.likeCount + 1,
       );
     }
 
@@ -569,7 +565,7 @@ class _PostDetailScreenState extends ConsumerState<PostDetailScreen> {
       if (post.source == SnsService.x) {
         final creds = account.xCredentials;
         final tweetId = post.id.replaceFirst('x_', '');
-        final result = wasLiked
+        final result = willUnlike
             ? await XApiService.instance.unlikeTweetWithDetail(creds, tweetId)
             : await XApiService.instance.likeTweetWithDetail(creds, tweetId);
         success = result.success;
@@ -577,7 +573,7 @@ class _PostDetailScreenState extends ConsumerState<PostDetailScreen> {
         responseSnippet = result.bodySnippet;
       } else if (post.source == SnsService.bluesky) {
         final creds = account.blueskyCredentials;
-        if (wasLiked) {
+        if (willUnlike) {
           if (post.bskyLikeUri != null) {
             success = await BlueskyApiService.instance.unlikePost(creds, post.bskyLikeUri!);
           }
@@ -603,12 +599,22 @@ class _PostDetailScreenState extends ConsumerState<PostDetailScreen> {
         responseSnippet: responseSnippet,
       );
 
-      if (!success && !settings.showAccountPickerOnEngagement) {
-        _updatePost(isLiked: wasLiked, likeCount: post.likeCount);
+      if (!success && mounted) {
+        if (isSameAccount) {
+          _updatePost(isLiked: post.isLiked, likeCount: post.likeCount);
+        }
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('いいねに失敗しました')),
+        );
       }
     } catch (e) {
-      if (!settings.showAccountPickerOnEngagement) {
-        _updatePost(isLiked: wasLiked, likeCount: post.likeCount);
+      if (isSameAccount) {
+        _updatePost(isLiked: post.isLiked, likeCount: post.likeCount);
+      }
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('いいねに失敗: $e')),
+        );
       }
     }
   }
@@ -617,15 +623,15 @@ class _PostDetailScreenState extends ConsumerState<PostDetailScreen> {
     final account = await _resolveAccount(post, 'リポスト');
     if (account == null) return;
 
-    final settings = ref.read(settingsProvider);
-    final wasReposted = settings.showAccountPickerOnEngagement ? false : post.isReposted;
-    final action = wasReposted ? ActivityAction.unrepost : ActivityAction.repost;
+    final isSameAccount = account.id == post.accountId;
+    final willUnrepost = isSameAccount && post.isReposted;
+    final action = willUnrepost ? ActivityAction.unrepost : ActivityAction.repost;
     final postSummary = post.body.length > 40 ? '${post.body.substring(0, 40)}…' : post.body;
 
-    if (!settings.showAccountPickerOnEngagement) {
+    if (isSameAccount) {
       _updatePost(
-        isReposted: !wasReposted,
-        repostCount: wasReposted ? post.repostCount - 1 : post.repostCount + 1,
+        isReposted: !post.isReposted,
+        repostCount: post.isReposted ? post.repostCount - 1 : post.repostCount + 1,
       );
     }
 
@@ -637,7 +643,7 @@ class _PostDetailScreenState extends ConsumerState<PostDetailScreen> {
       if (post.source == SnsService.x) {
         final creds = account.xCredentials;
         final tweetId = post.id.replaceFirst('x_', '');
-        final result = wasReposted
+        final result = willUnrepost
             ? await XApiService.instance.unretweetWithDetail(creds, tweetId)
             : await XApiService.instance.retweetWithDetail(creds, tweetId);
         success = result.success;
@@ -645,7 +651,7 @@ class _PostDetailScreenState extends ConsumerState<PostDetailScreen> {
         responseSnippet = result.bodySnippet;
       } else if (post.source == SnsService.bluesky) {
         final creds = account.blueskyCredentials;
-        if (wasReposted) {
+        if (willUnrepost) {
           if (post.bskyRepostUri != null) {
             success = await BlueskyApiService.instance.deleteRepost(creds, post.bskyRepostUri!);
           }
@@ -671,12 +677,22 @@ class _PostDetailScreenState extends ConsumerState<PostDetailScreen> {
         responseSnippet: responseSnippet,
       );
 
-      if (!success && !settings.showAccountPickerOnEngagement) {
-        _updatePost(isReposted: wasReposted, repostCount: post.repostCount);
+      if (!success && mounted) {
+        if (isSameAccount) {
+          _updatePost(isReposted: post.isReposted, repostCount: post.repostCount);
+        }
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('リポストに失敗しました')),
+        );
       }
     } catch (e) {
-      if (!settings.showAccountPickerOnEngagement) {
-        _updatePost(isReposted: wasReposted, repostCount: post.repostCount);
+      if (isSameAccount) {
+        _updatePost(isReposted: post.isReposted, repostCount: post.repostCount);
+      }
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('リポストに失敗: $e')),
+        );
       }
     }
   }
@@ -684,5 +700,112 @@ class _PostDetailScreenState extends ConsumerState<PostDetailScreen> {
   String _formatFullTimestamp(DateTime dt) {
     return '${dt.year}/${dt.month.toString().padLeft(2, '0')}/${dt.day.toString().padLeft(2, '0')} '
         '${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}';
+  }
+}
+
+class _AnimatedActionIcon extends StatefulWidget {
+  const _AnimatedActionIcon({
+    required this.isActive,
+    required this.icon,
+    required this.activeIcon,
+    required this.activeColor,
+    this.useRotation = false,
+    this.size = 24.0,
+  });
+
+  final bool isActive;
+  final IconData icon;
+  final IconData activeIcon;
+  final Color activeColor;
+  final bool useRotation;
+  final double size;
+
+  @override
+  State<_AnimatedActionIcon> createState() => _AnimatedActionIconState();
+}
+
+class _AnimatedActionIconState extends State<_AnimatedActionIcon>
+    with TickerProviderStateMixin {
+  late AnimationController _scaleController;
+  late AnimationController _rotationController;
+  late Animation<double> _scaleAnimation;
+  bool _rotateForward = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _scaleController = AnimationController(
+      duration: const Duration(milliseconds: 350),
+      vsync: this,
+    );
+    _rotationController = AnimationController(
+      duration: const Duration(milliseconds: 400),
+      vsync: this,
+    );
+    _scaleAnimation = _buildActivateScale();
+  }
+
+  Animation<double> _buildActivateScale() {
+    return TweenSequence<double>([
+      TweenSequenceItem(tween: Tween(begin: 1.0, end: 1.3), weight: 40),
+      TweenSequenceItem(tween: Tween(begin: 1.3, end: 0.95), weight: 30),
+      TweenSequenceItem(tween: Tween(begin: 0.95, end: 1.0), weight: 30),
+    ]).animate(CurvedAnimation(parent: _scaleController, curve: Curves.easeOut));
+  }
+
+  Animation<double> _buildDeactivateScale() {
+    return TweenSequence<double>([
+      TweenSequenceItem(tween: Tween(begin: 1.0, end: 0.8), weight: 50),
+      TweenSequenceItem(tween: Tween(begin: 0.8, end: 1.0), weight: 50),
+    ]).animate(CurvedAnimation(parent: _scaleController, curve: Curves.easeOut));
+  }
+
+  @override
+  void didUpdateWidget(covariant _AnimatedActionIcon oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.isActive != oldWidget.isActive) {
+      if (widget.isActive) {
+        _scaleAnimation = _buildActivateScale();
+        _scaleController.forward(from: 0);
+        if (widget.useRotation) {
+          _rotateForward = true;
+          _rotationController.forward(from: 0);
+        }
+      } else {
+        _scaleAnimation = _buildDeactivateScale();
+        _scaleController.forward(from: 0);
+        if (widget.useRotation) {
+          _rotateForward = false;
+          _rotationController.forward(from: 0);
+        }
+      }
+    }
+  }
+
+  @override
+  void dispose() {
+    _scaleController.dispose();
+    _rotationController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final iconData = widget.isActive ? widget.activeIcon : widget.icon;
+    final color = widget.isActive ? widget.activeColor : null;
+
+    return AnimatedBuilder(
+      animation: Listenable.merge([_scaleAnimation, _rotationController]),
+      builder: (context, child) => Transform.scale(
+        scale: _scaleAnimation.value,
+        child: Transform.rotate(
+          angle: widget.useRotation
+              ? _rotationController.value * 2 * 3.14159 * (_rotateForward ? 1 : -1)
+              : 0,
+          child: child,
+        ),
+      ),
+      child: Icon(iconData, size: widget.size, color: color),
+    );
   }
 }

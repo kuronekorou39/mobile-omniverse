@@ -62,6 +62,7 @@ class SettingsState {
     this.fabPosition = FabPosition.right,
     this.dripIntervalMs = 1000,
     this.debugLogEnabled = false,
+    this.imageSaveFolder = 'Pictures/OmniVerse',
   });
 
   final int fetchIntervalSeconds;
@@ -95,6 +96,8 @@ class SettingsState {
   final int dripIntervalMs;
   /// デバッグログを記録するか
   final bool debugLogEnabled;
+  /// 画像保存先フォルダ（ストレージルートからの相対パス）
+  final String imageSaveFolder;
 
   SettingsState copyWith({
     int? fetchIntervalSeconds,
@@ -113,6 +116,7 @@ class SettingsState {
     FabPosition? fabPosition,
     int? dripIntervalMs,
     bool? debugLogEnabled,
+    String? imageSaveFolder,
   }) {
     return SettingsState(
       fetchIntervalSeconds: fetchIntervalSeconds ?? this.fetchIntervalSeconds,
@@ -131,6 +135,7 @@ class SettingsState {
       fabPosition: fabPosition ?? this.fabPosition,
       dripIntervalMs: dripIntervalMs ?? this.dripIntervalMs,
       debugLogEnabled: debugLogEnabled ?? this.debugLogEnabled,
+      imageSaveFolder: imageSaveFolder ?? this.imageSaveFolder,
     );
   }
 }
@@ -187,6 +192,7 @@ class SettingsNotifier extends StateNotifier<SettingsState> {
     final fabPosition = FabPosition.values[fabPositionIndex.clamp(0, 1)];
     final dripIntervalMs = prefs.getInt('settings_drip_interval_ms') ?? 1000;
     final debugLogEnabled = prefs.getBool('settings_debug_log_enabled') ?? false;
+    final imageSaveFolder = prefs.getString('settings_image_save_folder') ?? 'Pictures/OmniVerse';
 
     state = state.copyWith(
       fetchIntervalSeconds: interval,
@@ -204,6 +210,7 @@ class SettingsNotifier extends StateNotifier<SettingsState> {
       fabPosition: fabPosition,
       dripIntervalMs: dripIntervalMs,
       debugLogEnabled: debugLogEnabled,
+      imageSaveFolder: imageSaveFolder,
     );
 
     // デバッグログの有効/無効を反映
@@ -234,6 +241,7 @@ class SettingsNotifier extends StateNotifier<SettingsState> {
     await prefs.setInt('settings_fab_position', state.fabPosition.index);
     await prefs.setInt('settings_drip_interval_ms', state.dripIntervalMs);
     await prefs.setBool('settings_debug_log_enabled', state.debugLogEnabled);
+    await prefs.setString('settings_image_save_folder', state.imageSaveFolder);
   }
 
   void setInterval(int seconds) {
@@ -305,6 +313,11 @@ class SettingsNotifier extends StateNotifier<SettingsState> {
 
   void setFontFamily(String value) {
     state = state.copyWith(fontFamily: value);
+    _saveToPrefs();
+  }
+
+  void setImageSaveFolder(String value) {
+    state = state.copyWith(imageSaveFolder: value);
     _saveToPrefs();
   }
 

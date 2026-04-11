@@ -247,11 +247,17 @@ class PostImageGrid extends StatelessWidget {
 
   void _openViewer(BuildContext context, int index) {
     Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (_) => ImageViewer(
+      PageRouteBuilder(
+        opaque: false,
+        pageBuilder: (_, __, ___) => ImageViewer(
           imageUrls: imageUrls,
           initialIndex: index,
         ),
+        transitionsBuilder: (_, animation, __, child) {
+          return FadeTransition(opacity: animation, child: child);
+        },
+        transitionDuration: const Duration(milliseconds: 200),
+        reverseTransitionDuration: const Duration(milliseconds: 150),
       ),
     );
   }

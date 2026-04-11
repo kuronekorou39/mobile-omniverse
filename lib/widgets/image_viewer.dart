@@ -1,5 +1,10 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:flutter_cache_manager/flutter_cache_manager.dart';
+import 'package:open_filex/open_filex.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../utils/image_headers.dart';
 
@@ -23,6 +28,13 @@ class _ImageViewerState extends State<ImageViewer> {
   late int _currentIndex;
   final List<_ZoomState> _zoomStates = [];
 
+  // スワイプで閉じる用
+  double _dragOffsetY = 0;
+  double _dragOffsetX = 0;
+  double _bgOpacity = 1.0;
+  bool _isDragging = false;
+  bool _edgeDismissing = false;
+
   @override
   void initState() {
     super.initState();
@@ -39,39 +51,169 @@ class _ImageViewerState extends State<ImageViewer> {
     super.dispose();
   }
 
+  int get _scalePercent {
+    final raw = _zoomStates[_currentIndex].scale * 100;
+    if ((raw - 100).abs() < 3) return 100;
+    if ((raw - 200).abs() < 3) return 200;
+    return (raw / 5).round() * 5;
+  }
+  bool get _isZoomed => _zoomStates[_currentIndex].scale > 1.05;
+
+  Future<void> _downloadImage() async {
+    final url = widget.imageUrls[_currentIndex];
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      final file = await DefaultCacheManager().getSingleFile(url, headers: kImageHeaders);
+      final dir = await getExternalStorageDirectory();
+      if (dir == null) throw Exception('ストレージにアクセスできません');
+      final prefs = await SharedPreferences.getInstance();
+      final saveFolder = prefs.getString('settings_image_save_folder') ?? 'Pictures/OmniVerse';
+      final picDir = Directory('${dir.parent.parent.parent.parent.path}/$saveFolder');
+      if (!await picDir.exists()) await picDir.create(recursive: true);
+      final ext = url.contains('.png') ? 'png' : 'jpg';
+      final name = 'omni_${DateTime.now().millisecondsSinceEpoch}.$ext';
+      final savePath = '${picDir.path}/$name';
+      await file.copy(savePath);
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text('保存しました: $saveFolder/$name'),
+          action: SnackBarAction(
+            label: '開く',
+            onPressed: () => OpenFilex.open(savePath),
+          ),
+          duration: const Duration(seconds: 4),
+        ),
+      );
+    } catch (e) {
+      messenger.showSnackBar(
+        SnackBar(content: Text('保存に失敗しました: $e')),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
-    // 現在のページのズーム率が120%超ならスワイプ無効
     final blockSwipe = _zoomStates[_currentIndex].scale > 1.2;
+    final scale = _scalePercent;
 
-    return Scaffold(
-      backgroundColor: Colors.black,
-      appBar: AppBar(
-        backgroundColor: Colors.transparent,
-        iconTheme: const IconThemeData(color: Colors.white),
-        title: widget.imageUrls.length > 1
-            ? Text(
-                '${_currentIndex + 1} / ${widget.imageUrls.length}',
-                style: const TextStyle(color: Colors.white),
-              )
-            : null,
-      ),
-      body: PageView.builder(
-        controller: _pageController,
-        itemCount: widget.imageUrls.length,
-        physics: blockSwipe
-            ? const NeverScrollableScrollPhysics()
-            : const PageScrollPhysics(),
-        onPageChanged: (index) => setState(() => _currentIndex = index),
-        itemBuilder: (context, index) {
-          return _ZoomableImage(
-            imageUrl: widget.imageUrls[index],
-            zoomState: _zoomStates[index],
-            onScaleChanged: () {
-              if (index == _currentIndex) setState(() {});
+    final singleImage = widget.imageUrls.length == 1;
+
+    return GestureDetector(
+      // 縦スワイプで閉じる（100%時のみ）
+      onVerticalDragStart: _isZoomed ? null : (_) {
+        _isDragging = true;
+      },
+      onVerticalDragUpdate: _isZoomed ? null : (details) {
+        if (!_isDragging) return;
+        setState(() {
+          _dragOffsetY += details.delta.dy;
+          final distance = _dragOffsetY.abs() + _dragOffsetX.abs();
+          _bgOpacity = (1.0 - (distance / 300)).clamp(0.0, 1.0);
+        });
+      },
+      onVerticalDragEnd: _isZoomed ? null : (details) {
+        _isDragging = false;
+        final velocity = details.primaryVelocity?.abs() ?? 0;
+        if (_dragOffsetY.abs() > 50 || velocity > 800) {
+          Navigator.of(context).pop();
+        } else {
+          setState(() {
+            _dragOffsetY = 0;
+            _bgOpacity = 1.0;
+          });
+        }
+      },
+      // 1枚の時: 横スワイプでも閉じる
+      onHorizontalDragUpdate: (!_isZoomed && singleImage) ? (details) {
+        setState(() {
+          _dragOffsetX += details.delta.dx;
+          _bgOpacity = (1.0 - (_dragOffsetX.abs() / 300)).clamp(0.0, 1.0);
+        });
+      } : null,
+      onHorizontalDragEnd: (!_isZoomed && singleImage) ? (details) {
+        final velocity = details.primaryVelocity?.abs() ?? 0;
+        if (_dragOffsetX.abs() > 50 || velocity > 800) {
+          Navigator.of(context).pop();
+        } else {
+          setState(() {
+            _dragOffsetX = 0;
+            _bgOpacity = 1.0;
+          });
+        }
+      } : null,
+      child: Scaffold(
+        backgroundColor: Colors.black.withValues(alpha: _bgOpacity),
+        appBar: AppBar(
+          backgroundColor: Colors.transparent,
+          elevation: 0,
+          iconTheme: const IconThemeData(color: Colors.white),
+          title: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (widget.imageUrls.length > 1) ...[
+                Text(
+                  '${_currentIndex + 1}/${widget.imageUrls.length}',
+                  style: const TextStyle(color: Colors.white, fontSize: 16),
+                ),
+                const SizedBox(width: 12),
+              ],
+              Text(
+                '$scale%',
+                style: TextStyle(
+                  color: scale == 100 ? Colors.white54 : Colors.white,
+                  fontSize: 14,
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            IconButton(
+              icon: const Icon(Icons.download, size: 22),
+              tooltip: 'ダウンロード',
+              onPressed: _downloadImage,
+            ),
+          ],
+        ),
+        body: Transform.translate(
+          offset: Offset(_dragOffsetX, _dragOffsetY),
+          child: NotificationListener<ScrollUpdateNotification>(
+            onNotification: (notification) {
+              if (_isZoomed || _edgeDismissing) return false;
+              final metrics = notification.metrics;
+              final isAtStart = _currentIndex == 0;
+              final isAtEnd = _currentIndex == widget.imageUrls.length - 1;
+              // 終端でのオーバースクロールを検知
+              if (isAtStart && metrics.pixels < -10) {
+                _edgeDismissing = true;
+                Navigator.of(context).pop();
+                return true;
+              }
+              if (isAtEnd && metrics.pixels > metrics.maxScrollExtent + 10) {
+                _edgeDismissing = true;
+                Navigator.of(context).pop();
+                return true;
+              }
+              return false;
             },
-          );
-        },
+            child: PageView.builder(
+              controller: _pageController,
+              itemCount: widget.imageUrls.length,
+              physics: blockSwipe
+                  ? const NeverScrollableScrollPhysics()
+                  : const BouncingScrollPhysics(),
+              onPageChanged: (index) => setState(() => _currentIndex = index),
+              itemBuilder: (context, index) {
+                return _ZoomableImage(
+                  imageUrl: widget.imageUrls[index],
+                  zoomState: _zoomStates[index],
+                  onScaleChanged: () {
+                    if (index == _currentIndex) setState(() {});
+                  },
+                );
+              },
+            ),
+          ),
+        ),
       ),
     );
   }
@@ -135,10 +277,8 @@ class _ZoomableImageState extends State<_ZoomableImage>
 
     final Matrix4 target;
     if (currentScale > 1.05) {
-      // 100%より大きい → 100%に戻す
       target = Matrix4.identity();
     } else {
-      // 100%以下 → 拡大（タップ位置を中心に）
       final position = details.localPosition;
       final x = -position.dx * (_doubleTapScale - 1);
       final y = -position.dy * (_doubleTapScale - 1);

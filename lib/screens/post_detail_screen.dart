@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:share_plus/share_plus.dart' as share_plus;
+import 'package:url_launcher/url_launcher.dart';
 
 import '../utils/image_headers.dart';
 import '../models/account.dart';
@@ -129,9 +129,13 @@ class _PostDetailScreenState extends ConsumerState<PostDetailScreen> {
           ),
           if (widget.post.permalink != null)
             IconButton(
-              icon: const Icon(Icons.share_outlined),
+              icon: const Icon(Icons.open_in_new, size: 20),
+              tooltip: '公式アプリで開く',
               onPressed: () {
-                share_plus.Share.share(widget.post.permalink!);
+                final uri = Uri.tryParse(widget.post.permalink!);
+                if (uri != null) {
+                  launchUrl(uri, mode: LaunchMode.externalApplication);
+                }
               },
             ),
         ],

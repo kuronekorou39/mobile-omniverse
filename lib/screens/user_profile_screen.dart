@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../models/account.dart';
 import '../models/activity_log.dart';
@@ -51,6 +52,7 @@ class _UserProfileScreenState extends ConsumerState<UserProfileScreen>
   List<Post> _posts = [];
   String? _bannerUrl;
   String? _profileError;
+  bool _hideRetweets = false;
   String? _postsError;
   String? _nextCursor;
   bool _hasMore = true;
@@ -315,12 +317,39 @@ class _UserProfileScreenState extends ConsumerState<UserProfileScreen>
   Widget build(BuildContext context) {
     return Scaffold(
       body: NestedScrollView(
+        floatHeaderSlivers: true,
         headerSliverBuilder: (context, innerBoxIsScrolled) => [
           SliverAppBar(
             title: Text(widget.handle),
             floating: true,
             snap: true,
             forceElevated: innerBoxIsScrolled,
+            actions: [
+              IconButton(
+                icon: _hideRetweets
+                    ? SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: CustomPaint(
+                          painter: _StrikethroughPainter(),
+                          child: Icon(Icons.repeat, size: 20, color: Colors.grey[500]),
+                        ),
+                      )
+                    : const Icon(Icons.repeat, size: 20),
+                tooltip: _hideRetweets ? 'RTを表示' : 'RTを非表示',
+                onPressed: () => setState(() => _hideRetweets = !_hideRetweets),
+              ),
+              IconButton(
+                icon: const Icon(Icons.open_in_new, size: 20),
+                tooltip: '公式アプリで開く',
+                onPressed: () {
+                  final url = widget.service == SnsService.x
+                      ? 'https://x.com/${widget.handle.replaceFirst('@', '')}'
+                      : 'https://bsky.app/profile/${widget.handle.replaceFirst('@', '')}';
+                  launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
+                },
+              ),
+            ],
           ),
           SliverToBoxAdapter(child: _buildProfileHeader()),
           SliverToBoxAdapter(
@@ -337,9 +366,14 @@ class _UserProfileScreenState extends ConsumerState<UserProfileScreen>
           controller: _tabController,
           children: [
             // 投稿タブ
-            _buildPostList(_posts),
+            _buildPostList(
+              _hideRetweets ? _posts.where((p) => !p.isRetweet).toList() : _posts,
+            ),
             // メディアタブ (ページネーションは投稿タブ側で処理)
-            _buildPostList(_mediaPosts, isMediaTab: true),
+            _buildPostList(
+              _hideRetweets ? _mediaPosts.where((p) => !p.isRetweet).toList() : _mediaPosts,
+              isMediaTab: true,
+            ),
           ],
         ),
       ),
@@ -639,8 +673,14 @@ class _UserProfileScreenState extends ConsumerState<UserProfileScreen>
 
   void _openImageViewer(List<String> urls) {
     Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (_) => ImageViewer(imageUrls: urls),
+      PageRouteBuilder(
+        opaque: false,
+        pageBuilder: (_, __, ___) => ImageViewer(imageUrls: urls),
+        transitionsBuilder: (_, animation, __, child) {
+          return FadeTransition(opacity: animation, child: child);
+        },
+        transitionDuration: const Duration(milliseconds: 200),
+        reverseTransitionDuration: const Duration(milliseconds: 150),
       ),
     );
   }
@@ -896,4 +936,23 @@ Future<void> _fetchThenNavigate(BuildContext context, Post post) async {
       SnackBar(content: Text('取得失敗: $e')),
     );
   }
+}
+
+/// アイコンの上に斜線を引くPainter
+class _StrikethroughPainter extends CustomPainter {
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = Colors.red.withValues(alpha: 0.8)
+      ..strokeWidth = 2.0
+      ..style = PaintingStyle.stroke;
+    canvas.drawLine(
+      Offset(2, size.height - 2),
+      Offset(size.width - 2, 2),
+      paint,
+    );
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }

@@ -32,10 +32,26 @@ class NotificationCacheService {
       return stamped.length;
     }
 
-    final existingIds = existing.notifications.map((n) => n.id).toSet();
-    final newItems = stamped.where((n) => !existingIds.contains(n.id)).toList();
+    final existingMap = {for (final n in existing.notifications) n.id: n};
+    final newItems = <NotificationItem>[];
+    for (final n in stamped) {
+      final old = existingMap[n.id];
+      if (old == null) {
+        // 新規
+        newItems.add(n);
+      } else if (n.totalActorCount > old.totalActorCount) {
+        // 同じIDだがアクター数が増えた → 更新＋新着扱い
+        final idx = existing.notifications.indexOf(old);
+        if (idx >= 0) existing.notifications[idx] = n;
+        newItems.add(n); // 新着として扱う（ハイライト用）
+      }
+    }
     if (newItems.isNotEmpty) {
-      existing.notifications.insertAll(0, newItems);
+      // 更新された既存アイテム以外の新規を先頭に挿入
+      final newOnly = newItems.where((n) => !existingMap.containsKey(n.id)).toList();
+      if (newOnly.isNotEmpty) {
+        existing.notifications.insertAll(0, newOnly);
+      }
     }
     if (cursor != null) existing.cursor = cursor;
     return newItems.length;

@@ -320,6 +320,8 @@ class _NotificationListState extends ConsumerState<_NotificationList>
   @override
   void initState() {
     super.initState();
+    // 現在のキャッシュを「既読」として記録（この後のフェッチで増えた分がハイライト対象）
+    _cacheService.markSeen(widget.account.id);
     // キャッシュがあれば即表示
     if (_cacheService.hasData(widget.account.id)) {
       _notifications.addAll(_cacheService.get(widget.account.id));
@@ -945,6 +947,10 @@ class _UnifiedNotificationListState
   @override
   void initState() {
     super.initState();
+    // 現在のキャッシュを「既読」として記録
+    for (final a in widget.accounts) {
+      _cacheService.markSeen(a.id);
+    }
     _loadFromCache();
     _fetchAll();
   }

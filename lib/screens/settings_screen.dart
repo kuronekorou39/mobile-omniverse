@@ -5,6 +5,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:file_picker/file_picker.dart';
+import 'package:open_filex/open_filex.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 
@@ -201,6 +203,50 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             dense: true,
             controlAffinity: ListTileControlAffinity.leading,
           ),
+          ListTile(
+            title: const Text('画像の保存先'),
+            subtitle: Text(settings.imageSaveFolder),
+            trailing: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                IconButton(
+                  icon: const Icon(Icons.folder_open, size: 20),
+                  tooltip: 'フォルダを開く',
+                  onPressed: () async {
+                    final dir = await getExternalStorageDirectory();
+                    if (dir == null) return;
+                    final path = '${dir.parent.parent.parent.parent.path}/${settings.imageSaveFolder}';
+                    final folder = Directory(path);
+                    if (await folder.exists()) {
+                      OpenFilex.open(path);
+                    } else {
+                      if (context.mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(content: Text('フォルダがまだ存在しません（画像保存時に作成されます）')),
+                        );
+                      }
+                    }
+                  },
+                ),
+                IconButton(
+                  icon: const Icon(Icons.edit, size: 20),
+                  tooltip: '変更',
+                  onPressed: () async {
+                    final selected = await FilePicker.getDirectoryPath();
+                    if (selected == null) return;
+                    // ストレージルートからの相対パスに変換
+                    final dir = await getExternalStorageDirectory();
+                    if (dir == null) return;
+                    final root = dir.parent.parent.parent.parent.path;
+                    final relative = selected.startsWith(root)
+                        ? selected.substring(root.length + 1)
+                        : selected;
+                    notifier.setImageSaveFolder(relative);
+                  },
+                ),
+              ],
+            ),
+          ),
 
           const Divider(),
 
@@ -230,6 +276,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
               items: const [
                 DropdownMenuItem(value: 500, child: Text('0.5秒')),
                 DropdownMenuItem(value: 1000, child: Text('1秒')),
+                DropdownMenuItem(value: 1500, child: Text('1.5秒')),
                 DropdownMenuItem(value: 2000, child: Text('2秒')),
                 DropdownMenuItem(value: 3000, child: Text('3秒')),
                 DropdownMenuItem(value: 5000, child: Text('5秒')),
@@ -245,25 +292,6 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             onChanged: (value) => notifier.setShowFetchTimer(value ?? true),
             dense: true,
             controlAffinity: ListTileControlAffinity.leading,
-          ),
-
-          const Divider(),
-
-          // ── デバッグ ──
-          const _SectionHeader(title: 'デバッグ'),
-          SwitchListTile(
-            title: const Text('通信ログを記録'),
-            subtitle: Text(
-              settings.debugLogEnabled
-                  ? 'ON — ストレージ消費・パフォーマンス低下の可能性あり'
-                  : 'OFF — 問題発生時にONにしてください',
-              style: TextStyle(
-                fontSize: 12,
-                color: settings.debugLogEnabled ? Colors.orange : Colors.grey,
-              ),
-            ),
-            value: settings.debugLogEnabled,
-            onChanged: (value) => notifier.setDebugLogEnabled(value),
           ),
 
           const Divider(),
@@ -302,6 +330,20 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 subtitle: Text(settings.isFetchingActive ? '実行中' : '停止中'),
                 value: settings.isFetchingActive,
                 onChanged: (_) => notifier.toggleFetching(),
+              ),
+              SwitchListTile(
+                title: const Text('通信ログを記録'),
+                subtitle: Text(
+                  settings.debugLogEnabled
+                      ? 'ON — ストレージ消費・パフォーマンス低下の可能性あり'
+                      : 'OFF — 問題発生時にONにしてください',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: settings.debugLogEnabled ? Colors.orange : Colors.grey,
+                  ),
+                ),
+                value: settings.debugLogEnabled,
+                onChanged: (value) => notifier.setDebugLogEnabled(value),
               ),
               const Divider(),
               ListTile(

@@ -533,7 +533,7 @@ class PostCard extends StatelessWidget {
               horizontal: compact ? 4 : 8,
               vertical: compact ? 2 : 4,
             ),
-            child: Icon(Icons.share_outlined, size: iconSize, color: iconColor),
+            child: Icon(Icons.open_in_new, size: iconSize, color: iconColor),
           ),
         ),
       ],

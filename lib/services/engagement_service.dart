@@ -1,5 +1,3 @@
-import 'package:flutter/material.dart';
-
 import '../models/account.dart';
 import '../models/activity_log.dart';
 import '../models/post.dart';

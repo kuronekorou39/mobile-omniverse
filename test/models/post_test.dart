@@ -16,8 +16,7 @@ void main() {
           likeCount: 10,
           replyCount: 3,
           repostCount: 5,
-          isLiked: true,
-          isReposted: false,
+          likedByAccountIds: {'acc_1'},
           permalink: 'https://x.com/alice/status/999',
           accountId: 'acc_1',
         );
@@ -152,16 +151,16 @@ void main() {
         expect(updated.body, post.body);
       });
 
-      test('isLiked を変更', () {
-        final post = makePost(isLiked: false);
-        final updated = post.copyWith(isLiked: true);
+      test('likedByAccountIds を変更', () {
+        final post = makePost();
+        final updated = post.copyWith(likedByAccountIds: {'test_account'});
 
         expect(updated.isLiked, true);
       });
 
-      test('isReposted を変更', () {
-        final post = makePost(isReposted: false);
-        final updated = post.copyWith(isReposted: true);
+      test('repostedByAccountIds を変更', () {
+        final post = makePost();
+        final updated = post.copyWith(repostedByAccountIds: {'test_account'});
 
         expect(updated.isReposted, true);
       });
@@ -189,7 +188,7 @@ void main() {
       });
 
       test('変更なしで同値', () {
-        final post = makePost(likeCount: 5, isLiked: true);
+        final post = makePost(likeCount: 5, likedByAccountIds: {'test_account'});
         final updated = post.copyWith();
 
         expect(updated.likeCount, 5);

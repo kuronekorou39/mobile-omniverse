@@ -108,7 +108,7 @@ void main() {
         body: 'With metadata',
         likeCount: 42,
         repostCount: 7,
-        isLiked: true,
+        likedByAccountIds: {'test_account'},
         imageUrls: ['https://img.com/1.jpg'],
         permalink: 'https://x.com/test/status/meta',
       );

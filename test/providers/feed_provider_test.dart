@@ -106,7 +106,7 @@ void main() {
         username: '', // ユーザー情報が欠けている
         handle: '',
         likeCount: 10,
-        isLiked: true,
+        likedByAccountIds: {'test_account'},
       );
 
       final existing = <String, Post>{'p1': old};
@@ -118,8 +118,8 @@ void main() {
             post.username.isEmpty &&
             oldPost.username.isNotEmpty) {
           existing[post.id] = oldPost.copyWith(
-            isLiked: post.isLiked,
-            isReposted: post.isReposted,
+            likedByAccountIds: post.likedByAccountIds,
+            repostedByAccountIds: post.repostedByAccountIds,
             likeCount: post.likeCount,
             repostCount: post.repostCount,
           );
@@ -148,8 +148,8 @@ void main() {
             post.username.isEmpty &&
             oldPost.username.isNotEmpty) {
           existing[post.id] = oldPost.copyWith(
-            isLiked: post.isLiked,
-            isReposted: post.isReposted,
+            likedByAccountIds: post.likedByAccountIds,
+            repostedByAccountIds: post.repostedByAccountIds,
             likeCount: post.likeCount,
             repostCount: post.repostCount,
           );
@@ -201,8 +201,8 @@ void main() {
   group('エンゲージメント更新', () {
     test('updatePostEngagement のロジック', () {
       final posts = [
-        makePost(id: 'p1', likeCount: 5, isLiked: false),
-        makePost(id: 'p2', likeCount: 3, isLiked: true),
+        makePost(id: 'p1', likeCount: 5),
+        makePost(id: 'p2', likeCount: 3, likedByAccountIds: {'test_account'}),
       ];
 
       // updatePostEngagement のロジックを再現
@@ -211,7 +211,7 @@ void main() {
 
       final updated = List<Post>.of(posts);
       updated[idx] = updated[idx].copyWith(
-        isLiked: true,
+        likedByAccountIds: {'test_account'},
         likeCount: 6,
       );
 
@@ -299,7 +299,7 @@ void main() {
       // ユーザー情報が欠けた投稿で更新
       scheduler.onPostsFetched?.call([
         makePost(id: 'protect_1', username: '', handle: '',
-            likeCount: 10, isLiked: true),
+            likeCount: 10, likedByAccountIds: {'test_account'}),
       ]);
       await Future<void>.delayed(const Duration(milliseconds: 50));
 
@@ -380,14 +380,15 @@ void main() {
 
       // まず投稿を追加
       scheduler.onPostsFetched?.call([
-        makePost(id: 'eng_p1', likeCount: 5, isLiked: false),
-        makePost(id: 'eng_p2', likeCount: 3, isLiked: true),
+        makePost(id: 'eng_p1', likeCount: 5),
+        makePost(id: 'eng_p2', likeCount: 3, likedByAccountIds: {'test_account'}),
       ]);
       await Future<void>.delayed(const Duration(milliseconds: 50));
 
       notifier.updatePostEngagement(
         'eng_p1',
-        isLiked: true,
+        accountId: 'test_account',
+        liked: true,
         likeCount: 6,
       );
 
@@ -405,13 +406,14 @@ void main() {
       final scheduler = TimelineFetchScheduler.instance;
 
       scheduler.onPostsFetched?.call([
-        makePost(id: 'rp_p1', repostCount: 2, isReposted: false),
+        makePost(id: 'rp_p1', repostCount: 2),
       ]);
       await Future<void>.delayed(const Duration(milliseconds: 50));
 
       notifier.updatePostEngagement(
         'rp_p1',
-        isReposted: true,
+        accountId: 'test_account',
+        reposted: true,
         repostCount: 3,
       );
 
@@ -430,7 +432,8 @@ void main() {
 
       notifier.updatePostEngagement(
         'nonexistent',
-        isLiked: true,
+        accountId: 'test_account',
+        liked: true,
         likeCount: 100,
       );
 
@@ -447,14 +450,12 @@ void main() {
           id: 'partial_p1',
           likeCount: 5,
           repostCount: 3,
-          isLiked: false,
-          isReposted: false,
         ),
       ]);
       await Future<void>.delayed(const Duration(milliseconds: 50));
 
-      // isLiked のみ更新
-      notifier.updatePostEngagement('partial_p1', isLiked: true);
+      // liked のみ更新
+      notifier.updatePostEngagement('partial_p1', accountId: 'test_account', liked: true);
 
       final p = notifier.state.posts.firstWhere((p) => p.id == 'partial_p1');
       expect(p.isLiked, true);

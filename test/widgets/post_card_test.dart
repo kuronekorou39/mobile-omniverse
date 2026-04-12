@@ -106,7 +106,7 @@ void main() {
     });
 
     testWidgets('like icon shows filled heart when isLiked is true', (tester) async {
-      final post = makePost(isLiked: true, likeCount: 1);
+      final post = makePost(likedByAccountIds: {'test_account'}, likeCount: 1);
       await tester.pumpWidget(buildPostCard(post: post));
 
       expect(find.byIcon(Icons.favorite), findsOneWidget);
@@ -114,7 +114,7 @@ void main() {
     });
 
     testWidgets('repost icon is green when isReposted is true', (tester) async {
-      final post = makePost(isReposted: true, repostCount: 1);
+      final post = makePost(repostedByAccountIds: {'test_account'}, repostCount: 1);
       await tester.pumpWidget(buildPostCard(post: post));
 
       // Find the repeat icon and verify its color is green.
@@ -448,7 +448,7 @@ void main() {
     });
 
     testWidgets('liked post shows red heart color', (tester) async {
-      final post = makePost(isLiked: true, likeCount: 5);
+      final post = makePost(likedByAccountIds: {'test_account'}, likeCount: 5);
       await tester.pumpWidget(buildPostCard(post: post));
 
       final heartIcons = find.byIcon(Icons.favorite);
@@ -460,7 +460,7 @@ void main() {
     });
 
     testWidgets('not liked post shows grey heart color', (tester) async {
-      final post = makePost(isLiked: false, likeCount: 5);
+      final post = makePost(likeCount: 5);
       await tester.pumpWidget(buildPostCard(post: post));
 
       final heartIcons = find.byIcon(Icons.favorite_border);

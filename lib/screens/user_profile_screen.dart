@@ -7,10 +7,13 @@ import '../models/account.dart';
 import '../models/activity_log.dart';
 import '../models/post.dart';
 import '../models/sns_service.dart';
+import '../providers/account_provider.dart';
 import '../providers/activity_log_provider.dart';
 import '../services/account_storage_service.dart';
 import '../services/bluesky_api_service.dart';
+import '../services/engagement_service.dart';
 import '../services/x_api_service.dart';
+import '../utils/engagement_errors.dart';
 import '../utils/image_headers.dart';
 import '../providers/settings_provider.dart';
 import '../widgets/account_picker_modal.dart';
@@ -49,6 +52,7 @@ class _UserProfileScreenState extends ConsumerState<UserProfileScreen>
   bool _isLoadingProfile = true;
   bool _isLoadingPosts = true;
   bool _isLoadingMore = false;
+  bool _loadMoreError = false;
   List<Post> _posts = [];
   String? _bannerUrl;
   String? _profileError;
@@ -128,6 +132,7 @@ class _UserProfileScreenState extends ConsumerState<UserProfileScreen>
     setState(() {
       _nextCursor = null;
       _hasMore = true;
+      _loadMoreError = false;
     });
     await _loadProfile();
     if (mounted) _loadPosts();
@@ -171,6 +176,7 @@ class _UserProfileScreenState extends ConsumerState<UserProfileScreen>
           final profile = await XApiService.instance
               .getUserProfile(account.xCredentials, screenName);
           if (profile != null && mounted) {
+            final isProtected = profile['protected'] as bool? ?? false;
             setState(() {
               _xRestId = profile['rest_id'] as String?;
               _bio = profile['description'] as String?;
@@ -179,6 +185,10 @@ class _UserProfileScreenState extends ConsumerState<UserProfileScreen>
               _postsCount = profile['statuses_count'] as int?;
               _bannerUrl = profile['profile_banner_url'] as String?;
             });
+            // 自アカウントのprotected状態を保存
+            if (widget.accountId != null) {
+              ref.read(accountProvider.notifier).updateProtectedStatus(widget.accountId!, isProtected);
+            }
             _logAction(ActivityAction.profileFetch, account, true,
                 targetId: screenName);
           } else if (mounted) {
@@ -270,7 +280,7 @@ class _UserProfileScreenState extends ConsumerState<UserProfileScreen>
   }
 
   Future<void> _loadMorePosts() async {
-    if (_isLoadingMore || !_hasMore || _nextCursor == null) return;
+    if (_isLoadingMore || !_hasMore || _nextCursor == null || _loadMoreError) return;
     final account = _account;
     if (account == null) return;
 
@@ -312,7 +322,18 @@ class _UserProfileScreenState extends ConsumerState<UserProfileScreen>
       }
     } catch (e) {
       debugPrint('[UserProfile] Error loading more posts: $e');
-      if (mounted) setState(() => _isLoadingMore = false);
+      if (mounted) {
+        setState(() {
+          _isLoadingMore = false;
+          _loadMoreError = true;
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('追加読み込みに失敗しました: $e'),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
     }
   }
 
@@ -546,76 +567,35 @@ class _UserProfileScreenState extends ConsumerState<UserProfileScreen>
 
     final wasLiked = post.isLikedBy(account.id);
     final action = wasLiked ? ActivityAction.unlike : ActivityAction.like;
-    final postSummary = post.body.length > 40
-        ? '${post.body.substring(0, 40)}...'
-        : post.body;
 
-    // Optimistic update
     _updatePost(post,
       accountId: account.id,
       liked: !wasLiked,
       likeCount: wasLiked ? post.likeCount - 1 : post.likeCount + 1,
     );
 
-    try {
-      bool success = false;
-      int? statusCode;
-      String? responseSnippet;
+    final result = await EngagementService.instance.like(
+      post: post, account: account, unlike: wasLiked,
+    );
 
-      if (post.source == SnsService.x) {
-        final creds = account.xCredentials;
-        final tweetId = post.id.replaceFirst('x_', '');
-        final result = wasLiked
-            ? await XApiService.instance.unlikeTweetWithDetail(creds, tweetId)
-            : await XApiService.instance.likeTweetWithDetail(creds, tweetId);
-        success = result.success;
-        statusCode = result.statusCode;
-        responseSnippet = result.bodySnippet;
-      } else if (post.source == SnsService.bluesky) {
-        final creds = account.blueskyCredentials;
-        if (wasLiked) {
-          final likeUri = post.bskyLikeUriFor(account.id);
-          if (likeUri != null) {
-            success = await BlueskyApiService.instance.unlikePost(creds, likeUri);
-          }
-        } else {
-          final postUri = post.uri;
-          final postCid = post.cid;
-          if (postUri != null && postCid != null && postCid.isNotEmpty) {
-            final result = await BlueskyApiService.instance.likePost(
-                creds, postUri, postCid);
-            success = result != null;
-          }
-        }
-      }
+    ref.read(activityLogProvider.notifier).logAction(
+      action: action,
+      platform: post.source,
+      accountHandle: account.handle,
+      accountId: account.id,
+      targetId: post.id,
+      targetSummary: EngagementService.postSummary(post),
+      success: result.success,
+      statusCode: result.statusCode,
+      responseSnippet: result.responseSnippet,
+      errorMessage: result.errorMessage,
+    );
 
-      ref.read(activityLogProvider.notifier).logAction(
-            action: action,
-            platform: post.source,
-            accountHandle: account.handle,
-            accountId: account.id,
-            targetId: post.id,
-            targetSummary: postSummary,
-            success: success,
-            statusCode: statusCode,
-            responseSnippet: responseSnippet,
-          );
-
-      if (!success) {
-        _updatePost(post, accountId: account.id, liked: wasLiked, likeCount: post.likeCount);
-      }
-    } catch (e) {
-      ref.read(activityLogProvider.notifier).logAction(
-            action: action,
-            platform: post.source,
-            accountHandle: account.handle,
-            accountId: account.id,
-            targetId: post.id,
-            targetSummary: postSummary,
-            success: false,
-            errorMessage: e.toString(),
-          );
+    if (!result.success && mounted) {
       _updatePost(post, accountId: account.id, liked: wasLiked, likeCount: post.likeCount);
+      ScaffoldMessenger.of(context).showSnackBar(
+        engagementErrorSnackBar('いいね', result.statusCode),
+      );
     }
   }
 
@@ -625,9 +605,6 @@ class _UserProfileScreenState extends ConsumerState<UserProfileScreen>
 
     final wasReposted = post.isRepostedBy(account.id);
     final action = wasReposted ? ActivityAction.unrepost : ActivityAction.repost;
-    final postSummary = post.body.length > 40
-        ? '${post.body.substring(0, 40)}...'
-        : post.body;
 
     _updatePost(post,
       accountId: account.id,
@@ -635,65 +612,28 @@ class _UserProfileScreenState extends ConsumerState<UserProfileScreen>
       repostCount: wasReposted ? post.repostCount - 1 : post.repostCount + 1,
     );
 
-    try {
-      bool success = false;
-      int? statusCode;
-      String? responseSnippet;
+    final result = await EngagementService.instance.repost(
+      post: post, account: account, unrepost: wasReposted,
+    );
 
-      if (post.source == SnsService.x) {
-        final creds = account.xCredentials;
-        final tweetId = post.id.replaceFirst('x_', '');
-        final result = wasReposted
-            ? await XApiService.instance.unretweetWithDetail(creds, tweetId)
-            : await XApiService.instance.retweetWithDetail(creds, tweetId);
-        success = result.success;
-        statusCode = result.statusCode;
-        responseSnippet = result.bodySnippet;
-      } else if (post.source == SnsService.bluesky) {
-        final creds = account.blueskyCredentials;
-        if (wasReposted) {
-          final repostUri = post.bskyRepostUriFor(account.id);
-          if (repostUri != null) {
-            success = await BlueskyApiService.instance.deleteRepost(creds, repostUri);
-          }
-        } else {
-          final postUri = post.uri;
-          final postCid = post.cid;
-          if (postUri != null && postCid != null && postCid.isNotEmpty) {
-            final result = await BlueskyApiService.instance.repost(
-                creds, postUri, postCid);
-            success = result != null;
-          }
-        }
-      }
+    ref.read(activityLogProvider.notifier).logAction(
+      action: action,
+      platform: post.source,
+      accountHandle: account.handle,
+      accountId: account.id,
+      targetId: post.id,
+      targetSummary: EngagementService.postSummary(post),
+      success: result.success,
+      statusCode: result.statusCode,
+      responseSnippet: result.responseSnippet,
+      errorMessage: result.errorMessage,
+    );
 
-      ref.read(activityLogProvider.notifier).logAction(
-            action: action,
-            platform: post.source,
-            accountHandle: account.handle,
-            accountId: account.id,
-            targetId: post.id,
-            targetSummary: postSummary,
-            success: success,
-            statusCode: statusCode,
-            responseSnippet: responseSnippet,
-          );
-
-      if (!success) {
-        _updatePost(post, accountId: account.id, reposted: wasReposted, repostCount: post.repostCount);
-      }
-    } catch (e) {
-      ref.read(activityLogProvider.notifier).logAction(
-            action: action,
-            platform: post.source,
-            accountHandle: account.handle,
-            accountId: account.id,
-            targetId: post.id,
-            targetSummary: postSummary,
-            success: false,
-            errorMessage: e.toString(),
-          );
+    if (!result.success && mounted) {
       _updatePost(post, accountId: account.id, reposted: wasReposted, repostCount: post.repostCount);
+      ScaffoldMessenger.of(context).showSnackBar(
+        engagementErrorSnackBar('リポスト', result.statusCode),
+      );
     }
   }
 

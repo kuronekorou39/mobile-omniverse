@@ -97,13 +97,6 @@ void main() {
       expect(find.byIcon(Icons.people_outline), findsOneWidget);
     });
 
-    testWidgets('shows bookmark icon button', (tester) async {
-      await tester.pumpWidget(buildOmniFeedScreen());
-      await tester.pump();
-
-      expect(find.byIcon(Icons.bookmark_outline), findsOneWidget);
-    });
-
     testWidgets('shows log icon button', (tester) async {
       await tester.pumpWidget(buildOmniFeedScreen());
       await tester.pump();
@@ -123,7 +116,6 @@ void main() {
       await tester.pump();
 
       expect(find.byTooltip('アカウント'), findsOneWidget);
-      expect(find.byTooltip('ブックマーク'), findsOneWidget);
       expect(find.byTooltip('ログ'), findsOneWidget);
       expect(find.byTooltip('設定'), findsOneWidget);
     });
@@ -231,18 +223,6 @@ void main() {
       expect(find.text('アカウント未登録'), findsOneWidget);
     });
 
-    testWidgets('tapping bookmark icon navigates to BookmarksScreen',
-        (tester) async {
-      await tester.pumpWidget(buildOmniFeedScreen());
-      await tester.pump();
-
-      await tester.tap(find.byIcon(Icons.bookmark_outline));
-      await tester.pumpAndSettle();
-
-      expect(find.text('ブックマーク'), findsOneWidget);
-      expect(find.text('ブックマークはありません'), findsOneWidget);
-    });
-
     testWidgets('tapping settings icon navigates to SettingsScreen',
         (tester) async {
       await tester.pumpWidget(buildOmniFeedScreen());
@@ -330,7 +310,6 @@ void main() {
       await tester.pump();
 
       expect(find.byIcon(Icons.people_outline), findsOneWidget);
-      expect(find.byIcon(Icons.bookmark_outline), findsOneWidget);
       expect(find.byIcon(Icons.receipt_long_outlined), findsOneWidget);
       expect(find.byIcon(Icons.settings_outlined), findsOneWidget);
     });

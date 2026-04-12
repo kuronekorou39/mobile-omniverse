@@ -7,15 +7,12 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/activity_log.dart';
 import '../models/post.dart';
-import '../models/sns_service.dart';
 import '../providers/activity_log_provider.dart';
 import '../providers/feed_provider.dart';
 import '../providers/notification_badge_provider.dart';
 import '../providers/settings_provider.dart';
 import '../providers/account_provider.dart';
-import '../services/account_storage_service.dart';
-import '../services/x_api_service.dart';
-import '../services/bluesky_api_service.dart';
+import '../services/engagement_service.dart';
 import '../services/app_update_service.dart';
 import '../services/debug_log_service.dart';
 import '../services/timeline_fetch_scheduler.dart';
@@ -179,7 +176,9 @@ class _OmniFeedScreenState extends ConsumerState<OmniFeedScreen>
         await FlutterOverlayWindow.closeOverlay();
       }
       ref.read(feedProvider.notifier).setOverlayActive(false);
-    } catch (_) {}
+    } catch (e) {
+      debugPrint('[OmniFeed] _closeOverlayIfActive error: $e');
+    }
   }
 
   Future<void> _pauseFetchingIfIdle() async {
@@ -188,7 +187,9 @@ class _OmniFeedScreenState extends ConsumerState<OmniFeedScreen>
       if (!isOverlayActive) {
         ref.read(settingsProvider.notifier).pauseFetching();
       }
-    } catch (_) {}
+    } catch (e) {
+      debugPrint('[OmniFeed] _pauseFetchingIfIdle error: $e');
+    }
   }
 
   Future<void> _checkPendingPostDetail() async {
@@ -202,7 +203,9 @@ class _OmniFeedScreenState extends ConsumerState<OmniFeedScreen>
         MaterialPageRoute(builder: (_) => PostDetailScreen(post: post)),
       );
       if (mounted) ref.read(feedProvider.notifier).setScreenVisible(true);
-    } catch (_) {}
+    } catch (e) {
+      debugPrint('[OmniFeed] _checkPendingPostDetail error: $e');
+    }
   }
 
   bool _lastAtTop = true;
@@ -282,11 +285,7 @@ class _OmniFeedScreenState extends ConsumerState<OmniFeedScreen>
 
     final willUnlike = post.isLikedBy(account.id);
     final action = willUnlike ? ActivityAction.unlike : ActivityAction.like;
-    final postSummary = post.body.length > 40
-        ? '${post.body.substring(0, 40)}...'
-        : post.body;
 
-    // 楽観的UIトグル
     ref.read(feedProvider.notifier).updatePostEngagement(
       post.id,
       accountId: account.id,
@@ -294,76 +293,30 @@ class _OmniFeedScreenState extends ConsumerState<OmniFeedScreen>
       likeCount: willUnlike ? post.likeCount - 1 : post.likeCount + 1,
     );
 
-    try {
-      bool success = false;
-      int? statusCode;
-      String? responseSnippet;
+    final result = await EngagementService.instance.like(
+      post: post, account: account, unlike: willUnlike,
+    );
 
-      if (post.source == SnsService.x) {
-        final creds = account.xCredentials;
-        final tweetId = post.id.replaceFirst('x_', '');
-        final result = willUnlike
-            ? await XApiService.instance.unlikeTweetWithDetail(creds, tweetId)
-            : await XApiService.instance.likeTweetWithDetail(creds, tweetId);
-        success = result.success;
-        statusCode = result.statusCode;
-        responseSnippet = result.bodySnippet;
-      } else if (post.source == SnsService.bluesky) {
-        final creds = account.blueskyCredentials;
-        if (willUnlike) {
-          final likeUri = post.bskyLikeUriFor(account.id);
-          if (likeUri != null) {
-            success = await BlueskyApiService.instance.unlikePost(creds, likeUri);
-          }
-        } else {
-          final postUri = post.uri;
-          final postCid = post.cid;
-          if (postUri != null && postCid != null && postCid.isNotEmpty) {
-            final result = await BlueskyApiService.instance.likePost(
-                creds, postUri, postCid);
-            success = result != null;
-          }
-        }
-      }
+    ref.read(activityLogProvider.notifier).logAction(
+      action: action,
+      platform: post.source,
+      accountHandle: account.handle,
+      accountId: account.id,
+      targetId: post.id,
+      targetSummary: EngagementService.postSummary(post),
+      success: result.success,
+      statusCode: result.statusCode,
+      responseSnippet: result.responseSnippet,
+      errorMessage: result.errorMessage,
+    );
 
-      ref.read(activityLogProvider.notifier).logAction(
-            action: action,
-            platform: post.source,
-            accountHandle: account.handle,
-            accountId: account.id,
-            targetId: post.id,
-            targetSummary: postSummary,
-            success: success,
-            statusCode: statusCode,
-            responseSnippet: responseSnippet,
-          );
-      if (!success && mounted) {
-        ref.read(feedProvider.notifier).updatePostEngagement(
-          post.id, accountId: account.id, liked: willUnlike, likeCount: post.likeCount,
-        );
-        ScaffoldMessenger.of(context).showSnackBar(
-          engagementErrorSnackBar('いいね', statusCode),
-        );
-      }
-    } catch (e) {
+    if (!result.success && mounted) {
       ref.read(feedProvider.notifier).updatePostEngagement(
         post.id, accountId: account.id, liked: willUnlike, likeCount: post.likeCount,
       );
-      ref.read(activityLogProvider.notifier).logAction(
-            action: action,
-            platform: post.source,
-            accountHandle: account.handle,
-            accountId: account.id,
-            targetId: post.id,
-            targetSummary: postSummary,
-            success: false,
-            errorMessage: e.toString(),
-          );
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('いいねに失敗: $e')),
-        );
-      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        engagementErrorSnackBar('いいね', result.statusCode),
+      );
     }
   }
 
@@ -373,11 +326,7 @@ class _OmniFeedScreenState extends ConsumerState<OmniFeedScreen>
 
     final willUnrepost = post.isRepostedBy(account.id);
     final action = willUnrepost ? ActivityAction.unrepost : ActivityAction.repost;
-    final postSummary = post.body.length > 40
-        ? '${post.body.substring(0, 40)}...'
-        : post.body;
 
-    // 楽観的UIトグル
     ref.read(feedProvider.notifier).updatePostEngagement(
       post.id,
       accountId: account.id,
@@ -385,76 +334,30 @@ class _OmniFeedScreenState extends ConsumerState<OmniFeedScreen>
       repostCount: willUnrepost ? post.repostCount - 1 : post.repostCount + 1,
     );
 
-    try {
-      bool success = false;
-      int? statusCode;
-      String? responseSnippet;
+    final result = await EngagementService.instance.repost(
+      post: post, account: account, unrepost: willUnrepost,
+    );
 
-      if (post.source == SnsService.x) {
-        final creds = account.xCredentials;
-        final tweetId = post.id.replaceFirst('x_', '');
-        final result = willUnrepost
-            ? await XApiService.instance.unretweetWithDetail(creds, tweetId)
-            : await XApiService.instance.retweetWithDetail(creds, tweetId);
-        success = result.success;
-        statusCode = result.statusCode;
-        responseSnippet = result.bodySnippet;
-      } else if (post.source == SnsService.bluesky) {
-        final creds = account.blueskyCredentials;
-        if (willUnrepost) {
-          final repostUri = post.bskyRepostUriFor(account.id);
-          if (repostUri != null) {
-            success = await BlueskyApiService.instance.deleteRepost(creds, repostUri);
-          }
-        } else {
-          final postUri = post.uri;
-          final postCid = post.cid;
-          if (postUri != null && postCid != null && postCid.isNotEmpty) {
-            final result = await BlueskyApiService.instance.repost(
-                creds, postUri, postCid);
-            success = result != null;
-          }
-        }
-      }
+    ref.read(activityLogProvider.notifier).logAction(
+      action: action,
+      platform: post.source,
+      accountHandle: account.handle,
+      accountId: account.id,
+      targetId: post.id,
+      targetSummary: EngagementService.postSummary(post),
+      success: result.success,
+      statusCode: result.statusCode,
+      responseSnippet: result.responseSnippet,
+      errorMessage: result.errorMessage,
+    );
 
-      ref.read(activityLogProvider.notifier).logAction(
-            action: action,
-            platform: post.source,
-            accountHandle: account.handle,
-            accountId: account.id,
-            targetId: post.id,
-            targetSummary: postSummary,
-            success: success,
-            statusCode: statusCode,
-            responseSnippet: responseSnippet,
-          );
-      if (!success && mounted) {
-        ref.read(feedProvider.notifier).updatePostEngagement(
-          post.id, accountId: account.id, reposted: willUnrepost, repostCount: post.repostCount,
-        );
-        ScaffoldMessenger.of(context).showSnackBar(
-          engagementErrorSnackBar('リポスト', statusCode),
-        );
-      }
-    } catch (e) {
+    if (!result.success && mounted) {
       ref.read(feedProvider.notifier).updatePostEngagement(
         post.id, accountId: account.id, reposted: willUnrepost, repostCount: post.repostCount,
       );
-      ref.read(activityLogProvider.notifier).logAction(
-            action: action,
-            platform: post.source,
-            accountHandle: account.handle,
-            accountId: account.id,
-            targetId: post.id,
-            targetSummary: postSummary,
-            success: false,
-            errorMessage: e.toString(),
-          );
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('リポストに失敗: $e')),
-        );
-      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        engagementErrorSnackBar('リポスト', result.statusCode),
+      );
     }
   }
 

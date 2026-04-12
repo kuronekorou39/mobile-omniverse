@@ -51,7 +51,6 @@ class SettingsState {
     this.themeMode = ThemeMode.system,
     this.fontScale = 1.0,
     this.hideRetweetsAccountIds = const {},
-    this.showAccountPickerOnEngagement = false,
     this.showFetchTimer = true,
     this.sensitiveMode = SensitiveMode.hide,
     this.compactEngagement = true,
@@ -73,8 +72,6 @@ class SettingsState {
   final double fontScale;
   /// RT/リポストを非表示にするアカウント ID の集合
   final Set<String> hideRetweetsAccountIds;
-  /// いいね/RT 時にアカウント選択モーダルを表示するか
-  final bool showAccountPickerOnEngagement;
   /// フェッチタイマーを表示するか
   final bool showFetchTimer;
   /// センシティブコンテンツの表示モード
@@ -111,7 +108,6 @@ class SettingsState {
     ThemeMode? themeMode,
     double? fontScale,
     Set<String>? hideRetweetsAccountIds,
-    bool? showAccountPickerOnEngagement,
     bool? showFetchTimer,
     SensitiveMode? sensitiveMode,
     bool? compactEngagement,
@@ -132,7 +128,6 @@ class SettingsState {
       themeMode: themeMode ?? this.themeMode,
       fontScale: fontScale ?? this.fontScale,
       hideRetweetsAccountIds: hideRetweetsAccountIds ?? this.hideRetweetsAccountIds,
-      showAccountPickerOnEngagement: showAccountPickerOnEngagement ?? this.showAccountPickerOnEngagement,
       showFetchTimer: showFetchTimer ?? this.showFetchTimer,
       sensitiveMode: sensitiveMode ?? this.sensitiveMode,
       compactEngagement: compactEngagement ?? this.compactEngagement,
@@ -159,7 +154,6 @@ class SettingsNotifier extends StateNotifier<SettingsState> {
   static const _keyThemeMode = 'settings_theme_mode';
   static const _keyFontScale = 'settings_font_scale';
   static const _keyHideRetweetsAccounts = 'settings_hide_retweets_accounts';
-  static const _keyShowAccountPicker = 'settings_show_account_picker';
   static const _keyShowFetchTimer = 'settings_show_fetch_timer';
   static const _keyShowSensitiveContent = 'settings_show_sensitive_content';
   static const _keyCompactEngagement = 'settings_compact_engagement';
@@ -176,7 +170,6 @@ class SettingsNotifier extends StateNotifier<SettingsState> {
     final themeModeIndex = prefs.getInt(_keyThemeMode) ?? 0;
     final fontScale = prefs.getDouble(_keyFontScale) ?? 1.0;
     final hideRtList = prefs.getStringList(_keyHideRetweetsAccounts) ?? [];
-    final showAccountPicker = prefs.getBool(_keyShowAccountPicker) ?? false;
     final showFetchTimer = prefs.getBool(_keyShowFetchTimer) ?? true;
     // 旧bool値からの移行対応
     final sensitiveModeIndex = prefs.getInt('settings_sensitive_mode');
@@ -211,7 +204,6 @@ class SettingsNotifier extends StateNotifier<SettingsState> {
       themeMode: ThemeMode.values[themeModeIndex.clamp(0, 2)],
       fontScale: fontScale,
       hideRetweetsAccountIds: hideRtList.toSet(),
-      showAccountPickerOnEngagement: showAccountPicker,
       showFetchTimer: showFetchTimer,
       sensitiveMode: sensitiveMode,
       compactEngagement: compactEngagement,
@@ -246,8 +238,6 @@ class SettingsNotifier extends StateNotifier<SettingsState> {
     await prefs.setDouble(_keyFontScale, state.fontScale);
     await prefs.setStringList(
         _keyHideRetweetsAccounts, state.hideRetweetsAccountIds.toList());
-    await prefs.setBool(
-        _keyShowAccountPicker, state.showAccountPickerOnEngagement);
     await prefs.setBool(_keyShowFetchTimer, state.showFetchTimer);
     await prefs.setInt('settings_sensitive_mode', state.sensitiveMode.index);
     await prefs.setBool(_keyCompactEngagement, state.compactEngagement);
@@ -292,11 +282,6 @@ class SettingsNotifier extends StateNotifier<SettingsState> {
 
   bool isRetweetsHidden(String accountId) {
     return state.hideRetweetsAccountIds.contains(accountId);
-  }
-
-  void setShowAccountPicker(bool value) {
-    state = state.copyWith(showAccountPickerOnEngagement: value);
-    _saveToPrefs();
   }
 
   void setShowFetchTimer(bool value) {

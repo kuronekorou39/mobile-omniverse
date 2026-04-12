@@ -13,7 +13,6 @@ void main() {
       expect(state.themeMode, ThemeMode.system);
       expect(state.fontScale, 1.0);
       expect(state.hideRetweetsAccountIds, isEmpty);
-      expect(state.showAccountPickerOnEngagement, false);
     });
 
     test('copyWith で fetchIntervalSeconds を変更', () {
@@ -45,13 +44,6 @@ void main() {
       );
 
       expect(updated.hideRetweetsAccountIds, {'acc_1', 'acc_2'});
-    });
-
-    test('copyWith で showAccountPickerOnEngagement を変更', () {
-      const state = SettingsState();
-      final updated = state.copyWith(showAccountPickerOnEngagement: true);
-
-      expect(updated.showAccountPickerOnEngagement, true);
     });
 
     test('copyWith で isFetchingActive を変更', () {
@@ -131,7 +123,6 @@ void main() {
       expect(notifier.state.themeMode, ThemeMode.system);
       expect(notifier.state.fontScale, 1.0);
       expect(notifier.state.hideRetweetsAccountIds, isEmpty);
-      expect(notifier.state.showAccountPickerOnEngagement, false);
     });
 
     test('setInterval でインターバルが変更される', () async {
@@ -251,28 +242,6 @@ void main() {
       expect(notifier.isRetweetsHidden('acc_1'), false);
     });
 
-    test('setShowAccountPicker で設定が変更される', () async {
-      final notifier = SettingsNotifier();
-      await Future<void>.delayed(const Duration(milliseconds: 50));
-
-      notifier.setShowAccountPicker(true);
-      expect(notifier.state.showAccountPickerOnEngagement, true);
-
-      notifier.setShowAccountPicker(false);
-      expect(notifier.state.showAccountPickerOnEngagement, false);
-    });
-
-    test('setShowAccountPicker で SharedPreferences に保存される', () async {
-      final notifier = SettingsNotifier();
-      await Future<void>.delayed(const Duration(milliseconds: 50));
-
-      notifier.setShowAccountPicker(true);
-
-      await Future<void>.delayed(const Duration(milliseconds: 50));
-      final prefs = await SharedPreferences.getInstance();
-      expect(prefs.getBool('settings_show_account_picker'), true);
-    });
-
     test('startFetching で isFetchingActive が true になる', () async {
       final notifier = SettingsNotifier();
       await Future<void>.delayed(const Duration(milliseconds: 50));
@@ -314,7 +283,6 @@ void main() {
         'settings_theme_mode': ThemeMode.dark.index,
         'settings_font_scale': 1.5,
         'settings_hide_retweets_accounts': ['acc_1', 'acc_2'],
-        'settings_show_account_picker': true,
       });
 
       final notifier = SettingsNotifier();
@@ -325,7 +293,6 @@ void main() {
       expect(notifier.state.themeMode, ThemeMode.dark);
       expect(notifier.state.fontScale, 1.5);
       expect(notifier.state.hideRetweetsAccountIds, {'acc_1', 'acc_2'});
-      expect(notifier.state.showAccountPickerOnEngagement, true);
     });
 
     test('_loadFromPrefs で不正な themeMode インデックスは clamp される', () async {
@@ -350,7 +317,6 @@ void main() {
       expect(notifier.state.themeMode, ThemeMode.system);
       expect(notifier.state.fontScale, 1.0);
       expect(notifier.state.hideRetweetsAccountIds, isEmpty);
-      expect(notifier.state.showAccountPickerOnEngagement, false);
     });
 
     test('_loadFromPrefs で負の themeMode インデックスは clamp される', () async {

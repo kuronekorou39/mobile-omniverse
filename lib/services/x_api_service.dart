@@ -384,7 +384,6 @@ class XApiService {
     final reqBody = json.encode({
       'variables': {'tweet_id': tweetId},
       'queryId': queryId,
-      'features': XFeatures.createTweet,
     });
     final sw = Stopwatch()..start();
     final response = await _withRateLimitRetry(
@@ -410,7 +409,6 @@ class XApiService {
     final reqBody = json.encode({
       'variables': {'tweet_id': tweetId},
       'queryId': queryId,
-      'features': XFeatures.createTweet,
     });
     final sw = Stopwatch()..start();
     final response = await _withRateLimitRetry(
@@ -434,9 +432,8 @@ class XApiService {
         Uri.parse('https://x.com/i/api/graphql/$queryId/CreateRetweet');
     final hdrs = _buildHeaders(creds, cookieOverride: warmedCookies);
     final reqBody = json.encode({
-      'variables': {'tweet_id': tweetId, 'dark_request': false},
+      'variables': {'tweet_id': tweetId},
       'queryId': queryId,
-      'features': XFeatures.createTweet,
     });
     final sw = Stopwatch()..start();
     final response = await _withRateLimitRetry(
@@ -460,9 +457,8 @@ class XApiService {
         Uri.parse('https://x.com/i/api/graphql/$queryId/DeleteRetweet');
     final hdrs = _buildHeaders(creds, cookieOverride: warmedCookies);
     final reqBody = json.encode({
-      'variables': {'source_tweet_id': tweetId, 'dark_request': false},
+      'variables': {'source_tweet_id': tweetId},
       'queryId': queryId,
-      'features': XFeatures.createTweet,
     });
     final sw = Stopwatch()..start();
     final response = await _withRateLimitRetry(
@@ -547,6 +543,7 @@ class XApiService {
             ?.replaceFirst('_normal', '_400x400'),
         'profile_banner_url': legacy['profile_banner_url'] as String?,
         'is_following': isFollowing,
+        'protected': legacy['protected'] as bool? ?? false,
       };
     });
   }

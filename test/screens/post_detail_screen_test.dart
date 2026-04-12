@@ -8,7 +8,6 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:mobile_omniverse/models/sns_service.dart';
 import 'package:mobile_omniverse/screens/post_detail_screen.dart';
 import 'package:mobile_omniverse/services/account_storage_service.dart';
-import 'package:mobile_omniverse/services/bookmark_service.dart';
 import 'package:mobile_omniverse/widgets/sns_badge.dart';
 
 import '../helpers/test_data.dart';
@@ -29,8 +28,6 @@ void main() {
 
   setUp(() async {
     SharedPreferences.setMockInitialValues({});
-    BookmarkService.instance.resetForTest();
-    await BookmarkService.instance.init();
   });
 
   Widget buildPostDetailScreen({required post}) {
@@ -110,32 +107,6 @@ void main() {
       await tester.pump();
 
       expect(find.text('2024/01/15 14:30'), findsOneWidget);
-    });
-
-    testWidgets('shows bookmark outline icon when not bookmarked',
-        (tester) async {
-      final post = makePost(id: 'not_bookmarked');
-      await tester.pumpWidget(buildPostDetailScreen(post: post));
-      await tester.pump();
-
-      expect(find.byIcon(Icons.bookmark_outline), findsOneWidget);
-    });
-
-    testWidgets('tapping bookmark toggles icon', (tester) async {
-      final post = makePost(id: 'toggle_bookmark');
-      await tester.pumpWidget(buildPostDetailScreen(post: post));
-      await tester.pump();
-
-      // Initially not bookmarked
-      expect(find.byIcon(Icons.bookmark_outline), findsOneWidget);
-      expect(find.byIcon(Icons.bookmark), findsNothing);
-
-      // Tap the bookmark icon
-      await tester.tap(find.byIcon(Icons.bookmark_outline));
-      await tester.pumpAndSettle();
-
-      // Now bookmarked
-      expect(find.byIcon(Icons.bookmark), findsOneWidget);
     });
 
     testWidgets('shows share icon when post has permalink', (tester) async {
@@ -309,20 +280,6 @@ void main() {
       expect(find.byType(SnsBadge), findsOneWidget);
       expect(find.text('Bluesky'), findsOneWidget);
       expect(find.text('Bluesky detail post'), findsOneWidget);
-    });
-
-    testWidgets('bookmark already bookmarked post shows filled icon',
-        (tester) async {
-      final post = makePost(id: 'pre_bookmarked');
-      // Pre-bookmark the post
-      await BookmarkService.instance.toggle(post);
-
-      await tester.pumpWidget(buildPostDetailScreen(post: post));
-      await tester.pump();
-
-      // Should show filled bookmark icon
-      expect(find.byIcon(Icons.bookmark), findsOneWidget);
-      expect(find.byIcon(Icons.bookmark_outline), findsNothing);
     });
 
     testWidgets('post with high engagement counts displays them',

@@ -66,7 +66,7 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
 
     final text = _textController.text.trim();
     final account = _selectedAccount!;
-    final postSummary = text.length > 40 ? '${text.substring(0, 40)}...' : text;
+    final postSummary = text.length > 40 ? '${text.substring(0, 40)}…' : text;
 
     try {
       bool success = false;

@@ -93,6 +93,7 @@ class Account {
     required this.credentials,
     required this.createdAt,
     this.isEnabled = true,
+    this.isProtected = false,
   });
 
   final String id;
@@ -105,6 +106,7 @@ class Account {
   final Object credentials;
   final DateTime createdAt;
   final bool isEnabled;
+  final bool isProtected;
 
   BlueskyCredentials get blueskyCredentials => credentials as BlueskyCredentials;
   XCredentials get xCredentials => credentials as XCredentials;
@@ -125,6 +127,7 @@ class Account {
       'credentials': json.encode(credsJson),
       'createdAt': createdAt.toIso8601String(),
       'isEnabled': isEnabled,
+      'isProtected': isProtected,
     };
   }
 
@@ -149,12 +152,14 @@ class Account {
       credentials: creds,
       createdAt: DateTime.parse(map['createdAt'] as String),
       isEnabled: map['isEnabled'] as bool? ?? true,
+      isProtected: map['isProtected'] as bool? ?? false,
     );
   }
 
   Account copyWith({
     Object? credentials,
     bool? isEnabled,
+    bool? isProtected,
   }) {
     return Account(
       id: id,
@@ -165,6 +170,7 @@ class Account {
       credentials: credentials ?? this.credentials,
       createdAt: createdAt,
       isEnabled: isEnabled ?? this.isEnabled,
+      isProtected: isProtected ?? this.isProtected,
     );
   }
 }

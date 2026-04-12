@@ -13,11 +13,16 @@ import 'session_refresh_screen.dart';
 import 'settings_screen.dart';
 import 'user_profile_screen.dart';
 
-class AccountsScreen extends ConsumerWidget {
+class AccountsScreen extends ConsumerStatefulWidget {
   const AccountsScreen({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<AccountsScreen> createState() => _AccountsScreenState();
+}
+
+class _AccountsScreenState extends ConsumerState<AccountsScreen> {
+  @override
+  Widget build(BuildContext context) {
     final accounts = ref.watch(accountProvider);
 
     return Scaffold(
@@ -300,6 +305,10 @@ class _AccountTile extends ConsumerWidget {
               overflow: TextOverflow.ellipsis,
             ),
           ),
+          if (account.isProtected) ...[
+            const SizedBox(width: 3),
+            Icon(Icons.lock, size: 13, color: Colors.grey[500]),
+          ],
           const SizedBox(width: 8),
           SnsBadge(service: account.service),
         ],
@@ -372,6 +381,23 @@ class _AccountDetailScreen extends ConsumerWidget {
         title: Text(account.displayName),
         actions: [
           IconButton(
+            icon: const Icon(Icons.person_outline),
+            tooltip: 'ユーザーホーム',
+            onPressed: () {
+              Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (_) => UserProfileScreen(
+                    username: account.displayName,
+                    handle: account.handle,
+                    service: account.service,
+                    avatarUrl: account.avatarUrl,
+                    accountId: account.id,
+                  ),
+                ),
+              );
+            },
+          ),
+          IconButton(
             icon: const Icon(Icons.refresh),
             tooltip: 'セッション更新',
             onPressed: () => _openSessionRefresh(context, ref, account),
@@ -405,10 +431,19 @@ class _AccountDetailScreen extends ConsumerWidget {
                       : null,
                 ),
                 const SizedBox(height: 12),
-                Text(
-                  account.displayName,
-                  style: const TextStyle(
-                      fontSize: 20, fontWeight: FontWeight.bold),
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      account.displayName,
+                      style: const TextStyle(
+                          fontSize: 20, fontWeight: FontWeight.bold),
+                    ),
+                    if (account.isProtected) ...[
+                      const SizedBox(width: 6),
+                      Icon(Icons.lock, size: 16, color: Colors.grey[500]),
+                    ],
+                  ],
                 ),
                 const SizedBox(height: 4),
                 Row(

@@ -82,7 +82,9 @@ class _PerfOverlayState extends ConsumerState<PerfOverlay> {
         txBytes = (info['txBytes'] as num?)?.toInt() ?? 0;
         rxBytes = (info['rxBytes'] as num?)?.toInt() ?? 0;
       }
-    } catch (_) {}
+    } catch (e) {
+      debugPrint('[PerfOverlay] _update getDeviceInfo error: $e');
+    }
 
     // 通信速度 (bytes/sec)
     int txSec = 0;

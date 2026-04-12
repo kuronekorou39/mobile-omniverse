@@ -42,6 +42,13 @@ class AccountNotifier extends StateNotifier<List<Account>> {
     state = _storage.accounts;
   }
 
+  Future<void> updateProtectedStatus(String accountId, bool isProtected) async {
+    final account = _storage.getAccount(accountId);
+    if (account == null || account.isProtected == isProtected) return;
+    await _storage.updateAccount(account.copyWith(isProtected: isProtected));
+    state = _storage.accounts;
+  }
+
   Future<void> enableAll() async {
     for (final account in _storage.accounts) {
       if (!account.isEnabled) {

@@ -28,6 +28,8 @@ class PostCard extends StatelessWidget {
     this.imageGridHeight,
     this.videoHeight,
     this.hideUserInfo = false,
+    this.threadImageUrls,
+    this.threadIndexOffset = 0,
   });
 
   final Post post;
@@ -42,6 +44,8 @@ class PostCard extends StatelessWidget {
   final double? imageGridHeight;
   final double? videoHeight;
   final bool hideUserInfo;
+  final List<String>? threadImageUrls;
+  final int threadIndexOffset;
 
   String _formatTimestamp(DateTime timestamp) {
     final diff = DateTime.now().difference(timestamp);
@@ -158,6 +162,8 @@ class PostCard extends StatelessWidget {
                                   imageUrls: post.imageUrls,
                                   maxSingleHeight: imageMaxHeight,
                                   gridHeight: imageGridHeight,
+                                  threadImageUrls: threadImageUrls,
+                                  threadIndexOffset: threadIndexOffset,
                                 ),
                               ],
                               if (post.videoUrl != null && post.videoThumbnailUrl != null) ...[
@@ -448,6 +454,10 @@ class PostCard extends StatelessWidget {
                   overflow: TextOverflow.ellipsis,
                 ),
               ),
+              if (post.isProtected) ...[
+                const SizedBox(width: 3),
+                Icon(Icons.lock, size: 13, color: Colors.grey[500]),
+              ],
               const SizedBox(width: 4),
               Flexible(
                 child: Text(

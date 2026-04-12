@@ -27,6 +27,7 @@ class Post {
     this.retweetedByHandle,
     this.quotedPost,
     this.isSensitive = false,
+    this.isProtected = false,
     Set<String>? likedByAccountIds,
     Set<String>? repostedByAccountIds,
     Map<String, String>? bskyLikeUris,
@@ -82,6 +83,9 @@ class Post {
 
   // Sensitive content flag
   final bool isSensitive;
+
+  // Protected (private) account flag
+  final bool isProtected;
 
   // 取得元アカウントID一覧（マージ時に蓄積）
   final Set<String> fetchedByAccountIds;
@@ -150,6 +154,7 @@ class Post {
     String? retweetedByHandle,
     Post? quotedPost,
     bool? isSensitive,
+    bool? isProtected,
     Set<String>? fetchedByAccountIds,
   }) {
     return Post(
@@ -180,6 +185,7 @@ class Post {
       retweetedByHandle: retweetedByHandle ?? this.retweetedByHandle,
       quotedPost: quotedPost ?? this.quotedPost,
       isSensitive: isSensitive ?? this.isSensitive,
+      isProtected: isProtected ?? this.isProtected,
       fetchedByAccountIds: fetchedByAccountIds ?? this.fetchedByAccountIds,
     );
   }
@@ -211,6 +217,7 @@ class Post {
         'retweetedByUsername': retweetedByUsername,
         'retweetedByHandle': retweetedByHandle,
         'isSensitive': isSensitive,
+        'isProtected': isProtected,
         'fetchedByAccountIds': fetchedByAccountIds.toList(),
         if (quotedPost != null) 'quotedPost': quotedPost!.toJson(),
       };
@@ -275,6 +282,7 @@ class Post {
           ? Post.fromCache(json['quotedPost'] as Map<String, dynamic>)
           : null,
       isSensitive: json['isSensitive'] as bool? ?? false,
+      isProtected: json['isProtected'] as bool? ?? false,
       fetchedByAccountIds: (json['fetchedByAccountIds'] as List<dynamic>?)
               ?.map((e) => e as String)
               .toSet(),

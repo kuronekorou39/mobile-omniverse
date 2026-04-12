@@ -341,6 +341,35 @@ class XApiService {
   static String _snippet(String body) =>
       body.length > 200 ? body.substring(0, 200) : body;
 
+  /// GraphQL mutation のレスポンスを解析して XApiResult を生成
+  /// ステータス200でもボディに errors が含まれていれば失敗扱いにする
+  XApiResult _parseMutationResult(http.Response response) {
+    var success = response.statusCode == 200;
+    int statusCode = response.statusCode;
+
+    if (success) {
+      try {
+        final body = json.decode(response.body);
+        if (body is Map<String, dynamic>) {
+          final errors = body['errors'] as List<dynamic>?;
+          if (errors != null && errors.isNotEmpty) {
+            success = false;
+            // エラーコードを抽出（X GraphQL の errors[0].code）
+            final firstError = errors[0] as Map<String, dynamic>?;
+            final code = firstError?['code'] as int?;
+            if (code != null) statusCode = code;
+          }
+        }
+      } catch (_) {}
+    }
+
+    return XApiResult(
+      success: success,
+      statusCode: statusCode,
+      bodySnippet: _snippet(response.body),
+    );
+  }
+
   /// いいね
   Future<bool> likeTweet(XCredentials creds, String tweetId) async =>
       (await likeTweetWithDetail(creds, tweetId)).success;
@@ -355,6 +384,7 @@ class XApiService {
     final reqBody = json.encode({
       'variables': {'tweet_id': tweetId},
       'queryId': queryId,
+      'features': XFeatures.createTweet,
     });
     final sw = Stopwatch()..start();
     final response = await _withRateLimitRetry(
@@ -363,11 +393,7 @@ class XApiService {
     );
     sw.stop();
     _logResponse('FavoriteTweet', 'POST', uri, hdrs, reqBody, response, sw);
-    return XApiResult(
-      success: response.statusCode == 200,
-      statusCode: response.statusCode,
-      bodySnippet: _snippet(response.body),
-    );
+    return _parseMutationResult(response);
   }
 
   /// いいね解除
@@ -384,6 +410,7 @@ class XApiService {
     final reqBody = json.encode({
       'variables': {'tweet_id': tweetId},
       'queryId': queryId,
+      'features': XFeatures.createTweet,
     });
     final sw = Stopwatch()..start();
     final response = await _withRateLimitRetry(
@@ -392,11 +419,7 @@ class XApiService {
     );
     sw.stop();
     _logResponse('UnfavoriteTweet', 'POST', uri, hdrs, reqBody, response, sw);
-    return XApiResult(
-      success: response.statusCode == 200,
-      statusCode: response.statusCode,
-      bodySnippet: _snippet(response.body),
-    );
+    return _parseMutationResult(response);
   }
 
   /// リツイート
@@ -413,6 +436,7 @@ class XApiService {
     final reqBody = json.encode({
       'variables': {'tweet_id': tweetId, 'dark_request': false},
       'queryId': queryId,
+      'features': XFeatures.createTweet,
     });
     final sw = Stopwatch()..start();
     final response = await _withRateLimitRetry(
@@ -421,11 +445,7 @@ class XApiService {
     );
     sw.stop();
     _logResponse('CreateRetweet', 'POST', uri, hdrs, reqBody, response, sw);
-    return XApiResult(
-      success: response.statusCode == 200,
-      statusCode: response.statusCode,
-      bodySnippet: _snippet(response.body),
-    );
+    return _parseMutationResult(response);
   }
 
   /// リツイート解除
@@ -442,6 +462,7 @@ class XApiService {
     final reqBody = json.encode({
       'variables': {'source_tweet_id': tweetId, 'dark_request': false},
       'queryId': queryId,
+      'features': XFeatures.createTweet,
     });
     final sw = Stopwatch()..start();
     final response = await _withRateLimitRetry(
@@ -450,11 +471,7 @@ class XApiService {
     );
     sw.stop();
     _logResponse('DeleteRetweet', 'POST', uri, hdrs, reqBody, response, sw);
-    return XApiResult(
-      success: response.statusCode == 200,
-      statusCode: response.statusCode,
-      bodySnippet: _snippet(response.body),
-    );
+    return _parseMutationResult(response);
   }
 
   /// ユーザープロフィール取得 (UserByScreenName)
@@ -1595,6 +1612,9 @@ class XApiService {
       // Sensitive content flag
       final isSensitive = legacy['possibly_sensitive'] as bool? ?? false;
 
+      // Protected account flag
+      final isProtected = userLegacy?['protected'] as bool? ?? false;
+
       // Engagement counts
       final likeCount = legacy['favorite_count'] as int? ?? 0;
       final repostCount = legacy['retweet_count'] as int? ?? 0;
@@ -1706,6 +1726,7 @@ class XApiService {
         inReplyToId: inReplyToId,
         quotedPost: quotedPost,
         isSensitive: isSensitive,
+        isProtected: isProtected,
       );
     } catch (e) {
       debugPrint('[XApi] Error parsing tweet: $e');

@@ -4,6 +4,7 @@ import 'package:google_fonts/google_fonts.dart';
 
 import 'providers/settings_provider.dart';
 import 'screens/overlay_timeline_screen.dart';
+import 'widgets/perf_overlay.dart';
 import 'screens/splash_screen.dart';
 import 'services/account_storage_service.dart';
 import 'services/debug_log_service.dart';
@@ -65,13 +66,17 @@ class OmniVerseApp extends ConsumerWidget {
       theme: lightTheme,
       darkTheme: darkTheme,
       builder: (context, child) {
-        // Apply font scale from settings
         final mediaQuery = MediaQuery.of(context);
         return MediaQuery(
           data: mediaQuery.copyWith(
             textScaler: TextScaler.linear(settings.fontScale),
           ),
-          child: child!,
+          child: Stack(
+            children: [
+              child!,
+              if (settings.showPerfOverlay) const PerfOverlay(),
+            ],
+          ),
         );
       },
       home: const SplashScreen(),

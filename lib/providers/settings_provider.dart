@@ -62,6 +62,8 @@ class SettingsState {
     this.fabPosition = FabPosition.right,
     this.dripIntervalMs = 1000,
     this.debugLogEnabled = false,
+    this.showPerfOverlay = false,
+    this.imageCacheSize = 50,
     this.imageSaveFolder = 'Pictures/OmniVerse',
   });
 
@@ -96,6 +98,10 @@ class SettingsState {
   final int dripIntervalMs;
   /// デバッグログを記録するか
   final bool debugLogEnabled;
+  /// パフォーマンスオーバーレイを表示するか
+  final bool showPerfOverlay;
+  /// 画像メモリキャッシュ上限枚数
+  final int imageCacheSize;
   /// 画像保存先フォルダ（ストレージルートからの相対パス）
   final String imageSaveFolder;
 
@@ -116,6 +122,8 @@ class SettingsState {
     FabPosition? fabPosition,
     int? dripIntervalMs,
     bool? debugLogEnabled,
+    bool? showPerfOverlay,
+    int? imageCacheSize,
     String? imageSaveFolder,
   }) {
     return SettingsState(
@@ -135,6 +143,8 @@ class SettingsState {
       fabPosition: fabPosition ?? this.fabPosition,
       dripIntervalMs: dripIntervalMs ?? this.dripIntervalMs,
       debugLogEnabled: debugLogEnabled ?? this.debugLogEnabled,
+      showPerfOverlay: showPerfOverlay ?? this.showPerfOverlay,
+      imageCacheSize: imageCacheSize ?? this.imageCacheSize,
       imageSaveFolder: imageSaveFolder ?? this.imageSaveFolder,
     );
   }
@@ -192,6 +202,8 @@ class SettingsNotifier extends StateNotifier<SettingsState> {
     final fabPosition = FabPosition.values[fabPositionIndex.clamp(0, 1)];
     final dripIntervalMs = prefs.getInt('settings_drip_interval_ms') ?? 1000;
     final debugLogEnabled = prefs.getBool('settings_debug_log_enabled') ?? false;
+    final showPerfOverlay = prefs.getBool('settings_show_perf_overlay') ?? false;
+    final imageCacheSize = prefs.getInt('settings_image_cache_size') ?? 50;
     final imageSaveFolder = prefs.getString('settings_image_save_folder') ?? 'Pictures/OmniVerse';
 
     state = state.copyWith(
@@ -210,8 +222,13 @@ class SettingsNotifier extends StateNotifier<SettingsState> {
       fabPosition: fabPosition,
       dripIntervalMs: dripIntervalMs,
       debugLogEnabled: debugLogEnabled,
+      showPerfOverlay: showPerfOverlay,
+      imageCacheSize: imageCacheSize,
       imageSaveFolder: imageSaveFolder,
     );
+
+    // 画像キャッシュ上限を反映
+    PaintingBinding.instance.imageCache.maximumSize = state.imageCacheSize;
 
     // デバッグログの有効/無効を反映
     DebugLogService.instance.enabled = state.debugLogEnabled;
@@ -241,6 +258,8 @@ class SettingsNotifier extends StateNotifier<SettingsState> {
     await prefs.setInt('settings_fab_position', state.fabPosition.index);
     await prefs.setInt('settings_drip_interval_ms', state.dripIntervalMs);
     await prefs.setBool('settings_debug_log_enabled', state.debugLogEnabled);
+    await prefs.setBool('settings_show_perf_overlay', state.showPerfOverlay);
+    await prefs.setInt('settings_image_cache_size', state.imageCacheSize);
     await prefs.setString('settings_image_save_folder', state.imageSaveFolder);
   }
 
@@ -324,6 +343,17 @@ class SettingsNotifier extends StateNotifier<SettingsState> {
   void setDebugLogEnabled(bool value) {
     state = state.copyWith(debugLogEnabled: value);
     DebugLogService.instance.enabled = value;
+    _saveToPrefs();
+  }
+
+  void setShowPerfOverlay(bool value) {
+    state = state.copyWith(showPerfOverlay: value);
+    _saveToPrefs();
+  }
+
+  void setImageCacheSize(int value) {
+    state = state.copyWith(imageCacheSize: value);
+    PaintingBinding.instance.imageCache.maximumSize = value;
     _saveToPrefs();
   }
 

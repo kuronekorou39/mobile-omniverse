@@ -4,6 +4,7 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter_overlay_window/flutter_overlay_window.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../models/activity_log.dart';
 import '../models/post.dart';
 import '../models/sns_service.dart';
@@ -18,6 +19,7 @@ import '../services/bluesky_api_service.dart';
 import '../services/app_update_service.dart';
 import '../services/debug_log_service.dart';
 import '../services/timeline_fetch_scheduler.dart';
+import '../utils/engagement_errors.dart';
 import '../models/account.dart';
 import '../widgets/account_picker_modal.dart';
 import '../utils/smooth_scroll_physics.dart';
@@ -340,7 +342,7 @@ class _OmniFeedScreenState extends ConsumerState<OmniFeedScreen>
           post.id, accountId: account.id, liked: willUnlike, likeCount: post.likeCount,
         );
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('いいねに失敗しました')),
+          engagementErrorSnackBar('いいね', statusCode),
         );
       }
     } catch (e) {
@@ -431,7 +433,7 @@ class _OmniFeedScreenState extends ConsumerState<OmniFeedScreen>
           post.id, accountId: account.id, reposted: willUnrepost, repostCount: post.repostCount,
         );
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('リポストに失敗しました')),
+          engagementErrorSnackBar('リポスト', statusCode),
         );
       }
     } catch (e) {
@@ -663,9 +665,15 @@ class _OmniFeedScreenState extends ConsumerState<OmniFeedScreen>
     }
 
     try {
+      // 保存済みのオーバーレイサイズ設定を読み込み
+      const widths = [180, 250, 360];
+      const heights = [250, 400, 700];
+      final prefs = await SharedPreferences.getInstance();
+      final wIndex = (prefs.getInt('overlay_wIndex') ?? 0).clamp(0, 2);
+      final hIndex = (prefs.getInt('overlay_hIndex') ?? 0).clamp(0, 2);
       await FlutterOverlayWindow.showOverlay(
-        height: 250,
-        width: 180,
+        height: heights[hIndex],
+        width: widths[wIndex],
         enableDrag: false,
         overlayTitle: 'OmniVerse',
         flag: OverlayFlag.defaultFlag,

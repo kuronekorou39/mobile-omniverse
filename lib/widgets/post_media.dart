@@ -84,11 +84,17 @@ class PostImageGrid extends StatelessWidget {
     required this.imageUrls,
     this.maxSingleHeight,
     this.gridHeight,
+    this.threadImageUrls,
+    this.threadIndexOffset = 0,
   });
 
   final List<String> imageUrls;
   final double? maxSingleHeight;
   final double? gridHeight;
+  /// スレッド全体の画像URLリスト（指定時はビューアでこちらを使用）
+  final List<String>? threadImageUrls;
+  /// threadImageUrls 内でのこの投稿の画像の開始位置
+  final int threadIndexOffset;
 
   @override
   Widget build(BuildContext context) {
@@ -246,12 +252,14 @@ class PostImageGrid extends StatelessWidget {
   }
 
   void _openViewer(BuildContext context, int index) {
+    final viewerUrls = threadImageUrls ?? imageUrls;
+    final viewerIndex = threadImageUrls != null ? threadIndexOffset + index : index;
     Navigator.of(context).push(
       PageRouteBuilder(
         opaque: false,
         pageBuilder: (_, __, ___) => ImageViewer(
-          imageUrls: imageUrls,
-          initialIndex: index,
+          imageUrls: viewerUrls,
+          initialIndex: viewerIndex,
         ),
         transitionsBuilder: (_, animation, __, child) {
           return FadeTransition(opacity: animation, child: child);

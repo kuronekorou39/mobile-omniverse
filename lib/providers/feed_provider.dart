@@ -1,7 +1,9 @@
 import 'dart:async';
 import 'dart:convert';
 
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/painting.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:flutter_cache_manager/flutter_cache_manager.dart';
 import 'package:flutter_overlay_window/flutter_overlay_window.dart';
@@ -124,11 +126,16 @@ class FeedNotifier extends StateNotifier<FeedState> {
     }
     try {
       debugPrint('[Feed] Precaching ${urls.length} images for ${post.id}');
+      // 1. ディスクにダウンロード
       await Future.wait(
         urls.map((url) => DefaultCacheManager().downloadFile(
               url,
               authHeaders: kImageHeaders,
             )),
+      ).timeout(const Duration(seconds: 5), onTimeout: () => []);
+      // 2. メモリにデコード（ドリップ時に即表示するため）
+      await Future.wait(
+        urls.map((url) => _decodeToMemory(url)),
       ).timeout(const Duration(seconds: 5), onTimeout: () => []);
       debugPrint('[Feed] Precache done for ${post.id}');
     } catch (e) {
@@ -140,6 +147,20 @@ class FeedNotifier extends StateNotifier<FeedState> {
       final excess = _precachedIds.length - _maxPosts;
       _precachedIds.removeAll(_precachedIds.take(excess).toList());
     }
+  }
+
+  /// 画像をFlutterのメモリイメージキャッシュにデコード
+  Future<void> _decodeToMemory(String url) async {
+    final completer = Completer<void>();
+    final provider = CachedNetworkImageProvider(url, headers: kImageHeaders);
+    final stream = provider.resolve(ImageConfiguration.empty);
+    late ImageStreamListener listener;
+    listener = ImageStreamListener(
+      (info, _) { if (!completer.isCompleted) completer.complete(); stream.removeListener(listener); },
+      onError: (e, _) { if (!completer.isCompleted) completer.complete(); stream.removeListener(listener); },
+    );
+    stream.addListener(listener);
+    return completer.future;
   }
 
   /// 複数投稿の画像を並列プリキャッシュ

@@ -88,7 +88,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             onTap: () => _openFontPicker(context, settings, notifier),
           ),
           ListTile(
-            title: Text('フォントサイズ ${(settings.fontScale * 100).round()}%'),
+            title: Text('フォントサイズ ${(settings.fontScale / 0.8 * 100).round()}%'),
           ),
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -97,10 +97,10 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 const Text('A', style: TextStyle(fontSize: 12)),
                 Expanded(
                   child: Slider(
-                    value: settings.fontScale,
-                    min: 0.8,
+                    value: settings.fontScale.clamp(0.6, 1.5),
+                    min: 0.6,
                     max: 1.5,
-                    divisions: 7,
+                    divisions: 9,
                     onChanged: (value) => notifier.setFontScale(value),
                   ),
                 ),
@@ -150,12 +150,11 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
               ),
             ),
           ),
-          CheckboxListTile(
+          SwitchListTile(
             title: const Text('ヘッダーに匿名切替ボタンを表示'),
             value: settings.appBarButtons.contains('userInfo'),
             onChanged: (_) => notifier.toggleAppBarButton('userInfo'),
             dense: true,
-            controlAffinity: ListTileControlAffinity.leading,
           ),
 
           const Divider(),
@@ -196,12 +195,11 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
               ),
             ),
           ),
-          CheckboxListTile(
+          SwitchListTile(
             title: const Text('ヘッダーにセンシティブ切替ボタンを表示'),
             value: settings.appBarButtons.contains('sensitive'),
             onChanged: (_) => notifier.toggleAppBarButton('sensitive'),
             dense: true,
-            controlAffinity: ListTileControlAffinity.leading,
           ),
           ListTile(
             title: const Text('画像の保存先'),
@@ -286,12 +284,11 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
               },
             ),
           ),
-          CheckboxListTile(
+          SwitchListTile(
             title: const Text('ヘッダーにタイマーを表示'),
             value: settings.showFetchTimer,
             onChanged: (value) => notifier.setShowFetchTimer(value ?? true),
             dense: true,
-            controlAffinity: ListTileControlAffinity.leading,
           ),
 
           const Divider(),
@@ -330,6 +327,29 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 subtitle: Text(settings.isFetchingActive ? '実行中' : '停止中'),
                 value: settings.isFetchingActive,
                 onChanged: (_) => notifier.toggleFetching(),
+              ),
+              SwitchListTile(
+                title: const Text('パフォーマンスオーバーレイ'),
+                subtitle: const Text('メモリ・FPS・投稿数を画面上に表示'),
+                value: settings.showPerfOverlay,
+                onChanged: (value) => notifier.setShowPerfOverlay(value),
+              ),
+              ListTile(
+                title: const Text('画像キャッシュ上限'),
+                subtitle: Text('メモリ上のデコード済み画像の保持枚数（現在: ${settings.imageCacheSize}枚）'),
+                trailing: DropdownButton<int>(
+                  value: settings.imageCacheSize,
+                  items: const [
+                    DropdownMenuItem(value: 20, child: Text('20枚')),
+                    DropdownMenuItem(value: 30, child: Text('30枚')),
+                    DropdownMenuItem(value: 50, child: Text('50枚')),
+                    DropdownMenuItem(value: 80, child: Text('80枚')),
+                    DropdownMenuItem(value: 100, child: Text('100枚')),
+                  ],
+                  onChanged: (value) {
+                    if (value != null) notifier.setImageCacheSize(value);
+                  },
+                ),
               ),
               SwitchListTile(
                 title: const Text('通信ログを記録'),

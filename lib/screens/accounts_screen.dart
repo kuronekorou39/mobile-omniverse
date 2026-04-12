@@ -10,6 +10,7 @@ import '../services/timeline_fetch_scheduler.dart';
 import '../widgets/sns_badge.dart';
 import 'login_webview_screen.dart';
 import 'session_refresh_screen.dart';
+import 'settings_screen.dart';
 import 'user_profile_screen.dart';
 
 class AccountsScreen extends ConsumerWidget {
@@ -25,13 +26,34 @@ class AccountsScreen extends ConsumerWidget {
               leadingWidth: 0,
               leading: const SizedBox.shrink(),
               titleSpacing: 16,
-              title: Align(
-                alignment: const Alignment(0.03, 0.0),
-                child: Image.asset(
-                  'assets/logo.png',
-                  height: 36,
-                  fit: BoxFit.contain,
-                ),
+              title: Stack(
+                clipBehavior: Clip.none,
+                children: [
+                  Positioned.fill(
+                    child: Align(
+                      alignment: const Alignment(0.03, 0.0),
+                      child: Image.asset(
+                        'assets/logo.png',
+                        height: 36,
+                        fit: BoxFit.contain,
+                      ),
+                    ),
+                  ),
+                  Row(
+                    children: [
+                      const Spacer(),
+                      IconButton(
+                        icon: const Icon(Icons.settings_outlined, size: 20),
+                        tooltip: '設定',
+                        onPressed: () => Navigator.of(context).push(
+                          MaterialPageRoute(builder: (_) => const SettingsScreen()),
+                        ),
+                        constraints: const BoxConstraints(minWidth: 40, minHeight: 40),
+                        padding: EdgeInsets.zero,
+                      ),
+                    ],
+                  ),
+                ],
               ),
             )
           : null,

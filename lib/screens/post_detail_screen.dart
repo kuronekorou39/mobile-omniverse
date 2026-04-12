@@ -3,6 +3,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../utils/engagement_errors.dart';
 import '../utils/image_headers.dart';
 import '../models/account.dart';
 import '../models/activity_log.dart';
@@ -86,21 +87,29 @@ class _PostDetailScreenState extends ConsumerState<PostDetailScreen> {
       );
 
       // メイン投稿を基準に、親（文脈）とリプライを分離
-      // inReplyToId でメイン投稿への返信かどうかを判定（タイムスタンプより確実）
+      // X の投稿IDはsnowflake（時系列で増加）なので、数値比較で前後を判定
+      // Bluesky はタイムスタンプで判定
       final mainId = widget.post.id;
       final others = posts.where((p) => p.id != mainId).toList();
-      final replies = others
-          .where((p) => p.inReplyToId != null &&
-              (p.inReplyToId == mainId ||
-               p.inReplyToId == mainId.replaceFirst('x_', '') ||
-               p.inReplyToId == mainId.replaceFirst('bsky_', '')))
-          .toList()
-        ..sort((a, b) => a.timestamp.compareTo(b.timestamp)); // 古い順
+
+      bool _isAfterMain(Post p) {
+        if (widget.post.source == SnsService.x) {
+          // x_ プレフィックスを除去して数値比較
+          final mainNum = BigInt.tryParse(mainId.replaceFirst('x_', ''));
+          final pNum = BigInt.tryParse(p.id.replaceFirst('x_', ''));
+          if (mainNum != null && pNum != null) return pNum > mainNum;
+        }
+        // Bluesky / フォールバック: タイムスタンプ比較
+        return p.timestamp.isAfter(widget.post.timestamp);
+      }
+
+      final replies = others.where(_isAfterMain).toList()
+        ..sort((a, b) => a.timestamp.compareTo(b.timestamp));
       final replyIds = replies.map((p) => p.id).toSet();
       final parents = others
           .where((p) => !replyIds.contains(p.id))
           .toList()
-        ..sort((a, b) => a.timestamp.compareTo(b.timestamp)); // 古い順
+        ..sort((a, b) => a.timestamp.compareTo(b.timestamp));
 
       setState(() {
         _post = freshMain;
@@ -142,7 +151,22 @@ class _PostDetailScreenState extends ConsumerState<PostDetailScreen> {
       ),
       body: RefreshIndicator(
         onRefresh: _loadReplies,
-        child: ListView(
+        child: Builder(builder: (context) {
+          // スレッド全体のメディアURLを収集（メイン投稿 + リプライ）
+          final threadImages = <String>[
+            ..._post.imageUrls,
+            for (final reply in _replies) ...reply.imageUrls,
+          ];
+          // 各投稿のオフセットを計算
+          final replyOffsets = <String, int>{};
+          var offset = _post.imageUrls.length;
+          for (final reply in _replies) {
+            replyOffsets[reply.id] = offset;
+            offset += reply.imageUrls.length;
+          }
+          final useThread = threadImages.length > _post.imageUrls.length;
+
+          return ListView(
           children: [
             // 親投稿（会話の文脈）
             if (_parents.isNotEmpty) ...[
@@ -178,7 +202,7 @@ class _PostDetailScreenState extends ConsumerState<PostDetailScreen> {
               ),
             ],
             // Main post (expanded)
-            _buildMainPost(context),
+            _buildMainPost(context, threadImages: useThread ? threadImages : null),
             const Divider(height: 1),
 
             // Replies section
@@ -231,6 +255,8 @@ class _PostDetailScreenState extends ConsumerState<PostDetailScreen> {
                     imageMaxHeight: s.imagePreviewSize.singleImageMaxHeight,
                     imageGridHeight: s.imagePreviewSize.gridImageHeight,
                     videoHeight: s.imagePreviewSize.videoHeight,
+                    threadImageUrls: useThread && reply.imageUrls.isNotEmpty ? threadImages : null,
+                    threadIndexOffset: replyOffsets[reply.id] ?? 0,
                     onTap: () {
                       Navigator.of(context).push(
                         MaterialPageRoute(
@@ -254,12 +280,13 @@ class _PostDetailScreenState extends ConsumerState<PostDetailScreen> {
             ],
             const SizedBox(height: 80),
           ],
-        ),
+        );
+        }),
       ),
     );
   }
 
-  Widget _buildMainPost(BuildContext context) {
+  Widget _buildMainPost(BuildContext context, {List<String>? threadImages}) {
     final post = _post;
 
     return Padding(
@@ -303,6 +330,10 @@ class _PostDetailScreenState extends ConsumerState<PostDetailScreen> {
                               overflow: TextOverflow.ellipsis,
                             ),
                           ),
+                          if (post.isProtected) ...[
+                            const SizedBox(width: 4),
+                            Icon(Icons.lock, size: 14, color: Colors.grey[500]),
+                          ],
                           const SizedBox(width: 6),
                           SnsBadge(service: post.source),
                         ],
@@ -332,7 +363,11 @@ class _PostDetailScreenState extends ConsumerState<PostDetailScreen> {
           // Images (shared widget - not PostCard!)
           if (post.imageUrls.isNotEmpty) ...[
             const SizedBox(height: 12),
-            PostImageGrid(imageUrls: post.imageUrls),
+            PostImageGrid(
+              imageUrls: post.imageUrls,
+              threadImageUrls: threadImages,
+              threadIndexOffset: 0,
+            ),
           ],
 
           // Video
@@ -400,7 +435,7 @@ class _PostDetailScreenState extends ConsumerState<PostDetailScreen> {
                 ),
                 count: post.repostCount,
                 showCounts: showCounts,
-                onPressed: () => _handleRepost(post),
+                onPressed: () => _showRepostMenu(post),
               ),
               _buildActionWithCount(
                 icon: _AnimatedActionIcon(
@@ -525,6 +560,39 @@ class _PostDetailScreenState extends ConsumerState<PostDetailScreen> {
     );
   }
 
+  void _showRepostMenu(Post post) {
+    showModalBottomSheet(
+      context: context,
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.repeat),
+              title: const Text('リポスト'),
+              onTap: () {
+                Navigator.of(ctx).pop();
+                _handleRepost(post);
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.edit_note),
+              title: const Text('引用リポスト'),
+              onTap: () {
+                Navigator.of(ctx).pop();
+                Navigator.of(context).push(
+                  MaterialPageRoute(
+                    builder: (_) => ComposeScreen(quotedPost: post),
+                  ),
+                );
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   void _updatePost({
     String? accountId,
     bool? liked,
@@ -620,7 +688,7 @@ class _PostDetailScreenState extends ConsumerState<PostDetailScreen> {
       if (!success && mounted) {
         _updatePost(accountId: account.id, liked: willUnlike, likeCount: post.likeCount);
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('いいねに失敗しました')),
+          engagementErrorSnackBar('いいね', statusCode),
         );
       }
     } catch (e) {
@@ -694,7 +762,7 @@ class _PostDetailScreenState extends ConsumerState<PostDetailScreen> {
       if (!success && mounted) {
         _updatePost(accountId: account.id, reposted: willUnrepost, repostCount: post.repostCount);
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('リポストに失敗しました')),
+          engagementErrorSnackBar('リポスト', statusCode),
         );
       }
     } catch (e) {

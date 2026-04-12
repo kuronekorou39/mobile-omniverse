@@ -1003,19 +1003,27 @@ class XApiService {
     XCredentials creds, {
     String? accountId,
   }) async {
-    try {
-      final queryId = XQueryIdService.instance.getQueryId('GenericTimelineById', creds: creds);
-      if (queryId.isEmpty) return <NotificationItem>[];
+    // まず WebView で取得済みの NotificationsTimeline を試す。
+    // フォールバックとして旧 GenericTimelineById も試す。
+    const primaryOp = 'NotificationsTimeline';
+    const fallbackOp = 'GenericTimelineById';
 
-      final variables = json.encode({
-        'timelineId': 'notifications_all',
-        'count': 40,
-        'withQuickPromoteEligibilityTweetFields': true,
-      });
+    Future<List<NotificationItem>> attempt(String queryId, String opName) async {
+      final variables = opName == 'GenericTimelineById'
+          ? json.encode({
+              'timelineId': 'notifications_all',
+              'count': 40,
+              'withQuickPromoteEligibilityTweetFields': true,
+            })
+          : json.encode({
+              'count': 40,
+              'includePromotedContent': false,
+              'timeline_type': 'All',
+            });
       final features = json.encode(XFeatures.timeline);
 
       final uri = Uri.parse(
-        'https://x.com/i/api/graphql/$queryId/GenericTimelineById'
+        'https://x.com/i/api/graphql/$queryId/$opName'
         '?variables=${Uri.encodeComponent(variables)}'
         '&features=${Uri.encodeComponent(features)}',
       );
@@ -1028,16 +1036,58 @@ class XApiService {
       _logResponse('NotificationsGQL', 'GET', uri, hdrs, null, response, sw);
 
       if (response.statusCode != 200) {
-        debugPrint('[XApi] NotificationsGQL failed: ${response.statusCode}');
         return <NotificationItem>[];
       }
 
       final body = json.decode(response.body) as Map<String, dynamic>;
+
+      // エラーレスポンスの検出（200 + errors）
+      final errors = body['errors'] as List<dynamic>?;
+      if (errors != null && errors.isNotEmpty) {
+        throw XApiException(
+          'NotificationsGQL errors: ${errors.first}',
+          statusCode: 500,
+        );
+      }
+
       return _parseGraphQLNotifications(body, accountId);
-    } catch (e) {
-      debugPrint('[XApi] NotificationsGQL error: $e');
-      return <NotificationItem>[];
     }
+
+    // 1. NotificationsTimeline を試す
+    final primaryId = XQueryIdService.instance.getQueryId(primaryOp, creds: creds);
+    if (primaryId.isNotEmpty) {
+      try {
+        return await attempt(primaryId, primaryOp);
+      } on XApiException {
+        debugPrint('[XApi] $primaryOp failed, trying fallback');
+      } catch (e) {
+        debugPrint('[XApi] $primaryOp error: $e');
+      }
+    }
+
+    // 2. フォールバック: GenericTimelineById
+    final fallbackId = XQueryIdService.instance.getQueryId(fallbackOp, creds: creds);
+    if (fallbackId.isNotEmpty) {
+      try {
+        return await attempt(fallbackId, fallbackOp);
+      } on XApiException {
+        debugPrint('[XApi] $fallbackOp also failed, refreshing queryIds');
+        // 両方失敗 → JSバンドルからリフレッシュ
+        await XQueryIdService.instance.forceRefresh(creds, onlyUpdate: {primaryOp, fallbackOp});
+        final refreshedId = XQueryIdService.instance.getQueryId(primaryOp, creds: creds);
+        if (refreshedId.isNotEmpty && refreshedId != primaryId) {
+          try {
+            return await attempt(refreshedId, primaryOp);
+          } catch (e) {
+            debugPrint('[XApi] NotificationsGQL retry also failed: $e');
+          }
+        }
+      } catch (e) {
+        debugPrint('[XApi] $fallbackOp error: $e');
+      }
+    }
+
+    return <NotificationItem>[];
   }
 
   List<NotificationItem> _parseGraphQLNotifications(

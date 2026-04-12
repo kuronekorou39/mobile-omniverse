@@ -36,6 +36,7 @@ class XQueryIdService {
     'UserMedia': 'dexO_2tohK86JDlXOGVk-w',
     'CreateTweet': 'RXKQMYyEqEjGgWpcSP6LBw',
     'GenericTimelineById': '2My6Exw3i3JLnuoxc4my8A',
+    'NotificationsTimeline': '8bj3MP0KXWKlpfC1yvGfbQ',
   };
 
   /// グローバルキャッシュ (旧形式・マイグレーション用)
@@ -260,6 +261,15 @@ class XQueryIdService {
       _lastRefresh = null;
     }
     return refreshQueryIds(creds, onlyUpdate: onlyUpdate);
+  }
+
+  /// WebView 等で取得した queryId をアカウント別キャッシュに保存
+  Future<void> updateQueryIds(XCredentials creds, Map<String, String> ids) async {
+    final key = _accountKey(creds);
+    _perAccount[key] ??= {};
+    _perAccount[key]!.addAll(ids);
+    await _saveToPrefs();
+    debugPrint('[XQueryId] Updated ${ids.length} queryIds for account: ${ids.keys.join(', ')}');
   }
 
   /// 特定オペレーションのキャッシュを消去してデフォルト値に戻す

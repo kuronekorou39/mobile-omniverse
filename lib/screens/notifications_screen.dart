@@ -15,9 +15,76 @@ import '../services/bluesky_api_service.dart';
 import '../services/notification_cache_service.dart';
 import '../services/x_api_service.dart';
 import '../widgets/sns_badge.dart';
+import 'notification_webview_screen.dart';
 import 'post_detail_screen.dart';
 import 'settings_screen.dart';
 import 'user_profile_screen.dart';
+
+// ─── 通知取得の共通ロジック ───
+
+/// アカウントの通知を取得し、マージ・重複排除済みのリストを返す
+class _NotificationFetchResult {
+  const _NotificationFetchResult({
+    required this.notifications,
+    this.cursor,
+    this.responseSnippet,
+    this.updatedCreds,
+  });
+  final List<NotificationItem> notifications;
+  final String? cursor;
+  final String? responseSnippet;
+  /// Bluesky のトークン更新があった場合
+  final Object? updatedCreds;
+}
+
+Future<_NotificationFetchResult> fetchAccountNotifications(
+  Account account, {
+  String? cursor,
+}) async {
+  if (account.service == SnsService.x) {
+    if (cursor != null) {
+      // ページネーション: REST のみ
+      final result = await XApiService.instance
+          .getNotifications(account.xCredentials, cursor: cursor);
+      return _NotificationFetchResult(
+        notifications: result.notifications,
+        cursor: result.cursor,
+        responseSnippet: result.responseSnippet,
+      );
+    }
+    // 初回/リフレッシュ: REST + GraphQL を並列取得
+    final results = await Future.wait([
+      XApiService.instance.getNotifications(account.xCredentials),
+      XApiService.instance.getNotificationsGraphQL(
+        account.xCredentials,
+        accountId: account.id,
+      ),
+    ]);
+    final notifResult = results[0]
+        as ({List<NotificationItem> notifications, String? cursor, String? responseSnippet});
+    final gqlNotifs = results[1] as List<NotificationItem>;
+
+    final merged = [...notifResult.notifications, ...gqlNotifs];
+    final seen = <String>{};
+    merged.retainWhere((n) => seen.add(n.id));
+    merged.sort((a, b) => b.timestamp.compareTo(a.timestamp));
+
+    return _NotificationFetchResult(
+      notifications: merged,
+      cursor: notifResult.cursor,
+      responseSnippet: notifResult.responseSnippet,
+    );
+  } else {
+    // Bluesky
+    final result = await BlueskyApiService.instance
+        .getNotificationsWithRefresh(account.blueskyCredentials, cursor: cursor);
+    return _NotificationFetchResult(
+      notifications: result.notifications,
+      cursor: result.cursor,
+      updatedCreds: result.updatedCreds,
+    );
+  }
+}
 
 // ─── 通知タイプの共通定義 ───
 
@@ -330,6 +397,7 @@ class _NotificationListState extends ConsumerState<_NotificationList>
   String? _cursor;
   bool _isLoadingMore = false;
   bool _isFetching = false;
+  bool _gqlFailed = false;
 
   /// フィルタ: 非表示にするタイプ（空 = 全表示）
   final Set<NotificationType> _hiddenTypes = {};
@@ -361,6 +429,17 @@ class _NotificationListState extends ConsumerState<_NotificationList>
     _fetch();
   }
 
+  Future<void> _openQueryIdWebView() async {
+    final updated = await Navigator.of(context).push<bool>(
+      MaterialPageRoute(
+        builder: (_) => NotificationWebViewScreen(account: widget.account),
+      ),
+    );
+    if (updated == true && mounted) {
+      _fetch();
+    }
+  }
+
   Future<void> _fetch() async {
     if (_isFetching) return;
     _isFetching = true;
@@ -374,43 +453,20 @@ class _NotificationListState extends ConsumerState<_NotificationList>
     }
 
     try {
-      late final int count;
-      String? responseSnippet;
-      late final List<NotificationItem> fetched;
-      late final String? newCursor;
+      final result = await fetchAccountNotifications(widget.account);
+      final fetched = result.notifications;
+      final newCursor = result.cursor;
 
+      // GraphQL通知（リプライ/メンション）が取得できたかチェック
       if (widget.account.service == SnsService.x) {
-        // REST通知 + GraphQL通知（リプライ含む）を並列取得
-        final results = await Future.wait([
-          XApiService.instance.getNotifications(widget.account.xCredentials),
-          XApiService.instance.getNotificationsGraphQL(
-            widget.account.xCredentials,
-            accountId: widget.account.id,
-          ),
-        ]);
-        final notifResult = results[0] as ({List<NotificationItem> notifications, String? cursor, String? responseSnippet});
-        final gqlNotifs = results[1] as List<NotificationItem>;
+        final hasReply = fetched.any((n) =>
+            n.type == NotificationType.reply || n.type == NotificationType.mention);
+        _gqlFailed = !hasReply && fetched.isNotEmpty;
+      }
 
-        final merged = [...notifResult.notifications, ...gqlNotifs];
-        // 重複排除（同じIDがある場合）
-        final seen = <String>{};
-        merged.retainWhere((n) => seen.add(n.id));
-        merged.sort((a, b) => b.timestamp.compareTo(a.timestamp));
-
-        count = merged.length;
-        responseSnippet = notifResult.responseSnippet;
-        fetched = merged;
-        newCursor = notifResult.cursor;
-      } else {
-        final result = await BlueskyApiService.instance
-            .getNotificationsWithRefresh(widget.account.blueskyCredentials);
-        count = result.notifications.length;
-        fetched = result.notifications;
-        newCursor = result.cursor;
-        if (result.updatedCreds != null) {
-          await ref.read(accountProvider.notifier)
-              .updateCredentials(widget.account.id, result.updatedCreds!);
-        }
+      if (result.updatedCreds != null) {
+        await ref.read(accountProvider.notifier)
+            .updateCredentials(widget.account.id, result.updatedCreds!);
       }
 
       if (!mounted) return;
@@ -446,9 +502,9 @@ class _NotificationListState extends ConsumerState<_NotificationList>
         platform: widget.account.service,
         accountHandle: widget.account.handle,
         accountId: widget.account.id,
-        targetSummary: '$count件取得',
+        targetSummary: '${fetched.length}件取得',
         success: true,
-        responseSnippet: responseSnippet,
+        responseSnippet: result.responseSnippet,
       );
     } catch (e, st) {
       debugPrint('[Notifications] Error fetching for ${widget.account.handle}: $e');
@@ -502,23 +558,13 @@ class _NotificationListState extends ConsumerState<_NotificationList>
     setState(() => _isLoadingMore = true);
 
     try {
-      if (widget.account.service == SnsService.x) {
-        final result = await XApiService.instance
-            .getNotifications(widget.account.xCredentials, cursor: _cursor);
-        if (!mounted) return;
-        _appendItems(result.notifications, result.cursor);
-      } else {
-        final result = await BlueskyApiService.instance
-            .getNotificationsWithRefresh(
-                widget.account.blueskyCredentials,
-                cursor: _cursor);
-        if (result.updatedCreds != null) {
-          await ref.read(accountProvider.notifier)
-              .updateCredentials(widget.account.id, result.updatedCreds!);
-        }
-        if (!mounted) return;
-        _appendItems(result.notifications, result.cursor);
+      final result = await fetchAccountNotifications(widget.account, cursor: _cursor);
+      if (result.updatedCreds != null) {
+        await ref.read(accountProvider.notifier)
+            .updateCredentials(widget.account.id, result.updatedCreds!);
       }
+      if (!mounted) return;
+      _appendItems(result.notifications, result.cursor);
     } catch (e) {
       if (!mounted) return;
       setState(() => _isLoadingMore = false);
@@ -560,6 +606,14 @@ class _NotificationListState extends ConsumerState<_NotificationList>
               ),
               const SizedBox(height: 16),
               FilledButton(onPressed: _fetch, child: const Text('再読み込み')),
+              if (widget.account.service == SnsService.x) ...[
+                const SizedBox(height: 8),
+                TextButton.icon(
+                  onPressed: _openQueryIdWebView,
+                  icon: const Icon(Icons.refresh, size: 16),
+                  label: const Text('queryId 更新'),
+                ),
+              ],
             ],
           ),
         ),
@@ -576,6 +630,33 @@ class _NotificationListState extends ConsumerState<_NotificationList>
 
     return Column(
       children: [
+        if (_gqlFailed && widget.account.service == SnsService.x)
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            color: Colors.orange.withAlpha(30),
+            child: Row(
+              children: [
+                Icon(Icons.warning_amber, size: 16, color: Colors.orange[700]),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    'リプライ/メンション通知を取得できていません',
+                    style: TextStyle(fontSize: 12, color: Colors.orange[700]),
+                  ),
+                ),
+                TextButton(
+                  onPressed: _openQueryIdWebView,
+                  style: TextButton.styleFrom(
+                    minimumSize: Size.zero,
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  ),
+                  child: const Text('修復', style: TextStyle(fontSize: 12)),
+                ),
+              ],
+            ),
+          ),
         _NotificationTypeFilter(
           availableTypes: types,
           hiddenTypes: _hiddenTypes,
@@ -1030,29 +1111,11 @@ class _UnifiedNotificationListState
     try {
       final futures = widget.accounts.map((account) async {
         try {
-          if (account.service == SnsService.x) {
-            final results = await Future.wait([
-              XApiService.instance.getNotifications(account.xCredentials),
-              XApiService.instance.getNotificationsGraphQL(
-                account.xCredentials,
-                accountId: account.id,
-              ),
-            ]);
-            final notifResult = results[0] as ({List<NotificationItem> notifications, String? cursor, String? responseSnippet});
-            final gqlNotifs = results[1] as List<NotificationItem>;
-            final merged = [...notifResult.notifications, ...gqlNotifs];
-            final seen = <String>{};
-            merged.retainWhere((n) => seen.add(n.id));
-            merged.sort((a, b) => b.timestamp.compareTo(a.timestamp));
-            _cacheService.merge(account.id, merged, cursor: notifResult.cursor);
-          } else {
-            final result = await BlueskyApiService.instance
-                .getNotificationsWithRefresh(account.blueskyCredentials);
-            _cacheService.merge(account.id, result.notifications, cursor: result.cursor);
-            if (result.updatedCreds != null) {
-              ref.read(accountProvider.notifier)
-                  .updateCredentials(account.id, result.updatedCreds!);
-            }
+          final result = await fetchAccountNotifications(account);
+          _cacheService.merge(account.id, result.notifications, cursor: result.cursor);
+          if (result.updatedCreds != null) {
+            ref.read(accountProvider.notifier)
+                .updateCredentials(account.id, result.updatedCreds!);
           }
         } catch (e) {
           debugPrint('[UnifiedNotif] Error fetching ${account.handle}: $e');

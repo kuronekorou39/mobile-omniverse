@@ -112,6 +112,9 @@ class _UserProfileScreenState extends ConsumerState<UserProfileScreen>
   void initState() {
     super.initState();
     _tabController = TabController(length: 2, vsync: this);
+    _tabController.addListener(() {
+      if (!_tabController.indexIsChanging) setState(() {});
+    });
     _loadData();
   }
 
@@ -315,15 +318,40 @@ class _UserProfileScreenState extends ConsumerState<UserProfileScreen>
 
   @override
   Widget build(BuildContext context) {
+    final activePosts = _tabController.index == 0
+        ? (_hideRetweets ? _posts.where((p) => !p.isRetweet).toList() : _posts)
+        : (_hideRetweets ? _mediaPosts.where((p) => !p.isRetweet).toList() : _mediaPosts);
+
     return Scaffold(
-      body: NestedScrollView(
-        floatHeaderSlivers: true,
-        headerSliverBuilder: (context, innerBoxIsScrolled) => [
+      body: _buildSliverBody(activePosts),
+    );
+  }
+
+  Widget _buildSliverBody(List<Post> posts) {
+    return NotificationListener<ScrollNotification>(
+      onNotification: (notification) {
+        if (notification is ScrollEndNotification &&
+            notification.metrics.pixels >=
+                notification.metrics.maxScrollExtent - 200) {
+          _loadMorePosts();
+        }
+        return false;
+      },
+      child: GestureDetector(
+        onHorizontalDragEnd: (details) {
+          if (details.primaryVelocity == null) return;
+          if (details.primaryVelocity! < -300 && _tabController.index < _tabController.length - 1) {
+            _tabController.animateTo(_tabController.index + 1);
+          } else if (details.primaryVelocity! > 300 && _tabController.index > 0) {
+            _tabController.animateTo(_tabController.index - 1);
+          }
+        },
+        child: CustomScrollView(
+        slivers: [
           SliverAppBar(
             title: Text(widget.handle),
             floating: true,
             snap: true,
-            forceElevated: innerBoxIsScrolled,
             actions: [
               IconButton(
                 icon: _hideRetweets
@@ -361,85 +389,70 @@ class _UserProfileScreenState extends ConsumerState<UserProfileScreen>
               ],
             ),
           ),
+          ..._buildPostSlivers(posts),
         ],
-        body: TabBarView(
-          controller: _tabController,
-          children: [
-            // 投稿タブ
-            _buildPostList(
-              _hideRetweets ? _posts.where((p) => !p.isRetweet).toList() : _posts,
-            ),
-            // メディアタブ (ページネーションは投稿タブ側で処理)
-            _buildPostList(
-              _hideRetweets ? _mediaPosts.where((p) => !p.isRetweet).toList() : _mediaPosts,
-              isMediaTab: true,
-            ),
-          ],
-        ),
+      ),
       ),
     );
   }
 
-  Widget _buildPostList(List<Post> posts, {bool isMediaTab = false}) {
+  List<Widget> _buildPostSlivers(List<Post> posts) {
     if (_isLoadingPosts) {
-      return const Center(child: CircularProgressIndicator());
+      return [
+        const SliverFillRemaining(
+          child: Center(child: CircularProgressIndicator()),
+        ),
+      ];
     }
     if (_postsError != null) {
-      return Center(
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Icon(Icons.error_outline, color: Colors.red, size: 32),
-              const SizedBox(height: 8),
-              Text(
-                _postsError!,
-                textAlign: TextAlign.center,
-                style: const TextStyle(color: Colors.red, fontSize: 13),
+      return [
+        SliverFillRemaining(
+          child: Center(
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(Icons.error_outline, color: Colors.red, size: 32),
+                  const SizedBox(height: 8),
+                  Text(
+                    _postsError!,
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(color: Colors.red, fontSize: 13),
+                  ),
+                  const SizedBox(height: 12),
+                  OutlinedButton(
+                    onPressed: () {
+                      setState(() {
+                        _postsError = null;
+                        _isLoadingPosts = true;
+                      });
+                      _loadPosts();
+                    },
+                    child: const Text('リトライ'),
+                  ),
+                ],
               ),
-              const SizedBox(height: 12),
-              OutlinedButton(
-                onPressed: () {
-                  setState(() {
-                    _postsError = null;
-                    _isLoadingPosts = true;
-                  });
-                  _loadPosts();
-                },
-                child: const Text('リトライ'),
-              ),
-            ],
+            ),
           ),
         ),
-      );
+      ];
     }
     if (posts.isEmpty) {
-      return const Center(
-        child: Text('投稿はありません', style: TextStyle(color: Colors.grey)),
-      );
+      return [
+        const SliverFillRemaining(
+          child: Center(
+            child: Text('投稿はありません', style: TextStyle(color: Colors.grey)),
+          ),
+        ),
+      ];
     }
-    return RefreshIndicator(
-      onRefresh: () async {
-        await _loadData();
-      },
-      child: NotificationListener<ScrollNotification>(
-        onNotification: (notification) {
-          if (notification is ScrollEndNotification &&
-              notification.metrics.pixels >=
-                  notification.metrics.maxScrollExtent - 200) {
-            _loadMorePosts();
-          }
-          return false;
-        },
-        child: MediaQuery.removePadding(
-          context: context,
-          removeTop: true,
-          child: ListView.builder(
-          itemCount: posts.length + (_hasMore ? 1 : 0),
-          itemBuilder: (context, index) {
+    final s = ref.watch(settingsProvider);
+    return [
+      SliverList(
+        delegate: SliverChildBuilderDelegate(
+          (context, index) {
             if (index >= posts.length) {
-              // ローディングインジケータ
               return Padding(
                 padding: const EdgeInsets.all(16),
                 child: Center(
@@ -454,7 +467,6 @@ class _UserProfileScreenState extends ConsumerState<UserProfileScreen>
               );
             }
             final post = posts[index];
-            final s = ref.watch(settingsProvider);
             return PostCard(
               post: post,
               sensitiveMode: s.sensitiveMode,
@@ -487,22 +499,30 @@ class _UserProfileScreenState extends ConsumerState<UserProfileScreen>
               },
             );
           },
-        ),
+          childCount: posts.length + (_hasMore ? 1 : 0),
         ),
       ),
-    );
+    ];
   }
 
   // ===== エンゲージメント =====
 
-  void _updatePost(Post post, {bool? isLiked, int? likeCount, bool? isReposted, int? repostCount}) {
+  void _updatePost(Post post, {String? accountId, bool? liked, int? likeCount, bool? reposted, int? repostCount}) {
     setState(() {
       _posts = _posts.map((p) {
         if (p.id != post.id) return p;
+        var newLikedBy = Set<String>.of(p.likedByAccountIds);
+        var newRepostedBy = Set<String>.of(p.repostedByAccountIds);
+        if (accountId != null) {
+          if (liked == true) newLikedBy.add(accountId);
+          if (liked == false) newLikedBy.remove(accountId);
+          if (reposted == true) newRepostedBy.add(accountId);
+          if (reposted == false) newRepostedBy.remove(accountId);
+        }
         return p.copyWith(
-          isLiked: isLiked ?? p.isLiked,
+          likedByAccountIds: newLikedBy,
+          repostedByAccountIds: newRepostedBy,
           likeCount: likeCount ?? p.likeCount,
-          isReposted: isReposted ?? p.isReposted,
           repostCount: repostCount ?? p.repostCount,
         );
       }).toList();
@@ -514,7 +534,9 @@ class _UserProfileScreenState extends ConsumerState<UserProfileScreen>
       context,
       service: post.source,
       actionLabel: actionLabel,
-      fetchedByAccountId: post.accountId,
+      fetchedByAccountIds: post.fetchedByAccountIds,
+      likedByAccountIds: post.likedByAccountIds,
+      repostedByAccountIds: post.repostedByAccountIds,
     );
   }
 
@@ -522,7 +544,7 @@ class _UserProfileScreenState extends ConsumerState<UserProfileScreen>
     final account = await _resolveAccount(post, 'いいね');
     if (account == null) return;
 
-    final wasLiked = post.isLiked;
+    final wasLiked = post.isLikedBy(account.id);
     final action = wasLiked ? ActivityAction.unlike : ActivityAction.like;
     final postSummary = post.body.length > 40
         ? '${post.body.substring(0, 40)}...'
@@ -530,7 +552,8 @@ class _UserProfileScreenState extends ConsumerState<UserProfileScreen>
 
     // Optimistic update
     _updatePost(post,
-      isLiked: !wasLiked,
+      accountId: account.id,
+      liked: !wasLiked,
       likeCount: wasLiked ? post.likeCount - 1 : post.likeCount + 1,
     );
 
@@ -551,8 +574,9 @@ class _UserProfileScreenState extends ConsumerState<UserProfileScreen>
       } else if (post.source == SnsService.bluesky) {
         final creds = account.blueskyCredentials;
         if (wasLiked) {
-          if (post.bskyLikeUri != null) {
-            success = await BlueskyApiService.instance.unlikePost(creds, post.bskyLikeUri!);
+          final likeUri = post.bskyLikeUriFor(account.id);
+          if (likeUri != null) {
+            success = await BlueskyApiService.instance.unlikePost(creds, likeUri);
           }
         } else {
           final postUri = post.uri;
@@ -578,7 +602,7 @@ class _UserProfileScreenState extends ConsumerState<UserProfileScreen>
           );
 
       if (!success) {
-        _updatePost(post, isLiked: wasLiked, likeCount: post.likeCount);
+        _updatePost(post, accountId: account.id, liked: wasLiked, likeCount: post.likeCount);
       }
     } catch (e) {
       ref.read(activityLogProvider.notifier).logAction(
@@ -591,7 +615,7 @@ class _UserProfileScreenState extends ConsumerState<UserProfileScreen>
             success: false,
             errorMessage: e.toString(),
           );
-      _updatePost(post, isLiked: wasLiked, likeCount: post.likeCount);
+      _updatePost(post, accountId: account.id, liked: wasLiked, likeCount: post.likeCount);
     }
   }
 
@@ -599,14 +623,15 @@ class _UserProfileScreenState extends ConsumerState<UserProfileScreen>
     final account = await _resolveAccount(post, 'リポスト');
     if (account == null) return;
 
-    final wasReposted = post.isReposted;
+    final wasReposted = post.isRepostedBy(account.id);
     final action = wasReposted ? ActivityAction.unrepost : ActivityAction.repost;
     final postSummary = post.body.length > 40
         ? '${post.body.substring(0, 40)}...'
         : post.body;
 
     _updatePost(post,
-      isReposted: !wasReposted,
+      accountId: account.id,
+      reposted: !wasReposted,
       repostCount: wasReposted ? post.repostCount - 1 : post.repostCount + 1,
     );
 
@@ -627,8 +652,9 @@ class _UserProfileScreenState extends ConsumerState<UserProfileScreen>
       } else if (post.source == SnsService.bluesky) {
         final creds = account.blueskyCredentials;
         if (wasReposted) {
-          if (post.bskyRepostUri != null) {
-            success = await BlueskyApiService.instance.deleteRepost(creds, post.bskyRepostUri!);
+          final repostUri = post.bskyRepostUriFor(account.id);
+          if (repostUri != null) {
+            success = await BlueskyApiService.instance.deleteRepost(creds, repostUri);
           }
         } else {
           final postUri = post.uri;
@@ -654,7 +680,7 @@ class _UserProfileScreenState extends ConsumerState<UserProfileScreen>
           );
 
       if (!success) {
-        _updatePost(post, isReposted: wasReposted, repostCount: post.repostCount);
+        _updatePost(post, accountId: account.id, reposted: wasReposted, repostCount: post.repostCount);
       }
     } catch (e) {
       ref.read(activityLogProvider.notifier).logAction(
@@ -667,7 +693,7 @@ class _UserProfileScreenState extends ConsumerState<UserProfileScreen>
             success: false,
             errorMessage: e.toString(),
           );
-      _updatePost(post, isReposted: wasReposted, repostCount: post.repostCount);
+      _updatePost(post, accountId: account.id, reposted: wasReposted, repostCount: post.repostCount);
     }
   }
 

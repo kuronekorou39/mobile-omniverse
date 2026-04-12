@@ -116,6 +116,7 @@ class _LoginWebViewScreenState extends State<LoginWebViewScreen> {
   bool _isExtracting = false;
   bool _cookiesCleared = false;
   bool _loginDetected = false;
+  bool _pageReady = false;
 
   @override
   void initState() {
@@ -267,6 +268,9 @@ class _LoginWebViewScreenState extends State<LoginWebViewScreen> {
               },
               onLoadStop: (controller, url) {
                 debugPrint('[LoginWebView] onLoadStop: $url');
+                if (!_pageReady && mounted) {
+                  setState(() => _pageReady = true);
+                }
                 final urlStr = url?.toString() ?? '';
                 if (urlStr.contains(widget.service.domain)) {
                   debugPrint('[LoginWebView] Returned to ${widget.service.domain}');
@@ -285,7 +289,22 @@ class _LoginWebViewScreenState extends State<LoginWebViewScreen> {
           ),
         ],
       ),
-          // 待機オーバーレイ
+          // ページロード待ちオーバーレイ
+          if (_cookiesCleared && !_pageReady)
+            Container(
+              color: Theme.of(context).scaffoldBackgroundColor,
+              child: const Center(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    CircularProgressIndicator(),
+                    SizedBox(height: 16),
+                    Text('ログイン画面を準備中...', style: TextStyle(color: Colors.grey)),
+                  ],
+                ),
+              ),
+            ),
+          // 認証情報取得オーバーレイ
           if (_isExtracting)
             Container(
               color: Colors.black54,

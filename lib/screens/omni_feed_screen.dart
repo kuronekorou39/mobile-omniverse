@@ -264,15 +264,13 @@ class _OmniFeedScreenState extends ConsumerState<OmniFeedScreen>
   }
 
   Future<Account?> _resolveAccount(Post post, String actionLabel) async {
-    bool? isEngaged;
-    if (actionLabel == 'いいね') isEngaged = post.isLiked;
-    else if (actionLabel == 'リポスト') isEngaged = post.isReposted;
     return showAccountPickerModal(
       context,
       service: post.source,
       actionLabel: actionLabel,
-      fetchedByAccountId: post.accountId,
-      isEngagedByFetcher: isEngaged,
+      fetchedByAccountIds: post.fetchedByAccountIds,
+      likedByAccountIds: post.likedByAccountIds,
+      repostedByAccountIds: post.repostedByAccountIds,
     );
   }
 
@@ -280,21 +278,19 @@ class _OmniFeedScreenState extends ConsumerState<OmniFeedScreen>
     final account = await _resolveAccount(post, 'いいね');
     if (account == null) return;
 
-    final isSameAccount = account.id == post.accountId;
-    final willUnlike = isSameAccount && post.isLiked;
+    final willUnlike = post.isLikedBy(account.id);
     final action = willUnlike ? ActivityAction.unlike : ActivityAction.like;
     final postSummary = post.body.length > 40
         ? '${post.body.substring(0, 40)}...'
         : post.body;
 
-    // 取得元アカウントで操作した場合のみ楽観的UIトグル
-    if (isSameAccount) {
-      ref.read(feedProvider.notifier).updatePostEngagement(
-        post.id,
-        isLiked: !post.isLiked,
-        likeCount: post.isLiked ? post.likeCount - 1 : post.likeCount + 1,
-      );
-    }
+    // 楽観的UIトグル
+    ref.read(feedProvider.notifier).updatePostEngagement(
+      post.id,
+      accountId: account.id,
+      liked: !willUnlike,
+      likeCount: willUnlike ? post.likeCount - 1 : post.likeCount + 1,
+    );
 
     try {
       bool success = false;
@@ -313,8 +309,9 @@ class _OmniFeedScreenState extends ConsumerState<OmniFeedScreen>
       } else if (post.source == SnsService.bluesky) {
         final creds = account.blueskyCredentials;
         if (willUnlike) {
-          if (post.bskyLikeUri != null) {
-            success = await BlueskyApiService.instance.unlikePost(creds, post.bskyLikeUri!);
+          final likeUri = post.bskyLikeUriFor(account.id);
+          if (likeUri != null) {
+            success = await BlueskyApiService.instance.unlikePost(creds, likeUri);
           }
         } else {
           final postUri = post.uri;
@@ -339,21 +336,17 @@ class _OmniFeedScreenState extends ConsumerState<OmniFeedScreen>
             responseSnippet: responseSnippet,
           );
       if (!success && mounted) {
-        if (isSameAccount) {
-          ref.read(feedProvider.notifier).updatePostEngagement(
-            post.id, isLiked: post.isLiked, likeCount: post.likeCount,
-          );
-        }
+        ref.read(feedProvider.notifier).updatePostEngagement(
+          post.id, accountId: account.id, liked: willUnlike, likeCount: post.likeCount,
+        );
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('いいねに失敗しました')),
         );
       }
     } catch (e) {
-      if (isSameAccount) {
-        ref.read(feedProvider.notifier).updatePostEngagement(
-          post.id, isLiked: post.isLiked, likeCount: post.likeCount,
-        );
-      }
+      ref.read(feedProvider.notifier).updatePostEngagement(
+        post.id, accountId: account.id, liked: willUnlike, likeCount: post.likeCount,
+      );
       ref.read(activityLogProvider.notifier).logAction(
             action: action,
             platform: post.source,
@@ -376,20 +369,19 @@ class _OmniFeedScreenState extends ConsumerState<OmniFeedScreen>
     final account = await _resolveAccount(post, 'リポスト');
     if (account == null) return;
 
-    final isSameAccount = account.id == post.accountId;
-    final willUnrepost = isSameAccount && post.isReposted;
+    final willUnrepost = post.isRepostedBy(account.id);
     final action = willUnrepost ? ActivityAction.unrepost : ActivityAction.repost;
     final postSummary = post.body.length > 40
         ? '${post.body.substring(0, 40)}...'
         : post.body;
 
-    if (isSameAccount) {
-      ref.read(feedProvider.notifier).updatePostEngagement(
-        post.id,
-        isReposted: !post.isReposted,
-        repostCount: post.isReposted ? post.repostCount - 1 : post.repostCount + 1,
-      );
-    }
+    // 楽観的UIトグル
+    ref.read(feedProvider.notifier).updatePostEngagement(
+      post.id,
+      accountId: account.id,
+      reposted: !willUnrepost,
+      repostCount: willUnrepost ? post.repostCount - 1 : post.repostCount + 1,
+    );
 
     try {
       bool success = false;
@@ -408,8 +400,9 @@ class _OmniFeedScreenState extends ConsumerState<OmniFeedScreen>
       } else if (post.source == SnsService.bluesky) {
         final creds = account.blueskyCredentials;
         if (willUnrepost) {
-          if (post.bskyRepostUri != null) {
-            success = await BlueskyApiService.instance.deleteRepost(creds, post.bskyRepostUri!);
+          final repostUri = post.bskyRepostUriFor(account.id);
+          if (repostUri != null) {
+            success = await BlueskyApiService.instance.deleteRepost(creds, repostUri);
           }
         } else {
           final postUri = post.uri;
@@ -434,21 +427,17 @@ class _OmniFeedScreenState extends ConsumerState<OmniFeedScreen>
             responseSnippet: responseSnippet,
           );
       if (!success && mounted) {
-        if (isSameAccount) {
-          ref.read(feedProvider.notifier).updatePostEngagement(
-            post.id, isReposted: post.isReposted, repostCount: post.repostCount,
-          );
-        }
+        ref.read(feedProvider.notifier).updatePostEngagement(
+          post.id, accountId: account.id, reposted: willUnrepost, repostCount: post.repostCount,
+        );
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('リポストに失敗しました')),
         );
       }
     } catch (e) {
-      if (isSameAccount) {
-        ref.read(feedProvider.notifier).updatePostEngagement(
-          post.id, isReposted: post.isReposted, repostCount: post.repostCount,
-        );
-      }
+      ref.read(feedProvider.notifier).updatePostEngagement(
+        post.id, accountId: account.id, reposted: willUnrepost, repostCount: post.repostCount,
+      );
       ref.read(activityLogProvider.notifier).logAction(
             action: action,
             platform: post.source,

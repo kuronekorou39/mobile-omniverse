@@ -267,8 +267,8 @@ class FeedNotifier extends StateNotifier<FeedState> {
   }
 
   static bool _engagementChanged(Post old, Post incoming) {
-    return old.isLiked != incoming.isLiked ||
-        old.isReposted != incoming.isReposted ||
+    return !setEquals(old.likedByAccountIds, incoming.likedByAccountIds) ||
+        !setEquals(old.repostedByAccountIds, incoming.repostedByAccountIds) ||
         old.likeCount != incoming.likeCount ||
         old.repostCount != incoming.repostCount ||
         old.replyCount != incoming.replyCount;
@@ -299,14 +299,29 @@ class FeedNotifier extends StateNotifier<FeedState> {
       final mergedAccountIds = old != null
           ? {...old.fetchedByAccountIds, ...post.fetchedByAccountIds}
           : post.fetchedByAccountIds;
+      // エンゲージメント情報をアカウント単位でマージ
+      final mergedLikedBy = old != null
+          ? {...old.likedByAccountIds, ...post.likedByAccountIds}
+          : post.likedByAccountIds;
+      final mergedRepostedBy = old != null
+          ? {...old.repostedByAccountIds, ...post.repostedByAccountIds}
+          : post.repostedByAccountIds;
+      final mergedBskyLikeUris = old != null
+          ? {...old.bskyLikeUris, ...post.bskyLikeUris}
+          : post.bskyLikeUris;
+      final mergedBskyRepostUris = old != null
+          ? {...old.bskyRepostUris, ...post.bskyRepostUris}
+          : post.bskyRepostUris;
       if (old != null && _isUserDataMissing(post) && !_isUserDataMissing(old)) {
         // ユーザー情報が欠けた投稿で正常なデータを上書きしない — 即時更新
         if (!existingUpdated) {
           existingUpdated = _engagementChanged(old, post);
         }
         existing[post.id] = old.copyWith(
-          isLiked: post.isLiked,
-          isReposted: post.isReposted,
+          likedByAccountIds: mergedLikedBy,
+          repostedByAccountIds: mergedRepostedBy,
+          bskyLikeUris: mergedBskyLikeUris,
+          bskyRepostUris: mergedBskyRepostUris,
           likeCount: post.likeCount,
           repostCount: post.repostCount,
           fetchedByAccountIds: mergedAccountIds,
@@ -319,8 +334,10 @@ class FeedNotifier extends StateNotifier<FeedState> {
           existingUpdated = _engagementChanged(old, post);
         }
         existing[post.id] = old.copyWith(
-          isLiked: post.isLiked,
-          isReposted: post.isReposted,
+          likedByAccountIds: mergedLikedBy,
+          repostedByAccountIds: mergedRepostedBy,
+          bskyLikeUris: mergedBskyLikeUris,
+          bskyRepostUris: mergedBskyRepostUris,
           likeCount: post.likeCount,
           repostCount: post.repostCount,
           fetchedByAccountIds: mergedAccountIds,
@@ -332,6 +349,10 @@ class FeedNotifier extends StateNotifier<FeedState> {
           existingUpdated = _engagementChanged(old, post);
         }
         existing[post.id] = post.copyWith(
+          likedByAccountIds: mergedLikedBy,
+          repostedByAccountIds: mergedRepostedBy,
+          bskyLikeUris: mergedBskyLikeUris,
+          bskyRepostUris: mergedBskyRepostUris,
           fetchedByAccountIds: mergedAccountIds,
           isRetweet: true,
           retweetedByUsername: old.retweetedByUsername,
@@ -347,6 +368,10 @@ class FeedNotifier extends StateNotifier<FeedState> {
           // 安全策: このパスに到達すべきではないがRT保護
           debugPrint('[Feed] WARNING: RT flag lost at general update for ${post.id} (old.isRT=${old.isRetweet}, new.isRT=${post.isRetweet})');
           existing[post.id] = post.copyWith(
+            likedByAccountIds: mergedLikedBy,
+            repostedByAccountIds: mergedRepostedBy,
+            bskyLikeUris: mergedBskyLikeUris,
+            bskyRepostUris: mergedBskyRepostUris,
             fetchedByAccountIds: mergedAccountIds,
             isRetweet: true,
             retweetedByUsername: old.retweetedByUsername,
@@ -354,7 +379,13 @@ class FeedNotifier extends StateNotifier<FeedState> {
             timestamp: old.timestamp, // RT時刻を保持
           );
         } else {
-          existing[post.id] = post.copyWith(fetchedByAccountIds: mergedAccountIds);
+          existing[post.id] = post.copyWith(
+            likedByAccountIds: mergedLikedBy,
+            repostedByAccountIds: mergedRepostedBy,
+            bskyLikeUris: mergedBskyLikeUris,
+            bskyRepostUris: mergedBskyRepostUris,
+            fetchedByAccountIds: mergedAccountIds,
+          );
         }
       } else if (!_pendingIds.contains(post.id)) {
         // 新規投稿（キューにも未登録）— キューに追加
@@ -736,17 +767,30 @@ class FeedNotifier extends StateNotifier<FeedState> {
 
   void updatePostEngagement(
     String postId, {
-    bool? isLiked,
-    bool? isReposted,
+    String? accountId,
+    bool? liked,       // true = add to set, false = remove
+    bool? reposted,    // true = add to set, false = remove
     int? likeCount,
     int? repostCount,
   }) {
     final idx = state.posts.indexWhere((p) => p.id == postId);
     if (idx == -1) return;
+    final post = state.posts[idx];
     final posts = List<Post>.of(state.posts);
-    posts[idx] = posts[idx].copyWith(
-      isLiked: isLiked,
-      isReposted: isReposted,
+
+    var newLikedBy = Set<String>.of(post.likedByAccountIds);
+    var newRepostedBy = Set<String>.of(post.repostedByAccountIds);
+
+    if (accountId != null) {
+      if (liked == true) newLikedBy.add(accountId);
+      if (liked == false) newLikedBy.remove(accountId);
+      if (reposted == true) newRepostedBy.add(accountId);
+      if (reposted == false) newRepostedBy.remove(accountId);
+    }
+
+    posts[idx] = post.copyWith(
+      likedByAccountIds: newLikedBy,
+      repostedByAccountIds: newRepostedBy,
       likeCount: likeCount,
       repostCount: repostCount,
     );

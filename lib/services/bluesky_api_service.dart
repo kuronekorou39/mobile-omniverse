@@ -480,8 +480,6 @@ class BlueskyApiService {
 
     // Viewer state
     final viewer = post['viewer'] as Map<String, dynamic>? ?? {};
-    final isLiked = viewer['like'] != null;
-    final isReposted = viewer['repost'] != null;
     final bskyLikeUri = viewer['like'] as String?;
     final bskyRepostUri = viewer['repost'] as String?;
 
@@ -530,8 +528,8 @@ class BlueskyApiService {
       likeCount: likeCount,
       replyCount: replyCount,
       repostCount: repostCount,
-      isLiked: isLiked,
-      isReposted: isReposted,
+      likedByAccountIds: bskyLikeUri != null && accountId != null ? {accountId} : null,
+      repostedByAccountIds: bskyRepostUri != null && accountId != null ? {accountId} : null,
       imageUrls: imageUrls,
       videoUrl: videoUrl,
       videoThumbnailUrl: videoThumbnailUrl,
@@ -541,8 +539,8 @@ class BlueskyApiService {
       cid: postCid,
       quotedPost: quotedPost,
       isSensitive: isSensitive,
-      bskyLikeUri: bskyLikeUri,
-      bskyRepostUri: bskyRepostUri,
+      bskyLikeUris: bskyLikeUri != null && accountId != null ? {accountId: bskyLikeUri} : null,
+      bskyRepostUris: bskyRepostUri != null && accountId != null ? {accountId: bskyRepostUri} : null,
     );
   }
 

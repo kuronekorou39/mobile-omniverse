@@ -86,14 +86,19 @@ class _PostDetailScreenState extends ConsumerState<PostDetailScreen> {
       );
 
       // メイン投稿を基準に、親（文脈）とリプライを分離
-      final mainTimestamp = widget.post.timestamp;
-      final others = posts.where((p) => p.id != widget.post.id).toList();
-      final parents = others
-          .where((p) => !p.timestamp.isAfter(mainTimestamp))
+      // inReplyToId でメイン投稿への返信かどうかを判定（タイムスタンプより確実）
+      final mainId = widget.post.id;
+      final others = posts.where((p) => p.id != mainId).toList();
+      final replies = others
+          .where((p) => p.inReplyToId != null &&
+              (p.inReplyToId == mainId ||
+               p.inReplyToId == mainId.replaceFirst('x_', '') ||
+               p.inReplyToId == mainId.replaceFirst('bsky_', '')))
           .toList()
         ..sort((a, b) => a.timestamp.compareTo(b.timestamp)); // 古い順
-      final replies = others
-          .where((p) => p.timestamp.isAfter(mainTimestamp))
+      final replyIds = replies.map((p) => p.id).toSet();
+      final parents = others
+          .where((p) => !replyIds.contains(p.id))
           .toList()
         ..sort((a, b) => a.timestamp.compareTo(b.timestamp)); // 古い順
 
@@ -387,7 +392,7 @@ class _PostDetailScreenState extends ConsumerState<PostDetailScreen> {
               ),
               _buildActionWithCount(
                 icon: _AnimatedActionIcon(
-                  isActive: post.isReposted,
+                  engagementState: post.repostState(),
                   icon: Icons.repeat,
                   activeIcon: Icons.repeat_on,
                   activeColor: Colors.green,
@@ -399,7 +404,7 @@ class _PostDetailScreenState extends ConsumerState<PostDetailScreen> {
               ),
               _buildActionWithCount(
                 icon: _AnimatedActionIcon(
-                  isActive: post.isLiked,
+                  engagementState: post.likeState(),
                   icon: Icons.favorite_outline,
                   activeIcon: Icons.favorite,
                   activeColor: Colors.red,
@@ -510,33 +515,46 @@ class _PostDetailScreenState extends ConsumerState<PostDetailScreen> {
   }
 
   Future<Account?> _resolveAccount(Post post, String actionLabel) async {
-    bool? isEngaged;
-    if (actionLabel == 'いいね') isEngaged = post.isLiked;
-    else if (actionLabel == 'リポスト') isEngaged = post.isReposted;
     return showAccountPickerModal(
       context,
       service: post.source,
       actionLabel: actionLabel,
-      fetchedByAccountId: post.accountId,
-      isEngagedByFetcher: isEngaged,
+      fetchedByAccountIds: post.fetchedByAccountIds,
+      likedByAccountIds: post.likedByAccountIds,
+      repostedByAccountIds: post.repostedByAccountIds,
     );
   }
 
-  void _updatePost({bool? isLiked, int? likeCount, bool? isReposted, int? repostCount}) {
+  void _updatePost({
+    String? accountId,
+    bool? liked,
+    int? likeCount,
+    bool? reposted,
+    int? repostCount,
+  }) {
     setState(() {
+      var newLikedBy = Set<String>.of(_post.likedByAccountIds);
+      var newRepostedBy = Set<String>.of(_post.repostedByAccountIds);
+      if (accountId != null) {
+        if (liked == true) newLikedBy.add(accountId);
+        if (liked == false) newLikedBy.remove(accountId);
+        if (reposted == true) newRepostedBy.add(accountId);
+        if (reposted == false) newRepostedBy.remove(accountId);
+      }
       _post = _post.copyWith(
-        isLiked: isLiked ?? _post.isLiked,
+        likedByAccountIds: newLikedBy,
+        repostedByAccountIds: newRepostedBy,
         likeCount: likeCount ?? _post.likeCount,
-        isReposted: isReposted ?? _post.isReposted,
         repostCount: repostCount ?? _post.repostCount,
       );
     });
     // メインタイムラインのstateにも反映
     ref.read(feedProvider.notifier).updatePostEngagement(
       _post.id,
-      isLiked: isLiked,
+      accountId: accountId,
+      liked: liked,
       likeCount: likeCount,
-      isReposted: isReposted,
+      reposted: reposted,
       repostCount: repostCount,
     );
   }
@@ -545,17 +563,16 @@ class _PostDetailScreenState extends ConsumerState<PostDetailScreen> {
     final account = await _resolveAccount(post, 'いいね');
     if (account == null) return;
 
-    final isSameAccount = account.id == post.accountId;
-    final willUnlike = isSameAccount && post.isLiked;
+    final willUnlike = post.isLikedBy(account.id);
     final action = willUnlike ? ActivityAction.unlike : ActivityAction.like;
     final postSummary = post.body.length > 40 ? '${post.body.substring(0, 40)}…' : post.body;
 
-    if (isSameAccount) {
-      _updatePost(
-        isLiked: !post.isLiked,
-        likeCount: post.isLiked ? post.likeCount - 1 : post.likeCount + 1,
-      );
-    }
+    // 楽観的UIトグル
+    _updatePost(
+      accountId: account.id,
+      liked: !willUnlike,
+      likeCount: willUnlike ? post.likeCount - 1 : post.likeCount + 1,
+    );
 
     try {
       bool success = false;
@@ -574,8 +591,9 @@ class _PostDetailScreenState extends ConsumerState<PostDetailScreen> {
       } else if (post.source == SnsService.bluesky) {
         final creds = account.blueskyCredentials;
         if (willUnlike) {
-          if (post.bskyLikeUri != null) {
-            success = await BlueskyApiService.instance.unlikePost(creds, post.bskyLikeUri!);
+          final likeUri = post.bskyLikeUriFor(account.id);
+          if (likeUri != null) {
+            success = await BlueskyApiService.instance.unlikePost(creds, likeUri);
           }
         } else {
           final postUri = post.uri;
@@ -600,17 +618,13 @@ class _PostDetailScreenState extends ConsumerState<PostDetailScreen> {
       );
 
       if (!success && mounted) {
-        if (isSameAccount) {
-          _updatePost(isLiked: post.isLiked, likeCount: post.likeCount);
-        }
+        _updatePost(accountId: account.id, liked: willUnlike, likeCount: post.likeCount);
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('いいねに失敗しました')),
         );
       }
     } catch (e) {
-      if (isSameAccount) {
-        _updatePost(isLiked: post.isLiked, likeCount: post.likeCount);
-      }
+      _updatePost(accountId: account.id, liked: willUnlike, likeCount: post.likeCount);
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('いいねに失敗: $e')),
@@ -623,17 +637,16 @@ class _PostDetailScreenState extends ConsumerState<PostDetailScreen> {
     final account = await _resolveAccount(post, 'リポスト');
     if (account == null) return;
 
-    final isSameAccount = account.id == post.accountId;
-    final willUnrepost = isSameAccount && post.isReposted;
+    final willUnrepost = post.isRepostedBy(account.id);
     final action = willUnrepost ? ActivityAction.unrepost : ActivityAction.repost;
     final postSummary = post.body.length > 40 ? '${post.body.substring(0, 40)}…' : post.body;
 
-    if (isSameAccount) {
-      _updatePost(
-        isReposted: !post.isReposted,
-        repostCount: post.isReposted ? post.repostCount - 1 : post.repostCount + 1,
-      );
-    }
+    // 楽観的UIトグル
+    _updatePost(
+      accountId: account.id,
+      reposted: !willUnrepost,
+      repostCount: willUnrepost ? post.repostCount - 1 : post.repostCount + 1,
+    );
 
     try {
       bool success = false;
@@ -652,8 +665,9 @@ class _PostDetailScreenState extends ConsumerState<PostDetailScreen> {
       } else if (post.source == SnsService.bluesky) {
         final creds = account.blueskyCredentials;
         if (willUnrepost) {
-          if (post.bskyRepostUri != null) {
-            success = await BlueskyApiService.instance.deleteRepost(creds, post.bskyRepostUri!);
+          final repostUri = post.bskyRepostUriFor(account.id);
+          if (repostUri != null) {
+            success = await BlueskyApiService.instance.deleteRepost(creds, repostUri);
           }
         } else {
           final postUri = post.uri;
@@ -678,17 +692,13 @@ class _PostDetailScreenState extends ConsumerState<PostDetailScreen> {
       );
 
       if (!success && mounted) {
-        if (isSameAccount) {
-          _updatePost(isReposted: post.isReposted, repostCount: post.repostCount);
-        }
+        _updatePost(accountId: account.id, reposted: willUnrepost, repostCount: post.repostCount);
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('リポストに失敗しました')),
         );
       }
     } catch (e) {
-      if (isSameAccount) {
-        _updatePost(isReposted: post.isReposted, repostCount: post.repostCount);
-      }
+      _updatePost(accountId: account.id, reposted: willUnrepost, repostCount: post.repostCount);
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('リポストに失敗: $e')),
@@ -705,7 +715,7 @@ class _PostDetailScreenState extends ConsumerState<PostDetailScreen> {
 
 class _AnimatedActionIcon extends StatefulWidget {
   const _AnimatedActionIcon({
-    required this.isActive,
+    this.engagementState = EngagementState.none,
     required this.icon,
     required this.activeIcon,
     required this.activeColor,
@@ -713,7 +723,7 @@ class _AnimatedActionIcon extends StatefulWidget {
     this.size = 24.0,
   });
 
-  final bool isActive;
+  final EngagementState engagementState;
   final IconData icon;
   final IconData activeIcon;
   final Color activeColor;
@@ -763,15 +773,27 @@ class _AnimatedActionIconState extends State<_AnimatedActionIcon>
   @override
   void didUpdateWidget(covariant _AnimatedActionIcon oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (widget.isActive != oldWidget.isActive) {
-      if (widget.isActive) {
+    if (widget.engagementState != oldWidget.engagementState) {
+      final oldState = oldWidget.engagementState;
+      final newState = widget.engagementState;
+      if (newState == EngagementState.all && oldState != EngagementState.all) {
+        // none/partial -> all: activate animation
         _scaleAnimation = _buildActivateScale();
         _scaleController.forward(from: 0);
         if (widget.useRotation) {
           _rotateForward = true;
           _rotationController.forward(from: 0);
         }
-      } else {
+      } else if (newState == EngagementState.partial && oldState == EngagementState.none) {
+        // none -> partial: activate animation
+        _scaleAnimation = _buildActivateScale();
+        _scaleController.forward(from: 0);
+        if (widget.useRotation) {
+          _rotateForward = true;
+          _rotationController.forward(from: 0);
+        }
+      } else if (newState == EngagementState.none && oldState != EngagementState.none) {
+        // all/partial -> none: deactivate animation
         _scaleAnimation = _buildDeactivateScale();
         _scaleController.forward(from: 0);
         if (widget.useRotation) {
@@ -791,8 +813,19 @@ class _AnimatedActionIconState extends State<_AnimatedActionIcon>
 
   @override
   Widget build(BuildContext context) {
-    final iconData = widget.isActive ? widget.activeIcon : widget.icon;
-    final color = widget.isActive ? widget.activeColor : null;
+    final IconData iconData;
+    final Color? color;
+    switch (widget.engagementState) {
+      case EngagementState.all:
+        iconData = widget.activeIcon;
+        color = widget.activeColor;
+      case EngagementState.partial:
+        iconData = widget.icon; // outline icon
+        color = widget.activeColor; // colored outline
+      case EngagementState.none:
+        iconData = widget.icon;
+        color = null;
+    }
 
     return AnimatedBuilder(
       animation: Listenable.merge([_scaleAnimation, _rotationController]),

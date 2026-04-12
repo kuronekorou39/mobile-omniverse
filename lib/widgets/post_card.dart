@@ -503,7 +503,7 @@ class PostCard extends StatelessWidget {
           onTap: onRepost != null
               ? () => _showRepostMenu(context)
               : null,
-          isActive: post.isReposted,
+          engagementState: post.repostState(),
           activeColor: Colors.green,
           useRotation: true,
         ),
@@ -517,7 +517,7 @@ class PostCard extends StatelessWidget {
           fontSize: fontSize,
           compact: compact,
           onTap: onLike,
-          isActive: post.isLiked,
+          engagementState: post.likeState(),
           activeIcon: Icons.favorite,
           activeColor: Colors.red,
         ),
@@ -581,7 +581,7 @@ class _EngagementButton extends StatefulWidget {
     required this.iconSize,
     required this.fontSize,
     this.onTap,
-    this.isActive = false,
+    this.engagementState = EngagementState.none,
     this.activeIcon,
     this.activeColor,
     this.useRotation = false,
@@ -594,7 +594,7 @@ class _EngagementButton extends StatefulWidget {
   final double iconSize;
   final double fontSize;
   final VoidCallback? onTap;
-  final bool isActive;
+  final EngagementState engagementState;
   final IconData? activeIcon;
   final Color? activeColor;
   final bool useRotation;
@@ -643,15 +643,27 @@ class _EngagementButtonState extends State<_EngagementButton>
   @override
   void didUpdateWidget(covariant _EngagementButton oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (widget.isActive != oldWidget.isActive) {
-      if (widget.isActive) {
+    if (widget.engagementState != oldWidget.engagementState) {
+      final oldState = oldWidget.engagementState;
+      final newState = widget.engagementState;
+      if (newState == EngagementState.all && oldState != EngagementState.all) {
+        // none/partial -> all: activate animation
         _scaleAnimation = _buildActivateScale();
         _scaleController.forward(from: 0);
         if (widget.useRotation) {
           _rotateForward = true;
           _rotationController.forward(from: 0);
         }
-      } else {
+      } else if (newState == EngagementState.partial && oldState == EngagementState.none) {
+        // none -> partial: activate animation
+        _scaleAnimation = _buildActivateScale();
+        _scaleController.forward(from: 0);
+        if (widget.useRotation) {
+          _rotateForward = true;
+          _rotationController.forward(from: 0);
+        }
+      } else if (newState == EngagementState.none && oldState != EngagementState.none) {
+        // all/partial -> none: deactivate animation
         _scaleAnimation = _buildDeactivateScale();
         _scaleController.forward(from: 0);
         if (widget.useRotation) {
@@ -676,8 +688,19 @@ class _EngagementButtonState extends State<_EngagementButton>
 
   @override
   Widget build(BuildContext context) {
-    final iconData = widget.isActive ? (widget.activeIcon ?? widget.icon) : widget.icon;
-    final iconColor = widget.isActive ? (widget.activeColor ?? widget.color) : widget.color;
+    final IconData iconData;
+    final Color iconColor;
+    switch (widget.engagementState) {
+      case EngagementState.all:
+        iconData = widget.activeIcon ?? widget.icon;
+        iconColor = widget.activeColor ?? widget.color;
+      case EngagementState.partial:
+        iconData = widget.icon; // outline icon
+        iconColor = widget.activeColor ?? widget.color; // colored outline
+      case EngagementState.none:
+        iconData = widget.icon;
+        iconColor = widget.color;
+    }
 
     return InkWell(
       borderRadius: BorderRadius.circular(20),

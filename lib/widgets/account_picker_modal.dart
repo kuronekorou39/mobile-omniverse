@@ -8,11 +8,11 @@ import 'sns_badge.dart';
 Widget? _buildEngagementIndicator(
   BuildContext context, {
   required String actionLabel,
+  required String accountId,
   required bool isFetcher,
-  bool? isEngaged,
+  required Set<String> likedByAccountIds,
+  required Set<String> repostedByAccountIds,
 }) {
-  if (isEngaged == null) return null;
-
   // リプライにはステータス表示不要
   final isLikeAction = actionLabel == 'いいね';
   final isRepostAction = actionLabel == 'リポスト';
@@ -23,12 +23,14 @@ Widget? _buildEngagementIndicator(
   }
 
   if (isLikeAction) {
+    final isEngaged = likedByAccountIds.contains(accountId);
     return Icon(
       isEngaged ? Icons.favorite : Icons.favorite_outline,
       size: 18,
       color: isEngaged ? Colors.red : Colors.grey[400],
     );
   }
+  final isEngaged = repostedByAccountIds.contains(accountId);
   return Icon(
     isEngaged ? Icons.repeat_on : Icons.repeat,
     size: 18,
@@ -38,14 +40,16 @@ Widget? _buildEngagementIndicator(
 
 /// いいね/RT/リプライ時にどのアカウントで実行するかを選択するモーダル
 /// 同じサービスの有効なアカウント一覧を表示する
-/// [fetchedByAccountId] は投稿を取得したアカウントID（マーク表示用）
-/// [isEngagedByFetcher] は取得元アカウントのエンゲージメント状態（いいね済み/RT済み等）
+/// [fetchedByAccountIds] は投稿を取得したアカウントIDのセット（マーク表示用）
+/// [likedByAccountIds] はいいね済みアカウントIDのセット
+/// [repostedByAccountIds] はリポスト済みアカウントIDのセット
 Future<Account?> showAccountPickerModal(
   BuildContext context, {
   required SnsService service,
   required String actionLabel,
-  String? fetchedByAccountId,
-  bool? isEngagedByFetcher,
+  Set<String> fetchedByAccountIds = const {},
+  Set<String> likedByAccountIds = const {},
+  Set<String> repostedByAccountIds = const {},
 }) async {
   final accounts = AccountStorageService.instance.accounts
       .where((a) => a.service == service && a.isEnabled)
@@ -90,7 +94,7 @@ Future<Account?> showAccountPickerModal(
                   ),
                   const SizedBox(width: 8),
                   SnsBadge(service: account.service),
-                  if (account.id == fetchedByAccountId) ...[
+                  if (fetchedByAccountIds.contains(account.id)) ...[
                     const SizedBox(width: 6),
                     Icon(Icons.arrow_back, size: 14,
                         color: Theme.of(ctx).colorScheme.primary),
@@ -104,8 +108,10 @@ Future<Account?> showAccountPickerModal(
               trailing: _buildEngagementIndicator(
                 ctx,
                 actionLabel: actionLabel,
-                isFetcher: account.id == fetchedByAccountId,
-                isEngaged: isEngagedByFetcher,
+                accountId: account.id,
+                isFetcher: fetchedByAccountIds.contains(account.id),
+                likedByAccountIds: likedByAccountIds,
+                repostedByAccountIds: repostedByAccountIds,
               ),
               onTap: () => Navigator.of(ctx).pop(account),
             ),

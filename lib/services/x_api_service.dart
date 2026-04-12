@@ -1599,8 +1599,8 @@ class XApiService {
       final likeCount = legacy['favorite_count'] as int? ?? 0;
       final repostCount = legacy['retweet_count'] as int? ?? 0;
       final replyCount = legacy['reply_count'] as int? ?? 0;
-      final isLiked = legacy['favorited'] as bool? ?? false;
-      final isReposted = legacy['retweeted'] as bool? ?? false;
+      final isFavorited = legacy['favorited'] as bool? ?? false;
+      final isRetweeted = legacy['retweeted'] as bool? ?? false;
 
       // Reply info
       final inReplyToId = legacy['in_reply_to_status_id_str'] as String?;
@@ -1697,8 +1697,8 @@ class XApiService {
         likeCount: likeCount,
         repostCount: repostCount,
         replyCount: replyCount,
-        isLiked: isLiked,
-        isReposted: isReposted,
+        likedByAccountIds: isFavorited && accountId != null ? {accountId} : null,
+        repostedByAccountIds: isRetweeted && accountId != null ? {accountId} : null,
         imageUrls: imageUrls,
         videoUrl: videoUrl,
         videoThumbnailUrl: videoThumbnailUrl,

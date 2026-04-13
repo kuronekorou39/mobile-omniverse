@@ -5,6 +5,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../utils/image_headers.dart';
 import 'debug_log_service.dart';
+import 'x_endpoints.dart';
 
 /// X の公開 Bearer Token を管理するサービス
 /// SharedPreferences キャッシュ → JSバンドル自動取得
@@ -48,7 +49,7 @@ class XBearerTokenService {
       if (cookie != null) headers['Cookie'] = cookie;
 
       final response = await client.get(
-        Uri.parse('https://x.com/home'),
+        Uri.parse(XEndpoints.home),
         headers: headers,
       );
 

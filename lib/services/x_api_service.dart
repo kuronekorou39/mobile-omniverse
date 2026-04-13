@@ -11,6 +11,7 @@ import '../models/sns_service.dart';
 import '../utils/image_headers.dart';
 import 'debug_log_service.dart';
 import 'x_bearer_token_service.dart';
+import 'x_endpoints.dart';
 import 'x_features.dart';
 import 'x_query_id_service.dart';
 
@@ -154,7 +155,7 @@ class XApiService {
     try {
       // account/settings.json は404を返すため、通知件数API（軽量GET）で代替
       final uri = Uri.parse(
-          'https://x.com/i/api/2/badge_count/badge_count.json?supports_ntab_urt=1');
+          XEndpoints.badgeCount);
       final response = await _client.get(uri, headers: _buildHeaders(creds));
 
       debugPrint('[XApi] warmCookies: status=${response.statusCode}');
@@ -256,7 +257,7 @@ class XApiService {
       final features = json.encode(XFeatures.timeline);
 
       final uri = Uri.parse(
-        'https://x.com/i/api/graphql/$queryId/HomeLatestTimeline'
+        '${XEndpoints.graphqlBase}/$queryId/HomeLatestTimeline'
         '?variables=${Uri.encodeComponent(variables)}'
         '&features=${Uri.encodeComponent(features)}',
       );
@@ -321,7 +322,7 @@ class XApiService {
       final features = json.encode(XFeatures.timeline);
 
       final uri = Uri.parse(
-        'https://x.com/i/api/graphql/$queryId/TweetDetail'
+        '${XEndpoints.graphqlBase}/$queryId/TweetDetail'
         '?variables=${Uri.encodeComponent(variables)}'
         '&features=${Uri.encodeComponent(features)}',
       );
@@ -394,7 +395,7 @@ class XApiService {
     final queryId = _getMutationQueryId('FavoriteTweet', creds);
     final warmedCookies = await _warmCookies(creds);
     final uri =
-        Uri.parse('https://x.com/i/api/graphql/$queryId/FavoriteTweet');
+        Uri.parse('${XEndpoints.graphqlBase}/$queryId/FavoriteTweet');
     final hdrs = _buildHeaders(creds, cookieOverride: warmedCookies);
     final reqBody = json.encode({
       'variables': {'tweet_id': tweetId},
@@ -419,7 +420,7 @@ class XApiService {
     final queryId = _getMutationQueryId('UnfavoriteTweet', creds);
     final warmedCookies = await _warmCookies(creds);
     final uri =
-        Uri.parse('https://x.com/i/api/graphql/$queryId/UnfavoriteTweet');
+        Uri.parse('${XEndpoints.graphqlBase}/$queryId/UnfavoriteTweet');
     final hdrs = _buildHeaders(creds, cookieOverride: warmedCookies);
     final reqBody = json.encode({
       'variables': {'tweet_id': tweetId},
@@ -444,7 +445,7 @@ class XApiService {
     final queryId = _getMutationQueryId('CreateRetweet', creds);
     final warmedCookies = await _warmCookies(creds);
     final uri =
-        Uri.parse('https://x.com/i/api/graphql/$queryId/CreateRetweet');
+        Uri.parse('${XEndpoints.graphqlBase}/$queryId/CreateRetweet');
     final hdrs = _buildHeaders(creds, cookieOverride: warmedCookies);
     final reqBody = json.encode({
       'variables': {'tweet_id': tweetId},
@@ -469,7 +470,7 @@ class XApiService {
     final queryId = _getMutationQueryId('DeleteRetweet', creds);
     final warmedCookies = await _warmCookies(creds);
     final uri =
-        Uri.parse('https://x.com/i/api/graphql/$queryId/DeleteRetweet');
+        Uri.parse('${XEndpoints.graphqlBase}/$queryId/DeleteRetweet');
     final hdrs = _buildHeaders(creds, cookieOverride: warmedCookies);
     final reqBody = json.encode({
       'variables': {'source_tweet_id': tweetId},
@@ -501,7 +502,7 @@ class XApiService {
       final features = json.encode(XFeatures.userProfile);
 
       final uri = Uri.parse(
-        'https://x.com/i/api/graphql/$queryId/UserByScreenName'
+        '${XEndpoints.graphqlBase}/$queryId/UserByScreenName'
         '?variables=${Uri.encodeComponent(variables)}'
         '&features=${Uri.encodeComponent(features)}',
       );
@@ -589,7 +590,7 @@ class XApiService {
       final features = json.encode(XFeatures.timeline);
 
       final uri = Uri.parse(
-        'https://x.com/i/api/graphql/$queryId/UserTweets'
+        '${XEndpoints.graphqlBase}/$queryId/UserTweets'
         '?variables=${Uri.encodeComponent(variables)}'
         '&features=${Uri.encodeComponent(features)}',
       );
@@ -781,7 +782,7 @@ class XApiService {
     // --- GraphQL CreateTweet ---
     final queryId = _getMutationQueryId('CreateTweet', creds);
     final gqlUri =
-        Uri.parse('https://x.com/i/api/graphql/$queryId/CreateTweet');
+        Uri.parse('${XEndpoints.graphqlBase}/$queryId/CreateTweet');
     final headers = _buildHeaders(creds, cookieOverride: warmedCookies);
 
     // リクエスト詳細を構築（アクティビティログ用）
@@ -1032,7 +1033,7 @@ class XApiService {
       final features = json.encode(XFeatures.timeline);
 
       final uri = Uri.parse(
-        'https://x.com/i/api/graphql/$queryId/$opName'
+        '${XEndpoints.graphqlBase}/$queryId/$opName'
         '?variables=${Uri.encodeComponent(variables)}'
         '&features=${Uri.encodeComponent(features)}',
       );
@@ -1208,7 +1209,7 @@ class XApiService {
       'ext': 'mediaStats,highlightedLabel,parodyCommentaryFanLabel,hasNftAvatar,voiceInfo,birdwatchPivot,superFollowMetadata,unmentionInfo,editControl',
     };
 
-    final uri = Uri.https('x.com', '/i/api/2/notifications/all.json', params);
+    final uri = Uri.https('x.com', XEndpoints.notificationsAll, params);
 
     final hdrs = _buildHeaders(creds);
     final sw = Stopwatch()..start();

@@ -7,6 +7,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/account.dart';
 import '../utils/image_headers.dart';
+import 'x_endpoints.dart';
 
 /// X の GraphQL queryId を管理するサービス
 /// JS バンドルから最新の queryId を取得してキャッシュする
@@ -134,7 +135,7 @@ class XQueryIdService {
 
       final client = httpClientOverride ?? http.Client();
       final htmlResponse = await client.get(
-        Uri.parse('https://x.com/home'),
+        Uri.parse(XEndpoints.home),
         headers: headers,
       );
 

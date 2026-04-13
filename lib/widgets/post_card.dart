@@ -30,6 +30,7 @@ class PostCard extends StatelessWidget {
     this.hideUserInfo = false,
     this.threadImageUrls,
     this.threadIndexOffset = 0,
+    this.useSeparatorStyle = false,
   });
 
   final Post post;
@@ -46,6 +47,7 @@ class PostCard extends StatelessWidget {
   final bool hideUserInfo;
   final List<String>? threadImageUrls;
   final int threadIndexOffset;
+  final bool useSeparatorStyle;
 
   String _formatTimestamp(DateTime timestamp) {
     final diff = DateTime.now().difference(timestamp);
@@ -90,6 +92,21 @@ class PostCard extends StatelessWidget {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
 
+    if (useSeparatorStyle) {
+      return Column(
+        children: [
+          InkWell(
+            onTap: onTap,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+              child: _buildContent(context),
+            ),
+          ),
+          Divider(height: 1, thickness: 0.5, color: Colors.grey.withAlpha(40)),
+        ],
+      );
+    }
+
     return Card(
       margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
       elevation: 0,
@@ -102,7 +119,16 @@ class PostCard extends StatelessWidget {
         onTap: onTap,
         child: Padding(
           padding: const EdgeInsets.all(12),
-          child: Column(
+          child: _buildContent(context),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildContent(BuildContext context) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+    return Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               // RT header
@@ -212,10 +238,7 @@ class PostCard extends StatelessWidget {
               SizedBox(height: compactEngagement ? 8 : 12),
               _buildEngagementRow(context),
             ],
-          ),
-        ),
-      ),
-    );
+          );
   }
 
   Widget _buildRetweetHeader(BuildContext context) {

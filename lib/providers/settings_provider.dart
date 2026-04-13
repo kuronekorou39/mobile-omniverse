@@ -43,6 +43,7 @@ enum SensitiveMode {
 
 /// FABの表示位置
 enum FabPosition { right, left }
+enum PostCardStyle { card, separator }
 
 class SettingsState {
   const SettingsState({
@@ -59,6 +60,7 @@ class SettingsState {
     this.fontFamily = '',
     this.appBarButtons = const {},
     this.fabPosition = FabPosition.right,
+    this.postCardStyle = PostCardStyle.card,
     this.dripIntervalMs = 1500,
     this.debugLogEnabled = false,
     this.showPerfOverlay = false,
@@ -91,6 +93,7 @@ class SettingsState {
   final Set<String> appBarButtons;
   /// FABの表示位置
   final FabPosition fabPosition;
+  final PostCardStyle postCardStyle;
   /// ドリップ間隔（ミリ秒）
   final int dripIntervalMs;
   /// デバッグログを記録するか
@@ -116,6 +119,7 @@ class SettingsState {
     String? fontFamily,
     Set<String>? appBarButtons,
     FabPosition? fabPosition,
+    PostCardStyle? postCardStyle,
     int? dripIntervalMs,
     bool? debugLogEnabled,
     bool? showPerfOverlay,
@@ -136,6 +140,7 @@ class SettingsState {
       fontFamily: fontFamily ?? this.fontFamily,
       appBarButtons: appBarButtons ?? this.appBarButtons,
       fabPosition: fabPosition ?? this.fabPosition,
+      postCardStyle: postCardStyle ?? this.postCardStyle,
       dripIntervalMs: dripIntervalMs ?? this.dripIntervalMs,
       debugLogEnabled: debugLogEnabled ?? this.debugLogEnabled,
       showPerfOverlay: showPerfOverlay ?? this.showPerfOverlay,
@@ -201,6 +206,7 @@ class SettingsNotifier extends StateNotifier<SettingsState> {
       fontFamily: fontFamily ?? d.fontFamily,
       appBarButtons: prefs.getStringList(_keyAppBarButtons)?.toSet() ?? d.appBarButtons,
       fabPosition: FabPosition.values[(prefs.getInt('settings_fab_position') ?? d.fabPosition.index).clamp(0, 1)],
+      postCardStyle: PostCardStyle.values[(prefs.getInt('settings_post_card_style') ?? d.postCardStyle.index).clamp(0, 1)],
       dripIntervalMs: prefs.getInt('settings_drip_interval_ms') ?? d.dripIntervalMs,
       debugLogEnabled: prefs.getBool('settings_debug_log_enabled') ?? d.debugLogEnabled,
       showPerfOverlay: prefs.getBool('settings_show_perf_overlay') ?? d.showPerfOverlay,
@@ -235,6 +241,7 @@ class SettingsNotifier extends StateNotifier<SettingsState> {
     await prefs.setString(_keyFontFamily, state.fontFamily);
     await prefs.setStringList(_keyAppBarButtons, state.appBarButtons.toList());
     await prefs.setInt('settings_fab_position', state.fabPosition.index);
+    await prefs.setInt('settings_post_card_style', state.postCardStyle.index);
     await prefs.setInt('settings_drip_interval_ms', state.dripIntervalMs);
     await prefs.setBool('settings_debug_log_enabled', state.debugLogEnabled);
     await prefs.setBool('settings_show_perf_overlay', state.showPerfOverlay);
@@ -338,6 +345,11 @@ class SettingsNotifier extends StateNotifier<SettingsState> {
 
   void setFabPosition(FabPosition position) {
     state = state.copyWith(fabPosition: position);
+    _saveToPrefs();
+  }
+
+  void setPostCardStyle(PostCardStyle style) {
+    state = state.copyWith(postCardStyle: style);
     _saveToPrefs();
   }
 

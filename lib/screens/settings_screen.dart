@@ -133,6 +133,22 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
               ),
             ),
           ),
+          ListTile(
+            title: const Text('投稿スタイル'),
+            trailing: SegmentedButton<PostCardStyle>(
+              showSelectedIcon: false,
+              segments: const [
+                ButtonSegment(value: PostCardStyle.card, label: Text('カード')),
+                ButtonSegment(value: PostCardStyle.separator, label: Text('セパレート')),
+              ],
+              selected: {settings.postCardStyle},
+              onSelectionChanged: (value) =>
+                  notifier.setPostCardStyle(value.first),
+              style: const ButtonStyle(
+                visualDensity: VisualDensity.compact,
+              ),
+            ),
+          ),
 
           const Divider(),
 

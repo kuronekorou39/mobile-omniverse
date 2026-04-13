@@ -1039,6 +1039,7 @@ class _OmniFeedScreenState extends ConsumerState<OmniFeedScreen>
               imageGridHeight: settings.imagePreviewSize.gridImageHeight,
               videoHeight: settings.imagePreviewSize.videoHeight,
               hideUserInfo: settings.hideUserInfo,
+              useSeparatorStyle: settings.postCardStyle == PostCardStyle.separator,
               onQuoteRepost: () async {
                 final posted = await Navigator.of(context).push<bool>(
                   MaterialPageRoute(

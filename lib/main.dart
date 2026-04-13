@@ -27,7 +27,7 @@ void main() async {
   await XBearerTokenService.instance.init();
   await XQueryIdService.instance.init();
   await DebugLogService.instance.init();
-  await NotificationCacheService.instance.loadRenderedIds();
+  await NotificationCacheService.instance.loadReadLines();
   runApp(const ProviderScope(child: OmniVerseApp()));
 }
 

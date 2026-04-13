@@ -24,6 +24,7 @@ import '../services/x_bearer_token_service.dart';
 import '../services/x_query_id_service.dart';
 import '../widgets/update_dialog.dart';
 import 'activity_log_screen.dart';
+import 'query_id_screen.dart';
 
 class SettingsScreen extends ConsumerStatefulWidget {
   const SettingsScreen({super.key});
@@ -307,17 +308,6 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             title: const Text('アップデート確認'),
             onTap: _checkForUpdate,
           ),
-          ListTile(
-            leading: const Icon(Icons.receipt_long_outlined),
-            title: const Text('アクションログ'),
-            trailing: const Icon(Icons.chevron_right),
-            onTap: () {
-              Navigator.of(context).push(
-                MaterialPageRoute(builder: (_) => const ActivityLogScreen()),
-              );
-            },
-          ),
-
           const Divider(),
 
           // ── デバッグ ──
@@ -325,6 +315,27 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             leading: const Icon(Icons.bug_report_outlined),
             title: const Text('デバッグ'),
             children: [
+              ListTile(
+                leading: const Icon(Icons.receipt_long_outlined),
+                title: const Text('アクションログ'),
+                trailing: const Icon(Icons.chevron_right),
+                onTap: () {
+                  Navigator.of(context).push(
+                    MaterialPageRoute(builder: (_) => const ActivityLogScreen()),
+                  );
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.key_outlined),
+                title: const Text('queryId 管理'),
+                trailing: const Icon(Icons.chevron_right),
+                onTap: () {
+                  Navigator.of(context).push(
+                    MaterialPageRoute(builder: (_) => const QueryIdScreen()),
+                  );
+                },
+              ),
+              const Divider(),
               SwitchListTile(
                 title: const Text('タイムライン取得'),
                 subtitle: Text(settings.isFetchingActive ? '実行中' : '停止中'),

@@ -145,15 +145,26 @@ class BlueskyApiService {
       posts.add(parsePostObject(post, accountId));
     }
 
-    // Replies
+    // Replies（再帰的に展開）
     final replies = thread['replies'] as List<dynamic>?;
     if (replies != null) {
       for (final reply in replies) {
         final replyMap = reply as Map<String, dynamic>;
         if (replyMap['\$type'] == 'app.bsky.feed.defs#threadViewPost') {
+          // 再帰呼び出しで子リプライも展開（parentは辿らない）
           final replyPost = replyMap['post'] as Map<String, dynamic>?;
           if (replyPost != null) {
             posts.add(parsePostObject(replyPost, accountId));
+          }
+          // 子リプライ
+          final childReplies = replyMap['replies'] as List<dynamic>?;
+          if (childReplies != null) {
+            for (final child in childReplies) {
+              final childMap = child as Map<String, dynamic>;
+              if (childMap['\$type'] == 'app.bsky.feed.defs#threadViewPost') {
+                flattenThread({'post': childMap['post'], 'replies': childMap['replies']}, posts, accountId);
+              }
+            }
           }
         }
       }

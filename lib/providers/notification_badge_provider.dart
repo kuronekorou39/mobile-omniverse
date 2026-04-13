@@ -75,13 +75,5 @@ class NotificationBadgeNotifier extends StateNotifier<Set<String>> {
   /// 通知画面を開いたとき、バッジを消して既読マーク
   Future<void> markSeen() async {
     state = {};
-
-    final accounts = AccountStorageService.instance.accounts
-        .where((a) => a.isEnabled)
-        .toList();
-
-    for (final account in accounts) {
-      _cache.markSeen(account.id);
-    }
   }
 }

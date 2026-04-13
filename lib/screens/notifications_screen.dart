@@ -29,10 +29,13 @@ class _NotificationFetchResult {
     this.cursor,
     this.responseSnippet,
     this.updatedCreds,
+    this.gqlOk = true,
   });
   final List<NotificationItem> notifications;
   final String? cursor;
   final String? responseSnippet;
+  /// GraphQL通知（リプライ/メンション）の取得が成功したか
+  final bool gqlOk;
   /// Bluesky のトークン更新があった場合
   final Object? updatedCreds;
 }
@@ -62,9 +65,9 @@ Future<_NotificationFetchResult> fetchAccountNotifications(
     ]);
     final notifResult = results[0]
         as ({List<NotificationItem> notifications, String? cursor, String? responseSnippet});
-    final gqlNotifs = results[1] as List<NotificationItem>;
+    final gqlResult = results[1] as ({List<NotificationItem> notifications, bool ok});
 
-    final merged = [...notifResult.notifications, ...gqlNotifs];
+    final merged = [...notifResult.notifications, ...gqlResult.notifications];
     final seen = <String>{};
     merged.retainWhere((n) => seen.add(n.id));
     merged.sort((a, b) => b.timestamp.compareTo(a.timestamp));
@@ -73,6 +76,7 @@ Future<_NotificationFetchResult> fetchAccountNotifications(
       notifications: merged,
       cursor: notifResult.cursor,
       responseSnippet: notifResult.responseSnippet,
+      gqlOk: gqlResult.ok,
     );
   } else {
     // Bluesky
@@ -398,6 +402,7 @@ class _NotificationListState extends ConsumerState<_NotificationList>
   bool _isLoadingMore = false;
   bool _isFetching = false;
   bool _gqlFailed = false;
+  late DateTime _readLine;
 
   /// フィルタ: 非表示にするタイプ（空 = 全表示）
   final Set<NotificationType> _hiddenTypes = {};
@@ -420,6 +425,7 @@ class _NotificationListState extends ConsumerState<_NotificationList>
   @override
   void initState() {
     super.initState();
+    _readLine = _cacheService.openTab(widget.account.id);
     // キャッシュがあれば即表示
     if (_cacheService.hasData(widget.account.id)) {
       _notifications.addAll(_cacheService.get(widget.account.id));
@@ -457,11 +463,9 @@ class _NotificationListState extends ConsumerState<_NotificationList>
       final fetched = result.notifications;
       final newCursor = result.cursor;
 
-      // GraphQL通知（リプライ/メンション）が取得できたかチェック
+      // GraphQL通知の取得結果で判定
       if (widget.account.service == SnsService.x) {
-        final hasReply = fetched.any((n) =>
-            n.type == NotificationType.reply || n.type == NotificationType.mention);
-        _gqlFailed = !hasReply && fetched.isNotEmpty;
+        _gqlFailed = !result.gqlOk;
       }
 
       if (result.updatedCreds != null) {
@@ -472,19 +476,22 @@ class _NotificationListState extends ConsumerState<_NotificationList>
       if (!mounted) return;
 
       if (isRefresh) {
-        // 既存のIDセットと比較して新しい通知だけを挿入
+        // 既存 + 新規をマージして時系列ソート
         final existingIds = _notifications.map((n) => n.id).toSet();
         final newItems = fetched.where((n) => !existingIds.contains(n.id)).toList();
         if (newItems.isNotEmpty) {
+          _notifications.addAll(newItems);
+          _notifications.sort((a, b) => b.timestamp.compareTo(a.timestamp));
+          // AnimatedList を全件リビルド
           for (var i = 0; i < newItems.length; i++) {
-            _notifications.insert(i, newItems[i]);
-            _listKey.currentState?.insertItem(i,
+            final idx = _notifications.indexOf(newItems[i]);
+            _listKey.currentState?.insertItem(idx,
                 duration: const Duration(milliseconds: 300));
           }
         }
         setState(() => _cursor = newCursor);
       } else {
-        // 初回ロード: 全件セット
+        // 初回ロード: 全件セット（fetchedはソート済み）
         _notifications.addAll(fetched);
         setState(() {
           _cursor = newCursor;
@@ -675,6 +682,7 @@ class _NotificationListState extends ConsumerState<_NotificationList>
             }
           }),
         ),
+        Divider(height: 1, thickness: 0.5, color: Colors.grey.withAlpha(40)),
 
         // 通知リスト
         Expanded(
@@ -689,7 +697,8 @@ class _NotificationListState extends ConsumerState<_NotificationList>
                       return _NotificationTile(
                         notification: n,
                         account: widget.account,
-                        isNew: _cacheService.isNew(widget.account.id, n.id),
+                        isNew: n.timestamp.isAfter(_readLine),
+                        showSnsBadge: false,
                       );
                     },
                   )
@@ -711,7 +720,8 @@ class _NotificationListState extends ConsumerState<_NotificationList>
                         child: _NotificationTile(
                           notification: n,
                           account: widget.account,
-                          isNew: _cacheService.isNew(widget.account.id, n.id),
+                          isNew: n.timestamp.isAfter(_readLine),
+                          showSnsBadge: false,
                         ),
                       );
                     },
@@ -729,11 +739,13 @@ class _NotificationTile extends StatefulWidget {
     required this.account,
     this.isNew = false,
     this.showRecipient = false,
+    this.showSnsBadge = true,
   });
   final NotificationItem notification;
   final Account account;
   final bool isNew;
   final bool showRecipient;
+  final bool showSnsBadge;
 
   @override
   State<_NotificationTile> createState() => _NotificationTileState();
@@ -750,13 +762,6 @@ class _NotificationTileState extends State<_NotificationTile> {
   void initState() {
     super.initState();
     _activateHighlight();
-    // 描画済みとして記録（次回以降はハイライトしない）
-    if (widget.notification.accountId != null) {
-      NotificationCacheService.instance.markRendered(
-        widget.notification.accountId!,
-        widget.notification.id,
-      );
-    }
   }
 
   @override
@@ -770,7 +775,7 @@ class _NotificationTileState extends State<_NotificationTile> {
   void _activateHighlight() {
     if (!widget.isNew) return;
     setState(() => _highlightOpacity = 1.0);
-    Future.delayed(const Duration(seconds: 7), () {
+    Future.delayed(const Duration(seconds: 10), () {
       if (mounted) setState(() => _highlightOpacity = 0.0);
     });
   }
@@ -822,151 +827,127 @@ class _NotificationTileState extends State<_NotificationTile> {
     return spans;
   }
 
+  Widget _buildAvatar(String? url, String name, {double radius = 14}) {
+    return CircleAvatar(
+      radius: radius,
+      backgroundImage: url != null ? NetworkImage(url) : null,
+      child: url == null
+          ? Text(
+              name.isNotEmpty ? name[0].toUpperCase() : '?',
+              style: TextStyle(fontSize: radius * 0.7),
+            )
+          : null,
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final timeAgo = _formatTimeAgo(notification.timestamp);
+    final actors = notification.additionalActors;
 
-    return AnimatedContainer(
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        AnimatedContainer(
       duration: const Duration(seconds: 3),
       curve: Curves.easeOut,
       color: _highlightOpacity > 0
           ? Theme.of(context).colorScheme.primary.withValues(alpha: 0.15 * _highlightOpacity)
           : null,
-      child: ListTile(
-      leading: GestureDetector(
-        onTap: _isSystemNotification ? null : () => _navigateToActorProfile(context),
-        child: SizedBox(
-          width: notification.additionalActors.isNotEmpty ? 56 : 44,
-          child: Stack(
-            clipBehavior: Clip.none,
+      child: InkWell(
+        onTap: () {
+          if (_isSystemNotification) {
+            final fullText = '${notification.actorName} ${notification.targetPostBody ?? ''}';
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(content: Text(fullText), duration: const Duration(seconds: 5)),
+            );
+            return;
+          }
+          if (notification.type == NotificationType.follow ||
+              notification.targetPostId == null) {
+            _navigateToActorProfile(context);
+          } else {
+            _navigateToTargetPost(context);
+          }
+        },
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // 追加アクターのアバター（2人目以降、右下にずらして重ねる）
-              for (var i = (notification.additionalActors.length > 2 ? 1 : notification.additionalActors.length - 1); i >= 0; i--)
-                Positioned(
-                  left: 16 + (i * 4).toDouble(),
-                  top: 10 + (i * 4).toDouble(),
-                  child: Container(
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      border: Border.all(
-                        color: Theme.of(context).scaffoldBackgroundColor,
-                        width: 1.5,
+              // 通知種類アイコン（大きめ）
+              SizedBox(
+                width: 36,
+                child: Column(
+                  children: [
+                    Icon(_icon, size: 24, color: _iconColor),
+                    if (widget.showSnsBadge) ...[
+                      const SizedBox(height: 4),
+                      SnsBadge(service: notification.source, size: 10),
+                    ],
+                  ],
+                ),
+              ),
+              const SizedBox(width: 10),
+              // メインコンテンツ
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // アクターアバター横並び + 時間
+                    Row(
+                      children: [
+                        GestureDetector(
+                          onTap: _isSystemNotification ? null : () => _navigateToActorProfile(context),
+                          child: _buildAvatar(notification.actorAvatarUrl, notification.actorName),
+                        ),
+                        for (var i = 0; i < actors.length && i < 4; i++) ...[
+                          const SizedBox(width: 4),
+                          _buildAvatar(actors[i].avatarUrl, actors[i].name, radius: 12),
+                        ],
+                        if (actors.length > 4) ...[
+                          const SizedBox(width: 4),
+                          Text('+${actors.length - 4}', style: TextStyle(fontSize: 11, color: Colors.grey[500])),
+                        ],
+                        const Spacer(),
+                        Text(timeAgo, style: TextStyle(color: Colors.grey[500], fontSize: 11)),
+                        if (showRecipient) ...[
+                          const SizedBox(width: 6),
+                          Opacity(
+                            opacity: 0.5,
+                            child: _buildAvatar(account.avatarUrl, account.displayName, radius: 8),
+                          ),
+                        ],
+                      ],
+                    ),
+                    const SizedBox(height: 6),
+                    // 「誰が何をした」
+                    Text.rich(
+                      TextSpan(children: _buildActorTextSpans()),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(fontSize: 13),
+                    ),
+                    // 対象投稿本文
+                    if (notification.targetPostBody != null) ...[
+                      const SizedBox(height: 4),
+                      Text(
+                        notification.targetPostBody!,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(color: Colors.grey[600], fontSize: 12),
                       ),
-                    ),
-                    child: CircleAvatar(
-                      radius: 14,
-                      backgroundImage: notification.additionalActors[i].avatarUrl != null
-                          ? NetworkImage(notification.additionalActors[i].avatarUrl!)
-                          : null,
-                      child: notification.additionalActors[i].avatarUrl == null
-                          ? Text(
-                              notification.additionalActors[i].name.isNotEmpty
-                                  ? notification.additionalActors[i].name[0].toUpperCase()
-                                  : '?',
-                              style: const TextStyle(fontSize: 10),
-                            )
-                          : null,
-                    ),
-                  ),
+                    ],
+                  ],
                 ),
-              // メインアクターのアバター（最前面）
-              CircleAvatar(
-                radius: 20,
-                backgroundImage: notification.actorAvatarUrl != null
-                    ? NetworkImage(notification.actorAvatarUrl!)
-                    : null,
-                child: notification.actorAvatarUrl == null
-                    ? Text(
-                        notification.actorName.isNotEmpty
-                            ? notification.actorName[0].toUpperCase()
-                            : '?',
-                      )
-                    : null,
-              ),
-              Positioned(
-                bottom: 0,
-                right: notification.additionalActors.isNotEmpty ? 12 : 0,
-                child: Container(
-                  padding: const EdgeInsets.all(2),
-                  decoration: BoxDecoration(
-                    color: Theme.of(context).scaffoldBackgroundColor,
-                    shape: BoxShape.circle,
-                  ),
-                  child: Icon(_icon, size: 14, color: _iconColor),
-                ),
-              ),
-              Positioned(
-                top: -4,
-                left: -6,
-                child: SnsBadge(service: notification.source, size: 10),
               ),
             ],
           ),
         ),
       ),
-      title: Text.rich(
-        TextSpan(children: _buildActorTextSpans()),
-        maxLines: 2,
-        overflow: TextOverflow.ellipsis,
       ),
-      subtitle: notification.targetPostBody != null
-          ? Text(
-              notification.targetPostBody!,
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(color: Colors.grey[600], fontSize: 13),
-            )
-          : null,
-      trailing: SizedBox(
-        width: 48,
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Text(
-              timeAgo,
-              style: TextStyle(color: Colors.grey[500], fontSize: 12),
-            ),
-          if (showRecipient) ...[
-            const SizedBox(height: 4),
-            CircleAvatar(
-              radius: 10,
-              backgroundImage: account.avatarUrl != null
-                  ? NetworkImage(account.avatarUrl!)
-                  : null,
-              child: account.avatarUrl == null
-                  ? Text(
-                      account.displayName.isNotEmpty
-                          ? account.displayName[0].toUpperCase()
-                          : '?',
-                      style: const TextStyle(fontSize: 9),
-                    )
-                  : null,
-            ),
-          ],
-        ],
-        ),
-      ),
-      contentPadding: const EdgeInsets.only(left: 16, right: 8, top: 4, bottom: 4),
-      onTap: () {
-        if (_isSystemNotification) {
-          // システム通知 → 全文をスナックバーで表示
-          final fullText = '${notification.actorName} ${notification.targetPostBody ?? ''}';
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(fullText),
-              duration: const Duration(seconds: 5),
-            ),
-          );
-          return;
-        }
-        if (notification.type == NotificationType.follow ||
-            notification.targetPostId == null) {
-          _navigateToActorProfile(context);
-        } else {
-          _navigateToTargetPost(context);
-        }
-      },
-      ),
+        Divider(height: 1, thickness: 0.5, color: Colors.grey.withAlpha(40)),
+      ],
     );
   }
 
@@ -1025,9 +1006,15 @@ class _NotificationTileState extends State<_NotificationTile> {
       Navigator.of(context, rootNavigator: true).pop(); // ローディングを閉じる
 
       if (posts.isNotEmpty) {
+        // 通知対象の投稿をスレッド内から探す（リプライ通知ならリプライ自体）
+        final targetId = notification.source == SnsService.x ? 'x_$postId' : 'bsky_$postId';
+        final target = posts.firstWhere(
+          (p) => p.id == targetId,
+          orElse: () => posts.first,
+        );
         Navigator.of(context).push(
           MaterialPageRoute(
-            builder: (_) => PostDetailScreen(post: posts.first),
+            builder: (_) => PostDetailScreen(post: target),
           ),
         );
       } else {
@@ -1071,6 +1058,7 @@ class _UnifiedNotificationListState
   bool _isLoading = true;
   bool _isFetching = false;
   List<NotificationItem> _allNotifications = [];
+  late DateTime _readLine;
 
   final Set<NotificationType> _hiddenTypes = {};
 
@@ -1092,6 +1080,8 @@ class _UnifiedNotificationListState
   @override
   void initState() {
     super.initState();
+    final accountIds = widget.accounts.map((a) => a.id).toList();
+    _readLine = _cacheService.openAllTab(accountIds);
     _loadFromCache();
     _fetchAll();
   }
@@ -1180,6 +1170,7 @@ class _UnifiedNotificationListState
             }
           }),
         ),
+        Divider(height: 1, thickness: 0.5, color: Colors.grey.withAlpha(40)),
         Expanded(
           child: RefreshIndicator(
             onRefresh: _fetchAll,
@@ -1192,7 +1183,7 @@ class _UnifiedNotificationListState
                 return _NotificationTile(
                   notification: n,
                   account: account,
-                  isNew: _cacheService.isNew(account.id, n.id),
+                  isNew: n.timestamp.isAfter(_readLine),
                   showRecipient: true,
                 );
               },

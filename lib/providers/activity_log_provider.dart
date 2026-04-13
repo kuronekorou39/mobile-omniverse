@@ -6,7 +6,7 @@ import '../models/sns_service.dart';
 class ActivityLogNotifier extends StateNotifier<List<ActivityLog>> {
   ActivityLogNotifier() : super([]);
 
-  static const _maxEntries = 300;
+  static const _maxEntries = 100;
 
   void add(ActivityLog log) {
     state = [log, ...state];

@@ -9,8 +9,8 @@ class NotificationCacheService {
 
   final Map<String, _AccountNotifications> _cache = {};
 
-  /// 画面に表示済みの通知IDセット（永続化）
-  final Map<String, Set<String>> _renderedIds = {};
+  /// アカウントごとの既読ライン（この時刻より新しい通知がハイライト対象）
+  final Map<String, DateTime> _readLines = {};
   bool _loaded = false;
 
   /// キャッシュ取得
@@ -47,8 +47,6 @@ class NotificationCacheService {
       } else if (n.totalActorCount > old.totalActorCount) {
         final idx = existing.notifications.indexOf(old);
         if (idx >= 0) existing.notifications[idx] = n;
-        // アクター増加 → 再表示対象にする（renderedIdsから削除）
-        _renderedIds[accountId]?.remove(n.id);
         newItems.add(n);
       }
     }
@@ -76,39 +74,55 @@ class NotificationCacheService {
   }
 
   /// 永続化された表示済みIDを読み込む
-  Future<void> loadRenderedIds() async {
+  Future<void> loadReadLines() async {
     if (_loaded) return;
     _loaded = true;
     final prefs = await SharedPreferences.getInstance();
-    final keys = prefs.getKeys().where((k) => k.startsWith('notif_rendered_'));
+    final keys = prefs.getKeys().where((k) => k.startsWith('notif_read_line_'));
     for (final key in keys) {
-      final accountId = key.replaceFirst('notif_rendered_', '');
-      final ids = prefs.getStringList(key);
-      if (ids != null) {
-        _renderedIds[accountId] = ids.toSet();
+      final accountId = key.replaceFirst('notif_read_line_', '');
+      final ms = prefs.getInt(key);
+      if (ms != null) {
+        _readLines[accountId] = DateTime.fromMillisecondsSinceEpoch(ms);
       }
     }
   }
 
-  /// 通知が画面に描画されたことを記録
-  void markRendered(String accountId, String notificationId) {
-    _renderedIds.putIfAbsent(accountId, () => {});
-    _renderedIds[accountId]!.add(notificationId);
+  /// タブを開いたときに呼ぶ: 既読ラインを読み取り、新しい既読ラインを保存
+  /// 戻り値は「旧既読ライン」（ハイライト判定に使う）
+  DateTime openTab(String accountId) {
+    final oldLine = _readLines[accountId];
+    _readLines[accountId] = DateTime.now();
+    _saveReadLine(accountId);
+    // 初回（既読ラインなし）は全て既読扱い
+    return oldLine ?? DateTime.now();
   }
 
-  /// 通知画面を離れる時に呼ぶ — 表示済みIDを永続化 + バッジクリア
-  Future<void> markSeen(String accountId) async {
+  /// 「すべて」タブを開いたときに呼ぶ: 全アカウントの既読ラインを更新
+  /// 戻り値は「最も古い旧既読ライン」
+  DateTime openAllTab(List<String> accountIds) {
+    final now = DateTime.now();
+    DateTime oldest = now;
+    for (final id in accountIds) {
+      final oldLine = _readLines[id] ?? now; // 初回は全て既読扱い
+      if (oldLine.isBefore(oldest)) oldest = oldLine;
+      _readLines[id] = now;
+      _saveReadLine(id);
+    }
+    return oldest;
+  }
+
+  Future<void> _saveReadLine(String accountId) async {
     final prefs = await SharedPreferences.getInstance();
-    final ids = _renderedIds[accountId];
-    if (ids != null) {
-      // 上限を超えたら古いIDを捨てる（メモリ節約）
-      if (ids.length > 500) {
-        final notifications = get(accountId);
-        final currentIds = notifications.map((n) => n.id).toSet();
-        ids.retainAll(currentIds);
-      }
-      await prefs.setStringList('notif_rendered_$accountId', ids.toList());
+    final line = _readLines[accountId];
+    if (line != null) {
+      await prefs.setInt('notif_read_line_$accountId', line.millisecondsSinceEpoch);
     }
+  }
+
+  /// 通知が既読ラインより新しいかどうか
+  bool isNew(String accountId, DateTime readLine, DateTime notificationTimestamp) {
+    return notificationTimestamp.isAfter(readLine);
   }
 
   /// 全アカウントの通知を時系列でマージして返す
@@ -121,12 +135,6 @@ class NotificationCacheService {
     return all;
   }
 
-  /// この通知が「新着」（まだ画面に表示されていない）かどうか
-  bool isNew(String accountId, String notificationId) {
-    final rendered = _renderedIds[accountId];
-    if (rendered == null) return false; // 一度もタブを開いていない
-    return !rendered.contains(notificationId);
-  }
 }
 
 class _AccountNotifications {

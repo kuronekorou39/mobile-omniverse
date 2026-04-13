@@ -88,29 +88,36 @@ class _PostDetailScreenState extends ConsumerState<PostDetailScreen> {
       );
 
       // メイン投稿を基準に、親（文脈）とリプライを分離
-      // X の投稿IDはsnowflake（時系列で増加）なので、数値比較で前後を判定
-      // Bluesky はタイムスタンプで判定
       final mainId = widget.post.id;
-      final others = posts.where((p) => p.id != mainId).toList();
+      final mainIndex = posts.indexWhere((p) => p.id == mainId);
 
-      bool _isAfterMain(Post p) {
+      List<Post> parents;
+      List<Post> replies;
+
+      if (mainIndex >= 0) {
+        // APIの返却順序を信頼: mainより前が親、後がリプライ
+        parents = posts.sublist(0, mainIndex);
+        replies = mainIndex + 1 < posts.length ? posts.sublist(mainIndex + 1) : [];
+      } else {
+        // メイン投稿が見つからない場合のフォールバック
+        final others = posts.where((p) => p.id != mainId).toList();
         if (widget.post.source == SnsService.x) {
-          // x_ プレフィックスを除去して数値比較
           final mainNum = BigInt.tryParse(mainId.replaceFirst('x_', ''));
-          final pNum = BigInt.tryParse(p.id.replaceFirst('x_', ''));
-          if (mainNum != null && pNum != null) return pNum > mainNum;
+          replies = others.where((p) {
+            final pNum = BigInt.tryParse(p.id.replaceFirst('x_', ''));
+            return mainNum != null && pNum != null && pNum > mainNum;
+          }).toList()..sort((a, b) => a.timestamp.compareTo(b.timestamp));
+          final replyIds = replies.map((p) => p.id).toSet();
+          parents = others.where((p) => !replyIds.contains(p.id)).toList()
+            ..sort((a, b) => a.timestamp.compareTo(b.timestamp));
+        } else {
+          replies = others.where((p) => p.timestamp.isAfter(widget.post.timestamp)).toList()
+            ..sort((a, b) => a.timestamp.compareTo(b.timestamp));
+          final replyIds = replies.map((p) => p.id).toSet();
+          parents = others.where((p) => !replyIds.contains(p.id)).toList()
+            ..sort((a, b) => a.timestamp.compareTo(b.timestamp));
         }
-        // Bluesky / フォールバック: タイムスタンプ比較
-        return p.timestamp.isAfter(widget.post.timestamp);
       }
-
-      final replies = others.where(_isAfterMain).toList()
-        ..sort((a, b) => a.timestamp.compareTo(b.timestamp));
-      final replyIds = replies.map((p) => p.id).toSet();
-      final parents = others
-          .where((p) => !replyIds.contains(p.id))
-          .toList()
-        ..sort((a, b) => a.timestamp.compareTo(b.timestamp));
 
       setState(() {
         _post = freshMain;

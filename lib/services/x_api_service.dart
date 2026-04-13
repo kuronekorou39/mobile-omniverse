@@ -1016,7 +1016,7 @@ class XApiService {
 
   /// 通知を GraphQL API (GenericTimelineById) で取得
   /// 他のqueryIdに影響しないよう、リトライ機構を使わない
-  Future<List<NotificationItem>> getNotificationsGraphQL(
+  Future<({List<NotificationItem> notifications, bool ok})> getNotificationsGraphQL(
     XCredentials creds, {
     String? accountId,
   }) async {
@@ -1064,19 +1064,19 @@ class XApiService {
 
     final queryId = XQueryIdService.instance.getQueryId(opName, creds: creds);
     if (queryId.isEmpty) {
-      // queryId未取得（通知WebViewで修復が必要）
-      return <NotificationItem>[];
+      return (notifications: <NotificationItem>[], ok: false);
     }
 
     try {
-      return await attempt(queryId, opName);
+      final list = await attempt(queryId, opName);
+      return (notifications: list, ok: true);
     } on XApiException {
       debugPrint('[XApi] $opName failed');
     } catch (e) {
       debugPrint('[XApi] $opName error: $e');
     }
 
-    return <NotificationItem>[];
+    return (notifications: <NotificationItem>[], ok: false);
   }
 
   List<NotificationItem> _parseGraphQLNotifications(

@@ -8,6 +8,7 @@ import '../models/account.dart';
 import '../models/notification_item.dart';
 import '../models/post.dart';
 import '../models/sns_service.dart';
+import '../utils/image_headers.dart';
 import 'debug_log_service.dart';
 import 'x_bearer_token_service.dart';
 import 'x_features.dart';
@@ -109,8 +110,7 @@ class XApiService {
         'Content-Type': form
             ? 'application/x-www-form-urlencoded'
             : 'application/json',
-        'User-Agent':
-            'Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Mobile Safari/537.36',
+        'User-Agent': kUserAgent,
         'Origin': 'https://x.com',
         'Referer': 'https://x.com/',
         'x-twitter-active-user': 'yes',

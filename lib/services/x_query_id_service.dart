@@ -6,6 +6,7 @@ import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/account.dart';
+import '../utils/image_headers.dart';
 
 /// X の GraphQL queryId を管理するサービス
 /// JS バンドルから最新の queryId を取得してキャッシュする
@@ -125,9 +126,7 @@ class XQueryIdService {
     try {
       // 1. x.com の HTML を取得
       final headers = <String, String>{
-        'User-Agent':
-            'Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 '
-            '(KHTML, like Gecko) Chrome/131.0.0.0 Mobile Safari/537.36',
+        'User-Agent': kUserAgent,
       };
       if (creds != null) {
         headers['Cookie'] = creds.cookieHeader;

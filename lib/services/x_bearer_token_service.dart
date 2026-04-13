@@ -3,6 +3,7 @@ import 'package:http/http.dart' as http;
 import 'package:flutter/widgets.dart' show visibleForTesting;
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../utils/image_headers.dart';
 import 'debug_log_service.dart';
 
 /// X の公開 Bearer Token を管理するサービス
@@ -42,9 +43,7 @@ class XBearerTokenService {
     try {
       final client = httpClientOverride ?? http.Client();
       final headers = <String, String>{
-        'User-Agent':
-            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 '
-                '(KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+        'User-Agent': kUserAgent,
       };
       if (cookie != null) headers['Cookie'] = cookie;
 

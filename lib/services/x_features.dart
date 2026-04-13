@@ -1,3 +1,5 @@
+import 'x_features_service.dart';
+
 /// X GraphQL API の features パラメータ定義を一元管理
 class XFeatures {
   XFeatures._();
@@ -85,4 +87,28 @@ class XFeatures {
     'responsive_web_graphql_timeline_navigation_enabled': true,
     'responsive_web_enhance_cards_enabled': false,
   };
+
+  /// operationName に対応する features を取得
+  /// 動的キャッシュ → ハードコード定義 の順でフォールバック
+  static Map<String, dynamic> forOperation(String operationName) {
+    // 1. 動的キャッシュ
+    final cached = XFeaturesService.instance.getFeatures(operationName);
+    if (cached != null) return cached;
+
+    // 2. ハードコード定義（フォールバック）
+    switch (operationName) {
+      case 'HomeLatestTimeline':
+      case 'TweetDetail':
+      case 'UserTweets':
+      case 'UserMedia':
+      case 'NotificationsTimeline':
+        return timeline;
+      case 'UserByScreenName':
+        return userProfile;
+      case 'CreateTweet':
+        return createTweet;
+      default:
+        return timeline;
+    }
+  }
 }

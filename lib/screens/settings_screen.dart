@@ -21,9 +21,11 @@ import '../services/debug_log_service.dart';
 import '../services/notification_cache_service.dart';
 import '../services/timeline_cache_service.dart';
 import '../services/x_bearer_token_service.dart';
+import '../services/x_features_service.dart';
 import '../services/x_query_id_service.dart';
 import '../widgets/update_dialog.dart';
 import 'activity_log_screen.dart';
+import 'features_screen.dart';
 import 'query_id_screen.dart';
 
 class SettingsScreen extends ConsumerStatefulWidget {
@@ -351,6 +353,16 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                   );
                 },
               ),
+              ListTile(
+                leading: const Icon(Icons.tune),
+                title: const Text('features 管理'),
+                trailing: const Icon(Icons.chevron_right),
+                onTap: () {
+                  Navigator.of(context).push(
+                    MaterialPageRoute(builder: (_) => const FeaturesScreen()),
+                  );
+                },
+              ),
               const Divider(),
               SwitchListTile(
                 title: const Text('タイムライン取得'),
@@ -487,6 +499,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                   PaintingBinding.instance.imageCache.clearLiveImages();
                   // queryId キャッシュ
                   await XQueryIdService.instance.clearCache();
+                  // features キャッシュ
+                  await XFeaturesService.instance.clearCache();
                   // Bearer Token キャッシュ
                   final prefs = await SharedPreferences.getInstance();
                   await prefs.remove('x_bearer_token');

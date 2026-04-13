@@ -1,10 +1,12 @@
 import 'dart:collection';
+import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 
 import '../models/account.dart';
 import '../services/debug_log_service.dart';
+import '../services/x_features_service.dart';
 import '../services/x_query_id_service.dart';
 
 /// X の通知ページを WebView で開き、GraphQL の queryId を自動取得する
@@ -159,6 +161,15 @@ class _NotificationWebViewScreenState extends State<NotificationWebViewScreen> {
                         );
                         if (_capturedIds[opName] != queryId) {
                           setState(() => _capturedIds[opName] = queryId);
+                        }
+                        // features パラメータもキャプチャ
+                        final uri = Uri.tryParse(url);
+                        final featuresParam = uri?.queryParameters['features'];
+                        if (featuresParam != null) {
+                          try {
+                            final features = json.decode(featuresParam) as Map<String, dynamic>;
+                            XFeaturesService.instance.updateFeatures(opName, features);
+                          } catch (_) {}
                         }
                       }
                     },

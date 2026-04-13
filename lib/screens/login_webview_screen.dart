@@ -11,6 +11,7 @@ import '../models/account.dart';
 import '../models/sns_service.dart';
 import '../services/debug_log_service.dart';
 import '../services/x_bearer_token_service.dart';
+import '../services/x_features_service.dart';
 import '../services/x_query_id_service.dart';
 
 /// ログイン完了時に返す認証情報
@@ -280,6 +281,15 @@ class _LoginWebViewScreenState extends State<LoginWebViewScreen> {
                 final gqlMatch = RegExp(r'/i/api/graphql/([A-Za-z0-9_-]+)/([A-Za-z0-9_]+)').firstMatch(url);
                 if (gqlMatch != null) {
                   _capturedQueryIds[gqlMatch.group(2)!] = gqlMatch.group(1)!;
+                  // features パラメータもキャプチャ
+                  final uri = Uri.tryParse(url);
+                  final featuresParam = uri?.queryParameters['features'];
+                  if (featuresParam != null) {
+                    try {
+                      final features = json.decode(featuresParam) as Map<String, dynamic>;
+                      XFeaturesService.instance.updateFeatures(gqlMatch.group(2)!, features);
+                    } catch (_) {}
+                  }
                 }
               },
               onLoadStop: (controller, url) {

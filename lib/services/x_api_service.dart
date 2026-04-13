@@ -254,7 +254,7 @@ class XApiService {
         if (cursor != null) 'cursor': cursor,
       });
 
-      final features = json.encode(XFeatures.timeline);
+      final features = json.encode(XFeatures.forOperation('HomeLatestTimeline'));
 
       final uri = Uri.parse(
         '${XEndpoints.graphqlBase}/$queryId/HomeLatestTimeline'
@@ -319,7 +319,7 @@ class XApiService {
         'withV2Timeline': true,
       });
 
-      final features = json.encode(XFeatures.timeline);
+      final features = json.encode(XFeatures.forOperation('TweetDetail'));
 
       final uri = Uri.parse(
         '${XEndpoints.graphqlBase}/$queryId/TweetDetail'
@@ -499,7 +499,7 @@ class XApiService {
         'withSafetyModeUserFields': true,
       });
 
-      final features = json.encode(XFeatures.userProfile);
+      final features = json.encode(XFeatures.forOperation('UserByScreenName'));
 
       final uri = Uri.parse(
         '${XEndpoints.graphqlBase}/$queryId/UserByScreenName'
@@ -587,7 +587,7 @@ class XApiService {
         if (cursor != null) 'cursor': cursor,
       });
 
-      final features = json.encode(XFeatures.timeline);
+      final features = json.encode(XFeatures.forOperation('UserTweets'));
 
       final uri = Uri.parse(
         '${XEndpoints.graphqlBase}/$queryId/UserTweets'
@@ -822,7 +822,7 @@ class XApiService {
         'semantic_annotation_ids': <dynamic>[],
         'disallowed_reply_options': null,
       },
-      'features': XFeatures.createTweet,
+      'features': XFeatures.forOperation('CreateTweet'),
       'queryId': queryId,
     });
     final sw = Stopwatch()..start();
@@ -1030,7 +1030,7 @@ class XApiService {
         'includePromotedContent': false,
         'timeline_type': 'All',
       });
-      final features = json.encode(XFeatures.timeline);
+      final features = json.encode(XFeatures.forOperation('NotificationsTimeline'));
 
       final uri = Uri.parse(
         '${XEndpoints.graphqlBase}/$queryId/$opName'

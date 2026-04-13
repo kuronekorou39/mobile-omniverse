@@ -31,12 +31,12 @@ void main() {
       expect(notifier.state.last.action, ActivityAction.like);
     });
 
-    test('300件上限', () {
-      for (int i = 0; i < 310; i++) {
+    test('100件上限', () {
+      for (int i = 0; i < 110; i++) {
         notifier.add(_makeLog(ActivityAction.like));
       }
 
-      expect(notifier.state.length, 300);
+      expect(notifier.state.length, 100);
     });
 
     test('logAction でログを追加', () {

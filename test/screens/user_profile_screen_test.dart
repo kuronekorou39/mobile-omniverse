@@ -1,12 +1,14 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:mobile_omniverse/models/sns_service.dart';
 import 'package:mobile_omniverse/screens/user_profile_screen.dart';
 import 'package:mobile_omniverse/services/account_storage_service.dart';
+import 'package:mobile_omniverse/services/timeline_fetch_scheduler.dart';
 import 'package:mobile_omniverse/widgets/sns_badge.dart';
 
 import '../helpers/test_data.dart';
@@ -30,6 +32,10 @@ void main() {
     await AccountStorageService.instance.load();
   });
 
+  tearDown(() {
+    TimelineFetchScheduler.instance.stop();
+  });
+
   Widget buildUserProfileScreen({
     String username = 'Test User',
     String handle = '@testuser',
@@ -37,13 +43,15 @@ void main() {
     String? avatarUrl,
     String? accountId,
   }) {
-    return MaterialApp(
-      home: UserProfileScreen(
-        username: username,
-        handle: handle,
-        service: service,
-        avatarUrl: avatarUrl,
-        accountId: accountId,
+    return ProviderScope(
+      child: MaterialApp(
+        home: UserProfileScreen(
+          username: username,
+          handle: handle,
+          service: service,
+          avatarUrl: avatarUrl,
+          accountId: accountId,
+        ),
       ),
     );
   }
@@ -78,7 +86,6 @@ void main() {
       await tester.pump();
 
       expect(find.byType(SnsBadge), findsOneWidget);
-      expect(find.text('X'), findsOneWidget);
     });
 
     testWidgets('displays SnsBadge for Bluesky service', (tester) async {
@@ -87,7 +94,6 @@ void main() {
       await tester.pump();
 
       expect(find.byType(SnsBadge), findsOneWidget);
-      expect(find.text('Bluesky'), findsOneWidget);
     });
 
     testWidgets('shows CircleAvatar', (tester) async {
@@ -132,12 +138,12 @@ void main() {
       expect(find.text('アカウント情報が見つかりません'), findsAtLeastNWidgets(1));
     });
 
-    testWidgets('contains NestedScrollView with TabBarView', (tester) async {
+    testWidgets('contains CustomScrollView with TabBar', (tester) async {
       await tester.pumpWidget(buildUserProfileScreen());
       await tester.pump();
 
-      expect(find.byType(NestedScrollView), findsOneWidget);
-      expect(find.byType(TabBarView), findsOneWidget);
+      expect(find.byType(CustomScrollView), findsOneWidget);
+      expect(find.byType(TabBar), findsOneWidget);
     });
 
     testWidgets('contains TabBar with 投稿 and メディア tabs', (tester) async {
@@ -237,7 +243,7 @@ void main() {
 
       final nameText = tester.widget<Text>(find.text('BoldName'));
       expect(nameText.style?.fontWeight, FontWeight.bold);
-      expect(nameText.style?.fontSize, 20);
+      expect(nameText.style?.fontSize, 18);
     });
 
     testWidgets('shows avatar circle with correct initial for name',
@@ -346,14 +352,16 @@ void main() {
         source: SnsService.x,
       );
 
-      await tester.pumpWidget(MaterialApp(
-        home: Builder(
-          builder: (context) {
-            return ElevatedButton(
-              onPressed: () => navigateToUserProfile(context, post: post),
-              child: const Text('Navigate'),
-            );
-          },
+      await tester.pumpWidget(ProviderScope(
+        child: MaterialApp(
+          home: Builder(
+            builder: (context) {
+              return ElevatedButton(
+                onPressed: () => navigateToUserProfile(context, post: post),
+                child: const Text('Navigate'),
+              );
+            },
+          ),
         ),
       ));
 
@@ -374,14 +382,16 @@ void main() {
         accountId: 'acc_123',
       );
 
-      await tester.pumpWidget(MaterialApp(
-        home: Builder(
-          builder: (context) {
-            return ElevatedButton(
-              onPressed: () => navigateToUserProfile(context, post: post),
-              child: const Text('Go'),
-            );
-          },
+      await tester.pumpWidget(ProviderScope(
+        child: MaterialApp(
+          home: Builder(
+            builder: (context) {
+              return ElevatedButton(
+                onPressed: () => navigateToUserProfile(context, post: post),
+                child: const Text('Go'),
+              );
+            },
+          ),
         ),
       ));
 

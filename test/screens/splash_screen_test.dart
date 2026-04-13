@@ -5,6 +5,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:mobile_omniverse/screens/splash_screen.dart';
 import 'package:mobile_omniverse/services/account_storage_service.dart';
+import 'package:mobile_omniverse/services/timeline_fetch_scheduler.dart';
 
 void main() {
   setUpAll(() {
@@ -15,18 +16,20 @@ void main() {
     SharedPreferences.setMockInitialValues({});
     AccountStorageService.instance.setAccountsForTest([]);
   });
-  testWidgets('SplashScreen renders app icon and title', (tester) async {
+
+  tearDown(() {
+    // Stop any timers started by SettingsNotifier/TimelineFetchScheduler
+    TimelineFetchScheduler.instance.stop();
+  });
+  testWidgets('SplashScreen renders logo image', (tester) async {
     await tester.pumpWidget(
       const MaterialApp(
         home: SplashScreen(),
       ),
     );
 
-    // Icon should be present
-    expect(find.byIcon(Icons.rss_feed), findsOneWidget);
-
-    // App title should be present
-    expect(find.text('OmniVerse'), findsOneWidget);
+    // Logo image should be present (Image.asset)
+    expect(find.byType(Image), findsOneWidget);
   });
 
   testWidgets('SplashScreen is a Scaffold', (tester) async {
@@ -66,6 +69,9 @@ void main() {
     await tester.pump(const Duration(milliseconds: 400));
     await tester.pump(const Duration(milliseconds: 100));
 
+    // Stop scheduler timer before test ends (started by SettingsNotifier)
+    TimelineFetchScheduler.instance.stop();
+
     // HomeScreen should now be shown (which includes OmniFeedScreen)
     // After navigation, the splash screen may be replaced
     // Just verify we haven't crashed and something rendered
@@ -91,9 +97,11 @@ void main() {
     await tester.pump(const Duration(milliseconds: 400));
     await tester.pump(const Duration(milliseconds: 100));
 
+    // Stop scheduler timer before test ends (started by SettingsNotifier)
+    TimelineFetchScheduler.instance.stop();
+
     // HomeScreen should be visible now
-    // HomeScreen wraps OmniFeedScreen which shows "OmniVerse"
-    expect(find.text('OmniVerse'), findsAtLeastNWidgets(1));
+    expect(find.byType(Scaffold), findsAtLeastNWidgets(1));
   });
 
   testWidgets('SplashScreen animates over time', (tester) async {
@@ -105,10 +113,10 @@ void main() {
 
     // Pump partial animation
     await tester.pump(const Duration(milliseconds: 400));
-    expect(find.text('OmniVerse'), findsOneWidget);
+    expect(find.byType(Image), findsOneWidget);
 
     // Pump to end of animation
     await tester.pump(const Duration(milliseconds: 400));
-    expect(find.text('OmniVerse'), findsOneWidget);
+    expect(find.byType(Image), findsOneWidget);
   });
 }

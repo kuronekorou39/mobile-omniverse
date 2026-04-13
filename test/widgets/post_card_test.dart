@@ -152,7 +152,7 @@ void main() {
       expect(likeCalled, isTrue);
     });
 
-    testWidgets('onRepost callback is called on repost button tap', (tester) async {
+    testWidgets('onRepost callback is called via repost menu', (tester) async {
       bool repostCalled = false;
       final post = makePost();
       await tester.pumpWidget(buildPostCard(
@@ -163,9 +163,16 @@ void main() {
       // Find all repeat icons; the one in the engagement row is tappable.
       final repeatIcons = find.byIcon(Icons.repeat);
       expect(repeatIcons, findsAtLeastNWidgets(1));
-      // Tap the first repeat icon (engagement button).
+      // Tap the first repeat icon (now opens repost menu).
       await tester.tap(repeatIcons.first);
-      await tester.pump();
+      await tester.pumpAndSettle();
+
+      // The bottom sheet shows 'リポスト' and '引用リポスト'
+      expect(find.text('リポスト'), findsOneWidget);
+
+      // Tap 'リポスト' to trigger the onRepost callback
+      await tester.tap(find.text('リポスト'));
+      await tester.pumpAndSettle();
 
       expect(repostCalled, isTrue);
     });
@@ -190,7 +197,6 @@ void main() {
       await tester.pumpWidget(buildPostCard(post: post));
 
       expect(find.byType(SnsBadge), findsOneWidget);
-      expect(find.text('X'), findsOneWidget);
     });
 
     testWidgets('quoted post card is shown when quotedPost is not null', (tester) async {
@@ -236,7 +242,6 @@ void main() {
       await tester.pumpWidget(buildPostCard(post: post));
 
       expect(find.byType(SnsBadge), findsOneWidget);
-      expect(find.text('Bluesky'), findsOneWidget);
     });
 
     testWidgets('body text with URLs renders LinkedText', (tester) async {
@@ -334,24 +339,15 @@ void main() {
       final post = makePost(permalink: 'https://x.com/user/status/123');
       await tester.pumpWidget(buildPostCard(post: post));
 
-      expect(find.byIcon(Icons.share_outlined), findsOneWidget);
+      expect(find.byIcon(Icons.open_in_new), findsOneWidget);
     });
 
-    testWidgets('share icon is present but disabled when no permalink', (tester) async {
+    testWidgets('share icon is present when no permalink', (tester) async {
       final post = makePost(permalink: null);
       await tester.pumpWidget(buildPostCard(post: post));
 
-      // The share icon is always shown, but with null onPressed when no permalink
-      expect(find.byIcon(Icons.share_outlined), findsOneWidget);
-
-      // Verify the IconButton has null onPressed
-      final iconButton = tester.widget<IconButton>(
-        find.ancestor(
-          of: find.byIcon(Icons.share_outlined),
-          matching: find.byType(IconButton),
-        ),
-      );
-      expect(iconButton.onPressed, isNull);
+      // The open_in_new icon is always shown via GestureDetector
+      expect(find.byIcon(Icons.open_in_new), findsOneWidget);
     });
 
     testWidgets('like button does not trigger when onLike is null', (tester) async {
@@ -519,25 +515,25 @@ void main() {
       expect(find.text('Quoted with avatar'), findsOneWidget);
     });
 
-    testWidgets('share button with permalink shows IconButton',
+    testWidgets('share button with permalink is tappable',
         (tester) async {
       final post =
           makePost(permalink: 'https://x.com/user/status/123');
       await tester.pumpWidget(buildPostCard(post: post));
 
-      // The share icon should exist and be tappable
-      final shareIcons = find.byIcon(Icons.share_outlined);
+      // The open_in_new icon should exist
+      final shareIcons = find.byIcon(Icons.open_in_new);
       expect(shareIcons, findsOneWidget);
 
-      // Find the IconButton containing share icon
-      final iconButton = tester.widget<IconButton>(
+      // Find the GestureDetector wrapping the share icon
+      final gestureDetector = tester.widget<GestureDetector>(
         find.ancestor(
           of: shareIcons,
-          matching: find.byType(IconButton),
-        ),
+          matching: find.byType(GestureDetector),
+        ).first,
       );
-      // When permalink is set, onPressed should not be null
-      expect(iconButton.onPressed, isNotNull);
+      // When permalink is set, onTap should not be null
+      expect(gestureDetector.onTap, isNotNull);
     });
   });
 }

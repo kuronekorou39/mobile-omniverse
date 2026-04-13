@@ -48,8 +48,8 @@ void main() {
       ));
       await tester.pump();
 
-      // For single image, title should be null (no page indicator text)
-      expect(find.text('1 / 1'), findsNothing);
+      // For single image, no page indicator (only shows scale %)
+      expect(find.text('1/1'), findsNothing);
     });
 
     testWidgets('shows page indicator for multiple images', (tester) async {
@@ -62,8 +62,8 @@ void main() {
       ));
       await tester.pump();
 
-      // Shows "1 / 3" for first image
-      expect(find.text('1 / 3'), findsOneWidget);
+      // Shows "1/3" for first image
+      expect(find.text('1/3'), findsOneWidget);
     });
 
     testWidgets('shows correct page when initialIndex is non-zero',
@@ -78,8 +78,8 @@ void main() {
       ));
       await tester.pump();
 
-      // Shows "2 / 3" when starting at index 1
-      expect(find.text('2 / 3'), findsOneWidget);
+      // Shows "2/3" when starting at index 1
+      expect(find.text('2/3'), findsOneWidget);
     });
 
     testWidgets('contains InteractiveViewer for zoom support', (tester) async {

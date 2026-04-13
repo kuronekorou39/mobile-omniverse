@@ -2,17 +2,23 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mobile_omniverse/providers/settings_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:mobile_omniverse/services/timeline_fetch_scheduler.dart';
 
 void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
   group('SettingsState', () {
     test('初期状態のデフォルト値', () {
       const state = SettingsState();
 
-      expect(state.fetchIntervalSeconds, 60);
-      expect(state.isFetchingActive, false);
+      expect(state.fetchIntervalSeconds, 15);
+      expect(state.isFetchingActive, true);
       expect(state.themeMode, ThemeMode.system);
-      expect(state.fontScale, 1.0);
+      expect(state.fontScale, 0.8);
       expect(state.hideRetweetsAccountIds, isEmpty);
+      expect(state.postCardStyle, PostCardStyle.card);
+      expect(state.imageCacheSize, 50);
+      expect(state.showPerfOverlay, false);
+      expect(state.dripIntervalMs, 1500);
     });
 
     test('copyWith で fetchIntervalSeconds を変更', () {
@@ -116,13 +122,22 @@ void main() {
       SharedPreferences.setMockInitialValues({});
     });
 
+    tearDown(() {
+      // スケジューラの定期タイマーを停止
+      TimelineFetchScheduler.instance.stop();
+    });
+
     test('初期状態はデフォルト値', () {
       final notifier = SettingsNotifier();
-      expect(notifier.state.fetchIntervalSeconds, 60);
-      expect(notifier.state.isFetchingActive, false);
+      expect(notifier.state.fetchIntervalSeconds, 15);
+      expect(notifier.state.isFetchingActive, true);
       expect(notifier.state.themeMode, ThemeMode.system);
-      expect(notifier.state.fontScale, 1.0);
+      expect(notifier.state.fontScale, 0.8);
       expect(notifier.state.hideRetweetsAccountIds, isEmpty);
+      expect(notifier.state.postCardStyle, PostCardStyle.card);
+      expect(notifier.state.imageCacheSize, 50);
+      expect(notifier.state.showPerfOverlay, false);
+      expect(notifier.state.dripIntervalMs, 1500);
     });
 
     test('setInterval でインターバルが変更される', () async {
@@ -246,6 +261,10 @@ void main() {
       final notifier = SettingsNotifier();
       await Future<void>.delayed(const Duration(milliseconds: 50));
 
+      // デフォルトで true なので、一旦停止してから開始
+      notifier.stopFetching();
+      expect(notifier.state.isFetchingActive, false);
+
       notifier.startFetching();
       expect(notifier.state.isFetchingActive, true);
 
@@ -257,7 +276,7 @@ void main() {
       final notifier = SettingsNotifier();
       await Future<void>.delayed(const Duration(milliseconds: 50));
 
-      notifier.startFetching();
+      // デフォルトで true
       expect(notifier.state.isFetchingActive, true);
 
       notifier.stopFetching();
@@ -268,13 +287,14 @@ void main() {
       final notifier = SettingsNotifier();
       await Future<void>.delayed(const Duration(milliseconds: 50));
 
-      expect(notifier.state.isFetchingActive, false);
-
-      notifier.toggleFetching();
+      // デフォルトで true
       expect(notifier.state.isFetchingActive, true);
 
       notifier.toggleFetching();
       expect(notifier.state.isFetchingActive, false);
+
+      notifier.toggleFetching();
+      expect(notifier.state.isFetchingActive, true);
     });
 
     test('_loadFromPrefs で保存済み値を復元', () async {
@@ -313,10 +333,14 @@ void main() {
       final notifier = SettingsNotifier();
       await Future<void>.delayed(const Duration(milliseconds: 100));
 
-      expect(notifier.state.fetchIntervalSeconds, 60);
+      expect(notifier.state.fetchIntervalSeconds, 15);
       expect(notifier.state.themeMode, ThemeMode.system);
-      expect(notifier.state.fontScale, 1.0);
+      expect(notifier.state.fontScale, 0.8);
       expect(notifier.state.hideRetweetsAccountIds, isEmpty);
+      expect(notifier.state.postCardStyle, PostCardStyle.card);
+      expect(notifier.state.imageCacheSize, 50);
+      expect(notifier.state.showPerfOverlay, false);
+      expect(notifier.state.dripIntervalMs, 1500);
     });
 
     test('_loadFromPrefs で負の themeMode インデックスは clamp される', () async {

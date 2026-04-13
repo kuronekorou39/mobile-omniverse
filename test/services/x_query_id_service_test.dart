@@ -20,18 +20,18 @@ void main() {
   });
 
   group('XQueryIdService', () {
-    test('getQueryId returns default for known operation when no cache', () async {
+    test('getQueryId returns empty string for known operation when no cache', () async {
       await service.clearCache();
 
       final queryId = service.getQueryId('HomeLatestTimeline');
-      expect(queryId, 'BKB7oi212Fi7kQtCBGE4zA');
+      expect(queryId, '');
     });
 
-    test('getQueryId returns default for TweetDetail', () async {
+    test('getQueryId returns empty string for TweetDetail when no cache', () async {
       await service.clearCache();
 
       final queryId = service.getQueryId('TweetDetail');
-      expect(queryId, 'nBS-WpgA6ZG0CyNHD517JQ');
+      expect(queryId, '');
     });
 
     test('getQueryId returns empty string for unknown operation', () async {
@@ -58,11 +58,11 @@ void main() {
 
       expect(service.getQueryId('HomeLatestTimeline', creds: creds), 'cachedId123');
       expect(service.getQueryId('TweetDetail', creds: creds), 'cachedId456');
-      // Without creds, should return defaults
-      expect(service.getQueryId('HomeLatestTimeline'), 'BKB7oi212Fi7kQtCBGE4zA');
+      // Without creds, should return empty (no defaults)
+      expect(service.getQueryId('HomeLatestTimeline'), '');
     });
 
-    test('clearCache resets to defaults', () async {
+    test('clearCache resets to empty', () async {
       // First, simulate per-account cached data
       final creds = XCredentials(authToken: 'testToken', ct0: 'testCt0');
       final perAccount = {
@@ -77,23 +77,23 @@ void main() {
       // Clear cache
       await service.clearCache();
 
-      // Should now return default
-      expect(service.getQueryId('HomeLatestTimeline', creds: creds), 'BKB7oi212Fi7kQtCBGE4zA');
+      // Should now return empty (no defaults)
+      expect(service.getQueryId('HomeLatestTimeline', creds: creds), '');
     });
 
-    test('currentIds returns all operations with their queryIds', () async {
+    test('currentIds returns all target operations', () async {
       await service.clearCache();
 
       final ids = service.currentIds();
 
-      expect(ids, containsPair('HomeLatestTimeline', 'BKB7oi212Fi7kQtCBGE4zA'));
-      expect(ids, containsPair('TweetDetail', 'nBS-WpgA6ZG0CyNHD517JQ'));
-      expect(ids, containsPair('FavoriteTweet', 'lI07N6Otwv1PhnEgXILM7A'));
-      expect(ids, containsPair('UnfavoriteTweet', 'ZYKSe-w7KEslx3JhSIk5LA'));
-      expect(ids, containsPair('CreateRetweet', 'ojPdsZsimiJrUGLR1sjUtA'));
-      expect(ids, containsPair('DeleteRetweet', 'iQtK4dl5hBmXewYZuEOKVw'));
-      expect(ids, containsPair('CreateTweet', 'a1p9RWpkYKBjWv_I3WzS-A'));
-      expect(ids, containsPair('UserByRestId', 'tD8zKvQzwY3kdx5yz6YmOw'));
+      // After clearCache, all values are empty strings (no defaults)
+      expect(ids, containsPair('HomeLatestTimeline', ''));
+      expect(ids, containsPair('TweetDetail', ''));
+      expect(ids, containsPair('FavoriteTweet', ''));
+      expect(ids, containsPair('UnfavoriteTweet', ''));
+      expect(ids, containsPair('CreateRetweet', ''));
+      expect(ids, containsPair('UserByRestId', ''));
+      expect(ids, containsPair('CreateTweet', ''));
       expect(ids.length, greaterThanOrEqualTo(8));
     });
 
@@ -134,8 +134,8 @@ void main() {
       // Should not throw
       await service.init();
 
-      // Falls back to defaults
-      expect(service.getQueryId('HomeLatestTimeline'), isNotEmpty);
+      // Falls back to empty (no defaults)
+      expect(service.getQueryId('HomeLatestTimeline'), '');
     });
 
     test('init loads lastRefreshTime from prefs', () async {
@@ -204,8 +204,8 @@ even more code{operationName:"FavoriteTweet",some:stuff,queryId:"NEW_QUERY_ID_3"
       expect(svc.getQueryId('HomeLatestTimeline', creds: creds), 'NEW_QUERY_ID_1');
       expect(svc.getQueryId('TweetDetail', creds: creds), 'NEW_QUERY_ID_2');
       expect(svc.getQueryId('FavoriteTweet', creds: creds), 'NEW_QUERY_ID_3');
-      // Without creds, should return defaults (no cross-account leakage)
-      expect(svc.getQueryId('HomeLatestTimeline'), 'BKB7oi212Fi7kQtCBGE4zA');
+      // Without creds, global cache is also updated
+      expect(svc.getQueryId('HomeLatestTimeline'), 'NEW_QUERY_ID_1');
     });
 
     test('returns 0 when HTML fetch fails', () async {

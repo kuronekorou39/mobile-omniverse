@@ -85,20 +85,16 @@ void main() {
       await tester.pump();
 
       expect(find.byType(SnsBadge), findsOneWidget);
-      expect(find.text('Bluesky'), findsOneWidget);
     });
 
-    testWidgets('displays engagement counts with labels', (tester) async {
+    testWidgets('displays engagement counts', (tester) async {
       final post = makePost(likeCount: 10, repostCount: 5, replyCount: 3);
       await tester.pumpWidget(buildPostDetailScreen(post: post));
       await tester.pump();
 
       expect(find.text('10'), findsOneWidget);
-      expect(find.text('いいね'), findsOneWidget);
       expect(find.text('5'), findsOneWidget);
-      expect(find.text('リポスト'), findsOneWidget);
       expect(find.text('3'), findsOneWidget);
-      expect(find.text('リプライ'), findsAtLeastNWidgets(1));
     });
 
     testWidgets('displays formatted timestamp', (tester) async {
@@ -109,21 +105,21 @@ void main() {
       expect(find.text('2024/01/15 14:30'), findsOneWidget);
     });
 
-    testWidgets('shows share icon when post has permalink', (tester) async {
+    testWidgets('shows open_in_new icon when post has permalink', (tester) async {
       final post =
           makePost(permalink: 'https://x.com/user/status/123');
       await tester.pumpWidget(buildPostDetailScreen(post: post));
       await tester.pump();
 
-      expect(find.byIcon(Icons.share_outlined), findsOneWidget);
+      expect(find.byIcon(Icons.open_in_new), findsOneWidget);
     });
 
-    testWidgets('hides share icon when post has no permalink', (tester) async {
+    testWidgets('hides open_in_new icon when post has no permalink', (tester) async {
       final post = makePost(permalink: null);
       await tester.pumpWidget(buildPostDetailScreen(post: post));
       await tester.pump();
 
-      expect(find.byIcon(Icons.share_outlined), findsNothing);
+      expect(find.byIcon(Icons.open_in_new), findsNothing);
     });
 
     testWidgets('shows "リプライはありません" when no account and replies loading fails',
@@ -188,13 +184,14 @@ void main() {
       expect(find.byType(RefreshIndicator), findsOneWidget);
     });
 
-    testWidgets('renders with zero engagement counts', (tester) async {
+    testWidgets('renders with zero engagement counts (no labels shown)', (tester) async {
       final post = makePost(likeCount: 0, repostCount: 0, replyCount: 0);
       await tester.pumpWidget(buildPostDetailScreen(post: post));
       await tester.pump();
 
-      // The count labels should still be displayed with 0
-      expect(find.text('0'), findsAtLeastNWidgets(3));
+      // When all counts are 0, showCounts is false so count labels are hidden
+      // Only icon buttons are shown (no count text)
+      expect(find.text('0'), findsNothing);
     });
   });
 
@@ -278,7 +275,6 @@ void main() {
       await tester.pump();
 
       expect(find.byType(SnsBadge), findsOneWidget);
-      expect(find.text('Bluesky'), findsOneWidget);
       expect(find.text('Bluesky detail post'), findsOneWidget);
     });
 

@@ -66,7 +66,8 @@ void main() {
         likeUri: 'at://did:plc:me/app.bsky.feed.like/abc',
       );
 
-      final post = service.parsePostObject(postObj, null);
+      // accountId must be non-null for likedByAccountIds to be populated
+      final post = service.parsePostObject(postObj, 'acc1');
 
       expect(post.isLiked, true);
       expect(post.isReposted, false);
@@ -77,7 +78,7 @@ void main() {
         repostUri: 'at://did:plc:me/app.bsky.feed.repost/xyz',
       );
 
-      final post = service.parsePostObject(postObj, null);
+      final post = service.parsePostObject(postObj, 'acc1');
 
       expect(post.isLiked, false);
       expect(post.isReposted, true);
@@ -89,7 +90,7 @@ void main() {
         repostUri: 'at://did:plc:me/app.bsky.feed.repost/xyz',
       );
 
-      final post = service.parsePostObject(postObj, null);
+      final post = service.parsePostObject(postObj, 'acc1');
 
       expect(post.isLiked, true);
       expect(post.isReposted, true);
@@ -905,7 +906,7 @@ void main() {
       final client = createMockClient(statusCode: 200, body: '{}');
       service.httpClientOverride = client;
 
-      final result = await service.unrepost(
+      final result = await service.deleteRepost(
         creds,
         'at://did:plc:test/app.bsky.feed.repost/repostkey',
       );
@@ -917,7 +918,7 @@ void main() {
       final client = createMockClient(statusCode: 500, body: '{}');
       service.httpClientOverride = client;
 
-      final result = await service.unrepost(
+      final result = await service.deleteRepost(
         creds,
         'at://did:plc:test/app.bsky.feed.repost/repostkey',
       );

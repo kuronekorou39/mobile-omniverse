@@ -2,12 +2,15 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:mobile_omniverse/models/post.dart';
 import 'package:mobile_omniverse/models/sns_service.dart';
 import 'package:mobile_omniverse/providers/feed_provider.dart';
+import 'package:mobile_omniverse/providers/settings_provider.dart';
 import 'package:mobile_omniverse/services/timeline_fetch_scheduler.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../helpers/test_data.dart';
 
 void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
+
   group('FeedState', () {
     test('初期状態', () {
       const state = FeedState();
@@ -249,7 +252,7 @@ void main() {
 
     setUp(() {
       SharedPreferences.setMockInitialValues({});
-      notifier = FeedNotifier(null);
+      notifier = FeedNotifier(null, () => const SettingsState(), null);
     });
 
     test('初期状態は空の FeedState', () {
@@ -338,26 +341,19 @@ void main() {
       await Future<void>.delayed(const Duration(milliseconds: 50));
 
       // 既存の投稿がある状態で新規投稿を含むバッチを送信
-      // dup_2 は既存 → 即時更新、dup_3 は新規 → ドリップキューへ
+      // dup_2 は既存 → 即時更新
+      // dup_3 は新規だが timestamp が top より古い → _isAtTop=true なので直接挿入
       scheduler.onPostsFetched?.call([
         makePost(id: 'dup_2', body: 'v2', timestamp: DateTime(2024, 1, 3)),
         makePost(id: 'dup_3', body: 'v1', timestamp: DateTime(2024, 1, 2)),
       ]);
       await Future<void>.delayed(const Duration(milliseconds: 50));
 
-      // dup_2 は即時更新される
-      expect(notifier.state.posts[0].id, 'dup_2');
-      expect(notifier.state.posts[0].body, 'v2');
-      // dup_3 はドリップキューにある
-      expect(notifier.state.pendingCount, 1);
-
-      // ドリップタイマーが発火するのを待つ
-      // スケジューラ間隔(60s) / キュー件数(1) = 60s → clamp(300ms, 2000ms) = 2000ms
-      await Future<void>.delayed(const Duration(milliseconds: 2100));
-
+      // dup_2 は即時更新、dup_3 は古い投稿なのでトップにいる場合は直接挿入される
       expect(notifier.state.posts.length, 3);
       // 時系列ソート：dup_2 (1/3) > dup_3 (1/2) > dup_1 (1/1)
       expect(notifier.state.posts[0].id, 'dup_2');
+      expect(notifier.state.posts[0].body, 'v2');
       expect(notifier.state.posts[1].id, 'dup_3');
       expect(notifier.state.posts[2].id, 'dup_1');
       expect(notifier.state.pendingCount, 0);
@@ -597,8 +593,8 @@ void main() {
       final scheduler = TimelineFetchScheduler.instance;
 
       // Calling onFetchLog should not throw even with null log notifier
-      scheduler.onFetchLog?.call('@test', SnsService.x, true, 5, null);
-      scheduler.onFetchLog?.call('@test', SnsService.bluesky, false, 0, 'error');
+      scheduler.onFetchLog?.call('acc_1', '@test', SnsService.x, true, 5, null);
+      scheduler.onFetchLog?.call('acc_1', '@test', SnsService.bluesky, false, 0, 'error');
 
       // No crash = success
       expect(true, true);

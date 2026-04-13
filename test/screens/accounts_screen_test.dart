@@ -5,6 +5,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:mobile_omniverse/screens/accounts_screen.dart';
 import 'package:mobile_omniverse/services/account_storage_service.dart';
+import 'package:mobile_omniverse/services/timeline_fetch_scheduler.dart';
 import 'package:mobile_omniverse/widgets/sns_badge.dart';
 
 import '../helpers/test_data.dart';
@@ -17,6 +18,10 @@ void main() {
   setUp(() async {
     SharedPreferences.setMockInitialValues({});
     AccountStorageService.instance.setAccountsForTest([]);
+  });
+
+  tearDown(() {
+    TimelineFetchScheduler.instance.stop();
   });
 
   Widget buildAccountsScreen() {
@@ -149,7 +154,7 @@ void main() {
       expect(find.byType(Switch), findsOneWidget);
     });
 
-    testWidgets('shows "アカウント追加" button at bottom of list',
+    testWidgets('shows "アカウントを追加" button at bottom of list',
         (tester) async {
       final account = makeXAccount(displayName: 'TestUser', handle: '@test');
       AccountStorageService.instance.setAccountsForTest([account]);
@@ -158,7 +163,7 @@ void main() {
       await tester.pump();
       await tester.pump();
 
-      expect(find.text('アカウント追加'), findsOneWidget);
+      expect(find.text('アカウントを追加'), findsOneWidget);
     });
 
     testWidgets('shows avatar initial when avatarUrl is null', (tester) async {
@@ -195,6 +200,14 @@ void main() {
   });
 
   group('AccountsScreen - account detail page', () {
+    // Helper to navigate to detail page and stop the scheduler timer
+    Future<void> navigateToDetail(WidgetTester tester, String displayName) async {
+      await tester.tap(find.text(displayName));
+      await tester.pumpAndSettle();
+      // Stop scheduler timer started by SettingsNotifier
+      TimelineFetchScheduler.instance.stop();
+    }
+
     testWidgets('tapping account tile navigates to detail page', (tester) async {
       final account = makeXAccount(
         displayName: 'DetailUser',
@@ -207,8 +220,7 @@ void main() {
       await tester.pump();
 
       // Tap the account tile (the ListTile area, not the switch)
-      await tester.tap(find.text('DetailUser'));
-      await tester.pumpAndSettle();
+      await navigateToDetail(tester, 'DetailUser');
 
       // Should be on the detail screen with the display name in AppBar
       expect(find.text('DetailUser'), findsAtLeastNWidgets(1));
@@ -226,8 +238,7 @@ void main() {
       await tester.pump();
       await tester.pump();
 
-      await tester.tap(find.text('ProfileUser'));
-      await tester.pumpAndSettle();
+      await navigateToDetail(tester, 'ProfileUser');
 
       // Detail screen shows a CircleAvatar with radius 40
       expect(find.byType(CircleAvatar), findsAtLeastNWidgets(1));
@@ -246,8 +257,7 @@ void main() {
       await tester.pump();
       await tester.pump();
 
-      await tester.tap(find.text('HandleUser'));
-      await tester.pumpAndSettle();
+      await navigateToDetail(tester, 'HandleUser');
 
       expect(find.text('@handleuser'), findsAtLeastNWidgets(1));
       expect(find.byType(SnsBadge), findsAtLeastNWidgets(1));
@@ -265,18 +275,18 @@ void main() {
       await tester.pump();
       await tester.pump();
 
-      await tester.tap(find.text('SwitchUser'));
-      await tester.pumpAndSettle();
+      await navigateToDetail(tester, 'SwitchUser');
 
       expect(find.text('タイムライン取得'), findsOneWidget);
       expect(
-        find.text('このアカウントのタイムラインを Omni-Feed に含める'),
+        find.text('このアカウントの投稿をフィードに表示する'),
         findsOneWidget,
       );
-      expect(find.byType(SwitchListTile), findsOneWidget);
+      // Two SwitchListTiles: timeline + hide RT
+      expect(find.byType(SwitchListTile), findsNWidgets(2));
     });
 
-    testWidgets('detail page shows service info', (tester) async {
+    testWidgets('detail page shows SnsBadge for X service', (tester) async {
       final account = makeXAccount(
         displayName: 'ServiceUser',
         handle: '@serviceuser',
@@ -287,52 +297,12 @@ void main() {
       await tester.pump();
       await tester.pump();
 
-      await tester.tap(find.text('ServiceUser'));
-      await tester.pumpAndSettle();
+      await navigateToDetail(tester, 'ServiceUser');
 
-      expect(find.text('サービス'), findsOneWidget);
-      expect(find.text('X'), findsAtLeastNWidgets(1));
+      expect(find.byType(SnsBadge), findsAtLeastNWidgets(1));
     });
 
-    testWidgets('detail page shows added date', (tester) async {
-      final account = makeXAccount(
-        displayName: 'DateUser',
-        handle: '@dateuser',
-      );
-      AccountStorageService.instance.setAccountsForTest([account]);
-
-      await tester.pumpWidget(buildAccountsScreen());
-      await tester.pump();
-      await tester.pump();
-
-      await tester.tap(find.text('DateUser'));
-      await tester.pumpAndSettle();
-
-      expect(find.text('追加日時'), findsOneWidget);
-      // makeXAccount creates with DateTime(2024, 1, 1)
-      expect(find.text('2024/01/01'), findsOneWidget);
-    });
-
-    testWidgets('detail page shows account ID', (tester) async {
-      final account = makeXAccount(
-        id: 'x_acc_detail',
-        displayName: 'IDUser',
-        handle: '@iduser',
-      );
-      AccountStorageService.instance.setAccountsForTest([account]);
-
-      await tester.pumpWidget(buildAccountsScreen());
-      await tester.pump();
-      await tester.pump();
-
-      await tester.tap(find.text('IDUser'));
-      await tester.pumpAndSettle();
-
-      expect(find.text('アカウント ID'), findsOneWidget);
-      expect(find.text('x_acc_detail'), findsOneWidget);
-    });
-
-    testWidgets('detail page shows delete button', (tester) async {
+    testWidgets('detail page shows delete icon in AppBar', (tester) async {
       final account = makeXAccount(
         displayName: 'DeleteUser',
         handle: '@deleteuser',
@@ -343,14 +313,12 @@ void main() {
       await tester.pump();
       await tester.pump();
 
-      await tester.tap(find.text('DeleteUser'));
-      await tester.pumpAndSettle();
+      await navigateToDetail(tester, 'DeleteUser');
 
-      expect(find.text('アカウントを削除'), findsOneWidget);
       expect(find.byIcon(Icons.delete_outline), findsOneWidget);
     });
 
-    testWidgets('delete button shows confirmation dialog', (tester) async {
+    testWidgets('delete icon shows confirmation dialog', (tester) async {
       final account = makeXAccount(
         displayName: 'ConfirmUser',
         handle: '@confirmuser',
@@ -361,11 +329,10 @@ void main() {
       await tester.pump();
       await tester.pump();
 
-      await tester.tap(find.text('ConfirmUser'));
-      await tester.pumpAndSettle();
+      await navigateToDetail(tester, 'ConfirmUser');
 
-      // Tap the delete button
-      await tester.tap(find.text('アカウントを削除'));
+      // Tap the delete icon button in AppBar
+      await tester.tap(find.byIcon(Icons.delete_outline));
       await tester.pumpAndSettle();
 
       // Should show confirmation dialog
@@ -389,10 +356,9 @@ void main() {
       await tester.pump();
       await tester.pump();
 
-      await tester.tap(find.text('CancelUser'));
-      await tester.pumpAndSettle();
+      await navigateToDetail(tester, 'CancelUser');
 
-      await tester.tap(find.text('アカウントを削除'));
+      await tester.tap(find.byIcon(Icons.delete_outline));
       await tester.pumpAndSettle();
 
       // Tap cancel
@@ -404,7 +370,7 @@ void main() {
       expect(find.text('CancelUser'), findsAtLeastNWidgets(1));
     });
 
-    testWidgets('tapping chevron_right navigates to detail page', (tester) async {
+    testWidgets('tapping account name navigates to detail page', (tester) async {
       final account = makeXAccount(
         displayName: 'ChevronUser',
         handle: '@chevronuser',
@@ -415,13 +381,12 @@ void main() {
       await tester.pump();
       await tester.pump();
 
-      // Tap the chevron_right icon button
-      await tester.tap(find.byIcon(Icons.chevron_right));
-      await tester.pumpAndSettle();
+      // Tap the account name text
+      await navigateToDetail(tester, 'ChevronUser');
 
       // Should navigate to detail page
       expect(find.text('タイムライン取得'), findsOneWidget);
-      expect(find.text('アカウントを削除'), findsOneWidget);
+      expect(find.byIcon(Icons.delete_outline), findsOneWidget);
     });
 
     testWidgets('toggling switch changes account enabled state', (tester) async {
@@ -460,11 +425,10 @@ void main() {
       await tester.pump();
 
       // Navigate to detail page
-      await tester.tap(find.text('DeleteMe'));
-      await tester.pumpAndSettle();
+      await navigateToDetail(tester, 'DeleteMe');
 
-      // Tap delete button
-      await tester.tap(find.text('アカウントを削除'));
+      // Tap delete icon in AppBar
+      await tester.tap(find.byIcon(Icons.delete_outline));
       await tester.pumpAndSettle();
 
       // Confirm the 削除 FilledButton is a FilledButton
@@ -483,10 +447,9 @@ void main() {
       await tester.pump();
       await tester.pump();
 
-      await tester.tap(find.text('BlueskyDetail'));
-      await tester.pumpAndSettle();
+      await navigateToDetail(tester, 'BlueskyDetail');
 
-      expect(find.text('Bluesky'), findsAtLeastNWidgets(1));
+      expect(find.byType(SnsBadge), findsAtLeastNWidgets(1));
       expect(find.text('@bskydetail'), findsAtLeastNWidgets(1));
     });
 
@@ -503,19 +466,19 @@ void main() {
       await tester.pump();
       await tester.pump();
 
-      await tester.tap(find.text('ToggleDetail'));
-      await tester.pumpAndSettle();
+      await navigateToDetail(tester, 'ToggleDetail');
 
-      // Toggle the SwitchListTile on detail page
-      final switchTile = find.byType(SwitchListTile);
-      expect(switchTile, findsOneWidget);
+      // Two SwitchListTiles: timeline + hide RT
+      final switchTiles = find.byType(SwitchListTile);
+      expect(switchTiles, findsNWidgets(2));
 
-      await tester.tap(switchTile);
+      // Toggle the first SwitchListTile (timeline)
+      await tester.tap(switchTiles.first);
       await tester.pump();
       await tester.pump();
 
-      // Switch should have toggled
-      expect(find.byType(SwitchListTile), findsOneWidget);
+      // SwitchListTiles should still be present
+      expect(find.byType(SwitchListTile), findsNWidgets(2));
     });
   });
 }

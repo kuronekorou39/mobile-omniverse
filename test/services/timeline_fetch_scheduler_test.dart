@@ -112,13 +112,15 @@ void main() {
     });
 
     test('onFetchLog コールバックを設定できる', () {
+      String? logAccountId;
       String? logHandle;
       SnsService? logPlatform;
       bool? logSuccess;
       int? logCount;
       String? logError;
 
-      scheduler.onFetchLog = (handle, platform, success, count, error) {
+      scheduler.onFetchLog = (accountId, handle, platform, success, count, error) {
+        logAccountId = accountId;
         logHandle = handle;
         logPlatform = platform;
         logSuccess = success;
@@ -126,8 +128,9 @@ void main() {
         logError = error;
       };
 
-      scheduler.onFetchLog?.call('@testuser', SnsService.x, true, 5, null);
+      scheduler.onFetchLog?.call('acc_1', '@testuser', SnsService.x, true, 5, null);
 
+      expect(logAccountId, 'acc_1');
       expect(logHandle, '@testuser');
       expect(logPlatform, SnsService.x);
       expect(logSuccess, true);
@@ -139,13 +142,13 @@ void main() {
       String? logError;
       bool? logSuccess;
 
-      scheduler.onFetchLog = (handle, platform, success, count, error) {
+      scheduler.onFetchLog = (accountId, handle, platform, success, count, error) {
         logSuccess = success;
         logError = error;
       };
 
       scheduler.onFetchLog
-          ?.call('@testuser', SnsService.bluesky, false, 0, 'Network error');
+          ?.call('acc_1', '@testuser', SnsService.bluesky, false, 0, 'Network error');
 
       expect(logSuccess, false);
       expect(logError, 'Network error');
@@ -189,7 +192,7 @@ void main() {
 
       // null safe な呼び出し
       scheduler.onPostsFetched?.call([]);
-      scheduler.onFetchLog?.call('@test', SnsService.x, true, 0, null);
+      scheduler.onFetchLog?.call('acc_1', '@test', SnsService.x, true, 0, null);
       scheduler.onTokenRefresh?.call('@test', true);
       scheduler.onTokenExpired?.call('acc_1', '@test');
 
@@ -270,16 +273,16 @@ void main() {
       String? firstResult;
       String? secondResult;
 
-      scheduler.onFetchLog = (handle, _, __, ___, ____) {
+      scheduler.onFetchLog = (_, handle, __, ___, ____, _____) {
         firstResult = handle;
       };
-      scheduler.onFetchLog?.call('@first', SnsService.x, true, 0, null);
+      scheduler.onFetchLog?.call('acc_1', '@first', SnsService.x, true, 0, null);
       expect(firstResult, '@first');
 
-      scheduler.onFetchLog = (handle, _, __, ___, ____) {
+      scheduler.onFetchLog = (_, handle, __, ___, ____, _____) {
         secondResult = handle;
       };
-      scheduler.onFetchLog?.call('@second', SnsService.x, true, 0, null);
+      scheduler.onFetchLog?.call('acc_1', '@second', SnsService.x, true, 0, null);
       expect(secondResult, '@second');
       expect(firstResult, '@first'); // First callback not called again
     });
@@ -296,12 +299,12 @@ void main() {
       int callCount = 0;
 
       scheduler.onPostsFetched = (_) => callCount++;
-      scheduler.onFetchLog = (_, __, ___, ____, _____) => callCount++;
+      scheduler.onFetchLog = (_, __, ___, ____, _____, ______) => callCount++;
       scheduler.onTokenRefresh = (_, __) => callCount++;
       scheduler.onTokenExpired = (_, __) => callCount++;
 
       scheduler.onPostsFetched?.call([]);
-      scheduler.onFetchLog?.call('@a', SnsService.x, true, 0, null);
+      scheduler.onFetchLog?.call('acc_1', '@a', SnsService.x, true, 0, null);
       scheduler.onTokenRefresh?.call('@a', true);
       scheduler.onTokenExpired?.call('id', '@a');
 

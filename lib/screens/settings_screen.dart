@@ -13,9 +13,15 @@ import 'package:share_plus/share_plus.dart';
 import '../models/account.dart';
 import '../models/sns_service.dart';
 import '../providers/settings_provider.dart';
+import 'package:flutter_cache_manager/flutter_cache_manager.dart';
+
 import '../services/account_storage_service.dart';
 import '../services/app_update_service.dart';
 import '../services/debug_log_service.dart';
+import '../services/notification_cache_service.dart';
+import '../services/timeline_cache_service.dart';
+import '../services/x_bearer_token_service.dart';
+import '../services/x_query_id_service.dart';
 import '../widgets/update_dialog.dart';
 import 'activity_log_screen.dart';
 
@@ -96,11 +102,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
               children: [
                 const Text('A', style: TextStyle(fontSize: 12)),
                 Expanded(
-                  child: Slider(
-                    value: settings.fontScale.clamp(0.6, 1.5),
-                    min: 0.6,
-                    max: 1.5,
-                    divisions: 9,
+                  child: _FontScaleSlider(
+                    value: settings.fontScale,
                     onChanged: (value) => notifier.setFontScale(value),
                   ),
                 ),
@@ -420,6 +423,57 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                   }
                 },
               ),
+              const Divider(),
+              ListTile(
+                leading: const Icon(Icons.cleaning_services_outlined),
+                title: const Text('キャッシュをクリア'),
+                subtitle: const Text('タイムライン・通知・画像・queryIdを削除（アカウント情報は残る）'),
+                onTap: () async {
+                  final confirmed = await showDialog<bool>(
+                    context: context,
+                    builder: (ctx) => AlertDialog(
+                      title: const Text('キャッシュをクリア'),
+                      content: const Text(
+                        'タイムライン、通知、画像キャッシュ、queryId、Bearer Tokenを削除します。\n\nアカウント情報は残ります。クリア後にアプリが再取得を開始します。',
+                      ),
+                      actions: [
+                        TextButton(
+                          onPressed: () => Navigator.of(ctx).pop(false),
+                          child: const Text('キャンセル'),
+                        ),
+                        FilledButton(
+                          onPressed: () => Navigator.of(ctx).pop(true),
+                          child: const Text('クリア'),
+                        ),
+                      ],
+                    ),
+                  );
+                  if (confirmed != true) return;
+
+                  // タイムラインキャッシュ
+                  await TimelineCacheService.instance.clearCache();
+                  // 通知キャッシュ
+                  NotificationCacheService.instance.clearAll();
+                  // 画像キャッシュ（ディスク + メモリ）
+                  await DefaultCacheManager().emptyCache();
+                  PaintingBinding.instance.imageCache.clear();
+                  PaintingBinding.instance.imageCache.clearLiveImages();
+                  // queryId キャッシュ
+                  await XQueryIdService.instance.clearCache();
+                  // Bearer Token キャッシュ
+                  final prefs = await SharedPreferences.getInstance();
+                  await prefs.remove('x_bearer_token');
+                  // デバッグログ
+                  await DebugLogService.instance.clear();
+
+                  if (mounted) {
+                    setState(() {});
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('キャッシュをクリアしました。アプリを再起動してください。')),
+                    );
+                  }
+                },
+              ),
             ],
           ),
         ],
@@ -517,6 +571,55 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
 
   String _formatTime(DateTime dt) {
     return '${dt.month}/${dt.day} ${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}';
+  }
+}
+
+/// フォントサイズスライダー: ドラッグ中はローカルstateのみ更新、
+/// 指を離したときにグローバルstate（MediaQuery）を更新。
+/// アプリ全体の再構築が毎フレーム走るのを防ぐ。
+class _FontScaleSlider extends StatefulWidget {
+  const _FontScaleSlider({required this.value, required this.onChanged});
+  final double value;
+  final ValueChanged<double> onChanged;
+
+  @override
+  State<_FontScaleSlider> createState() => _FontScaleSliderState();
+}
+
+class _FontScaleSliderState extends State<_FontScaleSlider> {
+  late double _localValue;
+  bool _dragging = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _localValue = widget.value;
+  }
+
+  @override
+  void didUpdateWidget(covariant _FontScaleSlider oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (!_dragging) _localValue = widget.value;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Slider(
+      value: _localValue.clamp(0.6, 1.5),
+      min: 0.6,
+      max: 1.5,
+      divisions: 9,
+      onChanged: (value) {
+        setState(() {
+          _dragging = true;
+          _localValue = value;
+        });
+      },
+      onChangeEnd: (value) {
+        _dragging = false;
+        widget.onChanged(value);
+      },
+    );
   }
 }
 

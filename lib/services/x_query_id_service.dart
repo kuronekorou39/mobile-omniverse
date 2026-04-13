@@ -22,21 +22,20 @@ class XQueryIdService {
   static const _lastRefreshKey = 'x_query_ids_last_refresh';
   static const _minRefreshInterval = Duration(hours: 1);
 
-  /// デフォルトの queryId (フォールバック用)
-  static const _defaults = <String, String>{
-    'HomeLatestTimeline': 'BKB7oi212Fi7kQtCBGE4zA',
-    'TweetDetail': 'nBS-WpgA6ZG0CyNHD517JQ',
-    'FavoriteTweet': 'lI07N6Otwv1PhnEgXILM7A',
-    'UnfavoriteTweet': 'ZYKSe-w7KEslx3JhSIk5LA',
-    'CreateRetweet': 'ojPdsZsimiJrUGLR1sjUtA',
-    'DeleteRetweet': 'iQtK4dl5hBmXewYZuEOKVw',
-    'UserByRestId': 'tD8zKvQzwY3kdx5yz6YmOw',
-    'UserByScreenName': 'xmU_MTpREJBz1I14LU744A',
-    'UserTweets': 'E3opETHurmVJflFsUBVuUQ',
-    'UserMedia': 'dexO_2tohK86JDlXOGVk-w',
-    'CreateTweet': 'RXKQMYyEqEjGgWpcSP6LBw',
-    'GenericTimelineById': '2My6Exw3i3JLnuoxc4my8A',
-    'NotificationsTimeline': '8bj3MP0KXWKlpfC1yvGfbQ',
+  /// 管理対象のオペレーション名一覧（JSバンドルからこれらのqueryIdを取得する）
+  static const _targetOperations = <String>{
+    'HomeLatestTimeline',
+    'TweetDetail',
+    'FavoriteTweet',
+    'UnfavoriteTweet',
+    'CreateRetweet',
+    'DeleteRetweet',
+    'UserByRestId',
+    'UserByScreenName',
+    'UserTweets',
+    'UserMedia',
+    'CreateTweet',
+    'NotificationsTimeline',
   };
 
   /// グローバルキャッシュ (旧形式・マイグレーション用)
@@ -81,6 +80,9 @@ class XQueryIdService {
     if (lastRefreshMs != null) {
       _lastRefresh = DateTime.fromMillisecondsSinceEpoch(lastRefreshMs);
     }
+
+    // キャッシュが空でもここでは何もしない
+    // ログイン時やAPI呼び出し時にcreds付きで取得される
   }
 
   /// operationName に対応する queryId を取得
@@ -94,8 +96,12 @@ class XQueryIdService {
         return acctCache[operationName]!;
       }
     }
-    // 2. デフォルト値 (グローバルキャッシュは使わない — 別アカウントの汚染を防ぐ)
-    return _defaults[operationName] ?? '';
+    // 2. グローバルキャッシュ（JSバンドルから取得済みの値）
+    if (_cached.containsKey(operationName)) {
+      return _cached[operationName]!;
+    }
+    // 未取得
+    return '';
   }
 
   /// x.com の JS バンドルから queryId を取得して更新
@@ -154,7 +160,7 @@ class XQueryIdService {
 
       // 3. 各バンドルから queryId を抽出
       final found = <String, String>{};
-      final targetOps = _defaults.keys.toSet();
+      final targetOps = _targetOperations;
 
       for (final url in bundleUrls.toList()) {
         if (found.length >= targetOps.length) break;
@@ -213,12 +219,12 @@ class XQueryIdService {
             : found;
 
         if (toStore.isNotEmpty) {
+          // グローバルキャッシュに常に保存（全アカウントで共有）
+          _cached.addAll(toStore);
           if (creds != null) {
             final key = _accountKey(creds);
             _perAccount[key] ??= {};
             _perAccount[key]!.addAll(toStore);
-          } else {
-            _cached.addAll(toStore);
           }
           await _saveToPrefs();
         }
@@ -263,11 +269,13 @@ class XQueryIdService {
     return refreshQueryIds(creds, onlyUpdate: onlyUpdate);
   }
 
-  /// WebView 等で取得した queryId をアカウント別キャッシュに保存
+  /// WebView 等で取得した queryId をアカウント別 + グローバルキャッシュに保存
   Future<void> updateQueryIds(XCredentials creds, Map<String, String> ids) async {
     final key = _accountKey(creds);
     _perAccount[key] ??= {};
     _perAccount[key]!.addAll(ids);
+    // グローバルキャッシュにも保存（他アカウントから参照可能にする）
+    _cached.addAll(ids);
     await _saveToPrefs();
     debugPrint('[XQueryId] Updated ${ids.length} queryIds for account: ${ids.keys.join(', ')}');
   }
@@ -282,7 +290,7 @@ class XQueryIdService {
       _cached.remove(operationName);
     }
     await _saveToPrefs();
-    debugPrint('[XQueryId] Reverted $operationName to default: ${_defaults[operationName]}');
+    debugPrint('[XQueryId] Reverted $operationName (cache cleared)');
   }
 
   /// キャッシュを全消去してデフォルト値に戻す
@@ -299,7 +307,7 @@ class XQueryIdService {
 
   /// 現在のキャッシュ状態を取得 (デバッグ用)
   Map<String, String> currentIds({XCredentials? creds}) => Map.unmodifiable({
-        for (final op in _defaults.keys) op: getQueryId(op, creds: creds),
+        for (final op in _targetOperations) op: getQueryId(op, creds: creds),
       });
 
   /// 最終更新日時

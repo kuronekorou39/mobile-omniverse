@@ -9,6 +9,7 @@ import 'screens/splash_screen.dart';
 import 'services/account_storage_service.dart';
 import 'services/debug_log_service.dart';
 import 'services/notification_cache_service.dart';
+import 'services/x_bearer_token_service.dart';
 import 'services/x_query_id_service.dart';
 
 @pragma("vm:entry-point")
@@ -23,6 +24,7 @@ void overlayMain() {
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await AccountStorageService.instance.load();
+  await XBearerTokenService.instance.init();
   await XQueryIdService.instance.init();
   await DebugLogService.instance.init();
   await NotificationCacheService.instance.loadRenderedIds();

@@ -22,6 +22,11 @@ class NotificationCacheService {
   bool hasData(String accountId) =>
       _cache[accountId] != null && _cache[accountId]!.notifications.isNotEmpty;
 
+  /// 全キャッシュをクリア（アカウント情報は残す）
+  void clearAll() {
+    _cache.clear();
+  }
+
   /// 新規フェッチ結果をマージ（重複排除、新しいものを先頭に）
   int merge(String accountId, List<NotificationItem> fetched, {String? cursor}) {
     final stamped = fetched.map((n) =>

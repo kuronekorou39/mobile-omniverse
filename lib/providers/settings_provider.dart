@@ -49,7 +49,7 @@ class SettingsState {
     this.fetchIntervalSeconds = 15,
     this.isFetchingActive = true,
     this.themeMode = ThemeMode.system,
-    this.fontScale = 1.0,
+    this.fontScale = 0.8,
     this.hideRetweetsAccountIds = const {},
     this.showFetchTimer = true,
     this.sensitiveMode = SensitiveMode.hide,
@@ -59,7 +59,7 @@ class SettingsState {
     this.fontFamily = '',
     this.appBarButtons = const {},
     this.fabPosition = FabPosition.right,
-    this.dripIntervalMs = 1000,
+    this.dripIntervalMs = 1500,
     this.debugLogEnabled = false,
     this.showPerfOverlay = false,
     this.imageCacheSize = 50,
@@ -166,57 +166,46 @@ class SettingsNotifier extends StateNotifier<SettingsState> {
 
   Future<void> _loadFromPrefs() async {
     final prefs = await SharedPreferences.getInstance();
-    final interval = prefs.getInt(_keyInterval) ?? 15;
-    final themeModeIndex = prefs.getInt(_keyThemeMode) ?? 0;
-    final fontScale = prefs.getDouble(_keyFontScale) ?? 1.0;
-    final hideRtList = prefs.getStringList(_keyHideRetweetsAccounts) ?? [];
-    final showFetchTimer = prefs.getBool(_keyShowFetchTimer) ?? true;
-    // 旧bool値からの移行対応
+    final d = state; // デフォルト値の参照元（SettingsState コンストラクタの値）
+
+    // センシティブモード: 旧bool値からの移行対応
+    SensitiveMode? sensitiveMode;
     final sensitiveModeIndex = prefs.getInt('settings_sensitive_mode');
-    final SensitiveMode sensitiveMode;
     if (sensitiveModeIndex != null) {
       sensitiveMode = SensitiveMode.values[sensitiveModeIndex.clamp(0, 2)];
     } else {
-      final oldBool = prefs.getBool(_keyShowSensitiveContent) ?? false;
-      sensitiveMode = oldBool ? SensitiveMode.show : SensitiveMode.hide;
+      final oldBool = prefs.getBool(_keyShowSensitiveContent);
+      if (oldBool != null) {
+        sensitiveMode = oldBool ? SensitiveMode.show : SensitiveMode.hide;
+      }
     }
-    final compactEngagement = prefs.getBool(_keyCompactEngagement) ?? true;
-    final imagePreviewSizeIndex = prefs.getInt(_keyImagePreviewSize) ?? ImagePreviewSize.medium.index;
-    final hideUserInfo = prefs.getBool(_keyHideUserInfo) ?? false;
-    var fontFamily = prefs.getString(_keyFontFamily) ?? '';
-    // 旧システムフォント値をリセット（Google Fonts非対応）
+
+    // フォントファミリー: 旧システムフォント値をリセット
+    var fontFamily = prefs.getString(_keyFontFamily);
     const legacyFonts = {'serif', 'monospace', 'sans-serif-condensed', 'cursive'};
-    if (legacyFonts.contains(fontFamily)) {
+    if (fontFamily != null && legacyFonts.contains(fontFamily)) {
       fontFamily = '';
       prefs.setString(_keyFontFamily, '');
     }
-    final appBarButtons = prefs.getStringList(_keyAppBarButtons)?.toSet() ?? {};
-    final fabPositionIndex = prefs.getInt('settings_fab_position') ?? FabPosition.right.index;
-    final fabPosition = FabPosition.values[fabPositionIndex.clamp(0, 1)];
-    final dripIntervalMs = prefs.getInt('settings_drip_interval_ms') ?? 1000;
-    final debugLogEnabled = prefs.getBool('settings_debug_log_enabled') ?? false;
-    final showPerfOverlay = prefs.getBool('settings_show_perf_overlay') ?? false;
-    final imageCacheSize = prefs.getInt('settings_image_cache_size') ?? 50;
-    final imageSaveFolder = prefs.getString('settings_image_save_folder') ?? 'Pictures/OmniVerse';
 
     state = state.copyWith(
-      fetchIntervalSeconds: interval,
-      themeMode: ThemeMode.values[themeModeIndex.clamp(0, 2)],
-      fontScale: fontScale,
-      hideRetweetsAccountIds: hideRtList.toSet(),
-      showFetchTimer: showFetchTimer,
-      sensitiveMode: sensitiveMode,
-      compactEngagement: compactEngagement,
-      imagePreviewSize: ImagePreviewSize.values[imagePreviewSizeIndex.clamp(0, 2)],
-      hideUserInfo: hideUserInfo,
-      fontFamily: fontFamily,
-      appBarButtons: appBarButtons,
-      fabPosition: fabPosition,
-      dripIntervalMs: dripIntervalMs,
-      debugLogEnabled: debugLogEnabled,
-      showPerfOverlay: showPerfOverlay,
-      imageCacheSize: imageCacheSize,
-      imageSaveFolder: imageSaveFolder,
+      fetchIntervalSeconds: prefs.getInt(_keyInterval) ?? d.fetchIntervalSeconds,
+      themeMode: ThemeMode.values[(prefs.getInt(_keyThemeMode) ?? d.themeMode.index).clamp(0, 2)],
+      fontScale: prefs.getDouble(_keyFontScale) ?? d.fontScale,
+      hideRetweetsAccountIds: prefs.getStringList(_keyHideRetweetsAccounts)?.toSet() ?? d.hideRetweetsAccountIds,
+      showFetchTimer: prefs.getBool(_keyShowFetchTimer) ?? d.showFetchTimer,
+      sensitiveMode: sensitiveMode ?? d.sensitiveMode,
+      compactEngagement: prefs.getBool(_keyCompactEngagement) ?? d.compactEngagement,
+      imagePreviewSize: ImagePreviewSize.values[(prefs.getInt(_keyImagePreviewSize) ?? d.imagePreviewSize.index).clamp(0, 2)],
+      hideUserInfo: prefs.getBool(_keyHideUserInfo) ?? d.hideUserInfo,
+      fontFamily: fontFamily ?? d.fontFamily,
+      appBarButtons: prefs.getStringList(_keyAppBarButtons)?.toSet() ?? d.appBarButtons,
+      fabPosition: FabPosition.values[(prefs.getInt('settings_fab_position') ?? d.fabPosition.index).clamp(0, 1)],
+      dripIntervalMs: prefs.getInt('settings_drip_interval_ms') ?? d.dripIntervalMs,
+      debugLogEnabled: prefs.getBool('settings_debug_log_enabled') ?? d.debugLogEnabled,
+      showPerfOverlay: prefs.getBool('settings_show_perf_overlay') ?? d.showPerfOverlay,
+      imageCacheSize: prefs.getInt('settings_image_cache_size') ?? d.imageCacheSize,
+      imageSaveFolder: prefs.getString('settings_image_save_folder') ?? d.imageSaveFolder,
     );
 
     // 画像キャッシュ上限を反映

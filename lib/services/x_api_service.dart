@@ -33,6 +33,13 @@ class XApiService {
 
   String get _bearerToken => XBearerTokenService.instance.token;
 
+  /// Bearer Token が未取得の場合にCookie付きで取得を試みる。
+  Future<void> _ensureBearerToken(XCredentials creds) async {
+    if (!XBearerTokenService.instance.hasToken) {
+      await XBearerTokenService.instance.refresh(cookie: creds.cookieHeader, force: true);
+    }
+  }
+
   /// 最新の ct0 をアカウント別に追跡 (APIレスポンスの Set-Cookie で更新)
   final Map<String, String> _latestCt0 = {};
 
@@ -204,7 +211,13 @@ class XApiService {
     String operationName,
     Future<T> Function(String queryId) action,
   ) async {
-    final queryId = XQueryIdService.instance.getQueryId(operationName, creds: creds);
+    var queryId = XQueryIdService.instance.getQueryId(operationName, creds: creds);
+    // queryId が空なら先にリフレッシュ
+    if (queryId.isEmpty) {
+      await XQueryIdService.instance.forceRefresh(creds, onlyUpdate: {operationName});
+      queryId = XQueryIdService.instance.getQueryId(operationName, creds: creds);
+      if (queryId.isEmpty) return await action(queryId); // 空のまま進めてエラーにする
+    }
     try {
       return await action(queryId);
     } on XApiException catch (e) {
@@ -231,6 +244,7 @@ class XApiService {
     int count = 20,
     String? cursor,
   }) async {
+    await _ensureBearerToken(creds);
     return _withTargetedQueryIdRetry(creds, 'HomeLatestTimeline', (queryId) async {
       final variables = json.encode({
         'count': count,
@@ -291,6 +305,7 @@ class XApiService {
     String tweetId, {
     String? accountId,
   }) async {
+    await _ensureBearerToken(creds);
     return _withTargetedQueryIdRetry(creds, 'TweetDetail', (queryId) async {
       final variables = json.encode({
         'focalTweetId': tweetId,
@@ -476,6 +491,7 @@ class XApiService {
     XCredentials creds,
     String screenName,
   ) async {
+    await _ensureBearerToken(creds);
     return _withTargetedQueryIdRetry(creds, 'UserByScreenName', (queryId) async {
       final variables = json.encode({
         'screen_name': screenName,
@@ -558,6 +574,7 @@ class XApiService {
     int count = 20,
     String? cursor,
   }) async {
+    await _ensureBearerToken(creds);
     return _withTargetedQueryIdRetry(creds, 'UserTweets', (queryId) async {
       final variables = json.encode({
         'userId': userId,
@@ -1003,23 +1020,15 @@ class XApiService {
     XCredentials creds, {
     String? accountId,
   }) async {
-    // まず WebView で取得済みの NotificationsTimeline を試す。
-    // フォールバックとして旧 GenericTimelineById も試す。
-    const primaryOp = 'NotificationsTimeline';
-    const fallbackOp = 'GenericTimelineById';
+    await _ensureBearerToken(creds);
+    const opName = 'NotificationsTimeline';
 
     Future<List<NotificationItem>> attempt(String queryId, String opName) async {
-      final variables = opName == 'GenericTimelineById'
-          ? json.encode({
-              'timelineId': 'notifications_all',
-              'count': 40,
-              'withQuickPromoteEligibilityTweetFields': true,
-            })
-          : json.encode({
-              'count': 40,
-              'includePromotedContent': false,
-              'timeline_type': 'All',
-            });
+      final variables = json.encode({
+        'count': 40,
+        'includePromotedContent': false,
+        'timeline_type': 'All',
+      });
       final features = json.encode(XFeatures.timeline);
 
       final uri = Uri.parse(
@@ -1053,38 +1062,18 @@ class XApiService {
       return _parseGraphQLNotifications(body, accountId);
     }
 
-    // 1. NotificationsTimeline を試す
-    final primaryId = XQueryIdService.instance.getQueryId(primaryOp, creds: creds);
-    if (primaryId.isNotEmpty) {
-      try {
-        return await attempt(primaryId, primaryOp);
-      } on XApiException {
-        debugPrint('[XApi] $primaryOp failed, trying fallback');
-      } catch (e) {
-        debugPrint('[XApi] $primaryOp error: $e');
-      }
+    final queryId = XQueryIdService.instance.getQueryId(opName, creds: creds);
+    if (queryId.isEmpty) {
+      // queryId未取得（通知WebViewで修復が必要）
+      return <NotificationItem>[];
     }
 
-    // 2. フォールバック: GenericTimelineById
-    final fallbackId = XQueryIdService.instance.getQueryId(fallbackOp, creds: creds);
-    if (fallbackId.isNotEmpty) {
-      try {
-        return await attempt(fallbackId, fallbackOp);
-      } on XApiException {
-        debugPrint('[XApi] $fallbackOp also failed, refreshing queryIds');
-        // 両方失敗 → JSバンドルからリフレッシュ
-        await XQueryIdService.instance.forceRefresh(creds, onlyUpdate: {primaryOp, fallbackOp});
-        final refreshedId = XQueryIdService.instance.getQueryId(primaryOp, creds: creds);
-        if (refreshedId.isNotEmpty && refreshedId != primaryId) {
-          try {
-            return await attempt(refreshedId, primaryOp);
-          } catch (e) {
-            debugPrint('[XApi] NotificationsGQL retry also failed: $e');
-          }
-        }
-      } catch (e) {
-        debugPrint('[XApi] $fallbackOp error: $e');
-      }
+    try {
+      return await attempt(queryId, opName);
+    } on XApiException {
+      debugPrint('[XApi] $opName failed');
+    } catch (e) {
+      debugPrint('[XApi] $opName error: $e');
     }
 
     return <NotificationItem>[];
@@ -1192,6 +1181,7 @@ class XApiService {
     int count = 40,
     String? cursor,
   }) async {
+    await _ensureBearerToken(creds);
     final params = {
       'include_profile_interstitial_type': '1',
       'include_blocking': '1',

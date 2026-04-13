@@ -8,6 +8,8 @@ import 'package:http/http.dart' as http;
 
 import '../models/account.dart';
 import '../models/sns_service.dart';
+import '../services/debug_log_service.dart';
+import '../services/x_bearer_token_service.dart';
 import '../services/x_query_id_service.dart';
 
 /// ログイン完了時に返す認証情報
@@ -114,6 +116,9 @@ class _LoginWebViewScreenState extends State<LoginWebViewScreen> {
   InAppWebViewController? _controller;
   double _progress = 0;
   bool _isExtracting = false;
+  // WebViewのリクエストからBearerTokenとqueryIdを自動キャプチャ
+  String? _capturedBearerToken;
+  final Map<String, String> _capturedQueryIds = {};
   bool _cookiesCleared = false;
   bool _loginDetected = false;
   bool _pageReady = false;
@@ -265,6 +270,15 @@ class _LoginWebViewScreenState extends State<LoginWebViewScreen> {
               },
               onProgressChanged: (_, progress) {
                 setState(() => _progress = progress / 100);
+              },
+              // WebViewのリクエストからqueryIdを自動キャプチャ
+              onLoadResource: (controller, resource) {
+                final url = resource.url?.toString() ?? '';
+                // GraphQL queryId
+                final gqlMatch = RegExp(r'/i/api/graphql/([A-Za-z0-9_-]+)/([A-Za-z0-9_]+)').firstMatch(url);
+                if (gqlMatch != null) {
+                  _capturedQueryIds[gqlMatch.group(2)!] = gqlMatch.group(1)!;
+                }
               },
               onLoadStop: (controller, url) {
                 debugPrint('[LoginWebView] onLoadStop: $url');
@@ -589,22 +603,47 @@ class _LoginWebViewScreenState extends State<LoginWebViewScreen> {
     }
 
     final creds = XCredentials(authToken: authToken, ct0: ct0, allCookies: allCookies);
+    final _log = DebugLogService.instance;
 
-    // WebView 内の fetch でユーザー情報取得（全 Cookie が自動送信される）
+    // WebViewでキャプチャ済みのqueryIdを保存
+    await _log.log('Login', 'capturedQueryIds: ${_capturedQueryIds.length} ${_capturedQueryIds.keys.join(",")}');
+    if (_capturedQueryIds.isNotEmpty) {
+      await XQueryIdService.instance.updateQueryIds(creds, _capturedQueryIds);
+    }
+
+    // BearerToken
+    await _log.log('Login', 'bearerToken hasToken=${XBearerTokenService.instance.hasToken}');
+    if (!XBearerTokenService.instance.hasToken) {
+      await XBearerTokenService.instance.refresh(cookie: allCookies, force: true);
+      await _log.log('Login', 'bearerToken after refresh: hasToken=${XBearerTokenService.instance.hasToken}');
+    }
+
+    // queryId
+    var userByRestId = XQueryIdService.instance.getQueryId('UserByRestId', creds: creds);
+    await _log.log('Login', 'UserByRestId queryId=$userByRestId');
+    if (userByRestId.isEmpty) {
+      final count = await XQueryIdService.instance.refreshQueryIds(creds);
+      userByRestId = XQueryIdService.instance.getQueryId('UserByRestId', creds: creds);
+      await _log.log('Login', 'After refreshQueryIds($count): UserByRestId=$userByRestId');
+    }
+
     String displayName = 'X User';
     String handle = '@user';
     String? avatarUrl;
 
-    // twid の形式: "u%3D1234567890" → userId = "1234567890"
+    // twid
     String? userId;
     if (twid != null) {
       final decoded = Uri.decodeComponent(twid);
       final match = RegExp(r'u=(\d+)').firstMatch(decoded);
       userId = match?.group(1);
-      debugPrint('[LoginWebView] X twid=$twid → userId=$userId');
     }
+    await _log.log('Login', 'twid=$twid userId=$userId');
 
     if (userId != null && _controller != null) {
+      final bearerToken = XBearerTokenService.instance.token;
+      final queryId = userByRestId;
+      await _log.log('Login', 'Calling UserByRestId: bearerToken=${bearerToken.isNotEmpty}, queryId=$queryId');
       try {
         // WebView 内で fetch を実行（ブラウザの全 Cookie が使われる）
         final jsResult = await _controller!.callAsyncJavaScript(
@@ -612,7 +651,8 @@ class _LoginWebViewScreenState extends State<LoginWebViewScreen> {
             try {
               var userId = userId_;
               var ct0 = ct0_;
-              var queryId = "${XQueryIdService.instance.getQueryId('UserByRestId')}";
+              var queryId = queryId_;
+              var bearerToken = bearerToken_;
               var variables = JSON.stringify({userId: userId, withSafetyModeUserFields: true});
               var features = JSON.stringify({
                 hidden_profile_subscriptions_enabled: true,
@@ -632,7 +672,7 @@ class _LoginWebViewScreenState extends State<LoginWebViewScreen> {
 
               var resp = await fetch(url, {
                 headers: {
-                  "Authorization": "Bearer AAAAAAAAAAAAAAAAAAAAANRILgAAAAAAnNwIzUejRCOuH5E6I8xnZz4puTs%3D1Zv7ttfk8LF81IUq16cHjhLTvJu4FA33AGWWjCpTnA",
+                  "Authorization": "Bearer " + bearerToken,
                   "x-csrf-token": ct0,
                   "x-twitter-active-user": "yes",
                   "x-twitter-client-language": "ja",
@@ -647,20 +687,33 @@ class _LoginWebViewScreenState extends State<LoginWebViewScreen> {
 
               var data = await resp.json();
               var user = data.data.user.result;
+              if (user.__typename && user.__typename !== 'User' && user.user) {
+                user = user.user;
+              }
               var legacy = user.legacy || {};
+              var core = user.core || {};
+              var coreUser = core.user_results && core.user_results.result && core.user_results.result.legacy || {};
+              // avatar: user.avatar.image_url or legacy
+              var avatarObj = user.avatar || {};
+              var avatarUrl = legacy.profile_image_url_https || coreUser.profile_image_url_https || avatarObj.image_url || "";
               return JSON.stringify({
-                screenName: legacy.screen_name || "",
-                name: legacy.name || "",
-                avatar: legacy.profile_image_url_https || ""
+                screenName: legacy.screen_name || coreUser.screen_name || core.screen_name || "",
+                name: legacy.name || coreUser.name || core.name || "",
+                avatar: avatarUrl.replace('_normal', '_400x400')
               });
             } catch(e) {
               return JSON.stringify({error: e.toString()});
             }
           ''',
-          arguments: {'userId_': userId, 'ct0_': ct0},
+          arguments: {
+            'userId_': userId,
+            'ct0_': ct0,
+            'queryId_': queryId,
+            'bearerToken_': bearerToken,
+          },
         );
 
-        debugPrint('[LoginWebView] UserByRestId JS result: ${jsResult?.value}');
+        await _log.log('Login', 'UserByRestId JS result: ${jsResult?.value}');
 
         if (jsResult?.value != null) {
           final resultStr = jsResult!.value.toString();
@@ -709,7 +762,7 @@ class _LoginWebViewScreenState extends State<LoginWebViewScreen> {
       }
     }
 
-    debugPrint('[LoginWebView] X login: $handle ($displayName)');
+    await _log.log('Login', 'FINAL: handle=$handle displayName=$displayName avatar=${avatarUrl ?? "null"}');
 
     // _normal (48x48) → _400x400 に置換して高解像度版を保存
     final hiResAvatar = avatarUrl?.replaceFirst('_normal', '_400x400');
@@ -721,6 +774,20 @@ class _LoginWebViewScreenState extends State<LoginWebViewScreen> {
       handle: handle,
       avatarUrl: hiResAvatar,
     );
+
+    // 通知用queryId取得: WebViewで通知ページに遷移してキャプチャ
+    if (_controller != null &&
+        XQueryIdService.instance.getQueryId('NotificationsTimeline', creds: creds).isEmpty) {
+      await _log.log('Login', 'Navigating to notifications page for queryId capture');
+      _capturedQueryIds.clear();
+      await _controller!.loadUrl(urlRequest: URLRequest(url: WebUri('https://x.com/notifications')));
+      // ページ読み込み+APIリクエスト発生を待つ
+      await Future.delayed(const Duration(seconds: 4));
+      if (_capturedQueryIds.containsKey('NotificationsTimeline')) {
+        await XQueryIdService.instance.updateQueryIds(creds, _capturedQueryIds);
+        await _log.log('Login', 'Captured NotificationsTimeline=${_capturedQueryIds["NotificationsTimeline"]}');
+      }
+    }
 
     // 全 Cookie をクリア（次回ログイン時に別アカウントと干渉しないように）
     await cookieManager.deleteAllCookies();

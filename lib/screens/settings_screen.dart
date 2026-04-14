@@ -180,6 +180,18 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             onChanged: (_) => notifier.toggleAppBarButton('userInfo'),
             dense: true,
           ),
+          SwitchListTile(
+            title: const Text('画面スリープ防止'),
+            subtitle: Text(settings.keepScreenOn ? 'ON — バッテリー消費に注意' : 'OFF'),
+            value: settings.keepScreenOn,
+            onChanged: (value) => notifier.setKeepScreenOn(value),
+          ),
+          SwitchListTile(
+            title: const Text('ヘッダーにスリープ防止ボタンを表示'),
+            value: settings.appBarButtons.contains('wakelock'),
+            onChanged: (_) => notifier.toggleAppBarButton('wakelock'),
+            dense: true,
+          ),
 
           const Divider(),
 

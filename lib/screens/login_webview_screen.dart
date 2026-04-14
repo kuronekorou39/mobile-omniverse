@@ -1,4 +1,3 @@
-import 'dart:async';
 import 'dart:collection';
 import 'dart:convert';
 
@@ -121,7 +120,6 @@ class _LoginWebViewScreenState extends State<LoginWebViewScreen> {
   // WebViewのリクエストからBearerTokenとqueryIdを自動キャプチャ
   String? _capturedBearerToken;
   final Map<String, String> _capturedQueryIds = {};
-  Completer<void>? _notifLoadCompleter;
   bool _cookiesCleared = false;
   bool _loginDetected = false;
   bool _pageReady = false;
@@ -296,10 +294,6 @@ class _LoginWebViewScreenState extends State<LoginWebViewScreen> {
                 debugPrint('[LoginWebView] onLoadStop: $url');
                 if (!_pageReady && mounted) {
                   setState(() => _pageReady = true);
-                }
-                // 通知ページのロード完了を通知
-                if (_notifLoadCompleter != null && !_notifLoadCompleter!.isCompleted) {
-                  _notifLoadCompleter!.complete();
                 }
                 final urlStr = url?.toString() ?? '';
                 if (urlStr.contains(widget.service.domain)) {
@@ -790,29 +784,6 @@ class _LoginWebViewScreenState extends State<LoginWebViewScreen> {
       handle: handle,
       avatarUrl: hiResAvatar,
     );
-
-    // 通知用queryId取得: WebViewで通知ページに遷移してキャプチャ
-    if (_controller != null &&
-        XQueryIdService.instance.getQueryId('NotificationsTimeline', creds: creds).isEmpty) {
-      await _log.log('Login', 'Navigating to notifications page for queryId capture');
-      _capturedQueryIds.clear();
-
-      // ページロード完了を待つ Completer
-      final loadCompleter = Completer<void>();
-      _notifLoadCompleter = loadCompleter;
-      await _controller!.loadUrl(urlRequest: URLRequest(url: WebUri('https://x.com/notifications')));
-      // onLoadStop で complete されるのを待つ（最大10秒）
-      await loadCompleter.future.timeout(const Duration(seconds: 10), onTimeout: () {});
-      _notifLoadCompleter = null;
-      // ロード後、GraphQLリクエストが飛ぶのを少し待つ
-      await Future.delayed(const Duration(seconds: 2));
-
-      await _log.log('Login', 'After notif page: capturedQueryIds=${_capturedQueryIds.keys.join(",")}');
-      if (_capturedQueryIds.isNotEmpty) {
-        await XQueryIdService.instance.updateQueryIds(creds, _capturedQueryIds);
-        await _log.log('Login', 'Saved NotificationsTimeline=${_capturedQueryIds["NotificationsTimeline"] ?? "not found"}');
-      }
-    }
 
     // 全 Cookie をクリア（次回ログイン時に別アカウントと干渉しないように）
     await cookieManager.deleteAllCookies();

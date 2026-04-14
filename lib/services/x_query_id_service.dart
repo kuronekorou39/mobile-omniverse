@@ -158,11 +158,12 @@ class XQueryIdService {
 
       if (bundleUrls.isEmpty) return 0;
 
-      // 3. 各バンドルから queryId を抽出
+      // 3. 各バンドルから queryId を抽出（メモリ節約のため最大5つ）
+      final limitedUrls = bundleUrls.take(5).toList();
       final found = <String, String>{};
       final targetOps = _targetOperations;
 
-      for (final url in bundleUrls.toList()) {
+      for (final url in limitedUrls) {
         if (found.length >= targetOps.length) break;
 
         try {
@@ -174,12 +175,14 @@ class XQueryIdService {
           );
 
           if (jsResponse.statusCode != 200) continue;
+          // メモリ節約: bodyを変数に取り、パース後に参照を切る
+          final jsBody = jsResponse.body;
 
           // queryId:"xxx",operationName:"yyy" パターン
           final pattern = RegExp(
             r'queryId\s*:\s*"([A-Za-z0-9_-]+)"\s*,\s*operationName\s*:\s*"([A-Za-z0-9_]+)"',
           );
-          for (final match in pattern.allMatches(jsResponse.body)) {
+          for (final match in pattern.allMatches(jsBody)) {
             final queryId = match.group(1)!;
             final opName = match.group(2)!;
             if (targetOps.contains(opName)) {
@@ -191,7 +194,7 @@ class XQueryIdService {
           final reversePattern = RegExp(
             r'operationName\s*:\s*"([A-Za-z0-9_]+)"[^}]*?queryId\s*:\s*"([A-Za-z0-9_-]+)"',
           );
-          for (final match in reversePattern.allMatches(jsResponse.body)) {
+          for (final match in reversePattern.allMatches(jsBody)) {
             final opName = match.group(1)!;
             final queryId = match.group(2)!;
             if (targetOps.contains(opName) && !found.containsKey(opName)) {
@@ -203,7 +206,7 @@ class XQueryIdService {
           final exportPattern = RegExp(
             r'exports\s*=\s*\{[^}]*?queryId\s*:\s*"([A-Za-z0-9_-]+)"[^}]*?operationName\s*:\s*"([A-Za-z0-9_]+)"',
           );
-          for (final match in exportPattern.allMatches(jsResponse.body)) {
+          for (final match in exportPattern.allMatches(jsBody)) {
             final queryId = match.group(1)!;
             final opName = match.group(2)!;
             if (targetOps.contains(opName) && !found.containsKey(opName)) {

@@ -11,9 +11,10 @@ import '../services/x_query_id_service.dart';
 
 /// X の通知ページを WebView で開き、GraphQL の queryId を自動取得する
 class NotificationWebViewScreen extends StatefulWidget {
-  const NotificationWebViewScreen({super.key, required this.account});
+  const NotificationWebViewScreen({super.key, required this.account, this.autoSave = false});
 
   final Account account;
+  final bool autoSave;
 
   @override
   State<NotificationWebViewScreen> createState() =>
@@ -23,6 +24,7 @@ class NotificationWebViewScreen extends StatefulWidget {
 class _NotificationWebViewScreenState extends State<NotificationWebViewScreen> {
   double _progress = 0;
   bool _ready = false;
+  bool _autoSaved = false;
   final Map<String, String> _capturedIds = {};
   InAppWebViewController? _controller;
 
@@ -161,6 +163,11 @@ class _NotificationWebViewScreenState extends State<NotificationWebViewScreen> {
                         );
                         if (_capturedIds[opName] != queryId) {
                           setState(() => _capturedIds[opName] = queryId);
+                        }
+                        // autoSave: NotificationsTimeline を取得したら自動保存して閉じる
+                        if (widget.autoSave && opName == 'NotificationsTimeline' && !_autoSaved) {
+                          _autoSaved = true;
+                          Future.microtask(() => _onDone());
                         }
                         // features パラメータもキャプチャ
                         final uri = Uri.tryParse(url);

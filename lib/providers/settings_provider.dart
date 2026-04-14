@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:wakelock_plus/wakelock_plus.dart';
 
 import '../services/debug_log_service.dart';
 import '../services/timeline_fetch_scheduler.dart';
@@ -63,6 +64,7 @@ class SettingsState {
     this.postCardStyle = PostCardStyle.card,
     this.debugPostEnabled = false,
     this.showDripStatus = false,
+    this.keepScreenOn = false,
     this.dripIntervalMs = 1500,
     this.debugLogEnabled = false,
     this.showPerfOverlay = false,
@@ -98,6 +100,7 @@ class SettingsState {
   final PostCardStyle postCardStyle;
   final bool debugPostEnabled;
   final bool showDripStatus;
+  final bool keepScreenOn;
   /// ドリップ間隔（ミリ秒）
   final int dripIntervalMs;
   /// デバッグログを記録するか
@@ -126,6 +129,7 @@ class SettingsState {
     PostCardStyle? postCardStyle,
     bool? debugPostEnabled,
     bool? showDripStatus,
+    bool? keepScreenOn,
     int? dripIntervalMs,
     bool? debugLogEnabled,
     bool? showPerfOverlay,
@@ -149,6 +153,7 @@ class SettingsState {
       postCardStyle: postCardStyle ?? this.postCardStyle,
       debugPostEnabled: debugPostEnabled ?? this.debugPostEnabled,
       showDripStatus: showDripStatus ?? this.showDripStatus,
+      keepScreenOn: keepScreenOn ?? this.keepScreenOn,
       dripIntervalMs: dripIntervalMs ?? this.dripIntervalMs,
       debugLogEnabled: debugLogEnabled ?? this.debugLogEnabled,
       showPerfOverlay: showPerfOverlay ?? this.showPerfOverlay,
@@ -217,6 +222,7 @@ class SettingsNotifier extends StateNotifier<SettingsState> {
       postCardStyle: PostCardStyle.values[(prefs.getInt('settings_post_card_style') ?? d.postCardStyle.index).clamp(0, 1)],
       debugPostEnabled: prefs.getBool('settings_debug_post_enabled') ?? d.debugPostEnabled,
       showDripStatus: prefs.getBool('settings_show_drip_status') ?? d.showDripStatus,
+      keepScreenOn: prefs.getBool('settings_keep_screen_on') ?? d.keepScreenOn,
       dripIntervalMs: prefs.getInt('settings_drip_interval_ms') ?? d.dripIntervalMs,
       debugLogEnabled: prefs.getBool('settings_debug_log_enabled') ?? d.debugLogEnabled,
       showPerfOverlay: prefs.getBool('settings_show_perf_overlay') ?? d.showPerfOverlay,
@@ -229,6 +235,7 @@ class SettingsNotifier extends StateNotifier<SettingsState> {
 
     // デバッグログの有効/無効を反映
     DebugLogService.instance.enabled = state.debugLogEnabled;
+    if (state.keepScreenOn) WakelockPlus.enable();
 
     // #3: デフォルトフェッチONの場合、起動時にスケジューラを開始
     if (state.isFetchingActive) {
@@ -254,6 +261,7 @@ class SettingsNotifier extends StateNotifier<SettingsState> {
     await prefs.setInt('settings_post_card_style', state.postCardStyle.index);
     await prefs.setBool('settings_debug_post_enabled', state.debugPostEnabled);
     await prefs.setBool('settings_show_drip_status', state.showDripStatus);
+    await prefs.setBool('settings_keep_screen_on', state.keepScreenOn);
     await prefs.setInt('settings_drip_interval_ms', state.dripIntervalMs);
     await prefs.setBool('settings_debug_log_enabled', state.debugLogEnabled);
     await prefs.setBool('settings_show_perf_overlay', state.showPerfOverlay);
@@ -357,6 +365,16 @@ class SettingsNotifier extends StateNotifier<SettingsState> {
 
   void setFabPosition(FabPosition position) {
     state = state.copyWith(fabPosition: position);
+    _saveToPrefs();
+  }
+
+  void setKeepScreenOn(bool value) {
+    state = state.copyWith(keepScreenOn: value);
+    if (value) {
+      WakelockPlus.enable();
+    } else {
+      WakelockPlus.disable();
+    }
     _saveToPrefs();
   }
 

@@ -62,7 +62,8 @@ class XBearerTokenService {
         r'<script[^>]+src="(https://abs\.twimg\.com/responsive-web/client-web[^"]*\.js)"',
       );
 
-      for (final match in scriptPattern.allMatches(response.body)) {
+      final matches = scriptPattern.allMatches(response.body).take(3);
+      for (final match in matches) {
         final jsUrl = match.group(1)!;
         try {
           final jsResp = await client.get(Uri.parse(jsUrl));

@@ -430,10 +430,11 @@ class _OmniFeedScreenState extends ConsumerState<OmniFeedScreen>
   static const appBarButtonDefs = {
     'sensitive': ('センシティブ表示', Icons.visibility_off, Icons.visibility),
     'userInfo': ('ユーザー情報', Icons.person_off_outlined, Icons.person_outline),
+    'wakelock': ('画面スリープ防止', Icons.lock_outline, Icons.lock_open),
   };
 
   List<Widget> _buildAppBarLeftButtons(SettingsState settings) {
-    final buttons = <Widget>[];
+    final items = <({String key, IconData icon, String tooltip, VoidCallback onPressed})>[];
     final notifier = ref.read(settingsProvider.notifier);
 
     if (settings.appBarButtons.contains('sensitive')) {
@@ -442,24 +443,61 @@ class _OmniFeedScreenState extends ConsumerState<OmniFeedScreen>
         SensitiveMode.hide => (Icons.blur_on, 'モザイク: センシティブのみ'),
         SensitiveMode.hideAll => (Icons.blur_circular, 'モザイク: 全て隠す'),
       };
-      buttons.add(IconButton(
-        icon: Icon(icon, size: 20),
-        tooltip: tooltip,
-        onPressed: () => notifier.cycleSensitiveMode(),
-        constraints: const BoxConstraints(minWidth: 40, minHeight: 40),
-        padding: EdgeInsets.zero,
-      ));
+      items.add((key: 'sensitive', icon: icon, tooltip: tooltip, onPressed: () => notifier.cycleSensitiveMode()));
     }
 
     if (settings.appBarButtons.contains('userInfo')) {
       final isHiding = settings.hideUserInfo;
-      buttons.add(IconButton(
-        icon: Icon(
-          isHiding ? Icons.face_retouching_off : Icons.face_retouching_natural,
-          size: 20,
-        ),
+      items.add((
+        key: 'userInfo',
+        icon: isHiding ? Icons.face_retouching_off : Icons.face_retouching_natural,
         tooltip: isHiding ? '匿名モード: ON' : '匿名モード: OFF',
         onPressed: () => notifier.setHideUserInfo(!isHiding),
+      ));
+    }
+
+    if (settings.appBarButtons.contains('wakelock')) {
+      final isOn = settings.keepScreenOn;
+      items.add((
+        key: 'wakelock',
+        icon: isOn ? Icons.lock : Icons.lock_open,
+        tooltip: isOn ? 'スリープ防止: ON' : 'スリープ防止: OFF',
+        onPressed: () => notifier.setKeepScreenOn(!isOn),
+      ));
+    }
+
+    // 3個以上ならメニューにまとめる
+    if (items.length >= 3) {
+      return [
+        PopupMenuButton<String>(
+          icon: const Icon(Icons.more_vert, size: 20),
+          constraints: const BoxConstraints(minWidth: 40, minHeight: 40),
+          padding: EdgeInsets.zero,
+          itemBuilder: (_) => items.map((item) => PopupMenuItem(
+            value: item.key,
+            child: Row(
+              children: [
+                Icon(item.icon, size: 18),
+                const SizedBox(width: 8),
+                Text(item.tooltip, style: const TextStyle(fontSize: 13)),
+              ],
+            ),
+          )).toList(),
+          onSelected: (key) {
+            final item = items.firstWhere((i) => i.key == key);
+            item.onPressed();
+          },
+        ),
+      ];
+    }
+
+    // 2個以下はそのままボタン表示
+    final buttons = <Widget>[];
+    for (final item in items) {
+      buttons.add(IconButton(
+        icon: Icon(item.icon, size: 20),
+        tooltip: item.tooltip,
+        onPressed: item.onPressed,
         constraints: const BoxConstraints(minWidth: 40, minHeight: 40),
         padding: EdgeInsets.zero,
       ));

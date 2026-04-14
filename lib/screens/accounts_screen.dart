@@ -7,8 +7,10 @@ import '../providers/account_provider.dart';
 import '../providers/fetch_status_provider.dart';
 import '../providers/settings_provider.dart';
 import '../services/timeline_fetch_scheduler.dart';
+import '../services/x_query_id_service.dart';
 import '../widgets/sns_badge.dart';
 import 'login_webview_screen.dart';
+import 'notification_webview_screen.dart';
 import 'session_refresh_screen.dart';
 import 'settings_screen.dart';
 import 'user_profile_screen.dart';
@@ -207,6 +209,20 @@ class _AccountsScreenState extends ConsumerState<AccountsScreen> {
 
     if (result == null) return;
 
+    // 同じサービス+ハンドルのアカウントが既に存在するかチェック
+    final existing = ref.read(accountProvider);
+    final duplicate = existing.any((a) =>
+        a.service == result.service &&
+        a.handle.toLowerCase() == result.handle.toLowerCase());
+    if (duplicate) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('${result.handle} は既に追加されています')),
+        );
+      }
+      return;
+    }
+
     final account = Account(
       id: '${service.name}_${DateTime.now().millisecondsSinceEpoch}',
       service: service,
@@ -223,6 +239,19 @@ class _AccountsScreenState extends ConsumerState<AccountsScreen> {
     final settings = ref.read(settingsProvider);
     if (!settings.isFetchingActive) {
       ref.read(settingsProvider.notifier).startFetching();
+    }
+
+    // X アカウントで NotificationsTimeline queryId が未取得なら自動取得
+    if (service == SnsService.x && context.mounted) {
+      final creds = (result.credentials as XCredentials);
+      final queryId = XQueryIdService.instance.getQueryId('NotificationsTimeline', creds: creds);
+      if (queryId.isEmpty) {
+        await Navigator.of(context).push<bool>(
+          MaterialPageRoute(
+            builder: (_) => NotificationWebViewScreen(account: account, autoSave: true),
+          ),
+        );
+      }
     }
   }
 }

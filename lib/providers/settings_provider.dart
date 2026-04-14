@@ -61,6 +61,8 @@ class SettingsState {
     this.appBarButtons = const {},
     this.fabPosition = FabPosition.right,
     this.postCardStyle = PostCardStyle.card,
+    this.debugPostEnabled = false,
+    this.showDripStatus = false,
     this.dripIntervalMs = 1500,
     this.debugLogEnabled = false,
     this.showPerfOverlay = false,
@@ -94,6 +96,8 @@ class SettingsState {
   /// FABの表示位置
   final FabPosition fabPosition;
   final PostCardStyle postCardStyle;
+  final bool debugPostEnabled;
+  final bool showDripStatus;
   /// ドリップ間隔（ミリ秒）
   final int dripIntervalMs;
   /// デバッグログを記録するか
@@ -120,6 +124,8 @@ class SettingsState {
     Set<String>? appBarButtons,
     FabPosition? fabPosition,
     PostCardStyle? postCardStyle,
+    bool? debugPostEnabled,
+    bool? showDripStatus,
     int? dripIntervalMs,
     bool? debugLogEnabled,
     bool? showPerfOverlay,
@@ -141,6 +147,8 @@ class SettingsState {
       appBarButtons: appBarButtons ?? this.appBarButtons,
       fabPosition: fabPosition ?? this.fabPosition,
       postCardStyle: postCardStyle ?? this.postCardStyle,
+      debugPostEnabled: debugPostEnabled ?? this.debugPostEnabled,
+      showDripStatus: showDripStatus ?? this.showDripStatus,
       dripIntervalMs: dripIntervalMs ?? this.dripIntervalMs,
       debugLogEnabled: debugLogEnabled ?? this.debugLogEnabled,
       showPerfOverlay: showPerfOverlay ?? this.showPerfOverlay,
@@ -207,6 +215,8 @@ class SettingsNotifier extends StateNotifier<SettingsState> {
       appBarButtons: prefs.getStringList(_keyAppBarButtons)?.toSet() ?? d.appBarButtons,
       fabPosition: FabPosition.values[(prefs.getInt('settings_fab_position') ?? d.fabPosition.index).clamp(0, 1)],
       postCardStyle: PostCardStyle.values[(prefs.getInt('settings_post_card_style') ?? d.postCardStyle.index).clamp(0, 1)],
+      debugPostEnabled: prefs.getBool('settings_debug_post_enabled') ?? d.debugPostEnabled,
+      showDripStatus: prefs.getBool('settings_show_drip_status') ?? d.showDripStatus,
       dripIntervalMs: prefs.getInt('settings_drip_interval_ms') ?? d.dripIntervalMs,
       debugLogEnabled: prefs.getBool('settings_debug_log_enabled') ?? d.debugLogEnabled,
       showPerfOverlay: prefs.getBool('settings_show_perf_overlay') ?? d.showPerfOverlay,
@@ -242,6 +252,8 @@ class SettingsNotifier extends StateNotifier<SettingsState> {
     await prefs.setStringList(_keyAppBarButtons, state.appBarButtons.toList());
     await prefs.setInt('settings_fab_position', state.fabPosition.index);
     await prefs.setInt('settings_post_card_style', state.postCardStyle.index);
+    await prefs.setBool('settings_debug_post_enabled', state.debugPostEnabled);
+    await prefs.setBool('settings_show_drip_status', state.showDripStatus);
     await prefs.setInt('settings_drip_interval_ms', state.dripIntervalMs);
     await prefs.setBool('settings_debug_log_enabled', state.debugLogEnabled);
     await prefs.setBool('settings_show_perf_overlay', state.showPerfOverlay);
@@ -345,6 +357,16 @@ class SettingsNotifier extends StateNotifier<SettingsState> {
 
   void setFabPosition(FabPosition position) {
     state = state.copyWith(fabPosition: position);
+    _saveToPrefs();
+  }
+
+  void setShowDripStatus(bool value) {
+    state = state.copyWith(showDripStatus: value);
+    _saveToPrefs();
+  }
+
+  void setDebugPostEnabled(bool value) {
+    state = state.copyWith(debugPostEnabled: value);
     _saveToPrefs();
   }
 

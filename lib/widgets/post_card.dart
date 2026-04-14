@@ -166,41 +166,42 @@ class PostCard extends StatelessWidget {
                           const SizedBox(height: 4),
                         ],
 
-                        // Body text, images, video
-                        _SensitiveOverlay(
-                          isSensitive: (post.imageUrls.isNotEmpty || post.videoUrl != null) &&
-                              (sensitiveMode == SensitiveMode.hideAll ||
-                               (sensitiveMode == SensitiveMode.hide && post.isSensitive)),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              if (post.body.isNotEmpty)
-                                LinkedText(
-                                  text: post.body,
-                                  style: const TextStyle(
-                                    fontSize: 15,
-                                    height: 1.45,
+                        // Body text
+                        if (post.body.isNotEmpty)
+                          LinkedText(
+                            text: post.body,
+                            style: const TextStyle(
+                              fontSize: 15,
+                              height: 1.45,
+                            ),
+                          ),
+                        // Images, video（センシティブ時はオーバーレイで隠す）
+                        if (post.imageUrls.isNotEmpty || (post.videoUrl != null && post.videoThumbnailUrl != null))
+                          _SensitiveOverlay(
+                            isSensitive: (sensitiveMode == SensitiveMode.hideAll ||
+                                (sensitiveMode == SensitiveMode.hide && post.isSensitive)),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                if (post.imageUrls.isNotEmpty) ...[
+                                  const SizedBox(height: 8),
+                                  PostImageGrid(
+                                    imageUrls: post.imageUrls,
+                                    maxSingleHeight: imageMaxHeight,
+                                    gridHeight: imageGridHeight,
+                                    threadImageUrls: threadImageUrls,
+                                    threadIndexOffset: threadIndexOffset,
                                   ),
-                                ),
-                              if (post.imageUrls.isNotEmpty) ...[
-                                const SizedBox(height: 8),
-                                PostImageGrid(
-                                  imageUrls: post.imageUrls,
-                                  maxSingleHeight: imageMaxHeight,
-                                  gridHeight: imageGridHeight,
-                                  threadImageUrls: threadImageUrls,
-                                  threadIndexOffset: threadIndexOffset,
-                                ),
+                                ],
+                                if (post.videoUrl != null && post.videoThumbnailUrl != null) ...[
+                                  const SizedBox(height: 8),
+                                  PostVideoThumbnail(
+                                    videoUrl: post.videoUrl!,
+                                    thumbnailUrl: post.videoThumbnailUrl!,
+                                    height: videoHeight,
+                                  ),
+                                ],
                               ],
-                              if (post.videoUrl != null && post.videoThumbnailUrl != null) ...[
-                                const SizedBox(height: 8),
-                                PostVideoThumbnail(
-                                  videoUrl: post.videoUrl!,
-                                  thumbnailUrl: post.videoThumbnailUrl!,
-                                  height: videoHeight,
-                                ),
-                              ],
-                            ],
                           ),
                         ),
 

@@ -28,6 +28,7 @@ class _OverlayTimelineScreenState extends State<OverlayTimelineScreen> {
   int _themeModeIndex = 0; // 0=ダーク, 1=ライト, 2=システム
   bool _showFetchTimer = true; // メインアプリの設定から同期
   bool _hideUserInfo = false; // メインアプリの設定から同期
+  bool _showDripStatus = false; // メインアプリの設定から同期
   final Set<String> _expandedPostIds = {};
   Set<String> _newPostIds = {};
 
@@ -91,6 +92,10 @@ class _OverlayTimelineScreenState extends State<OverlayTimelineScreen> {
           if (decoded.containsKey('hideUserInfo')) {
             final v = decoded['hideUserInfo'] as bool? ?? false;
             if (v != _hideUserInfo) { _hideUserInfo = v; needsRebuild = true; }
+          }
+          if (decoded.containsKey('showDripStatus')) {
+            final v = decoded['showDripStatus'] as bool? ?? false;
+            if (v != _showDripStatus) { _showDripStatus = v; needsRebuild = true; }
           }
 
           // 投稿リストは変更時のみ送られてくる（トップでない時は無視）
@@ -583,12 +588,14 @@ class _OverlayTimelineScreenState extends State<OverlayTimelineScreen> {
                             child: Row(
                               mainAxisSize: MainAxisSize.min,
                               children: [
-                                Icon(
-                                  _overlayAtTop ? Icons.sync : Icons.pause,
-                                  color: _overlayAtTop ? Colors.green : _theme.textQuaternary,
-                                  size: 12,
-                                ),
-                                const SizedBox(width: 4),
+                                if (_showDripStatus) ...[
+                                  Icon(
+                                    _overlayAtTop ? Icons.sync : Icons.pause,
+                                    color: _overlayAtTop ? Colors.green : _theme.textQuaternary,
+                                    size: 12,
+                                  ),
+                                  const SizedBox(width: 4),
+                                ],
                                 Icon(Icons.drag_indicator,
                                     color: _theme.iconColor, size: 16),
                                 if (_showFetchTimer) ...[

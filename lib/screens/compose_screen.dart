@@ -7,6 +7,7 @@ import '../models/activity_log.dart';
 import '../models/post.dart';
 import '../models/sns_service.dart';
 import '../providers/activity_log_provider.dart';
+import '../providers/settings_provider.dart';
 import '../services/account_storage_service.dart';
 import '../services/bluesky_api_service.dart';
 import '../services/x_api_service.dart';
@@ -166,8 +167,9 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
                 ? '引用リポスト'
                 : '投稿'),
         actions: [
-          // ブラウザ投稿デバッグ（Xアカウント選択時のみ）
-          if (_selectedAccount?.service == SnsService.x)
+          // ブラウザ投稿デバッグ（設定でON + Xアカウント選択時のみ）
+          if (ref.watch(settingsProvider).debugPostEnabled &&
+              _selectedAccount?.service == SnsService.x)
             IconButton(
               icon: const Icon(Icons.bug_report_outlined, size: 20),
               tooltip: 'ブラウザで投稿（デバッグ）',

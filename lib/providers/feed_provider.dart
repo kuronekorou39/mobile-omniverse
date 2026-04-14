@@ -125,19 +125,15 @@ class FeedNotifier extends StateNotifier<FeedState> {
       return;
     }
     try {
-      debugPrint('[Feed] Precaching ${urls.length} images for ${post.id}');
-      // 1. ディスクにダウンロード
-      await Future.wait(
-        urls.map((url) => DefaultCacheManager().downloadFile(
-              url,
-              authHeaders: kImageHeaders,
-            )),
-      ).timeout(const Duration(seconds: 5), onTimeout: () => []);
-      // 2. メモリにデコード（ドリップ時に即表示するため）
-      await Future.wait(
-        urls.map((url) => _decodeToMemory(url)),
-      ).timeout(const Duration(seconds: 5), onTimeout: () => []);
-      debugPrint('[Feed] Precache done for ${post.id}');
+      // 画像を1枚ずつ順次処理（同時接続数を抑制）
+      for (final url in urls) {
+        try {
+          await DefaultCacheManager().downloadFile(url, authHeaders: kImageHeaders)
+              .timeout(const Duration(seconds: 5), onTimeout: () => throw TimeoutException(''));
+          await _decodeToMemory(url)
+              .timeout(const Duration(seconds: 3), onTimeout: () {});
+        } catch (_) {}
+      }
     } catch (e) {
       debugPrint('[Feed] Precache error for ${post.id}: $e');
     }
@@ -163,12 +159,23 @@ class FeedNotifier extends StateNotifier<FeedState> {
     return completer.future;
   }
 
-  /// 複数投稿の画像を並列プリキャッシュ
+  /// 複数投稿の画像を順次プリキャッシュ（同時実行数を制限）
+  bool _isPrecaching = false;
+  final List<Post> _precacheQueue = [];
+
   void _precachePostsImages(List<Post> posts) {
-    debugPrint('[Feed] Starting precache for ${posts.length} posts');
-    for (final post in posts) {
-      _precachePostImages(post);
+    _precacheQueue.addAll(posts.where((p) => !_precachedIds.contains(p.id)));
+    if (!_isPrecaching) _processPrecacheQueue();
+  }
+
+  Future<void> _processPrecacheQueue() async {
+    if (_isPrecaching) return;
+    _isPrecaching = true;
+    while (_precacheQueue.isNotEmpty) {
+      final post = _precacheQueue.removeAt(0);
+      await _precachePostImages(post);
     }
+    _isPrecaching = false;
   }
 
   /// トークン期限切れアカウントの通知用 (accountId, handle)
@@ -265,6 +272,7 @@ class FeedNotifier extends StateNotifier<FeedState> {
         },
         'showFetchTimer': settings.showFetchTimer,
         'hideUserInfo': settings.hideUserInfo,
+        'showDripStatus': settings.showDripStatus,
       };
 
       // 投稿に変更があった場合のみフルデータを送信（トップでない時は保留）
@@ -626,6 +634,11 @@ class FeedNotifier extends StateNotifier<FeedState> {
       _dripTimer?.cancel();
       _dripTimer = null;
       return;
+    }
+
+    // ドリップ直前にソート（途中追加された投稿の順序を保証）
+    if (_pendingQueue.length > 1) {
+      _pendingQueue.sort((a, b) => a.timestamp.compareTo(b.timestamp));
     }
 
     // 重複をスキップして最初の有効な投稿を見つける

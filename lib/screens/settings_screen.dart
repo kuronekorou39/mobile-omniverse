@@ -37,6 +37,8 @@ class SettingsScreen extends ConsumerStatefulWidget {
 
 class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   String _version = '...';
+  int _debugTapCount = 0;
+  bool _debugUnlocked = false;
 
   @override
   void initState() {
@@ -320,12 +322,32 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
           ListTile(
             title: const Text('バージョン'),
             trailing: Text(_version),
+            onTap: () {
+              if (_debugUnlocked) return;
+              _debugTapCount++;
+              final remaining = 5 - _debugTapCount;
+              if (remaining > 0 && remaining <= 2) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text('あと$remaining回でデバッグモード'),
+                    duration: const Duration(seconds: 1),
+                  ),
+                );
+              }
+              if (_debugTapCount >= 5) {
+                setState(() => _debugUnlocked = true);
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('デバッグモードが有効になりました')),
+                );
+              }
+            },
           ),
           ListTile(
             leading: const Icon(Icons.system_update),
             title: const Text('アップデート確認'),
             onTap: _checkForUpdate,
           ),
+          if (_debugUnlocked) ...[
           const Divider(),
 
           // ── デバッグ ──
@@ -369,6 +391,18 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 subtitle: Text(settings.isFetchingActive ? '実行中' : '停止中'),
                 value: settings.isFetchingActive,
                 onChanged: (_) => notifier.toggleFetching(),
+              ),
+              SwitchListTile(
+                title: const Text('ブラウザ投稿（デバッグ）'),
+                subtitle: const Text('投稿画面にWebView投稿ボタンを表示'),
+                value: settings.debugPostEnabled,
+                onChanged: (value) => notifier.setDebugPostEnabled(value),
+              ),
+              SwitchListTile(
+                title: const Text('ドリップ状態アイコン'),
+                subtitle: const Text('オーバーレイにドリップ状態を表示'),
+                value: settings.showDripStatus,
+                onChanged: (value) => notifier.setShowDripStatus(value),
               ),
               SwitchListTile(
                 title: const Text('パフォーマンスオーバーレイ'),
@@ -517,6 +551,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
               ),
             ],
           ),
+          ], // _debugUnlocked
         ],
       ),
     );

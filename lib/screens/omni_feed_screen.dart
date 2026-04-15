@@ -55,6 +55,7 @@ class _OmniFeedScreenState extends ConsumerState<OmniFeedScreen>
   List<Post>? _lastPosts;
   Set<String>? _lastEnabledIds;
   Set<String>? _lastHideRtIds;
+  bool? _lastHideAllRt;
 
   /// タイマー表示の定期リビルド用
   Timer? _countdownTimer;
@@ -353,13 +354,15 @@ class _OmniFeedScreenState extends ConsumerState<OmniFeedScreen>
     List<Post> posts,
     Set<String> enabledIds,
     Set<String> hideRtIds,
+    bool hideAllRt,
     int totalAccounts,
   ) {
     // 同じpostsリスト + 同じフィルタ条件なら前回結果を返す
     if (identical(posts, _lastPosts) &&
         _cachedFilteredPosts != null &&
         _setsEqual(enabledIds, _lastEnabledIds) &&
-        _setsEqual(hideRtIds, _lastHideRtIds)) {
+        _setsEqual(hideRtIds, _lastHideRtIds) &&
+        hideAllRt == _lastHideAllRt) {
       return _cachedFilteredPosts!;
     }
 
@@ -373,7 +376,9 @@ class _OmniFeedScreenState extends ConsumerState<OmniFeedScreen>
           .toList();
     }
 
-    if (hideRtIds.isNotEmpty) {
+    if (hideAllRt) {
+      result = result.where((p) => !p.isRetweet).toList();
+    } else if (hideRtIds.isNotEmpty) {
       result = result
           .where((p) =>
               !p.isRetweet ||
@@ -385,6 +390,7 @@ class _OmniFeedScreenState extends ConsumerState<OmniFeedScreen>
     _lastPosts = posts;
     _lastEnabledIds = enabledIds;
     _lastHideRtIds = hideRtIds;
+    _lastHideAllRt = hideAllRt;
     _cachedFilteredPosts = result;
     return result;
   }
@@ -453,9 +459,26 @@ class _OmniFeedScreenState extends ConsumerState<OmniFeedScreen>
       ));
     }
 
-    // 3個以上ならメニューにまとめる
-    if (items.length >= 3) {
-      return [
+    if (settings.appBarButtons.contains('retweet')) {
+      final isHiding = settings.hideAllRetweets;
+      items.add((
+        key: 'retweet',
+        icon: isHiding ? Icons.repeat_on : Icons.repeat,
+        tooltip: isHiding ? 'RT非表示: ON' : 'RT非表示: OFF',
+        onPressed: () => notifier.setHideAllRetweets(!isHiding),
+      ));
+    }
+
+    // フェッチタイマーは常に独立表示（メニューに入れない）
+    final hasAccounts = ref.read(accountProvider).isNotEmpty;
+    final showTimer = hasAccounts && settings.isFetchingActive && settings.showFetchTimer;
+    // タイマー表示時はボタン枠を1つ使うため、残り2個以上でまとめる
+    final groupThreshold = showTimer ? 2 : 3;
+
+    final buttons = <Widget>[];
+
+    if (items.length >= groupThreshold) {
+      buttons.add(
         PopupMenuButton<String>(
           icon: const Icon(Icons.more_vert, size: 20),
           constraints: const BoxConstraints(minWidth: 40, minHeight: 40),
@@ -475,24 +498,20 @@ class _OmniFeedScreenState extends ConsumerState<OmniFeedScreen>
             item.onPressed();
           },
         ),
-      ];
+      );
+    } else {
+      for (final item in items) {
+        buttons.add(IconButton(
+          icon: Icon(item.icon, size: 20),
+          tooltip: item.tooltip,
+          onPressed: item.onPressed,
+          constraints: const BoxConstraints(minWidth: 40, minHeight: 40),
+          padding: EdgeInsets.zero,
+        ));
+      }
     }
 
-    // 2個以下はそのままボタン表示
-    final buttons = <Widget>[];
-    for (final item in items) {
-      buttons.add(IconButton(
-        icon: Icon(item.icon, size: 20),
-        tooltip: item.tooltip,
-        onPressed: item.onPressed,
-        constraints: const BoxConstraints(minWidth: 40, minHeight: 40),
-        padding: EdgeInsets.zero,
-      ));
-    }
-
-    // フェッチタイマー（ロゴ寄りに配置）
-    final hasAccounts = ref.read(accountProvider).isNotEmpty;
-    if (hasAccounts && settings.isFetchingActive && settings.showFetchTimer) {
+    if (showTimer) {
       buttons.add(_buildFetchIndicator(context, settings));
     }
 
@@ -1001,7 +1020,7 @@ class _OmniFeedScreenState extends ConsumerState<OmniFeedScreen>
 
     // フィルタ適用（メモ化: postsリストが同一なら前回結果を再利用）
     final hideRtIds = settings.hideRetweetsAccountIds;
-    final filteredPosts = _getFilteredPosts(feed.posts, enabledAccountIds, hideRtIds, accounts.length);
+    final filteredPosts = _getFilteredPosts(feed.posts, enabledAccountIds, hideRtIds, settings.hideAllRetweets, accounts.length);
 
     final slivers = <Widget>[];
 

@@ -26,7 +26,7 @@ class LoginResult {
   });
 
   final SnsService service;
-  final Object credentials;
+  final SnsCredentials credentials;
   final String displayName;
   final bool isProtected;
   final String handle;

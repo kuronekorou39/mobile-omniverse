@@ -37,7 +37,7 @@ class _NotificationFetchResult {
   /// GraphQL通知（リプライ/メンション）の取得が成功したか
   final bool gqlOk;
   /// Bluesky のトークン更新があった場合
-  final Object? updatedCreds;
+  final SnsCredentials? updatedCreds;
 }
 
 Future<_NotificationFetchResult> fetchAccountNotifications(

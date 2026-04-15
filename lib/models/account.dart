@@ -2,8 +2,13 @@ import 'dart:convert';
 
 import 'sns_service.dart';
 
+/// SNS 認証情報の基底型
+sealed class SnsCredentials {
+  const SnsCredentials();
+}
+
 /// Bluesky (AT Protocol) の認証情報
-class BlueskyCredentials {
+class BlueskyCredentials extends SnsCredentials {
   const BlueskyCredentials({
     required this.accessJwt,
     required this.refreshJwt,
@@ -51,7 +56,7 @@ class BlueskyCredentials {
 }
 
 /// X (Twitter) の認証情報
-class XCredentials {
+class XCredentials extends SnsCredentials {
   const XCredentials({
     required this.authToken,
     required this.ct0,
@@ -102,8 +107,7 @@ class Account {
   final String handle;
   final String? avatarUrl;
 
-  /// BlueskyCredentials | XCredentials
-  final Object credentials;
+  final SnsCredentials credentials;
   final DateTime createdAt;
   final bool isEnabled;
   final bool isProtected;
@@ -115,7 +119,6 @@ class Account {
     final credsJson = switch (credentials) {
       BlueskyCredentials c => c.toJson(),
       XCredentials c => c.toJson(),
-      _ => throw StateError('Unknown credentials type'),
     };
 
     return {
@@ -138,7 +141,7 @@ class Account {
     final credsMap = json.decode(map['credentials'] as String)
         as Map<String, dynamic>;
 
-    final Object creds = switch (service) {
+    final SnsCredentials creds = switch (service) {
       SnsService.bluesky => BlueskyCredentials.fromJson(credsMap),
       SnsService.x => XCredentials.fromJson(credsMap),
     };
@@ -157,7 +160,7 @@ class Account {
   }
 
   Account copyWith({
-    Object? credentials,
+    SnsCredentials? credentials,
     bool? isEnabled,
     bool? isProtected,
   }) {

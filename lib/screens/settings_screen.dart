@@ -10,17 +10,13 @@ import 'package:open_filex/open_filex.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 
-import '../models/account.dart';
-import '../models/sns_service.dart';
 import '../providers/settings_provider.dart';
 import 'package:flutter_cache_manager/flutter_cache_manager.dart';
 
-import '../services/account_storage_service.dart';
 import '../services/app_update_service.dart';
 import '../services/debug_log_service.dart';
 import '../services/notification_cache_service.dart';
 import '../services/timeline_cache_service.dart';
-import '../services/x_bearer_token_service.dart';
 import '../services/x_features_service.dart';
 import '../services/x_query_id_service.dart';
 import '../widgets/update_dialog.dart';
@@ -77,6 +73,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
           // ── 外観 ──
           const _SectionHeader(title: '外観'),
           ListTile(
+            leading: const Icon(Icons.palette_outlined),
             title: const Text('テーマ'),
             trailing: DropdownButton<ThemeMode>(
               value: settings.themeMode,
@@ -91,6 +88,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             ),
           ),
           ListTile(
+            leading: const Icon(Icons.font_download_outlined),
             title: const Text('フォント'),
             subtitle: Text(settings.fontFamily.isEmpty
                 ? 'デフォルト'
@@ -99,11 +97,9 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             onTap: () => _openFontPicker(context, settings, notifier),
           ),
           ListTile(
+            leading: const Icon(Icons.format_size),
             title: Text('フォントサイズ ${(settings.fontScale / 0.8 * 100).round()}%'),
-          ),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: Row(
+            subtitle: Row(
               children: [
                 const Text('A', style: TextStyle(fontSize: 12)),
                 Expanded(
@@ -117,27 +113,12 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             ),
           ),
 
-          const Divider(),
+          const _SectionGap(),
 
-          // ── レイアウト ──
-          const _SectionHeader(title: 'レイアウト'),
+          // ── 投稿の表示 ──
+          const _SectionHeader(title: '投稿の表示'),
           ListTile(
-            title: const Text('ボタン位置'),
-            trailing: SegmentedButton<FabPosition>(
-              showSelectedIcon: false,
-              segments: const [
-                ButtonSegment(value: FabPosition.left, label: Text('左')),
-                ButtonSegment(value: FabPosition.right, label: Text('右')),
-              ],
-              selected: {settings.fabPosition},
-              onSelectionChanged: (value) =>
-                  notifier.setFabPosition(value.first),
-              style: const ButtonStyle(
-                visualDensity: VisualDensity.compact,
-              ),
-            ),
-          ),
-          ListTile(
+            leading: const Icon(Icons.view_agenda_outlined),
             title: const Text('投稿スタイル'),
             trailing: SegmentedButton<PostCardStyle>(
               showSelectedIcon: false,
@@ -153,51 +134,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
               ),
             ),
           ),
-
-          const Divider(),
-
-          // ── タイムライン ──
-          const _SectionHeader(title: 'タイムライン'),
           ListTile(
-            title: const Text('匿名モード'),
-            trailing: SegmentedButton<bool>(
-              showSelectedIcon: false,
-              segments: const [
-                ButtonSegment(value: false, label: Text('通常表示')),
-                ButtonSegment(value: true, label: Text('匿名表示')),
-              ],
-              selected: {settings.hideUserInfo},
-              onSelectionChanged: (value) =>
-                  notifier.setHideUserInfo(value.first),
-              style: const ButtonStyle(
-                visualDensity: VisualDensity.compact,
-              ),
-            ),
-          ),
-          SwitchListTile(
-            title: const Text('ヘッダーに匿名切替ボタンを表示'),
-            value: settings.appBarButtons.contains('userInfo'),
-            onChanged: (_) => notifier.toggleAppBarButton('userInfo'),
-            dense: true,
-          ),
-          SwitchListTile(
-            title: const Text('画面スリープ防止'),
-            subtitle: Text(settings.keepScreenOn ? 'ON — バッテリー消費に注意' : 'OFF'),
-            value: settings.keepScreenOn,
-            onChanged: (value) => notifier.setKeepScreenOn(value),
-          ),
-          SwitchListTile(
-            title: const Text('ヘッダーにスリープ防止ボタンを表示'),
-            value: settings.appBarButtons.contains('wakelock'),
-            onChanged: (_) => notifier.toggleAppBarButton('wakelock'),
-            dense: true,
-          ),
-
-          const Divider(),
-
-          // ── メディア ──
-          const _SectionHeader(title: 'メディア'),
-          ListTile(
+            leading: const Icon(Icons.photo_size_select_large_outlined),
             title: const Text('プレビューサイズ'),
             trailing: SegmentedButton<ImagePreviewSize>(
               showSelectedIcon: false,
@@ -214,7 +152,31 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
               ),
             ),
           ),
+          SwitchListTile(
+            secondary: const Icon(Icons.repeat),
+            title: const Text('RT / リポストを非表示'),
+            value: settings.hideAllRetweets,
+            onChanged: (value) => notifier.setHideAllRetweets(value),
+          ),
           ListTile(
+            leading: const Icon(Icons.visibility_off_outlined),
+            title: const Text('匿名モード'),
+            trailing: SegmentedButton<bool>(
+              showSelectedIcon: false,
+              segments: const [
+                ButtonSegment(value: false, label: Text('通常表示')),
+                ButtonSegment(value: true, label: Text('匿名表示')),
+              ],
+              selected: {settings.hideUserInfo},
+              onSelectionChanged: (value) =>
+                  notifier.setHideUserInfo(value.first),
+              style: const ButtonStyle(
+                visualDensity: VisualDensity.compact,
+              ),
+            ),
+          ),
+          ListTile(
+            leading: const Icon(Icons.shield_outlined),
             title: const Text('センシティブ'),
             trailing: SegmentedButton<SensitiveMode>(
               showSelectedIcon: false,
@@ -231,13 +193,113 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
               ),
             ),
           ),
-          SwitchListTile(
-            title: const Text('ヘッダーにセンシティブ切替ボタンを表示'),
-            value: settings.appBarButtons.contains('sensitive'),
-            onChanged: (_) => notifier.toggleAppBarButton('sensitive'),
-            dense: true,
+          ListTile(
+            leading: const Icon(Icons.swap_horiz),
+            title: const Text('ボタン位置'),
+            trailing: SegmentedButton<FabPosition>(
+              showSelectedIcon: false,
+              segments: const [
+                ButtonSegment(value: FabPosition.left, label: Text('左')),
+                ButtonSegment(value: FabPosition.right, label: Text('右')),
+              ],
+              selected: {settings.fabPosition},
+              onSelectionChanged: (value) =>
+                  notifier.setFabPosition(value.first),
+              style: const ButtonStyle(
+                visualDensity: VisualDensity.compact,
+              ),
+            ),
+          ),
+
+          const _SectionGap(),
+
+          // ── タイムライン取得 ──
+          const _SectionHeader(title: 'タイムライン取得'),
+          ListTile(
+            leading: const Icon(Icons.timer_outlined),
+            title: const Text('取得間隔'),
+            trailing: DropdownButton<int>(
+              value: settings.fetchIntervalSeconds,
+              items: const [
+                DropdownMenuItem(value: 15, child: Text('15秒')),
+                DropdownMenuItem(value: 30, child: Text('30秒')),
+                DropdownMenuItem(value: 60, child: Text('60秒')),
+                DropdownMenuItem(value: 120, child: Text('2分')),
+                DropdownMenuItem(value: 300, child: Text('5分')),
+              ],
+              onChanged: (value) {
+                if (value != null) notifier.setInterval(value);
+              },
+            ),
           ),
           ListTile(
+            leading: const Icon(Icons.water_drop_outlined),
+            title: const Text('ドリップ速度'),
+            subtitle: const Text('取得した投稿をタイムラインに流す間隔'),
+            trailing: DropdownButton<int>(
+              value: settings.dripIntervalMs,
+              items: const [
+                DropdownMenuItem(value: 500, child: Text('0.5秒')),
+                DropdownMenuItem(value: 1000, child: Text('1秒')),
+                DropdownMenuItem(value: 1500, child: Text('1.5秒')),
+                DropdownMenuItem(value: 2000, child: Text('2秒')),
+                DropdownMenuItem(value: 3000, child: Text('3秒')),
+                DropdownMenuItem(value: 5000, child: Text('5秒')),
+              ],
+              onChanged: (value) {
+                if (value != null) notifier.setDripIntervalMs(value);
+              },
+            ),
+          ),
+
+          const _SectionGap(),
+
+          // ── ヘッダーバー ──
+          const _SectionHeader(title: 'ヘッダーバー', subtitle: 'ヘッダーに表示するボタン'),
+          SwitchListTile(
+            secondary: const Icon(Icons.timer_outlined),
+            title: const Text('フェッチタイマー'),
+            value: settings.showFetchTimer,
+            onChanged: (value) => notifier.setShowFetchTimer(value),
+          ),
+          SwitchListTile(
+            secondary: const Icon(Icons.visibility_off_outlined),
+            title: const Text('匿名切替'),
+            value: settings.appBarButtons.contains('userInfo'),
+            onChanged: (_) => notifier.toggleAppBarButton('userInfo'),
+          ),
+          SwitchListTile(
+            secondary: const Icon(Icons.screen_lock_portrait_outlined),
+            title: const Text('スリープ防止'),
+            value: settings.appBarButtons.contains('wakelock'),
+            onChanged: (_) => notifier.toggleAppBarButton('wakelock'),
+          ),
+          SwitchListTile(
+            secondary: const Icon(Icons.shield_outlined),
+            title: const Text('センシティブ切替'),
+            value: settings.appBarButtons.contains('sensitive'),
+            onChanged: (_) => notifier.toggleAppBarButton('sensitive'),
+          ),
+          SwitchListTile(
+            secondary: const Icon(Icons.repeat),
+            title: const Text('RT非表示切替'),
+            value: settings.appBarButtons.contains('retweet'),
+            onChanged: (_) => notifier.toggleAppBarButton('retweet'),
+          ),
+
+          const _SectionGap(),
+
+          // ── 一般 ──
+          const _SectionHeader(title: '一般'),
+          SwitchListTile(
+            secondary: const Icon(Icons.bedtime_off_outlined),
+            title: const Text('画面スリープ防止'),
+            subtitle: Text(settings.keepScreenOn ? 'ON — バッテリー消費に注意' : 'OFF'),
+            value: settings.keepScreenOn,
+            onChanged: (value) => notifier.setKeepScreenOn(value),
+          ),
+          ListTile(
+            leading: const Icon(Icons.folder_outlined),
             title: const Text('画像の保存先'),
             subtitle: Text(settings.imageSaveFolder),
             trailing: Row(
@@ -282,56 +344,12 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             ),
           ),
 
-          const Divider(),
-
-          // ── フェッチ ──
-          const _SectionHeader(title: 'フェッチ', subtitle: 'SNSから投稿を取得する間隔'),
-          ListTile(
-            title: const Text('取得間隔'),
-            trailing: DropdownButton<int>(
-              value: settings.fetchIntervalSeconds,
-              items: const [
-                DropdownMenuItem(value: 15, child: Text('15秒')),
-                DropdownMenuItem(value: 30, child: Text('30秒')),
-                DropdownMenuItem(value: 60, child: Text('60秒')),
-                DropdownMenuItem(value: 120, child: Text('2分')),
-                DropdownMenuItem(value: 300, child: Text('5分')),
-              ],
-              onChanged: (value) {
-                if (value != null) notifier.setInterval(value);
-              },
-            ),
-          ),
-          ListTile(
-            title: const Text('ドリップ速度'),
-            subtitle: const Text('取得した投稿をタイムラインに流す間隔'),
-            trailing: DropdownButton<int>(
-              value: settings.dripIntervalMs,
-              items: const [
-                DropdownMenuItem(value: 500, child: Text('0.5秒')),
-                DropdownMenuItem(value: 1000, child: Text('1秒')),
-                DropdownMenuItem(value: 1500, child: Text('1.5秒')),
-                DropdownMenuItem(value: 2000, child: Text('2秒')),
-                DropdownMenuItem(value: 3000, child: Text('3秒')),
-                DropdownMenuItem(value: 5000, child: Text('5秒')),
-              ],
-              onChanged: (value) {
-                if (value != null) notifier.setDripIntervalMs(value);
-              },
-            ),
-          ),
-          SwitchListTile(
-            title: const Text('ヘッダーにタイマーを表示'),
-            value: settings.showFetchTimer,
-            onChanged: (value) => notifier.setShowFetchTimer(value ?? true),
-            dense: true,
-          ),
-
-          const Divider(),
+          const _SectionGap(),
 
           // ── アプリ情報 ──
           const _SectionHeader(title: 'アプリ情報'),
           ListTile(
+            leading: const Icon(Icons.info_outline),
             title: const Text('バージョン'),
             trailing: Text(_version),
             onTap: () {
@@ -348,7 +366,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             onTap: _checkForUpdate,
           ),
           if (_debugUnlocked) ...[
-          const Divider(),
+          const _SectionGap(),
 
           // ── デバッグ ──
           ExpansionTile(
@@ -627,27 +645,6 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       ),
     );
   }
-
-  String _themeModeLabel(ThemeMode mode) {
-    return switch (mode) {
-      ThemeMode.system => 'システム設定に従う',
-      ThemeMode.light => 'ライト',
-      ThemeMode.dark => 'ダーク',
-    };
-  }
-
-  String _fontLabel(String family) => switch (family) {
-        '' => 'デフォルト',
-        'serif' => '明朝体',
-        'monospace' => '等幅',
-        'sans-serif-condensed' => 'コンデンス',
-        'cursive' => '手書き風',
-        _ => family,
-      };
-
-  String _formatTime(DateTime dt) {
-    return '${dt.month}/${dt.day} ${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}';
-  }
 }
 
 /// フォントサイズスライダー: ドラッグ中はローカルstateのみ更新、
@@ -707,29 +704,57 @@ class _SectionHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final color = Theme.of(context).colorScheme.primary;
     return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 16, 16, 4),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+      padding: const EdgeInsets.fromLTRB(16, 20, 16, 8),
+      child: Row(
         children: [
-          Text(
-            title,
-            style: TextStyle(
-              fontSize: 13,
-              fontWeight: FontWeight.bold,
-              color: Theme.of(context).colorScheme.primary,
+          Container(
+            width: 3,
+            height: subtitle != null ? 30 : 18,
+            decoration: BoxDecoration(
+              color: color,
+              borderRadius: BorderRadius.circular(2),
             ),
           ),
-          if (subtitle != null)
-            Padding(
-              padding: const EdgeInsets.only(top: 2),
-              child: Text(
-                subtitle!,
-                style: TextStyle(fontSize: 12, color: Colors.grey[500]),
-              ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.bold,
+                    color: color,
+                  ),
+                ),
+                if (subtitle != null)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 2),
+                    child: Text(
+                      subtitle!,
+                      style: TextStyle(fontSize: 12, color: Colors.grey[500]),
+                    ),
+                  ),
+              ],
             ),
+          ),
         ],
       ),
+    );
+  }
+}
+
+class _SectionGap extends StatelessWidget {
+  const _SectionGap();
+
+  @override
+  Widget build(BuildContext context) {
+    return const Padding(
+      padding: EdgeInsets.only(top: 12),
+      child: Divider(height: 1),
     );
   }
 }

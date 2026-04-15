@@ -9,7 +9,7 @@ import '../models/sns_service.dart';
 /// セッション更新の結果
 class SessionRefreshResult {
   const SessionRefreshResult({required this.credentials});
-  final Object credentials;
+  final SnsCredentials credentials;
 }
 
 /// 既存アカウントの Cookie を WebView にセットしてセッションを確認・更新する画面

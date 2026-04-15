@@ -112,7 +112,6 @@ class FeedNotifier extends StateNotifier<FeedState> {
   bool _overlayAtTop = true;
   int _remainingSeconds = 0;
   int get remainingSeconds => _remainingSeconds;
-  bool _wasFetching = false;
   final SettingsState Function() _settingsReader;
 
   /// 画像キャッシュ済みの投稿 ID
@@ -218,12 +217,6 @@ class FeedNotifier extends StateNotifier<FeedState> {
     _countdownTimer = Timer.periodic(const Duration(seconds: 1), (_) {
       if (!mounted) return;
 
-      // フェッチ完了時にカウントダウンをリセット
-      if (_wasFetching && !state.isFetching) {
-        _remainingSeconds = _settingsReader().fetchIntervalSeconds;
-      }
-      _wasFetching = state.isFetching;
-
       if (!state.isFetching && _remainingSeconds > 0) {
         _remainingSeconds--;
       }
@@ -290,10 +283,12 @@ class FeedNotifier extends StateNotifier<FeedState> {
       if (_overlayPostsDirty && _overlayAtTop) {
         _overlayPostsDirty = false;
         final hideRtIds = settings.hideRetweetsAccountIds;
-        var visiblePosts = state.posts.where((p) =>
-            !p.isRetweet ||
-            p.fetchedByAccountIds.isEmpty ||
-            p.fetchedByAccountIds.any((id) => !hideRtIds.contains(id)));
+        var visiblePosts = settings.hideAllRetweets
+            ? state.posts.where((p) => !p.isRetweet)
+            : state.posts.where((p) =>
+                !p.isRetweet ||
+                p.fetchedByAccountIds.isEmpty ||
+                p.fetchedByAccountIds.any((id) => !hideRtIds.contains(id)));
         payload['posts'] = visiblePosts.take(100).map((p) => p.toJson()).toList();
       }
 
@@ -458,14 +453,16 @@ class FeedNotifier extends StateNotifier<FeedState> {
     // 新規投稿のキュー処理（ドリップ対象の場合のみ）
     int newPendingCount = _pendingQueue.length;
     if (!shouldBypassDrip && newPending.isNotEmpty) {
-      final hideRtIds = _settingsReader().hideRetweetsAccountIds;
+      final currentSettings = _settingsReader();
+      final hideRtIds = currentSettings.hideRetweetsAccountIds;
+      final hideAllRt = currentSettings.hideAllRetweets;
       final filtered = newPending
           .where((p) =>
               !sortedIds.contains(p.id) &&
               !_pendingIds.contains(p.id) &&
-              !(p.isRetweet &&
-                p.fetchedByAccountIds.isNotEmpty &&
-                p.fetchedByAccountIds.every((id) => hideRtIds.contains(id))))
+              !(p.isRetweet && (hideAllRt ||
+                (p.fetchedByAccountIds.isNotEmpty &&
+                 p.fetchedByAccountIds.every((id) => hideRtIds.contains(id))))))
           .toList();
 
       if (filtered.isNotEmpty) {
@@ -514,6 +511,9 @@ class FeedNotifier extends StateNotifier<FeedState> {
       clearError: true,
       pendingCount: newPendingCount,
     );
+
+    // フェッチ完了 → カウントダウンをリセット（タイマーの遷移検知に依存しない）
+    _remainingSeconds = _settingsReader().fetchIntervalSeconds;
 
 
     // ドリップタイマー起動（_dripOne内でトップ判定するので、ここでは常に起動）

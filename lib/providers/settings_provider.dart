@@ -54,22 +54,23 @@ class SettingsState {
     this.fontScale = 0.8,
     this.hideRetweetsAccountIds = const {},
     this.showFetchTimer = true,
-    this.sensitiveMode = SensitiveMode.hide,
+    this.sensitiveMode = SensitiveMode.show,
     this.compactEngagement = true,
     this.imagePreviewSize = ImagePreviewSize.medium,
     this.hideUserInfo = false,
     this.fontFamily = '',
-    this.appBarButtons = const {},
+    this.appBarButtons = const {'sensitive', 'userInfo', 'wakelock'},
     this.fabPosition = FabPosition.right,
-    this.postCardStyle = PostCardStyle.card,
+    this.postCardStyle = PostCardStyle.separator,
     this.debugPostEnabled = false,
     this.showDripStatus = false,
-    this.keepScreenOn = false,
+    this.keepScreenOn = true,
     this.dripIntervalMs = 1500,
     this.debugLogEnabled = false,
     this.showPerfOverlay = false,
     this.imageCacheSize = 50,
     this.imageSaveFolder = 'Pictures/OmniVerse',
+    this.hideAllRetweets = false,
   });
 
   final int fetchIntervalSeconds;
@@ -111,6 +112,8 @@ class SettingsState {
   final int imageCacheSize;
   /// 画像保存先フォルダ（ストレージルートからの相対パス）
   final String imageSaveFolder;
+  /// すべてのRT/リポストを非表示にするか
+  final bool hideAllRetweets;
 
   SettingsState copyWith({
     int? fetchIntervalSeconds,
@@ -135,6 +138,7 @@ class SettingsState {
     bool? showPerfOverlay,
     int? imageCacheSize,
     String? imageSaveFolder,
+    bool? hideAllRetweets,
   }) {
     return SettingsState(
       fetchIntervalSeconds: fetchIntervalSeconds ?? this.fetchIntervalSeconds,
@@ -159,6 +163,7 @@ class SettingsState {
       showPerfOverlay: showPerfOverlay ?? this.showPerfOverlay,
       imageCacheSize: imageCacheSize ?? this.imageCacheSize,
       imageSaveFolder: imageSaveFolder ?? this.imageSaveFolder,
+      hideAllRetweets: hideAllRetweets ?? this.hideAllRetweets,
     );
   }
 }
@@ -231,6 +236,8 @@ class SettingsNotifier extends StateNotifier<SettingsState> {
       showPerfOverlay: prefs.getBool('settings_show_perf_overlay') ?? d.showPerfOverlay,
       imageCacheSize: prefs.getInt('settings_image_cache_size') ?? d.imageCacheSize,
       imageSaveFolder: prefs.getString('settings_image_save_folder') ?? d.imageSaveFolder,
+      hideAllRetweets: prefs.getBool('settings_hide_all_retweets') ?? d.hideAllRetweets,
+      isFetchingActive: prefs.getBool('settings_fetching_active') ?? d.isFetchingActive,
     );
 
     // 画像キャッシュ上限を反映
@@ -270,6 +277,8 @@ class SettingsNotifier extends StateNotifier<SettingsState> {
     await prefs.setBool('settings_show_perf_overlay', state.showPerfOverlay);
     await prefs.setInt('settings_image_cache_size', state.imageCacheSize);
     await prefs.setString('settings_image_save_folder', state.imageSaveFolder);
+    await prefs.setBool('settings_hide_all_retweets', state.hideAllRetweets);
+    await prefs.setBool('settings_fetching_active', state.isFetchingActive);
   }
 
   void setInterval(int seconds) {
@@ -344,6 +353,11 @@ class SettingsNotifier extends StateNotifier<SettingsState> {
     _saveToPrefs();
   }
 
+  void setHideAllRetweets(bool value) {
+    state = state.copyWith(hideAllRetweets: value);
+    _saveToPrefs();
+  }
+
   void setDebugLogEnabled(bool value) {
     state = state.copyWith(debugLogEnabled: value);
     DebugLogService.instance.enabled = value;
@@ -411,11 +425,13 @@ class SettingsNotifier extends StateNotifier<SettingsState> {
     _scheduler.setInterval(Duration(seconds: state.fetchIntervalSeconds));
     _scheduler.start();
     state = state.copyWith(isFetchingActive: true);
+    _saveToPrefs();
   }
 
   void stopFetching() {
     _scheduler.stop();
     state = state.copyWith(isFetchingActive: false);
+    _saveToPrefs();
   }
 
   void toggleFetching() {

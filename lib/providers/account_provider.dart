@@ -34,7 +34,7 @@ class AccountNotifier extends StateNotifier<List<Account>> {
   }
 
   Future<void> updateCredentials(
-      String accountId, Object newCredentials) async {
+      String accountId, SnsCredentials newCredentials) async {
     final account = _storage.getAccount(accountId);
     if (account == null) return;
     final updated = account.copyWith(credentials: newCredentials);

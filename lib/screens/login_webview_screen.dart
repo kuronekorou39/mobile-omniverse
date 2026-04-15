@@ -22,11 +22,13 @@ class LoginResult {
     required this.displayName,
     required this.handle,
     this.avatarUrl,
+    this.isProtected = false,
   });
 
   final SnsService service;
   final Object credentials;
   final String displayName;
+  final bool isProtected;
   final String handle;
   final String? avatarUrl;
 }
@@ -741,6 +743,7 @@ class _LoginWebViewScreenState extends State<LoginWebViewScreen> {
     String displayName = 'X User';
     String handle = '@user';
     String? avatarUrl;
+    bool isProtected = false;
 
     final bearerToken = XBearerTokenService.instance.token;
 
@@ -780,7 +783,8 @@ class _LoginWebViewScreenState extends State<LoginWebViewScreen> {
               return JSON.stringify({
                 screenName: core.screen_name || legacy.screen_name || "",
                 name: core.name || legacy.name || "",
-                avatar: (legacy.profile_image_url_https || avatarObj.image_url || "").replace('_normal', '_400x400')
+                avatar: (legacy.profile_image_url_https || avatarObj.image_url || "").replace('_normal', '_400x400'),
+                isProtected: legacy.protected || user.privacy === "protected" || false
               });
             } catch(e) { return JSON.stringify({error: e.toString()}); }
           ''',
@@ -798,6 +802,7 @@ class _LoginWebViewScreenState extends State<LoginWebViewScreen> {
               displayName = (name != null && name.isNotEmpty) ? name : sn;
             }
             if (av != null && av.isNotEmpty) avatarUrl = av;
+            isProtected = data['isProtected'] as bool? ?? false;
           }
         }
       } catch (e) {
@@ -828,6 +833,7 @@ class _LoginWebViewScreenState extends State<LoginWebViewScreen> {
           displayName: displayName,
           handle: handle,
           avatarUrl: hiResAvatar,
+          isProtected: isProtected,
         ));
       }
     } else {
@@ -892,6 +898,7 @@ class _LoginWebViewScreenState extends State<LoginWebViewScreen> {
           displayName: displayName,
           handle: handle,
           avatarUrl: hiResAvatar,
+          isProtected: isProtected,
         ));
       }
     }

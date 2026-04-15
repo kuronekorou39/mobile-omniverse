@@ -228,6 +228,7 @@ class _AccountsScreenState extends ConsumerState<AccountsScreen> {
       avatarUrl: result.avatarUrl,
       credentials: result.credentials,
       createdAt: DateTime.now(),
+      isProtected: result.isProtected,
     );
 
     await ref.read(accountProvider.notifier).addAccount(account);

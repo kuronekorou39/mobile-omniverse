@@ -544,7 +544,12 @@ class XApiService {
       final restId = userResult['rest_id'] as String?;
       final legacy = userResult['legacy'] as Map<String, dynamic>?;
 
-      if (legacy == null) return {'rest_id': restId};
+      if (legacy == null) {
+        return {
+          'rest_id': restId,
+          'protected': (userResult['privacy'] as Map<String, dynamic>?)?['protected'] as bool? ?? false,
+        };
+      }
 
       final isFollowing = legacy['following'] as bool? ?? false;
 
@@ -560,7 +565,9 @@ class XApiService {
             ?.replaceFirst('_normal', '_400x400'),
         'profile_banner_url': legacy['profile_banner_url'] as String?,
         'is_following': isFollowing,
-        'protected': legacy['protected'] as bool? ?? false,
+        'protected': legacy['protected'] as bool?
+            ?? (userResult['privacy'] as Map<String, dynamic>?)?['protected'] as bool?
+            ?? false,
       };
     });
   }
@@ -1650,8 +1657,10 @@ class XApiService {
       // Sensitive content flag
       final isSensitive = legacy['possibly_sensitive'] as bool? ?? false;
 
-      // Protected account flag
-      final isProtected = userLegacy?['protected'] as bool? ?? false;
+      // Protected account flag: legacy → userResult.privacy.protected の順にフォールバック
+      final isProtected = userLegacy?['protected'] as bool?
+          ?? (userResult?['privacy'] as Map<String, dynamic>?)?['protected'] as bool?
+          ?? false;
 
       // Engagement counts
       final likeCount = legacy['favorite_count'] as int? ?? 0;

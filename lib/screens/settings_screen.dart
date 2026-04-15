@@ -337,20 +337,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             onTap: () {
               if (_debugUnlocked) return;
               _debugTapCount++;
-              final remaining = 5 - _debugTapCount;
-              if (remaining > 0 && remaining <= 2) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(
-                    content: Text('あと$remaining回でデバッグモード'),
-                    duration: const Duration(seconds: 1),
-                  ),
-                );
-              }
               if (_debugTapCount >= 5) {
                 setState(() => _debugUnlocked = true);
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('デバッグモードが有効になりました')),
-                );
               }
             },
           ),

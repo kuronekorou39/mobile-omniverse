@@ -1,61 +1,63 @@
-import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/painting.dart';
+import 'package:flutter/services.dart';
+import 'package:flutter/widgets.dart';
 import 'package:flutter_cache_manager/flutter_cache_manager.dart';
 
-/// メモリ使用量を監視し、閾値を超えたら自動で負荷軽減するサービス
-class MemoryGuardService {
+import 'debug_log_service.dart';
+
+/// OS のメモリプレッシャー通知に反応して負荷軽減・安全終了するサービス
+/// ポーリングではなくイベント駆動
+class MemoryGuardService with WidgetsBindingObserver {
   MemoryGuardService._();
   static final instance = MemoryGuardService._();
 
-  Timer? _timer;
   bool _precachePaused = false;
+  int _pressureCount = 0;
 
   /// プリキャッシュが一時停止中かどうか
   bool get isPrecachePaused => _precachePaused;
 
-  /// 警告レベル（MB）: プリキャッシュ停止 + 画像キャッシュ半分クリア
-  static const _warningMB = 800;
-  /// 緊急レベル（MB）: 画像キャッシュ全クリア
-  static const _criticalMB = 1000;
-  /// 復帰レベル（MB）: プリキャッシュ再開
-  static const _resumeMB = 600;
-
-  /// 監視を開始（5秒間隔）
+  /// 監視を開始（WidgetsBindingObserver として登録）
   void start() {
-    _timer?.cancel();
-    _timer = Timer.periodic(const Duration(seconds: 5), (_) => _check());
+    WidgetsBinding.instance.addObserver(this);
   }
 
   void stop() {
-    _timer?.cancel();
-    _timer = null;
+    WidgetsBinding.instance.removeObserver(this);
   }
 
-  void _check() {
+  /// OS からメモリプレッシャー通知を受けたとき呼ばれる
+  @override
+  void didHaveMemoryPressure() {
+    _pressureCount++;
     final rssMB = ProcessInfo.currentRss / (1024 * 1024);
+    final imgCache = PaintingBinding.instance.imageCache;
+    final snapshot = 'RSS:${rssMB.round()}MB '
+        'IMG:${imgCache.currentSize}枚/${(imgCache.currentSizeBytes / 1024 / 1024).toStringAsFixed(1)}MB '
+        'pressure:#$_pressureCount';
+    debugPrint('[MemoryGuard] $snapshot');
 
-    if (rssMB >= _criticalMB) {
-      // 緊急: 画像キャッシュ全クリア
-      debugPrint('[MemoryGuard] CRITICAL: ${rssMB.round()}MB — clearing all image cache');
-      PaintingBinding.instance.imageCache.clear();
-      PaintingBinding.instance.imageCache.clearLiveImages();
+    // DebugLogService が有効ならファイルにも記録（軽量な文字列のみ）
+    DebugLogService.instance.log('MemoryGuard', snapshot);
+
+    if (_pressureCount >= 3) {
+      // 3回目以降: アプリを安全終了（フリーズ防止）
+      debugPrint('[MemoryGuard] FATAL: repeated pressure — exiting app');
+      DebugLogService.instance.log('MemoryGuard', 'FATAL: exiting app');
+      SystemNavigator.pop();
+      return;
+    }
+
+    // 1回目: プリキャッシュ停止 + 画像キャッシュクリア
+    // 2回目: 全キャッシュクリア
+    _precachePaused = true;
+    PaintingBinding.instance.imageCache.clear();
+    PaintingBinding.instance.imageCache.clearLiveImages();
+    if (_pressureCount >= 2) {
       DefaultCacheManager().emptyCache();
-      _precachePaused = true;
-    } else if (rssMB >= _warningMB) {
-      // 警告: プリキャッシュ停止 + 画像キャッシュ縮小
-      if (!_precachePaused) {
-        debugPrint('[MemoryGuard] WARNING: ${rssMB.round()}MB — pausing precache, trimming image cache');
-        _precachePaused = true;
-      }
-      final cache = PaintingBinding.instance.imageCache;
-      cache.maximumSize = (cache.maximumSize * 0.5).round().clamp(10, 1000);
-    } else if (rssMB < _resumeMB && _precachePaused) {
-      // 復帰
-      debugPrint('[MemoryGuard] RESUMED: ${rssMB.round()}MB — resuming precache');
-      _precachePaused = false;
     }
   }
 }

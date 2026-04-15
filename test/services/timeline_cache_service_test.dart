@@ -1,7 +1,7 @@
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:mobile_omniverse/services/timeline_cache_service.dart';
 
@@ -9,11 +9,22 @@ import '../helpers/test_data.dart';
 
 void main() {
   late TimelineCacheService service;
+  late Directory tempDir;
+  late File testFile;
 
   setUp(() {
     TestWidgetsFlutterBinding.ensureInitialized();
-    SharedPreferences.setMockInitialValues({});
     service = TimelineCacheService.instance;
+    tempDir = Directory.systemTemp.createTempSync('timeline_cache_test_');
+    testFile = File('${tempDir.path}/timeline_cache.json');
+    service.cacheFileOverride = testFile;
+  });
+
+  tearDown(() {
+    service.cacheFileOverride = null;
+    if (tempDir.existsSync()) {
+      tempDir.deleteSync(recursive: true);
+    }
   });
 
   group('TimelineCacheService', () {
@@ -69,22 +80,20 @@ void main() {
     });
 
     test('corrupted JSON returns empty list gracefully', () async {
-      // Manually write invalid JSON to SharedPreferences
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setString('timeline_cache', 'not valid json {{{');
+      // ファイルに不正なJSONを直接書き込み
+      await testFile.writeAsString('not valid json {{{');
 
       final loaded = await service.loadCachedTimeline();
       expect(loaded, isEmpty);
     });
 
     test('corrupted individual post in list is skipped gracefully', () async {
-      // Write a JSON list where one item is invalid
+      // JSONリスト内に不正なアイテムを含むデータ
       final validPost = makePost(id: 'x_valid', body: 'Valid').toJson();
       final invalidPost = {'id': null}; // Missing required 'id' as String
       final data = json.encode([validPost, invalidPost]);
 
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setString('timeline_cache', data);
+      await testFile.writeAsString(data);
 
       final loaded = await service.loadCachedTimeline();
       // Only the valid post should be loaded; the invalid one is skipped
@@ -123,5 +132,6 @@ void main() {
       expect(loaded[0].imageUrls, ['https://img.com/1.jpg']);
       expect(loaded[0].permalink, 'https://x.com/test/status/meta');
     });
+
   });
 }

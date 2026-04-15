@@ -56,10 +56,8 @@ class _OmniFeedScreenState extends ConsumerState<OmniFeedScreen>
   Set<String>? _lastEnabledIds;
   Set<String>? _lastHideRtIds;
 
-  /// カウントダウン用
+  /// タイマー表示の定期リビルド用
   Timer? _countdownTimer;
-  int _remainingSeconds = 0;
-  bool _wasFetching = false;
 
   @override
   void initState() {
@@ -119,18 +117,7 @@ class _OmniFeedScreenState extends ConsumerState<OmniFeedScreen>
   void _startCountdownTimer() {
     _countdownTimer = Timer.periodic(const Duration(seconds: 1), (_) {
       if (!mounted) return;
-      final isFetching = ref.read(feedProvider).isFetching;
-
-      // フェッチ完了時にカウントダウンをリセット
-      if (_wasFetching && !isFetching) {
-        _remainingSeconds = ref.read(settingsProvider).fetchIntervalSeconds;
-      }
-      _wasFetching = isFetching;
-
-      if (!isFetching && _remainingSeconds > 0) {
-        _remainingSeconds--;
-      }
-      // タイマー表示が有効な場合のみ再描画（スクロールへの影響を最小化）
+      // タイマー表示が有効な場合のみ再描画（カウントダウン値は FeedNotifier が管理）
       if (ref.read(settingsProvider).showFetchTimer) {
         setState(() {});
       }
@@ -818,7 +805,7 @@ class _OmniFeedScreenState extends ConsumerState<OmniFeedScreen>
   Widget _buildFetchIndicator(
       BuildContext context, SettingsState settings) {
     final total = settings.fetchIntervalSeconds;
-    final remaining = _remainingSeconds.clamp(0, total);
+    final remaining = ref.read(feedProvider.notifier).remainingSeconds.clamp(0, total);
     final progress = total > 0 ? remaining / total : 0.0;
     final pendingCount = ref.read(feedProvider).pendingCount;
     final showPending = pendingCount > 0;

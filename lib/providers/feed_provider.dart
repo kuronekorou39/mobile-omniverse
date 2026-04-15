@@ -95,6 +95,10 @@ class FeedNotifier extends StateNotifier<FeedState> {
   int _cacheSaveCounter = 0;
   static const int _cacheSaveEveryN = 5;
 
+  /// ドリップ中のキャッシュ保存カウンター
+  int _dripCacheSaveCounter = 0;
+  static const int _dripCacheSaveEveryN = 10;
+
   final List<Post> _pendingQueue = [];
   final Set<String> _pendingIds = {};
   Timer? _dripTimer;
@@ -107,6 +111,7 @@ class FeedNotifier extends StateNotifier<FeedState> {
   bool _overlayActive = false;
   bool _overlayAtTop = true;
   int _remainingSeconds = 0;
+  int get remainingSeconds => _remainingSeconds;
   bool _wasFetching = false;
   final SettingsState Function() _settingsReader;
 
@@ -399,29 +404,13 @@ class FeedNotifier extends StateNotifier<FeedState> {
         if (!existingUpdated) {
           existingUpdated = _engagementChanged(old, post);
         }
-        if (old.isRetweet && !post.isRetweet) {
-          // 安全策: このパスに到達すべきではないがRT保護
-          debugPrint('[Feed] WARNING: RT flag lost at general update for ${post.id} (old.isRT=${old.isRetweet}, new.isRT=${post.isRetweet})');
-          existing[post.id] = post.copyWith(
-            likedByAccountIds: mergedLikedBy,
-            repostedByAccountIds: mergedRepostedBy,
-            bskyLikeUris: mergedBskyLikeUris,
-            bskyRepostUris: mergedBskyRepostUris,
-            fetchedByAccountIds: mergedAccountIds,
-            isRetweet: true,
-            retweetedByUsername: old.retweetedByUsername,
-            retweetedByHandle: old.retweetedByHandle,
-            timestamp: old.timestamp, // RT時刻を保持
-          );
-        } else {
-          existing[post.id] = post.copyWith(
-            likedByAccountIds: mergedLikedBy,
-            repostedByAccountIds: mergedRepostedBy,
-            bskyLikeUris: mergedBskyLikeUris,
-            bskyRepostUris: mergedBskyRepostUris,
-            fetchedByAccountIds: mergedAccountIds,
-          );
-        }
+        existing[post.id] = post.copyWith(
+          likedByAccountIds: mergedLikedBy,
+          repostedByAccountIds: mergedRepostedBy,
+          bskyLikeUris: mergedBskyLikeUris,
+          bskyRepostUris: mergedBskyRepostUris,
+          fetchedByAccountIds: mergedAccountIds,
+        );
       } else if (!_pendingIds.contains(post.id)) {
         // 新規投稿（キューにも未登録）— キューに追加
         final queued = newToQueue[post.id];
@@ -648,11 +637,12 @@ class FeedNotifier extends StateNotifier<FeedState> {
     }
 
     // 重複をスキップして最初の有効な投稿を見つける
+    final displayedIds = state.posts.map((p) => p.id).toSet();
     Post? post;
     while (_pendingQueue.isNotEmpty) {
       final candidate = _pendingQueue.removeAt(0);
       _pendingIds.remove(candidate.id);
-      if (!state.posts.any((p) => p.id == candidate.id)) {
+      if (!displayedIds.contains(candidate.id)) {
         post = candidate;
         break;
       }
@@ -684,8 +674,12 @@ class FeedNotifier extends StateNotifier<FeedState> {
 
     state = state.copyWith(posts: posts, pendingCount: _pendingQueue.length);
 
-    // キャッシュ更新
-    TimelineCacheService.instance.saveTimeline(posts);
+    // キャッシュ更新（ドリップ中は間引き）
+    _dripCacheSaveCounter++;
+    if (_dripCacheSaveCounter >= _dripCacheSaveEveryN || _pendingQueue.isEmpty) {
+      _dripCacheSaveCounter = 0;
+      TimelineCacheService.instance.saveTimeline(posts);
+    }
 
     // オーバーレイへ同期
     _syncToOverlay();

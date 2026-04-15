@@ -754,37 +754,7 @@ class XApiService {
   /// ツイートを投稿 (GraphQL CreateTweet)
   /// 226 (bot detection) の場合はリトライせず即失敗を返す
   Future<XApiResult> createTweet(XCredentials creds, String text) async {
-    // --- Cookie 詳細 (key=value の先頭16文字ずつ) ---
-    final cookiePairs = <String>[];
-    for (final pair in creds.cookieHeader.split('; ')) {
-      final eq = pair.indexOf('=');
-      if (eq > 0) {
-        final name = pair.substring(0, eq);
-        final val = pair.substring(eq + 1);
-        final preview = val.length > 16 ? '${val.substring(0, 16)}…' : val;
-        cookiePairs.add('$name=$preview');
-      }
-    }
-
     final warmedCookies = await _warmCookies(creds);
-
-    // warmed で変化した Cookie を検出
-    final warmedMap = <String, String>{};
-    for (final pair in warmedCookies.split('; ')) {
-      final eq = pair.indexOf('=');
-      if (eq > 0) warmedMap[pair.substring(0, eq)] = pair.substring(eq + 1);
-    }
-    final origMap = <String, String>{};
-    for (final pair in creds.cookieHeader.split('; ')) {
-      final eq = pair.indexOf('=');
-      if (eq > 0) origMap[pair.substring(0, eq)] = pair.substring(eq + 1);
-    }
-    final changedCookies = <String>[];
-    for (final key in warmedMap.keys) {
-      if (origMap[key] != warmedMap[key]) {
-        changedCookies.add(key);
-      }
-    }
 
     // --- GraphQL CreateTweet ---
     final queryId = _getMutationQueryId('CreateTweet', creds);
@@ -792,36 +762,23 @@ class XApiService {
         Uri.parse('${XEndpoints.graphqlBase}/$queryId/CreateTweet');
     final headers = _buildHeaders(creds, cookieOverride: warmedCookies);
 
-    // リクエスト詳細を構築（アクティビティログ用）
+    // リクエスト詳細を構築（デバッグビルドのみ Cookie 詳細を含む）
     final reqLines = StringBuffer();
-    reqLines.writeln('=== Headers ===');
-    for (final entry in headers.entries) {
-      if (entry.key == 'Cookie') {
-        reqLines.writeln('Cookie: (${entry.value.length} chars)');
-      } else {
-        reqLines.writeln('${entry.key}: ${entry.value}');
-      }
-    }
-    reqLines.writeln('=== Cookies (orig) ===');
-    for (final p in cookiePairs) {
-      reqLines.writeln(p);
-    }
-    if (changedCookies.isNotEmpty) {
-      reqLines.writeln('=== warmCookies changed ===');
-      for (final key in changedCookies) {
-        final oldVal = origMap[key] ?? '(none)';
-        final newVal = warmedMap[key] ?? '(none)';
-        reqLines.writeln('$key: ${oldVal.length > 16 ? "${oldVal.substring(0,16)}…" : oldVal} → ${newVal.length > 16 ? "${newVal.substring(0,16)}…" : newVal}');
-      }
-    } else {
-      reqLines.writeln('=== warmCookies: no changes ===');
-    }
-    reqLines.writeln('=== Endpoint ===');
     reqLines.writeln('POST $gqlUri');
     reqLines.writeln('queryId=$queryId');
+    if (kDebugMode) {
+      reqLines.writeln('=== Headers ===');
+      for (final entry in headers.entries) {
+        if (entry.key == 'Cookie') {
+          reqLines.writeln('Cookie: (${entry.value.length} chars)');
+        } else {
+          reqLines.writeln('${entry.key}: ${entry.value}');
+        }
+      }
+    }
     final reqInfo = reqLines.toString();
 
-    debugPrint('[XApi] createTweet POST:\n$reqInfo');
+    debugPrint('[XApi] createTweet POST: $gqlUri queryId=$queryId');
     final gqlBody = json.encode({
       'variables': {
         'tweet_text': text,

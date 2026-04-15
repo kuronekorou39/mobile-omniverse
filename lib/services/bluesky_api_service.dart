@@ -106,7 +106,7 @@ class BlueskyApiService {
       '?uri=${Uri.encodeComponent(postUri)}&depth=10',
     );
 
-    final response = await (httpClientOverride ?? http.Client()).get(uri, headers: {
+    final response = await _client.get(uri, headers: {
       'Authorization': 'Bearer ${creds.accessJwt}',
       'Accept': 'application/json',
     });
@@ -347,7 +347,7 @@ class BlueskyApiService {
       '?actor=${Uri.encodeComponent(actor)}',
     );
     debugPrint('[BlueskyApi] getProfile: actor=$actor, url=$uri');
-    final response = await (httpClientOverride ?? http.Client()).get(uri, headers: {
+    final response = await _client.get(uri, headers: {
       'Authorization': 'Bearer ${creds.accessJwt}',
       'Accept': 'application/json',
     });
@@ -376,7 +376,7 @@ class BlueskyApiService {
     }
     final uri = Uri.parse(url);
     debugPrint('[BlueskyApi] getAuthorFeed: actor=$actor, cursor=$cursor');
-    final response = await (httpClientOverride ?? http.Client()).get(uri, headers: {
+    final response = await _client.get(uri, headers: {
       'Authorization': 'Bearer ${creds.accessJwt}',
       'Accept': 'application/json',
     });

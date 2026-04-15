@@ -50,9 +50,9 @@ class Post {
   final String? accountId;
 
   // Engagement counts (global)
-  int likeCount;
-  int replyCount;
-  int repostCount;
+  final int likeCount;
+  final int replyCount;
+  final int repostCount;
 
   // Per-account engagement state
   final Set<String> likedByAccountIds;
@@ -124,7 +124,7 @@ class Post {
   factory Post.fromJson(Map<String, dynamic> json, SnsService source,
       {String? accountId}) {
     return Post(
-      id: json['id'] as String? ?? '${source.name}_${json.hashCode}',
+      id: json['id'] as String? ?? '${source.name}_${DateTime.now().microsecondsSinceEpoch}',
       source: source,
       username: json['username'] as String? ?? '',
       handle: json['handle'] as String? ?? '',
@@ -140,6 +140,7 @@ class Post {
   Post copyWith({
     String? username,
     String? handle,
+    String? body,
     String? avatarUrl,
     DateTime? timestamp,
     int? likeCount,
@@ -149,6 +150,13 @@ class Post {
     Set<String>? repostedByAccountIds,
     Map<String, String>? bskyLikeUris,
     Map<String, String>? bskyRepostUris,
+    List<String>? imageUrls,
+    String? videoUrl,
+    String? videoThumbnailUrl,
+    String? permalink,
+    String? inReplyToId,
+    String? uri,
+    String? cid,
     bool? isRetweet,
     String? retweetedByUsername,
     String? retweetedByHandle,
@@ -162,7 +170,7 @@ class Post {
       source: source,
       username: username ?? this.username,
       handle: handle ?? this.handle,
-      body: body,
+      body: body ?? this.body,
       timestamp: timestamp ?? this.timestamp,
       avatarUrl: avatarUrl ?? this.avatarUrl,
       accountId: accountId,
@@ -173,13 +181,13 @@ class Post {
       repostedByAccountIds: repostedByAccountIds ?? this.repostedByAccountIds,
       bskyLikeUris: bskyLikeUris ?? this.bskyLikeUris,
       bskyRepostUris: bskyRepostUris ?? this.bskyRepostUris,
-      imageUrls: imageUrls,
-      videoUrl: videoUrl,
-      videoThumbnailUrl: videoThumbnailUrl,
-      permalink: permalink,
-      inReplyToId: inReplyToId,
-      uri: uri,
-      cid: cid,
+      imageUrls: imageUrls ?? this.imageUrls,
+      videoUrl: videoUrl ?? this.videoUrl,
+      videoThumbnailUrl: videoThumbnailUrl ?? this.videoThumbnailUrl,
+      permalink: permalink ?? this.permalink,
+      inReplyToId: inReplyToId ?? this.inReplyToId,
+      uri: uri ?? this.uri,
+      cid: cid ?? this.cid,
       isRetweet: isRetweet ?? this.isRetweet,
       retweetedByUsername: retweetedByUsername ?? this.retweetedByUsername,
       retweetedByHandle: retweetedByHandle ?? this.retweetedByHandle,

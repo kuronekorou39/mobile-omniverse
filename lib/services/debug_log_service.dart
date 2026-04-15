@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:path_provider/path_provider.dart';
@@ -229,7 +230,7 @@ class DebugLogService {
       while (_writeBuffer.isNotEmpty) {
         final batch = _writeBuffer.join();
         _writeBuffer.clear();
-        final bytes = batch.codeUnits;
+        final bytes = utf8.encode(batch);
         await _logFile!.writeAsBytes(bytes, mode: FileMode.append, flush: false);
         _logBytes += bytes.length;
       }

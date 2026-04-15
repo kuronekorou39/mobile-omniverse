@@ -19,6 +19,8 @@ class XBearerTokenService {
   @visibleForTesting
   http.Client? httpClientOverride;
 
+  late final http.Client _sharedClient = http.Client();
+
   static const _prefsKey = 'x_bearer_token';
 
   String _current = '';
@@ -65,7 +67,7 @@ class XBearerTokenService {
     }
 
     try {
-      final client = httpClientOverride ?? http.Client();
+      final client = httpClientOverride ?? _sharedClient;
       final headers = <String, String>{
         'User-Agent': kUserAgent,
       };

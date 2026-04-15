@@ -195,6 +195,9 @@ class SettingsNotifier extends StateNotifier<SettingsState> {
       final oldBool = prefs.getBool(_keyShowSensitiveContent);
       if (oldBool != null) {
         sensitiveMode = oldBool ? SensitiveMode.show : SensitiveMode.hide;
+        // マイグレーション: 新キーに保存して旧キーを削除
+        prefs.setInt('settings_sensitive_mode', sensitiveMode.index);
+        prefs.remove(_keyShowSensitiveContent);
       }
     }
 

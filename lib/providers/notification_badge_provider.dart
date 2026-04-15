@@ -20,7 +20,6 @@ class NotificationBadgeNotifier extends StateNotifier<Set<String>> {
 
   int _fetchCycleCount = 0;
   static const _checkEveryNCycles = 5; // 5回に1回チェック
-  static const _prefsPrefix = 'notif_last_seen_';
   final _cache = NotificationCacheService.instance;
 
   /// 全体で未読があるかどうか（home_screen のバッジ用）

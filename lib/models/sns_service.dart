@@ -1,7 +1,7 @@
 enum SnsService {
   x(
     label: 'X',
-    homeUrl: 'https://x.com/home',
+    homeUrl: 'https://x.com/i/flow/login',
     domain: 'x.com',
   ),
   bluesky(

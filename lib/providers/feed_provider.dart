@@ -15,6 +15,7 @@ import '../models/sns_service.dart';
 import '../providers/activity_log_provider.dart';
 import '../providers/fetch_status_provider.dart';
 import '../providers/settings_provider.dart';
+import '../services/memory_guard_service.dart';
 import '../services/timeline_cache_service.dart';
 import '../services/timeline_fetch_scheduler.dart';
 import '../utils/image_headers.dart';
@@ -115,6 +116,11 @@ class FeedNotifier extends StateNotifier<FeedState> {
   /// 投稿の画像をプリキャッシュ
   Future<void> _precachePostImages(Post post) async {
     if (_precachedIds.contains(post.id)) return;
+    // メモリ警告中はスキップ
+    if (MemoryGuardService.instance.isPrecachePaused) {
+      _precachedIds.add(post.id);
+      return;
+    }
     final urls = <String>[
       if (post.avatarUrl != null) post.avatarUrl!,
       ...post.imageUrls,

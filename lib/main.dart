@@ -8,6 +8,7 @@ import 'widgets/perf_overlay.dart';
 import 'screens/splash_screen.dart';
 import 'services/account_storage_service.dart';
 import 'services/debug_log_service.dart';
+import 'services/memory_guard_service.dart';
 import 'services/notification_cache_service.dart';
 import 'services/x_bearer_token_service.dart';
 import 'services/x_features_service.dart';
@@ -30,6 +31,7 @@ void main() async {
   await XFeaturesService.instance.init();
   await DebugLogService.instance.init();
   await NotificationCacheService.instance.loadReadLines();
+  MemoryGuardService.instance.start();
   runApp(const ProviderScope(child: OmniVerseApp()));
 }
 

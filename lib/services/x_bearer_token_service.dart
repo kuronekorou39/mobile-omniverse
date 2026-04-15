@@ -1,4 +1,7 @@
+import 'dart:convert';
+
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
 import 'package:flutter/widgets.dart' show visibleForTesting;
 import 'package:shared_preferences/shared_preferences.dart';
@@ -25,12 +28,32 @@ class XBearerTokenService {
   DateTime? _lastRefresh;
   static const _refreshInterval = Duration(hours: 24);
 
-  /// SharedPreferences からキャッシュを読み込み
+  /// WebView等で取得したトークンを直接設定・永続化
+  Future<void> setToken(String token) async {
+    _current = token;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_prefsKey, token);
+  }
+
+  /// 初期化: キャッシュ → 設定ファイル の順で読み込み
   Future<void> init() async {
     final prefs = await SharedPreferences.getInstance();
     final cached = prefs.getString(_prefsKey);
     if (cached != null && cached.isNotEmpty) {
       _current = cached;
+      return;
+    }
+    // 設定ファイルから初期値を読み込み
+    try {
+      final jsonStr = await rootBundle.loadString('assets/x_defaults.json');
+      final defaults = json.decode(jsonStr) as Map<String, dynamic>;
+      final token = defaults['bearer_token'] as String?;
+      if (token != null && token.isNotEmpty) {
+        _current = token;
+        await prefs.setString(_prefsKey, _current);
+      }
+    } catch (e) {
+      debugPrint('[XBearerToken] Failed to load defaults: $e');
     }
   }
 

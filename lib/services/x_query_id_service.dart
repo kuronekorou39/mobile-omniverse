@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart' show visibleForTesting;
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
@@ -22,7 +23,7 @@ class XQueryIdService {
   static const _prefsKey = 'x_query_ids';
   static const _perAccountPrefsKey = 'x_query_ids_per_account';
   static const _lastRefreshKey = 'x_query_ids_last_refresh';
-  static const _minRefreshInterval = Duration(hours: 1);
+  static const _minRefreshInterval = Duration(hours: 24);
 
   /// 管理対象のオペレーション名一覧（JSバンドルからこれらのqueryIdを取得する）
   static const _targetOperations = <String>{
@@ -46,7 +47,6 @@ class XQueryIdService {
 
   /// アカウントごとの queryId キャッシュ
   final Map<String, Map<String, String>> _perAccount = {};
-  final Map<String, DateTime> _perAccountLastRefresh = {};
 
   /// アカウント識別キー
   static String _accountKey(XCredentials creds) => creds.authToken;
@@ -83,8 +83,23 @@ class XQueryIdService {
       _lastRefresh = DateTime.fromMillisecondsSinceEpoch(lastRefreshMs);
     }
 
-    // キャッシュが空でもここでは何もしない
-    // ログイン時やAPI呼び出し時にcreds付きで取得される
+    // キャッシュが空なら設定ファイルのデフォルト値を読み込む
+    if (_cached.isEmpty && _perAccount.isEmpty) {
+      try {
+        final jsonStr = await rootBundle.loadString('assets/x_defaults.json');
+        final defaults = json.decode(jsonStr) as Map<String, dynamic>;
+        final queryIds = defaults['query_ids'] as Map<String, dynamic>?;
+        if (queryIds != null) {
+          for (final entry in queryIds.entries) {
+            _cached[entry.key] = entry.value as String;
+          }
+          await _saveToPrefs();
+          debugPrint('[XQueryId] Loaded ${queryIds.length} queryIds from defaults');
+        }
+      } catch (e) {
+        debugPrint('[XQueryId] Failed to load defaults: $e');
+      }
+    }
   }
 
   /// operationName に対応する queryId を取得
@@ -111,17 +126,10 @@ class XQueryIdService {
   /// [onlyUpdate] を指定すると、そのオペレーションのみキャッシュ更新する
   /// Returns: 更新された operationName の数
   Future<int> refreshQueryIds(XCredentials? creds, {Set<String>? onlyUpdate}) async {
-    // アカウント別レート制限チェック
-    if (creds != null) {
-      final key = _accountKey(creds);
-      final last = _perAccountLastRefresh[key];
-      if (last != null && DateTime.now().difference(last) < _minRefreshInterval) {
-        return 0;
-      }
-    } else if (_lastRefresh != null) {
-      if (DateTime.now().difference(_lastRefresh!) < _minRefreshInterval) {
-        return 0;
-      }
+    // グローバルレート制限チェック（どのアカウントで取得しても結果は同じ）
+    if (_lastRefresh != null &&
+        DateTime.now().difference(_lastRefresh!) < _minRefreshInterval) {
+      return 0;
     }
 
     try {
@@ -233,14 +241,10 @@ class XQueryIdService {
         }
       }
 
-      // アカウント別のレート制限を記録
-      if (creds != null) {
-        _perAccountLastRefresh[_accountKey(creds)] = DateTime.now();
-      } else {
-        _lastRefresh = DateTime.now();
-        final prefs = await SharedPreferences.getInstance();
-        await prefs.setInt(_lastRefreshKey, _lastRefresh!.millisecondsSinceEpoch);
-      }
+      // グローバルレート制限を記録（queryIdは全アカウント共通なので1回で十分）
+      _lastRefresh = DateTime.now();
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setInt(_lastRefreshKey, _lastRefresh!.millisecondsSinceEpoch);
 
       debugPrint('[XQueryId] Refreshed ${found.length} queryIds');
       return found.length;
@@ -264,11 +268,7 @@ class XQueryIdService {
   /// [onlyUpdate] を指定すると、そのオペレーションの queryId のみ更新する
   /// (他のオペレーション、特に HomeLatestTimeline を壊さない)
   Future<int> forceRefresh(XCredentials? creds, {Set<String>? onlyUpdate}) async {
-    if (creds != null) {
-      _perAccountLastRefresh.remove(_accountKey(creds));
-    } else {
-      _lastRefresh = null;
-    }
+    _lastRefresh = null;
     return refreshQueryIds(creds, onlyUpdate: onlyUpdate);
   }
 
@@ -300,7 +300,6 @@ class XQueryIdService {
   Future<void> clearCache() async {
     _cached.clear();
     _perAccount.clear();
-    _perAccountLastRefresh.clear();
     _lastRefresh = null;
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove(_prefsKey);
@@ -316,7 +315,7 @@ class XQueryIdService {
   /// 最終更新日時
   DateTime? lastRefreshTime({XCredentials? creds}) {
     if (creds != null) {
-      return _perAccountLastRefresh[_accountKey(creds)];
+      return _lastRefresh;
     }
     return _lastRefresh;
   }

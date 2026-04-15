@@ -9,6 +9,7 @@ import 'package:http/http.dart' as http;
 import '../models/account.dart';
 import '../models/sns_service.dart';
 import '../services/debug_log_service.dart';
+import '../services/x_api_service.dart';
 import '../services/x_bearer_token_service.dart';
 import '../services/x_features_service.dart';
 import '../services/x_query_id_service.dart';
@@ -41,10 +42,12 @@ class LoginWebViewScreen extends StatefulWidget {
   State<LoginWebViewScreen> createState() => _LoginWebViewScreenState();
 }
 
-/// X の fetch をインターセプトしてユーザー情報をキャプチャするスクリプト
+/// X の fetch をインターセプトしてユーザー情報・BearerToken・queryIdをキャプチャするスクリプト
 const _xFetchInterceptorScript = '''
 (function() {
   window.__xCapturedUser = null;
+  window.__xCapturedBearerToken = '';
+  window.__xCapturedQueryIds = {};
   var _origFetch = window.fetch;
   window.fetch = function() {
     var url = '';
@@ -53,6 +56,28 @@ const _xFetchInterceptorScript = '''
     } else if (arguments[0] && arguments[0].url) {
       url = arguments[0].url;
     }
+
+    // リクエストヘッダーから Bearer Token をキャプチャ
+    try {
+      var opts = arguments[1] || {};
+      var headers = opts.headers || {};
+      var authHeader = '';
+      if (typeof headers.get === 'function') {
+        authHeader = headers.get('Authorization') || headers.get('authorization') || '';
+      } else {
+        authHeader = headers['Authorization'] || headers['authorization'] || '';
+      }
+      if (authHeader.indexOf('Bearer ') === 0 && authHeader.length > 20) {
+        window.__xCapturedBearerToken = authHeader.substring(7);
+      }
+    } catch(e) {}
+
+    // URL から queryId をキャプチャ
+    var gqlMatch = url.match(/\\/i\\/api\\/graphql\\/([A-Za-z0-9_-]+)\\/([A-Za-z0-9_]+)/);
+    if (gqlMatch) {
+      window.__xCapturedQueryIds[gqlMatch[2]] = gqlMatch[1];
+    }
+
     return _origFetch.apply(this, arguments).then(function(response) {
       try {
         // settings API のレスポンスをキャプチャ
@@ -120,9 +145,45 @@ class _LoginWebViewScreenState extends State<LoginWebViewScreen> {
   // WebViewのリクエストからBearerTokenとqueryIdを自動キャプチャ
   String? _capturedBearerToken;
   final Map<String, String> _capturedQueryIds = {};
+
+  // 取得状況表示用
+  String _extractStatus = '認証情報を取得中…';
+  bool _gotBearerToken = false;
+  bool _gotQueryIds = false;
+  bool _gotUserInfo = false;
+  bool _gotNotifications = false;
   bool _cookiesCleared = false;
   bool _loginDetected = false;
   bool _pageReady = false;
+
+  Widget _buildStatusRow(String label, bool done) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 2),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            done ? Icons.check_circle : Icons.hourglass_empty,
+            size: 16,
+            color: done ? Colors.green : Colors.grey,
+          ),
+          const SizedBox(width: 8),
+          Text(label, style: TextStyle(fontSize: 13, color: done ? Colors.green : Colors.grey)),
+        ],
+      ),
+    );
+  }
+
+  void _updateExtractStatus(String status, {bool? bearerToken, bool? queryIds, bool? userInfo, bool? notifications}) {
+    if (!mounted) return;
+    setState(() {
+      _extractStatus = status;
+      if (bearerToken != null) _gotBearerToken = bearerToken;
+      if (queryIds != null) _gotQueryIds = queryIds;
+      if (userInfo != null) _gotUserInfo = userInfo;
+      if (notifications != null) _gotNotifications = notifications;
+    });
+  }
 
   @override
   void initState() {
@@ -332,21 +393,26 @@ class _LoginWebViewScreenState extends State<LoginWebViewScreen> {
           if (_isExtracting)
             Container(
               color: Colors.black54,
-              child: const Center(
+              child: Center(
                 child: Card(
-                  margin: EdgeInsets.all(32),
+                  margin: const EdgeInsets.all(32),
                   child: Padding(
-                    padding: EdgeInsets.all(32),
+                    padding: const EdgeInsets.all(24),
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        CircularProgressIndicator(),
-                        SizedBox(height: 24),
+                        const CircularProgressIndicator(),
+                        const SizedBox(height: 20),
                         Text(
-                          '認証情報を取得中...',
-                          style: TextStyle(fontSize: 16),
+                          _extractStatus,
+                          style: const TextStyle(fontSize: 14),
                           textAlign: TextAlign.center,
                         ),
+                        const SizedBox(height: 16),
+                        _buildStatusRow('Bearer Token', _gotBearerToken),
+                        _buildStatusRow('queryId', _gotQueryIds),
+                        _buildStatusRow('ユーザー情報', _gotUserInfo),
+                        _buildStatusRow('通知 queryId', _gotNotifications),
                       ],
                     ),
                   ),
@@ -615,119 +681,114 @@ class _LoginWebViewScreenState extends State<LoginWebViewScreen> {
     final creds = XCredentials(authToken: authToken, ct0: ct0, allCookies: allCookies);
     final _log = DebugLogService.instance;
 
-    // WebViewでキャプチャ済みのqueryIdを保存
-    await _log.log('Login', 'capturedQueryIds: ${_capturedQueryIds.length} ${_capturedQueryIds.keys.join(",")}');
+    // === 1. onLoadResource で queryId がキャプチャされるのを待つ ===
+    _updateExtractStatus('API応答を待っています…');
+    for (var i = 0; i < 16; i++) {
+      if (_capturedQueryIds.isNotEmpty) break;
+      await Future.delayed(const Duration(milliseconds: 500));
+    }
+
+    // キャプチャ済みqueryIdを保存
     if (_capturedQueryIds.isNotEmpty) {
       await XQueryIdService.instance.updateQueryIds(creds, _capturedQueryIds);
     }
+    await _log.log('Login', 'capturedQueryIds: ${_capturedQueryIds.keys.join(",")}');
 
-    // BearerToken
-    await _log.log('Login', 'bearerToken hasToken=${XBearerTokenService.instance.hasToken}');
+    // === 2. BearerToken 確認 ===
     if (!XBearerTokenService.instance.hasToken) {
-      await XBearerTokenService.instance.refresh(cookie: allCookies, force: true);
-      await _log.log('Login', 'bearerToken after refresh: hasToken=${XBearerTokenService.instance.hasToken}');
+      await XBearerTokenService.instance.init();
     }
+    _updateExtractStatus('取得状況を確認中…',
+      bearerToken: XBearerTokenService.instance.hasToken,
+    );
 
-    // queryId
-    var userByRestId = XQueryIdService.instance.getQueryId('UserByRestId', creds: creds);
-    await _log.log('Login', 'UserByRestId queryId=$userByRestId');
-    if (userByRestId.isEmpty) {
-      final count = await XQueryIdService.instance.refreshQueryIds(creds);
-      userByRestId = XQueryIdService.instance.getQueryId('UserByRestId', creds: creds);
-      await _log.log('Login', 'After refreshQueryIds($count): UserByRestId=$userByRestId');
+    // === 3. 不足queryIdをJSバンドルから補完 ===
+    _updateExtractStatus('queryId を取得中…');
+    await XQueryIdService.instance.refreshQueryIds(creds);
+
+    // 主要queryIdが揃っているか確認
+    final requiredOps = ['HomeLatestTimeline', 'UserByRestId', 'TweetDetail'];
+    final allQueryIdsOk = requiredOps.every(
+      (op) => XQueryIdService.instance.getQueryId(op, creds: creds).isNotEmpty,
+    );
+    _updateExtractStatus('queryId を取得中…', queryIds: allQueryIdsOk);
+
+    final missingOps = requiredOps
+        .where((op) => XQueryIdService.instance.getQueryId(op, creds: creds).isEmpty)
+        .toList();
+    await _log.log('Login', 'queryIds ok=$allQueryIdsOk missing=$missingOps');
+
+    // === 4. 通知ページに遷移してNotificationsTimeline queryIdを取得 ===
+    final notifQueryId = XQueryIdService.instance.getQueryId('NotificationsTimeline', creds: creds);
+    if (notifQueryId.isEmpty && _controller != null) {
+      _updateExtractStatus('通知 queryId を取得中…');
+      await _controller!.loadUrl(urlRequest: URLRequest(url: WebUri('https://x.com/notifications')));
+      for (var i = 0; i < 15; i++) {
+        await Future.delayed(const Duration(seconds: 1));
+        if (_capturedQueryIds.containsKey('NotificationsTimeline')) {
+          await XQueryIdService.instance.updateQueryIds(creds, _capturedQueryIds);
+          break;
+        }
+      }
     }
+    _updateExtractStatus('通知 queryId を取得中…',
+      notifications: XQueryIdService.instance.getQueryId('NotificationsTimeline', creds: creds).isNotEmpty,
+    );
+    await _log.log('Login', 'NotificationsTimeline=${XQueryIdService.instance.getQueryId("NotificationsTimeline", creds: creds)}');
 
+    // === 5. ユーザー情報取得 ===
+    _updateExtractStatus('ユーザー情報を取得中…');
     String displayName = 'X User';
     String handle = '@user';
     String? avatarUrl;
 
-    // twid
+    final bearerToken = XBearerTokenService.instance.token;
+
+    // WebView JS で UserByRestId を呼んでユーザー情報を取得
     String? userId;
     if (twid != null) {
       final decoded = Uri.decodeComponent(twid);
       final match = RegExp(r'u=(\d+)').firstMatch(decoded);
       userId = match?.group(1);
     }
-    await _log.log('Login', 'twid=$twid userId=$userId');
+    final queryId = XQueryIdService.instance.getQueryId('UserByRestId', creds: creds);
 
-    if (userId != null && _controller != null) {
-      final bearerToken = XBearerTokenService.instance.token;
-      final queryId = userByRestId;
-      await _log.log('Login', 'Calling UserByRestId: bearerToken=${bearerToken.isNotEmpty}, queryId=$queryId');
+    if (userId != null && _controller != null && bearerToken.isNotEmpty && queryId.isNotEmpty) {
       try {
-        // WebView 内で fetch を実行（ブラウザの全 Cookie が使われる）
         final jsResult = await _controller!.callAsyncJavaScript(
           functionBody: '''
             try {
-              var userId = userId_;
-              var ct0 = ct0_;
-              var queryId = queryId_;
-              var bearerToken = bearerToken_;
-              var variables = JSON.stringify({userId: userId, withSafetyModeUserFields: true});
-              var features = JSON.stringify({
-                hidden_profile_subscriptions_enabled: true,
-                rweb_tipjar_consumption_enabled: true,
-                responsive_web_graphql_exclude_directive_enabled: true,
-                verified_phone_label_enabled: false,
-                highlights_tweets_tab_ui_enabled: true,
-                responsive_web_twitter_article_notes_tab_enabled: true,
-                subscriptions_feature_can_gift_premium: true,
-                creator_subscriptions_tweet_preview_api_enabled: true,
-                responsive_web_graphql_skip_user_profile_image_extensions_enabled: false,
-                responsive_web_graphql_timeline_navigation_enabled: true
-              });
-              var url = "https://x.com/i/api/graphql/" + queryId + "/UserByRestId"
-                + "?variables=" + encodeURIComponent(variables)
-                + "&features=" + encodeURIComponent(features);
-
-              var resp = await fetch(url, {
-                headers: {
-                  "Authorization": "Bearer " + bearerToken,
-                  "x-csrf-token": ct0,
-                  "x-twitter-active-user": "yes",
-                  "x-twitter-client-language": "ja",
-                  "Content-Type": "application/json"
-                },
+              var resp = await fetch("https://x.com/i/api/graphql/" + queryId_ + "/UserByRestId?variables=" +
+                encodeURIComponent(JSON.stringify({userId: userId_, withSafetyModeUserFields: true})) +
+                "&features=" + encodeURIComponent(JSON.stringify({
+                  hidden_profile_subscriptions_enabled: true, rweb_tipjar_consumption_enabled: true,
+                  responsive_web_graphql_exclude_directive_enabled: true, verified_phone_label_enabled: false,
+                  creator_subscriptions_tweet_preview_api_enabled: true,
+                  responsive_web_graphql_skip_user_profile_image_extensions_enabled: false,
+                  responsive_web_graphql_timeline_navigation_enabled: true
+                })), {
+                headers: {"Authorization": "Bearer " + bearerToken_, "x-csrf-token": ct0_, "Content-Type": "application/json"},
                 credentials: "include"
               });
-
-              if (!resp.ok) {
-                return JSON.stringify({error: "HTTP " + resp.status});
-              }
-
+              if (!resp.ok) return JSON.stringify({error: "HTTP " + resp.status});
               var data = await resp.json();
               var user = data.data.user.result;
-              if (user.__typename && user.__typename !== 'User' && user.user) {
-                user = user.user;
-              }
-              var legacy = user.legacy || {};
+              if (user.__typename && user.__typename !== 'User' && user.user) user = user.user;
               var core = user.core || {};
-              var coreUser = core.user_results && core.user_results.result && core.user_results.result.legacy || {};
-              // avatar: user.avatar.image_url or legacy
+              var legacy = user.legacy || {};
               var avatarObj = user.avatar || {};
-              var avatarUrl = legacy.profile_image_url_https || coreUser.profile_image_url_https || avatarObj.image_url || "";
               return JSON.stringify({
-                screenName: legacy.screen_name || coreUser.screen_name || core.screen_name || "",
-                name: legacy.name || coreUser.name || core.name || "",
-                avatar: avatarUrl.replace('_normal', '_400x400')
+                screenName: core.screen_name || legacy.screen_name || "",
+                name: core.name || legacy.name || "",
+                avatar: (legacy.profile_image_url_https || avatarObj.image_url || "").replace('_normal', '_400x400')
               });
-            } catch(e) {
-              return JSON.stringify({error: e.toString()});
-            }
+            } catch(e) { return JSON.stringify({error: e.toString()}); }
           ''',
-          arguments: {
-            'userId_': userId,
-            'ct0_': ct0,
-            'queryId_': queryId,
-            'bearerToken_': bearerToken,
-          },
+          arguments: {'userId_': userId, 'ct0_': ct0, 'queryId_': queryId, 'bearerToken_': bearerToken},
         );
-
-        await _log.log('Login', 'UserByRestId JS result: ${jsResult?.value}');
-
+        await _log.log('Login', 'UserByRestId result: ${jsResult?.value}');
         if (jsResult?.value != null) {
-          final resultStr = jsResult!.value.toString();
-          final data = json.decode(resultStr) as Map<String, dynamic>;
+          final data = json.decode(jsResult!.value.toString()) as Map<String, dynamic>;
           if (data['error'] == null) {
             final sn = data['screenName'] as String?;
             final name = data['name'] as String?;
@@ -737,58 +798,103 @@ class _LoginWebViewScreenState extends State<LoginWebViewScreen> {
               displayName = (name != null && name.isNotEmpty) ? name : sn;
             }
             if (av != null && av.isNotEmpty) avatarUrl = av;
-            debugPrint('[LoginWebView] X user from WebView: $handle ($displayName)');
-          } else {
-            debugPrint('[LoginWebView] UserByRestId error: ${data['error']}');
           }
         }
       } catch (e) {
-        debugPrint('[LoginWebView] Error getting X user via WebView fetch: $e');
+        await _log.log('Login', 'UserByRestId error: $e');
+      }
+    }
+
+    _updateExtractStatus(
+      _gotBearerToken && _gotQueryIds && _gotNotifications && handle != '@user'
+          ? '取得完了'
+          : '一部取得できませんでした',
+      userInfo: handle != '@user',
+    );
+    await _log.log('Login', 'FINAL: handle=$handle displayName=$displayName avatar=${avatarUrl ?? "null"} '
+        'bearer=$_gotBearerToken queryIds=$_gotQueryIds notif=$_gotNotifications');
+
+    final hiResAvatar = avatarUrl?.replaceFirst('_normal', '_400x400');
+    final allDone = _gotBearerToken && _gotQueryIds && _gotNotifications && handle != '@user';
+
+    if (allDone) {
+      // 全て成功 → 1秒見せてから自動で閉じる
+      await Future.delayed(const Duration(seconds: 1));
+      await cookieManager.deleteAllCookies();
+      if (mounted) {
+        Navigator.of(context).pop(LoginResult(
+          service: SnsService.x,
+          credentials: creds,
+          displayName: displayName,
+          handle: handle,
+          avatarUrl: hiResAvatar,
+        ));
       }
     } else {
-      debugPrint('[LoginWebView] No twid/controller, cannot get user info');
-    }
+      // 一部失敗 → リトライ/続行ボタンを表示
+      if (!mounted) return;
+      setState(() {
+        _extractStatus = '一部取得できませんでした';
+        _isExtracting = false;
+      });
+      final retry = await showDialog<bool>(
+        context: context,
+        barrierDismissible: false,
+        builder: (ctx) => AlertDialog(
+          title: const Text('取得状況'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              _buildStatusRow('Bearer Token', _gotBearerToken),
+              _buildStatusRow('queryId', _gotQueryIds),
+              _buildStatusRow('ユーザー情報', handle != '@user'),
+              _buildStatusRow('通知 queryId', _gotNotifications),
+              const SizedBox(height: 12),
+              Text(
+                '取得できなかった項目があります。WebViewでページを操作してからリトライできます。',
+                style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(false),
+              child: const Text('このまま続行'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(ctx).pop(true),
+              child: const Text('リトライ'),
+            ),
+          ],
+        ),
+      );
 
-    // UserByRestId が失敗した場合、fetch interceptor で捕捉したデータにフォールバック
-    if (handle == '@user' && _controller != null) {
-      try {
-        final captured = await _controller!.evaluateJavascript(
-          source: 'JSON.stringify(window.__xCapturedUser)',
-        );
-        if (captured != null && captured != 'null') {
-          final data = json.decode(captured.toString()) as Map<String, dynamic>;
-          final sn = data['screenName'] as String?;
-          final name = data['name'] as String?;
-          final av = data['avatar'] as String?;
-          if (sn != null && sn.isNotEmpty) {
-            handle = '@$sn';
-            displayName = (name != null && name.isNotEmpty) ? name : sn;
-          }
-          if (av != null && av.isNotEmpty) avatarUrl = av;
-          debugPrint('[LoginWebView] X user from interceptor: $handle ($displayName)');
+      if (retry == true && mounted) {
+        // リトライ: ホームに再遷移して onLoadResource を再キャプチャ
+        // 既にチェック済みの項目はリセットしない
+        setState(() => _isExtracting = true);
+        _capturedQueryIds.clear();
+        if (_controller != null) {
+          await _controller!.loadUrl(urlRequest: URLRequest(url: WebUri('https://x.com/home')));
+          // ページロード+APIリクエストを待つ
+          await Future.delayed(const Duration(seconds: 3));
         }
-      } catch (e) {
-        debugPrint('[LoginWebView] Error reading interceptor data: $e');
+        await _extractXCredentials();
+        return;
+      }
+
+      // 続行: 取得できた分で進む
+      await cookieManager.deleteAllCookies();
+      if (mounted) {
+        Navigator.of(context).pop(LoginResult(
+          service: SnsService.x,
+          credentials: creds,
+          displayName: displayName,
+          handle: handle,
+          avatarUrl: hiResAvatar,
+        ));
       }
     }
-
-    await _log.log('Login', 'FINAL: handle=$handle displayName=$displayName avatar=${avatarUrl ?? "null"}');
-
-    // _normal (48x48) → _400x400 に置換して高解像度版を保存
-    final hiResAvatar = avatarUrl?.replaceFirst('_normal', '_400x400');
-
-    final loginResult = LoginResult(
-      service: SnsService.x,
-      credentials: creds,
-      displayName: displayName,
-      handle: handle,
-      avatarUrl: hiResAvatar,
-    );
-
-    // 全 Cookie をクリア（次回ログイン時に別アカウントと干渉しないように）
-    await cookieManager.deleteAllCookies();
-
-    if (mounted) Navigator.of(context).pop(loginResult);
   }
 }
 

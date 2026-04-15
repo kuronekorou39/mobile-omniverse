@@ -112,15 +112,15 @@ class _PerfOverlayState extends ConsumerState<PerfOverlay> {
   }
 
   String _formatBytes(int bytes) {
-    if (bytes < 1024) return '$bytes B';
-    if (bytes < 1024 * 1024) return '${(bytes / 1024).toStringAsFixed(0)} KB';
-    return '${(bytes / (1024 * 1024)).toStringAsFixed(1)} MB';
+    if (bytes < 1024) return '${bytes.toString().padLeft(4)} B';
+    if (bytes < 1024 * 1024) return '${(bytes / 1024).toStringAsFixed(0).padLeft(4)} KB';
+    return '${(bytes / (1024 * 1024)).toStringAsFixed(1).padLeft(6)} MB';
   }
 
   String _formatSpeed(int bytesPerSec) {
-    if (bytesPerSec < 1024) return '$bytesPerSec B/s';
-    if (bytesPerSec < 1024 * 1024) return '${(bytesPerSec / 1024).toStringAsFixed(1)} KB/s';
-    return '${(bytesPerSec / (1024 * 1024)).toStringAsFixed(1)} MB/s';
+    if (bytesPerSec < 1024) return '${bytesPerSec.toString().padLeft(4)} B/s';
+    if (bytesPerSec < 1024 * 1024) return '${(bytesPerSec / 1024).toStringAsFixed(1).padLeft(5)} KB/s';
+    return '${(bytesPerSec / (1024 * 1024)).toStringAsFixed(1).padLeft(5)} MB/s';
   }
 
   @override
@@ -155,19 +155,19 @@ class _PerfOverlayState extends ConsumerState<PerfOverlay> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text('RSS  ${_formatBytes(_rssBytes)}'),
-                Text('IMG  $_imageCacheCount (${_formatBytes(_imageCacheBytes)})'),
-                Text('POST $postCount  Q:$pendingCount'),
-                Text('FPS  ${_fps.toStringAsFixed(1)}'),
+                Text('RSS ${_formatBytes(_rssBytes)}'),
+                Text('IMG ${_imageCacheCount.toString().padLeft(3)} ${_formatBytes(_imageCacheBytes)}'),
+                Text('PST ${postCount.toString().padLeft(3)} Q:${pendingCount.toString().padLeft(3)}'),
+                Text('FPS ${_fps.toStringAsFixed(1).padLeft(5)}'),
                 if (_temperature >= 0)
                   Text(
-                    'TEMP ${_temperature.toStringAsFixed(1)}°C',
+                    'TMP ${_temperature.toStringAsFixed(1).padLeft(5)}°C',
                     style: TextStyle(color: tempColor),
                   ),
                 if (_batteryPercent >= 0)
-                  Text('BAT  ${_batteryPercent.toStringAsFixed(0)}%'),
-                Text('NET  ${_formatBytes(_rxBytes + _txBytes)}'),
-                Text('  ↓${_formatSpeed(_rxPerSec)} ↑${_formatSpeed(_txPerSec)}'),
+                  Text('BAT ${_batteryPercent.toStringAsFixed(0).padLeft(3)}%'),
+                Text('NET ${_formatBytes(_rxBytes + _txBytes)}'),
+                Text(' ↓${_formatSpeed(_rxPerSec)} ↑${_formatSpeed(_txPerSec)}'),
               ],
             ),
           ),

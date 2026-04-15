@@ -10,7 +10,6 @@ import '../services/timeline_fetch_scheduler.dart';
 import '../services/x_query_id_service.dart';
 import '../widgets/sns_badge.dart';
 import 'login_webview_screen.dart';
-import 'notification_webview_screen.dart';
 import 'session_refresh_screen.dart';
 import 'settings_screen.dart';
 import 'user_profile_screen.dart';
@@ -28,8 +27,7 @@ class _AccountsScreenState extends ConsumerState<AccountsScreen> {
     final accounts = ref.watch(accountProvider);
 
     return Scaffold(
-      appBar: accounts.isNotEmpty
-          ? AppBar(
+      appBar: AppBar(
               leadingWidth: 0,
               leading: const SizedBox.shrink(),
               titleSpacing: 16,
@@ -62,8 +60,7 @@ class _AccountsScreenState extends ConsumerState<AccountsScreen> {
                   ),
                 ],
               ),
-            )
-          : null,
+            ),
       body: accounts.isEmpty
           ? Center(
               child: Padding(
@@ -241,18 +238,6 @@ class _AccountsScreenState extends ConsumerState<AccountsScreen> {
       ref.read(settingsProvider.notifier).startFetching();
     }
 
-    // X アカウントで NotificationsTimeline queryId が未取得なら自動取得
-    if (service == SnsService.x && context.mounted) {
-      final creds = (result.credentials as XCredentials);
-      final queryId = XQueryIdService.instance.getQueryId('NotificationsTimeline', creds: creds);
-      if (queryId.isEmpty) {
-        await Navigator.of(context).push<bool>(
-          MaterialPageRoute(
-            builder: (_) => NotificationWebViewScreen(account: account, autoSave: true),
-          ),
-        );
-      }
-    }
   }
 }
 

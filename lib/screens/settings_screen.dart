@@ -11,6 +11,7 @@ import 'package:file_picker/file_picker.dart';
 import 'package:open_filex/open_filex.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../providers/settings_provider.dart';
 import 'package:flutter_cache_manager/flutter_cache_manager.dart';
@@ -425,6 +426,15 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             leading: const Icon(Icons.system_update),
             title: const Text('アップデート確認'),
             onTap: _checkForUpdate,
+          ),
+          ListTile(
+            leading: const Icon(Icons.policy_outlined),
+            title: const Text('プライバシーポリシー・免責事項'),
+            trailing: const Icon(Icons.open_in_new, size: 16),
+            onTap: () => launchUrl(
+              Uri.parse('https://kuronekorou39.github.io/mobile-omniverse/privacy-policy.html'),
+              mode: LaunchMode.externalApplication,
+            ),
           ),
           if (_debugUnlocked) ...[
           const _SectionGap(),

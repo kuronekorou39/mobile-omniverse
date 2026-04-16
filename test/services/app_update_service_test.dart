@@ -96,21 +96,19 @@ void main() {
         currentVersion: '1.0.0',
         latestVersion: '1.1.0',
         releaseNotes: 'New features',
-        apkUrl: 'https://example.com/app.apk',
-        releaseUrl: 'https://github.com/releases/v1.1.0',
+        apkUrl: 'https://rou39.com/omniverse/OmniVerse-v1.1.0.apk',
       );
-      expect(info.downloadUrl, 'https://example.com/app.apk');
+      expect(info.downloadUrl, 'https://rou39.com/omniverse/OmniVerse-v1.1.0.apk');
     });
 
-    test('downloadUrl falls back to releaseUrl when apkUrl is null', () {
+    test('downloadUrl falls back to site URL when apkUrl is null', () {
       const info = AppUpdateInfo(
         currentVersion: '1.0.0',
         latestVersion: '1.1.0',
         releaseNotes: 'New features',
         apkUrl: null,
-        releaseUrl: 'https://github.com/releases/v1.1.0',
       );
-      expect(info.downloadUrl, 'https://github.com/releases/v1.1.0');
+      expect(info.downloadUrl, 'https://rou39.com/omniverse/');
     });
 
     test('fields are accessible', () {
@@ -118,14 +116,12 @@ void main() {
         currentVersion: '1.0.0',
         latestVersion: '1.1.0',
         releaseNotes: 'Bug fixes',
-        apkUrl: 'https://example.com/app.apk',
-        releaseUrl: 'https://github.com/releases/v1.1.0',
+        apkUrl: 'https://rou39.com/omniverse/app.apk',
       );
       expect(info.currentVersion, '1.0.0');
       expect(info.latestVersion, '1.1.0');
       expect(info.releaseNotes, 'Bug fixes');
-      expect(info.apkUrl, 'https://example.com/app.apk');
-      expect(info.releaseUrl, 'https://github.com/releases/v1.1.0');
+      expect(info.apkUrl, 'https://rou39.com/omniverse/app.apk');
     });
 
     test('releaseNotes can be empty', () {
@@ -133,7 +129,6 @@ void main() {
         currentVersion: '1.0.0',
         latestVersion: '1.1.0',
         releaseNotes: '',
-        releaseUrl: 'https://github.com/releases/v1.1.0',
       );
       expect(info.releaseNotes, isEmpty);
       expect(info.apkUrl, isNull);
@@ -146,8 +141,6 @@ void main() {
       service.httpClientOverride = mockClient;
 
       final result = await service.checkForUpdate();
-      // PackageInfo.fromPlatform() がテスト環境で例外を出す可能性があるため
-      // null が返ることを期待（例外 catch で null を返す）
       expect(result, isNull);
     });
 
@@ -164,7 +157,6 @@ void main() {
       service.httpClientOverride = mockClient;
 
       final result = await service.checkForUpdate();
-      // PackageInfo.fromPlatform() の例外かJSON解析エラーで null
       expect(result, isNull);
     });
 
@@ -174,22 +166,6 @@ void main() {
 
       service.httpClientOverride = null;
       expect(service.httpClientOverride, isNull);
-    });
-
-    test('200 レスポンスで古いバージョンの場合は null', () async {
-      // Create a response with a version older than current
-      final body = json.encode({
-        'tag_name': 'v0.0.1',
-        'body': 'Old release',
-        'html_url': 'https://github.com/owner/repo/releases/v0.0.1',
-        'assets': [],
-      });
-      final mockClient = createMockClient(statusCode: 200, body: body);
-      service.httpClientOverride = mockClient;
-
-      final result = await service.checkForUpdate();
-      // PackageInfo.fromPlatform() may throw in test environment, so null
-      expect(result, isNull);
     });
 
     test('空のボディで例外をキャッチして null を返す', () async {
@@ -210,169 +186,48 @@ void main() {
   });
 
   group('checkForUpdate - レスポンスパース', () {
-    test('正常なリリースレスポンスのパース構造を検証', () {
-      // GitHub Releases API レスポンスの構造をテスト
+    test('update.json の構造を検証', () {
       final responseBody = json.encode({
-        'tag_name': 'v2.0.0',
-        'body': 'Release notes here',
-        'html_url': 'https://github.com/owner/repo/releases/v2.0.0',
-        'assets': [
-          {
-            'name': 'app-debug.apk',
-            'browser_download_url':
-                'https://github.com/owner/repo/releases/download/v2.0.0/app-debug.apk',
-          },
-        ],
+        'version': '2.0.0',
+        'release_notes': 'Release notes here',
+        'apk_url': 'https://rou39.com/omniverse/OmniVerse-v2.0.0.apk',
       });
 
       final data = json.decode(responseBody) as Map<String, dynamic>;
 
-      // tag_name のパース
-      final tagName = data['tag_name'] as String;
-      final latestVersion = tagName.replaceFirst(RegExp(r'^v'), '');
-      expect(latestVersion, '2.0.0');
-
-      // release notes のパース
-      final releaseNotes = data['body'] as String;
-      expect(releaseNotes, 'Release notes here');
-
-      // html_url のパース
-      final htmlUrl = data['html_url'] as String;
-      expect(htmlUrl, 'https://github.com/owner/repo/releases/v2.0.0');
-
-      // APK URL の検索
-      String? apkUrl;
-      final assets = data['assets'] as List<dynamic>;
-      for (final asset in assets) {
-        final a = asset as Map<String, dynamic>;
-        final name = a['name'] as String;
-        if (name.endsWith('.apk')) {
-          apkUrl = a['browser_download_url'] as String?;
-          break;
-        }
-      }
-      expect(apkUrl, contains('app-debug.apk'));
+      expect(data['version'], '2.0.0');
+      expect(data['release_notes'], 'Release notes here');
+      expect(data['apk_url'], contains('v2.0.0.apk'));
     });
 
-    test('APK アセットがないレスポンスの処理', () {
-      final responseBody = json.encode({
-        'tag_name': 'v1.5.0',
-        'body': 'No APK in this release',
-        'html_url': 'https://github.com/owner/repo/releases/v1.5.0',
-        'assets': [
-          {
-            'name': 'source.tar.gz',
-            'browser_download_url':
-                'https://github.com/owner/repo/archive/v1.5.0.tar.gz',
-          },
-        ],
-      });
+    test('apk_url が null の場合', () {
+      final data = <String, dynamic>{
+        'version': '1.5.0',
+        'release_notes': 'No APK',
+      };
 
-      final data = json.decode(responseBody) as Map<String, dynamic>;
-      String? apkUrl;
-      final assets = data['assets'] as List<dynamic>;
-      for (final asset in assets) {
-        final a = asset as Map<String, dynamic>;
-        final name = a['name'] as String;
-        if (name.endsWith('.apk')) {
-          apkUrl = a['browser_download_url'] as String?;
-          break;
-        }
-      }
+      final apkUrl = data['apk_url'] as String?;
       expect(apkUrl, isNull);
     });
 
-    test('空の assets リストの処理', () {
-      final responseBody = json.encode({
-        'tag_name': 'v1.0.0',
-        'body': '',
-        'html_url': 'https://github.com/owner/repo/releases/v1.0.0',
-        'assets': <dynamic>[],
-      });
-
-      final data = json.decode(responseBody) as Map<String, dynamic>;
-      final assets = data['assets'] as List<dynamic>;
-      expect(assets, isEmpty);
-    });
-
-    test('tag_name に v プレフィックスがない場合', () {
-      final tagName = '1.0.0';
-      final latestVersion = tagName.replaceFirst(RegExp(r'^v'), '');
-      expect(latestVersion, '1.0.0');
-    });
-
-    test('tag_name に v プレフィックスがある場合', () {
-      final tagName = 'v1.0.0';
-      final latestVersion = tagName.replaceFirst(RegExp(r'^v'), '');
-      expect(latestVersion, '1.0.0');
-    });
-
-    test('body が null の場合にデフォルト値を使用', () {
+    test('version が null の場合にデフォルト値', () {
       final data = <String, dynamic>{
-        'tag_name': 'v1.0.0',
-        'body': null,
-        'html_url': 'https://github.com/owner/repo/releases/v1.0.0',
+        'version': null,
+        'release_notes': 'notes',
       };
 
-      final releaseNotes = data['body'] as String? ?? '';
-      expect(releaseNotes, isEmpty);
+      final version = data['version'] as String? ?? '';
+      expect(version, isEmpty);
     });
 
-    test('html_url が null の場合にデフォルト値を使用', () {
+    test('release_notes が null の場合にデフォルト値', () {
       final data = <String, dynamic>{
-        'tag_name': 'v1.0.0',
-        'body': 'notes',
-        'html_url': null,
+        'version': '1.0.0',
+        'release_notes': null,
       };
 
-      final htmlUrl = data['html_url'] as String? ?? '';
-      expect(htmlUrl, isEmpty);
-    });
-
-    test('tag_name が null の場合にデフォルト値を使用', () {
-      final data = <String, dynamic>{
-        'tag_name': null,
-        'body': 'notes',
-        'html_url': 'https://example.com',
-      };
-
-      final tagName = data['tag_name'] as String? ?? '';
-      expect(tagName, isEmpty);
-    });
-
-    test('assets が null の場合の処理', () {
-      final data = <String, dynamic>{
-        'tag_name': 'v1.0.0',
-        'body': 'notes',
-        'html_url': 'https://example.com',
-        'assets': null,
-      };
-
-      final assets = data['assets'] as List<dynamic>? ?? [];
-      expect(assets, isEmpty);
-    });
-
-    test('複数の APK アセットがある場合、最初のものを使用', () {
-      final assets = <Map<String, dynamic>>[
-        {
-          'name': 'app-debug.apk',
-          'browser_download_url': 'https://example.com/debug.apk',
-        },
-        {
-          'name': 'app-release.apk',
-          'browser_download_url': 'https://example.com/release.apk',
-        },
-      ];
-
-      String? apkUrl;
-      for (final asset in assets) {
-        final name = asset['name'] as String;
-        if (name.endsWith('.apk')) {
-          apkUrl = asset['browser_download_url'] as String?;
-          break;
-        }
-      }
-      expect(apkUrl, 'https://example.com/debug.apk');
+      final notes = data['release_notes'] as String? ?? '';
+      expect(notes, isEmpty);
     });
   });
 }

@@ -7,7 +7,6 @@ import '../providers/account_provider.dart';
 import '../providers/fetch_status_provider.dart';
 import '../providers/settings_provider.dart';
 import '../services/timeline_fetch_scheduler.dart';
-import '../services/x_query_id_service.dart';
 import '../utils/app_snackbar.dart';
 import '../widgets/empty_state.dart';
 import '../widgets/sns_badge.dart';

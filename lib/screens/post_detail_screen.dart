@@ -720,7 +720,6 @@ class _AnimatedActionIcon extends StatefulWidget {
     required this.activeIcon,
     required this.activeColor,
     this.useRotation = false,
-    this.size = 24.0,
   });
 
   final EngagementState engagementState;
@@ -728,7 +727,7 @@ class _AnimatedActionIcon extends StatefulWidget {
   final IconData activeIcon;
   final Color activeColor;
   final bool useRotation;
-  final double size;
+  final double size = 24.0;
 
   @override
   State<_AnimatedActionIcon> createState() => _AnimatedActionIconState();

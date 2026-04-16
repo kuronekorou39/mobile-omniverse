@@ -126,8 +126,6 @@ class PostCard extends StatelessWidget {
   }
 
   Widget _buildContent(BuildContext context) {
-    final theme = Theme.of(context);
-    final colorScheme = theme.colorScheme;
     return Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [

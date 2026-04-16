@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../models/activity_log.dart';
-import '../models/sns_service.dart';
 import '../providers/activity_log_provider.dart';
 import '../widgets/empty_state.dart';
 import '../widgets/sns_badge.dart';

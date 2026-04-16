@@ -1,7 +1,6 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../models/notification_item.dart';
 import '../models/sns_service.dart';
 import '../services/account_storage_service.dart';
 import '../services/bluesky_api_service.dart';

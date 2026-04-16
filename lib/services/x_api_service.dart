@@ -45,11 +45,6 @@ class XApiService {
   /// 最新の ct0 をアカウント別に追跡 (APIレスポンスの Set-Cookie で更新)
   final Map<String, String> _latestCt0 = {};
 
-  /// authToken をキーにして最新 ct0 を取得
-  String _getCt0(XCredentials creds) {
-    return _latestCt0[creds.authToken] ?? creds.ct0;
-  }
-
   /// レスポンスの Set-Cookie から ct0 を抽出して更新
   void _updateCt0FromResponse(XCredentials creds, http.Response response) {
     final setCookie = response.headers['set-cookie'];

@@ -197,10 +197,6 @@ class _OverlayTimelineScreenState extends State<OverlayTimelineScreen> {
     await Future.delayed(const Duration(milliseconds: 1500));
   }
 
-  Future<void> _openMainApp() async {
-    await FlutterOverlayWindow.launchMainActivity();
-  }
-
   Future<void> _openPostDetail(Post post) async {
     await FlutterOverlayWindow.openPostDetail(jsonEncode(post.toJson()));
   }

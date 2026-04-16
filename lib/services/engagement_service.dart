@@ -1,5 +1,4 @@
 import '../models/account.dart';
-import '../models/activity_log.dart';
 import '../models/post.dart';
 import '../models/sns_service.dart';
 import '../services/bluesky_api_service.dart';

@@ -10,7 +10,6 @@ import '../models/account.dart';
 import '../models/sns_service.dart';
 import '../services/debug_log_service.dart';
 import '../utils/app_snackbar.dart';
-import '../services/x_api_service.dart';
 import '../services/x_bearer_token_service.dart';
 import '../services/x_features_service.dart';
 import '../services/x_query_id_service.dart';
@@ -145,8 +144,7 @@ class _LoginWebViewScreenState extends State<LoginWebViewScreen> {
   InAppWebViewController? _controller;
   double _progress = 0;
   bool _isExtracting = false;
-  // WebViewのリクエストからBearerTokenとqueryIdを自動キャプチャ
-  String? _capturedBearerToken;
+  // WebViewのリクエストからqueryIdを自動キャプチャ
   final Map<String, String> _capturedQueryIds = {};
 
   // 取得状況表示用

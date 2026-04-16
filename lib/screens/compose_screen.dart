@@ -10,7 +10,6 @@ import '../providers/activity_log_provider.dart';
 import '../providers/settings_provider.dart';
 import '../services/account_storage_service.dart';
 import '../services/bluesky_api_service.dart';
-import '../services/x_api_service.dart';
 import '../services/x_webview_action_service.dart';
 import '../utils/app_snackbar.dart';
 import '../utils/image_headers.dart';

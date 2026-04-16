@@ -5,6 +5,7 @@ import '../models/sns_service.dart';
 import '../services/account_storage_service.dart';
 import '../services/x_bearer_token_service.dart';
 import '../services/x_query_id_service.dart';
+import '../utils/app_snackbar.dart';
 import 'notification_webview_screen.dart';
 
 /// queryId 管理画面（デバッグ用）
@@ -175,9 +176,7 @@ class _QueryIdScreenState extends State<QueryIdScreen> {
     final count = await XQueryIdService.instance.forceRefresh(account.xCredentials);
     if (mounted) {
       setState(() {});
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('${account.handle}: $count 件更新')),
-      );
+      showAppSnackBar(context, '${account.handle}: $count 件更新', type: SnackType.success);
     }
   }
 

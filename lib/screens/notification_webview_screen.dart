@@ -8,6 +8,7 @@ import '../models/account.dart';
 import '../services/debug_log_service.dart';
 import '../services/x_features_service.dart';
 import '../services/x_query_id_service.dart';
+import '../utils/app_snackbar.dart';
 
 /// X の通知ページを WebView で開き、GraphQL の queryId を自動取得する
 class NotificationWebViewScreen extends StatefulWidget {
@@ -222,9 +223,7 @@ class _NotificationWebViewScreenState extends State<NotificationWebViewScreen> {
       await XQueryIdService.instance.updateQueryIds(creds, _capturedIds);
 
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('${_capturedIds.length}件の queryId を更新しました')),
-        );
+        showAppSnackBar(context, '${_capturedIds.length}件の queryId を更新しました', type: SnackType.success);
       }
     }
 

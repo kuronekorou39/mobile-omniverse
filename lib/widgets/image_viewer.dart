@@ -6,6 +6,7 @@ import 'package:open_filex/open_filex.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../utils/app_snackbar.dart';
 import '../utils/image_headers.dart';
 
 /// Full-screen image viewer with swipe-to-dismiss
@@ -61,7 +62,6 @@ class _ImageViewerState extends State<ImageViewer> {
 
   Future<void> _downloadImage() async {
     final url = widget.imageUrls[_currentIndex];
-    final messenger = ScaffoldMessenger.of(context);
     try {
       final file = await DefaultCacheManager().getSingleFile(url, headers: kImageHeaders);
       final dir = await getExternalStorageDirectory();
@@ -74,20 +74,22 @@ class _ImageViewerState extends State<ImageViewer> {
       final name = 'omni_${DateTime.now().millisecondsSinceEpoch}.$ext';
       final savePath = '${picDir.path}/$name';
       await file.copy(savePath);
-      messenger.showSnackBar(
-        SnackBar(
-          content: Text('保存しました: $saveFolder/$name'),
+      if (mounted) {
+        showAppSnackBar(
+          context,
+          '保存しました: $saveFolder/$name',
+          type: SnackType.success,
+          duration: const Duration(seconds: 4),
           action: SnackBarAction(
             label: '開く',
             onPressed: () => OpenFilex.open(savePath),
           ),
-          duration: const Duration(seconds: 4),
-        ),
-      );
+        );
+      }
     } catch (e) {
-      messenger.showSnackBar(
-        SnackBar(content: Text('保存に失敗しました: $e')),
-      );
+      if (mounted) {
+        showAppSnackBar(context, '保存に失敗しました: $e', type: SnackType.error);
+      }
     }
   }
 

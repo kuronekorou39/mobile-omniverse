@@ -30,6 +30,59 @@ import 'compose_screen.dart';
 import 'settings_screen.dart';
 import 'post_detail_screen.dart';
 
+/// ヘッダーバーのボタン定義を生成（AppBar / QuickSettingsPanel 共通）
+List<({String key, IconData icon, String tooltip, VoidCallback onPressed})>
+    _buildHeaderButtonItems(SettingsState settings, SettingsNotifier notifier) {
+  final items =
+      <({String key, IconData icon, String tooltip, VoidCallback onPressed})>[];
+
+  if (settings.appBarButtons.contains('sensitive')) {
+    final (icon, tooltip) = switch (settings.sensitiveMode) {
+      SensitiveMode.show => (Icons.blur_off, 'モザイク: OFF'),
+      SensitiveMode.hide => (Icons.blur_on, 'モザイク: センシティブのみ'),
+      SensitiveMode.hideAll => (Icons.blur_circular, 'モザイク: 全て隠す'),
+    };
+    items.add((
+      key: 'sensitive',
+      icon: icon,
+      tooltip: tooltip,
+      onPressed: () => notifier.cycleSensitiveMode(),
+    ));
+  }
+
+  if (settings.appBarButtons.contains('userInfo')) {
+    final isHiding = settings.hideUserInfo;
+    items.add((
+      key: 'userInfo',
+      icon: isHiding ? Icons.face_retouching_off : Icons.face_retouching_natural,
+      tooltip: isHiding ? '匿名モード: ON' : '匿名モード: OFF',
+      onPressed: () => notifier.setHideUserInfo(!isHiding),
+    ));
+  }
+
+  if (settings.appBarButtons.contains('wakelock')) {
+    final isOn = settings.keepScreenOn;
+    items.add((
+      key: 'wakelock',
+      icon: isOn ? Icons.lock : Icons.lock_open,
+      tooltip: isOn ? 'スリープ防止: ON' : 'スリープ防止: OFF',
+      onPressed: () => notifier.setKeepScreenOn(!isOn),
+    ));
+  }
+
+  if (settings.appBarButtons.contains('retweet')) {
+    final isHiding = settings.hideAllRetweets;
+    items.add((
+      key: 'retweet',
+      icon: isHiding ? Icons.repeat_on : Icons.repeat,
+      tooltip: isHiding ? 'RT非表示: ON' : 'RT非表示: OFF',
+      onPressed: () => notifier.setHideAllRetweets(!isHiding),
+    ));
+  }
+
+  return items;
+}
+
 class OmniFeedScreen extends ConsumerStatefulWidget {
   const OmniFeedScreen({super.key, this.onRegisterTimelineTap});
 
@@ -420,47 +473,8 @@ class _OmniFeedScreenState extends ConsumerState<OmniFeedScreen>
   }
 
   List<Widget> _buildAppBarLeftButtons(SettingsState settings) {
-    final items = <({String key, IconData icon, String tooltip, VoidCallback onPressed})>[];
     final notifier = ref.read(settingsProvider.notifier);
-
-    if (settings.appBarButtons.contains('sensitive')) {
-      final (icon, tooltip) = switch (settings.sensitiveMode) {
-        SensitiveMode.show => (Icons.blur_off, 'モザイク: OFF'),
-        SensitiveMode.hide => (Icons.blur_on, 'モザイク: センシティブのみ'),
-        SensitiveMode.hideAll => (Icons.blur_circular, 'モザイク: 全て隠す'),
-      };
-      items.add((key: 'sensitive', icon: icon, tooltip: tooltip, onPressed: () => notifier.cycleSensitiveMode()));
-    }
-
-    if (settings.appBarButtons.contains('userInfo')) {
-      final isHiding = settings.hideUserInfo;
-      items.add((
-        key: 'userInfo',
-        icon: isHiding ? Icons.face_retouching_off : Icons.face_retouching_natural,
-        tooltip: isHiding ? '匿名モード: ON' : '匿名モード: OFF',
-        onPressed: () => notifier.setHideUserInfo(!isHiding),
-      ));
-    }
-
-    if (settings.appBarButtons.contains('wakelock')) {
-      final isOn = settings.keepScreenOn;
-      items.add((
-        key: 'wakelock',
-        icon: isOn ? Icons.lock : Icons.lock_open,
-        tooltip: isOn ? 'スリープ防止: ON' : 'スリープ防止: OFF',
-        onPressed: () => notifier.setKeepScreenOn(!isOn),
-      ));
-    }
-
-    if (settings.appBarButtons.contains('retweet')) {
-      final isHiding = settings.hideAllRetweets;
-      items.add((
-        key: 'retweet',
-        icon: isHiding ? Icons.repeat_on : Icons.repeat,
-        tooltip: isHiding ? 'RT非表示: ON' : 'RT非表示: OFF',
-        onPressed: () => notifier.setHideAllRetweets(!isHiding),
-      ));
-    }
+    final items = _buildHeaderButtonItems(settings, notifier);
 
     // フェッチタイマーは常に独立表示（メニューに入れない）
     final hasAccounts = ref.read(accountProvider).isNotEmpty;
@@ -1199,44 +1213,7 @@ class _QuickSettingsPanel extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final settings = ref.watch(settingsProvider);
     final notifier = ref.read(settingsProvider.notifier);
-
-    final items = <({IconData icon, String label, VoidCallback onTap})>[];
-
-    if (settings.appBarButtons.contains('sensitive')) {
-      final (icon, label) = switch (settings.sensitiveMode) {
-        SensitiveMode.show => (Icons.blur_off, 'モザイク: OFF'),
-        SensitiveMode.hide => (Icons.blur_on, 'モザイク: センシティブのみ'),
-        SensitiveMode.hideAll => (Icons.blur_circular, 'モザイク: 全て隠す'),
-      };
-      items.add((icon: icon, label: label, onTap: () => notifier.cycleSensitiveMode()));
-    }
-
-    if (settings.appBarButtons.contains('userInfo')) {
-      final h = settings.hideUserInfo;
-      items.add((
-        icon: h ? Icons.face_retouching_off : Icons.face_retouching_natural,
-        label: h ? '匿名モード: ON' : '匿名モード: OFF',
-        onTap: () => notifier.setHideUserInfo(!h),
-      ));
-    }
-
-    if (settings.appBarButtons.contains('wakelock')) {
-      final isOn = settings.keepScreenOn;
-      items.add((
-        icon: isOn ? Icons.lock : Icons.lock_open,
-        label: isOn ? 'スリープ防止: ON' : 'スリープ防止: OFF',
-        onTap: () => notifier.setKeepScreenOn(!isOn),
-      ));
-    }
-
-    if (settings.appBarButtons.contains('retweet')) {
-      final h = settings.hideAllRetweets;
-      items.add((
-        icon: h ? Icons.repeat_on : Icons.repeat,
-        label: h ? 'RT非表示: ON' : 'RT非表示: OFF',
-        onTap: () => notifier.setHideAllRetweets(!h),
-      ));
-    }
+    final items = _buildHeaderButtonItems(settings, notifier);
 
     return Align(
       alignment: Alignment.topLeft,
@@ -1253,14 +1230,14 @@ class _QuickSettingsPanel extends ConsumerWidget {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: items.map((item) => InkWell(
-                onTap: item.onTap,
+                onTap: item.onPressed,
                 child: Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                   child: Row(
                     children: [
                       Icon(item.icon, size: 20),
                       const SizedBox(width: 12),
-                      Text(item.label, style: const TextStyle(fontSize: 13)),
+                      Text(item.tooltip, style: const TextStyle(fontSize: 13)),
                     ],
                   ),
                 ),

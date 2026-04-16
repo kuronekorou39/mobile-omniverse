@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 
 import '../models/account.dart';
+import '../utils/app_snackbar.dart';
 
 /// ブラウザ投稿のリクエストをキャプチャするデバッグ画面
 /// WebView で x.com/compose/post を開き、fetch をインターセプトして
@@ -281,9 +282,7 @@ class _BrowserPostDebugScreenState extends State<BrowserPostDebugScreen> {
                       label: const Text('コピー'),
                       onPressed: () {
                         Clipboard.setData(ClipboardData(text: fullText));
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(content: Text('コピーしました')),
-                        );
+                        showAppSnackBar(context, 'コピーしました', type: SnackType.success);
                       },
                     ),
                   ],
@@ -324,9 +323,7 @@ class _BrowserPostDebugScreenState extends State<BrowserPostDebugScreen> {
 
     if (result == null || result == 'null' || result == '[]') {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('キャプチャされたリクエストはありません')),
-        );
+        showAppSnackBar(context, 'キャプチャされたリクエストはありません', type: SnackType.info);
       }
       return;
     }
@@ -334,9 +331,7 @@ class _BrowserPostDebugScreenState extends State<BrowserPostDebugScreen> {
     final list = json.decode(result.toString()) as List<dynamic>;
     if (list.isEmpty) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('キャプチャされたリクエストはありません')),
-        );
+        showAppSnackBar(context, 'キャプチャされたリクエストはありません', type: SnackType.info);
       }
       return;
     }
@@ -385,9 +380,7 @@ class _BrowserPostDebugScreenState extends State<BrowserPostDebugScreen> {
                   .map((e) => const JsonEncoder.withIndent('  ').convert(e))
                   .join('\n\n---\n\n');
               Clipboard.setData(ClipboardData(text: allText));
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('全件コピーしました')),
-              );
+              showAppSnackBar(context, '全件コピーしました', type: SnackType.success);
             },
             child: const Text('全件コピー'),
           ),

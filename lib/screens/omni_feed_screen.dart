@@ -419,13 +419,6 @@ class _OmniFeedScreenState extends ConsumerState<OmniFeedScreen>
     ));
   }
 
-  /// AppBarカスタムボタンの定義
-  static const appBarButtonDefs = {
-    'sensitive': ('センシティブ表示', Icons.visibility_off, Icons.visibility),
-    'userInfo': ('ユーザー情報', Icons.person_off_outlined, Icons.person_outline),
-    'wakelock': ('画面スリープ防止', Icons.lock_outline, Icons.lock_open),
-  };
-
   List<Widget> _buildAppBarLeftButtons(SettingsState settings) {
     final items = <({String key, IconData icon, String tooltip, VoidCallback onPressed})>[];
     final notifier = ref.read(settingsProvider.notifier);
@@ -479,24 +472,11 @@ class _OmniFeedScreenState extends ConsumerState<OmniFeedScreen>
 
     if (items.length >= groupThreshold) {
       buttons.add(
-        PopupMenuButton<String>(
+        IconButton(
           icon: const Icon(Icons.more_vert, size: 20),
           constraints: const BoxConstraints(minWidth: 40, minHeight: 40),
           padding: EdgeInsets.zero,
-          itemBuilder: (_) => items.map((item) => PopupMenuItem(
-            value: item.key,
-            child: Row(
-              children: [
-                Icon(item.icon, size: 18),
-                const SizedBox(width: 8),
-                Text(item.tooltip, style: const TextStyle(fontSize: 13)),
-              ],
-            ),
-          )).toList(),
-          onSelected: (key) {
-            final item = items.firstWhere((i) => i.key == key);
-            item.onPressed();
-          },
+          onPressed: () => _showQuickSettingsPanel(context),
         ),
       );
     } else {
@@ -516,6 +496,14 @@ class _OmniFeedScreenState extends ConsumerState<OmniFeedScreen>
     }
 
     return buttons;
+  }
+
+  void _showQuickSettingsPanel(BuildContext context) {
+    showDialog(
+      context: context,
+      barrierColor: Colors.black26,
+      builder: (_) => const _QuickSettingsPanel(),
+    );
   }
 
   void _openSettingsScreen(BuildContext context) {
@@ -1209,6 +1197,88 @@ class _AnimatedPostCardState extends State<_AnimatedPostCard>
       child: FadeTransition(
         opacity: _fadeAnimation,
         child: widget.child,
+      ),
+    );
+  }
+}
+
+/// ヘッダーのクイック設定パネル（タップしても閉じない）
+class _QuickSettingsPanel extends ConsumerWidget {
+  const _QuickSettingsPanel();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final settings = ref.watch(settingsProvider);
+    final notifier = ref.read(settingsProvider.notifier);
+
+    final items = <({IconData icon, String label, VoidCallback onTap})>[];
+
+    if (settings.appBarButtons.contains('sensitive')) {
+      final (icon, label) = switch (settings.sensitiveMode) {
+        SensitiveMode.show => (Icons.blur_off, 'モザイク: OFF'),
+        SensitiveMode.hide => (Icons.blur_on, 'モザイク: センシティブのみ'),
+        SensitiveMode.hideAll => (Icons.blur_circular, 'モザイク: 全て隠す'),
+      };
+      items.add((icon: icon, label: label, onTap: () => notifier.cycleSensitiveMode()));
+    }
+
+    if (settings.appBarButtons.contains('userInfo')) {
+      final h = settings.hideUserInfo;
+      items.add((
+        icon: h ? Icons.face_retouching_off : Icons.face_retouching_natural,
+        label: h ? '匿名モード: ON' : '匿名モード: OFF',
+        onTap: () => notifier.setHideUserInfo(!h),
+      ));
+    }
+
+    if (settings.appBarButtons.contains('wakelock')) {
+      final isOn = settings.keepScreenOn;
+      items.add((
+        icon: isOn ? Icons.lock : Icons.lock_open,
+        label: isOn ? 'スリープ防止: ON' : 'スリープ防止: OFF',
+        onTap: () => notifier.setKeepScreenOn(!isOn),
+      ));
+    }
+
+    if (settings.appBarButtons.contains('retweet')) {
+      final h = settings.hideAllRetweets;
+      items.add((
+        icon: h ? Icons.repeat_on : Icons.repeat,
+        label: h ? 'RT非表示: ON' : 'RT非表示: OFF',
+        onTap: () => notifier.setHideAllRetweets(!h),
+      ));
+    }
+
+    return Align(
+      alignment: Alignment.topLeft,
+      child: Padding(
+        padding: EdgeInsets.only(
+          top: MediaQuery.of(context).padding.top + kToolbarHeight,
+          left: 8,
+        ),
+        child: Material(
+          elevation: 8,
+          borderRadius: BorderRadius.circular(12),
+          clipBehavior: Clip.antiAlias,
+          child: IntrinsicWidth(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: items.map((item) => InkWell(
+                onTap: item.onTap,
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                  child: Row(
+                    children: [
+                      Icon(item.icon, size: 20),
+                      const SizedBox(width: 12),
+                      Text(item.label, style: const TextStyle(fontSize: 13)),
+                    ],
+                  ),
+                ),
+              )).toList(),
+            ),
+          ),
+        ),
       ),
     );
   }

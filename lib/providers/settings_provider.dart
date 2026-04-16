@@ -358,6 +358,24 @@ class SettingsNotifier extends StateNotifier<SettingsState> {
     _saveToPrefs();
   }
 
+  void resetToDefaults() {
+    final defaults = const SettingsState();
+    state = defaults.copyWith(
+      // アカウント別RT非表示・フェッチ状態は維持
+      hideRetweetsAccountIds: state.hideRetweetsAccountIds,
+      isFetchingActive: state.isFetchingActive,
+    );
+    PaintingBinding.instance.imageCache.maximumSize = state.imageCacheSize;
+    DebugLogService.instance.enabled = state.debugLogEnabled;
+    if (state.keepScreenOn) {
+      WakelockPlus.enable();
+    } else {
+      WakelockPlus.disable();
+    }
+    _scheduler.setInterval(Duration(seconds: state.fetchIntervalSeconds));
+    _saveToPrefs();
+  }
+
   void setDebugLogEnabled(bool value) {
     state = state.copyWith(debugLogEnabled: value);
     DebugLogService.instance.enabled = value;

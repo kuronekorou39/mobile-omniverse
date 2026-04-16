@@ -140,6 +140,7 @@ class _PerfOverlayState extends ConsumerState<PerfOverlay> {
       right: 8,
       child: IgnorePointer(
         child: Container(
+          constraints: const BoxConstraints(minWidth: 190),
           padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
           decoration: BoxDecoration(
             color: Colors.black.withAlpha(180),

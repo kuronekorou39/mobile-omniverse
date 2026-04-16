@@ -1,5 +1,6 @@
 import 'dart:collection';
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -208,8 +209,10 @@ class _LoginWebViewScreenState extends State<LoginWebViewScreen> {
     // WebView のキャッシュ・ストレージもクリア
     await InAppWebViewController.clearAllCache();
     // localStorage / sessionStorage もクリア（Bluesky の BSKY_STORAGE 等）
-    final webStorageManager = WebStorageManager.instance();
-    await webStorageManager.android.deleteAllData();
+    if (Platform.isAndroid) {
+      final webStorageManager = WebStorageManager.instance();
+      await webStorageManager.android.deleteAllData();
+    }
     if (mounted) {
       setState(() => _cookiesCleared = true);
     }

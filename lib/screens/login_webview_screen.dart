@@ -256,12 +256,20 @@ class _LoginWebViewScreenState extends State<LoginWebViewScreen> {
                 domStorageEnabled: true,
                 useShouldOverrideUrlLoading: true,
                 thirdPartyCookiesEnabled: true,
-                javaScriptCanOpenWindowsAutomatically: Platform.isAndroid,
-                supportMultipleWindows: Platform.isAndroid,
+                javaScriptCanOpenWindowsAutomatically: true,
+                supportMultipleWindows: true,
               ),
               // Google OAuth: ポップアップウィンドウ内のWebViewを作成し、
               // 認証完了後にpostMessageで親に返すフローを処理
               onCreateWindow: (controller, createWindowAction) async {
+                if (Platform.isIOS) {
+                  // iOS: ポップアップではなく同一WebViewで開く（Cookie共有の問題回避）
+                  if (createWindowAction.request.url != null) {
+                    controller.loadUrl(urlRequest: createWindowAction.request);
+                  }
+                  return false;
+                }
+                // Android: ポップアップダイアログで開く
                 showDialog(
                   context: context,
                   builder: (ctx) => Dialog(
@@ -284,12 +292,10 @@ class _LoginWebViewScreenState extends State<LoginWebViewScreen> {
                             debugPrint('[LoginWebView] popup onLoadStop: $urlStr');
                           },
                           onCloseWindow: (ctrl) {
-                            // 認証完了でpostMessageが親に返り、ポップアップが閉じられた
                             debugPrint('[LoginWebView] popup onCloseWindow');
                             if (Navigator.of(ctx).canPop()) {
                               Navigator.of(ctx).pop();
                             }
-                            // 親WebViewをリロードし、少し待ってからcookieを確認
                             controller.loadUrl(
                               urlRequest: URLRequest(url: WebUri('https://x.com/home')),
                             );

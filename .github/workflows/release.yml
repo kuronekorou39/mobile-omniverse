@@ -44,20 +44,27 @@ jobs:
       - name: Build release APK
         run: flutter build apk --release
 
+      - name: Build release AAB (Play Store用)
+        run: flutter build appbundle --release
+
       - name: Extract version
         id: version
         run: |
           VERSION=$(grep '^version:' pubspec.yaml | sed 's/version: //' | cut -d+ -f1)
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
 
-      - name: Rename APK
-        run: cp build/app/outputs/flutter-apk/app-release.apk "OmniVerse-v${{ steps.version.outputs.version }}.apk"
+      - name: Rename artifacts
+        run: |
+          cp build/app/outputs/flutter-apk/app-release.apk "OmniVerse-v${{ steps.version.outputs.version }}.apk"
+          cp build/app/outputs/bundle/release/app-release.aab "OmniVerse-v${{ steps.version.outputs.version }}.aab"
 
-      - name: Upload APK artifact
+      - name: Upload Android artifacts
         uses: actions/upload-artifact@v4
         with:
           name: android-apk
-          path: "OmniVerse-v${{ steps.version.outputs.version }}.apk"
+          path: |
+            OmniVerse-v${{ steps.version.outputs.version }}.apk
+            OmniVerse-v${{ steps.version.outputs.version }}.aab
 
   # ── iOS IPA ──
   build-ios:
@@ -171,6 +178,7 @@ jobs:
         with:
           files: |
             artifacts/android-apk/*.apk
+            artifacts/android-apk/*.aab
             artifacts/ios-ipa/*.ipa
           generate_release_notes: true
           fail_on_unmatched_files: false

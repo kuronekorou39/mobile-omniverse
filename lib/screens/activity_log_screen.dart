@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/activity_log.dart';
 import '../models/sns_service.dart';
 import '../providers/activity_log_provider.dart';
+import '../widgets/empty_state.dart';
 import '../widgets/sns_badge.dart';
 
 class ActivityLogScreen extends ConsumerStatefulWidget {
@@ -71,9 +72,7 @@ class _ActivityLogScreenState extends ConsumerState<ActivityLogScreen> {
         ],
       ),
       body: filtered.isEmpty
-          ? const Center(
-              child: Text('ログがありません', style: TextStyle(color: Colors.grey)),
-            )
+          ? const EmptyState(icon: Icons.receipt_long_outlined, title: 'ログがありません')
           : ListView.separated(
               itemCount: filtered.length,
               separatorBuilder: (_, __) =>

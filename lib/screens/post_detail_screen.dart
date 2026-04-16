@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -17,6 +18,7 @@ import '../services/bluesky_api_service.dart';
 import '../services/engagement_service.dart';
 import '../services/x_api_service.dart';
 import '../widgets/account_picker_modal.dart';
+import '../widgets/empty_state.dart';
 import '../widgets/post_card.dart';
 import 'compose_screen.dart';
 import '../widgets/post_media.dart';
@@ -234,15 +236,7 @@ class _PostDetailScreenState extends ConsumerState<PostDetailScreen> {
                 ),
               )
             else if (_replies.isEmpty)
-              const Padding(
-                padding: EdgeInsets.all(32),
-                child: Center(
-                  child: Text(
-                    'リプライはありません',
-                    style: TextStyle(color: Colors.grey),
-                  ),
-                ),
-              )
+              const EmptyState(icon: Icons.chat_bubble_outline, title: 'リプライはありません')
             else ...[
               Padding(
                 padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
@@ -636,6 +630,7 @@ class _PostDetailScreenState extends ConsumerState<PostDetailScreen> {
   }
 
   Future<void> _handleLike(Post post) async {
+    HapticFeedback.lightImpact();
     final account = await _resolveAccount(post, 'いいね');
     if (account == null) return;
 
@@ -674,6 +669,7 @@ class _PostDetailScreenState extends ConsumerState<PostDetailScreen> {
   }
 
   Future<void> _handleRepost(Post post) async {
+    HapticFeedback.lightImpact();
     final account = await _resolveAccount(post, 'リポスト');
     if (account == null) return;
 

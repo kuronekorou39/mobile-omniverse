@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_overlay_window/flutter_overlay_window.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -16,9 +17,11 @@ import '../services/engagement_service.dart';
 import '../services/app_update_service.dart';
 import '../services/debug_log_service.dart';
 import '../services/timeline_fetch_scheduler.dart';
+import '../utils/app_snackbar.dart';
 import '../utils/engagement_errors.dart';
 import '../models/account.dart';
 import '../widgets/account_picker_modal.dart';
+import '../widgets/empty_state.dart';
 import '../utils/smooth_scroll_physics.dart';
 import '../widgets/post_card.dart';
 import '../widgets/update_dialog.dart';
@@ -105,12 +108,7 @@ class _OmniFeedScreenState extends ConsumerState<OmniFeedScreen>
       // ログサイズ警告を設定
       DebugLogService.instance.onLogSizeWarning = (sizeLabel) {
         if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('デバッグログが上限に達したため自動整理しました（現在 $sizeLabel）'),
-            duration: const Duration(seconds: 3),
-          ),
-        );
+        showAppSnackBar(context, 'デバッグログが上限に達したため自動整理しました（現在 $sizeLabel）', type: SnackType.warning);
       };
     });
   }
@@ -268,6 +266,7 @@ class _OmniFeedScreenState extends ConsumerState<OmniFeedScreen>
   }
 
   Future<void> _handleLike(Post post) async {
+    HapticFeedback.lightImpact();
     final account = await _resolveAccount(post, 'いいね');
     if (account == null) return;
 
@@ -309,6 +308,7 @@ class _OmniFeedScreenState extends ConsumerState<OmniFeedScreen>
   }
 
   Future<void> _handleRepost(Post post) async {
+    HapticFeedback.lightImpact();
     final account = await _resolveAccount(post, 'リポスト');
     if (account == null) return;
 
@@ -987,12 +987,7 @@ class _OmniFeedScreenState extends ConsumerState<OmniFeedScreen>
       return [
         SliverFillRemaining(
           hasScrollBody: false,
-          child: Center(
-            child: Text(
-              'フェッチが停止中です',
-              style: TextStyle(color: Colors.grey[500]),
-            ),
-          ),
+          child: EmptyState(icon: Icons.pause_circle_outline, title: 'フェッチが停止中です'),
         ),
       ];
     }
@@ -1038,15 +1033,9 @@ class _OmniFeedScreenState extends ConsumerState<OmniFeedScreen>
     // Post list
     if (filteredPosts.isEmpty) {
       slivers.add(
-        const SliverFillRemaining(
+        SliverFillRemaining(
           hasScrollBody: false,
-          child: Center(
-            child: Text(
-              '投稿が見つかりませんでした。\nしばらくお待ちください...',
-              textAlign: TextAlign.center,
-              style: TextStyle(color: Colors.grey),
-            ),
-          ),
+          child: EmptyState(icon: Icons.hourglass_empty, title: '投稿が見つかりませんでした', subtitle: 'しばらくお待ちください...'),
         ),
       );
     } else {

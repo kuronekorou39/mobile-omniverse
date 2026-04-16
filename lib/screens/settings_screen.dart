@@ -2,6 +2,7 @@ import 'dart:io';
 import 'dart:ui';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:package_info_plus/package_info_plus.dart';
@@ -21,6 +22,7 @@ import '../services/timeline_cache_service.dart';
 import '../services/x_features_service.dart';
 import '../services/x_query_id_service.dart';
 import '../widgets/update_dialog.dart';
+import '../utils/app_snackbar.dart';
 import 'activity_log_screen.dart';
 import 'features_screen.dart';
 import 'query_id_screen.dart';
@@ -56,9 +58,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     if (info != null) {
       showUpdateDialog(context, info);
     } else {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('最新バージョンです')),
-      );
+      showAppSnackBar(context, '最新バージョンです');
     }
   }
 
@@ -256,7 +256,10 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             secondary: const Icon(Icons.repeat),
             title: const Text('RT / リポストを非表示'),
             value: settings.hideAllRetweets,
-            onChanged: (value) => notifier.setHideAllRetweets(value),
+            onChanged: (value) {
+              HapticFeedback.selectionClick();
+              notifier.setHideAllRetweets(value);
+            },
           ),
 
           const _SectionGap(),
@@ -267,31 +270,46 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             secondary: const Icon(Icons.timer_outlined),
             title: const Text('フェッチタイマー'),
             value: settings.showFetchTimer,
-            onChanged: (value) => notifier.setShowFetchTimer(value),
+            onChanged: (value) {
+              HapticFeedback.selectionClick();
+              notifier.setShowFetchTimer(value);
+            },
           ),
           SwitchListTile(
             secondary: const Icon(Icons.visibility_off_outlined),
             title: const Text('匿名切替'),
             value: settings.appBarButtons.contains('userInfo'),
-            onChanged: (_) => notifier.toggleAppBarButton('userInfo'),
+            onChanged: (_) {
+              HapticFeedback.selectionClick();
+              notifier.toggleAppBarButton('userInfo');
+            },
           ),
           SwitchListTile(
             secondary: const Icon(Icons.screen_lock_portrait_outlined),
             title: const Text('スリープ防止'),
             value: settings.appBarButtons.contains('wakelock'),
-            onChanged: (_) => notifier.toggleAppBarButton('wakelock'),
+            onChanged: (_) {
+              HapticFeedback.selectionClick();
+              notifier.toggleAppBarButton('wakelock');
+            },
           ),
           SwitchListTile(
             secondary: const Icon(Icons.shield_outlined),
             title: const Text('センシティブ切替'),
             value: settings.appBarButtons.contains('sensitive'),
-            onChanged: (_) => notifier.toggleAppBarButton('sensitive'),
+            onChanged: (_) {
+              HapticFeedback.selectionClick();
+              notifier.toggleAppBarButton('sensitive');
+            },
           ),
           SwitchListTile(
             secondary: const Icon(Icons.repeat),
             title: const Text('RT非表示切替'),
             value: settings.appBarButtons.contains('retweet'),
-            onChanged: (_) => notifier.toggleAppBarButton('retweet'),
+            onChanged: (_) {
+              HapticFeedback.selectionClick();
+              notifier.toggleAppBarButton('retweet');
+            },
           ),
 
           const _SectionGap(),
@@ -308,7 +326,10 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
               ),
             ),
             value: settings.keepScreenOn,
-            onChanged: (value) => notifier.setKeepScreenOn(value),
+            onChanged: (value) {
+              HapticFeedback.selectionClick();
+              notifier.setKeepScreenOn(value);
+            },
           ),
           ListTile(
             leading: const Icon(Icons.folder_outlined),
@@ -329,9 +350,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                       OpenFilex.open(path);
                     } else {
                       if (context.mounted) {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(content: Text('フォルダがまだ存在しません（画像保存時に作成されます）')),
-                        );
+                        showAppSnackBar(context, 'フォルダがまだ存在しません（画像保存時に作成されます）', type: SnackType.info);
                       }
                     }
                   },
@@ -380,9 +399,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
               if (confirmed == true) {
                 notifier.resetToDefaults();
                 if (mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('設定をデフォルトに戻しました')),
-                  );
+                  showAppSnackBar(context, '設定をデフォルトに戻しました', type: SnackType.success);
                 }
               }
             },
@@ -551,9 +568,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                     await DebugLogService.instance.clear();
                     if (mounted) {
                       setState(() {});
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('ログをクリアしました')),
-                      );
+                      showAppSnackBar(context, 'ログをクリアしました', type: SnackType.success);
                     }
                   }
                 },
@@ -605,9 +620,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
 
                   if (mounted) {
                     setState(() {});
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('キャッシュをクリアしました。アプリを再起動してください。')),
-                    );
+                    showAppSnackBar(context, 'キャッシュをクリアしました。アプリを再起動してください。', type: SnackType.success);
                   }
                 },
               ),
@@ -1004,9 +1017,7 @@ class _FontPickerSheetState extends State<_FontPickerSheet> {
       widget.onSelect(fontName);
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('ダウンロード失敗: $e')),
-      );
+      showAppSnackBar(context, 'ダウンロード失敗: $e', type: SnackType.error);
       setState(() => _downloading = null);
     }
   }
@@ -1066,9 +1077,7 @@ class _FontPickerSheetState extends State<_FontPickerSheet> {
               await widget.clearFontCache(fontName);
               setState(() => _cacheStatus[fontName] = false);
               if (mounted) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('キャッシュを削除しました。再度タップでダウンロードできます。')),
-                );
+                showAppSnackBar(context, 'キャッシュを削除しました。再度タップでダウンロードできます。', type: SnackType.success);
               }
             },
             child: const Text('削除して再ダウンロード'),

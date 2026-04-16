@@ -12,6 +12,7 @@ import '../services/account_storage_service.dart';
 import '../services/bluesky_api_service.dart';
 import '../services/x_api_service.dart';
 import '../services/x_webview_action_service.dart';
+import '../utils/app_snackbar.dart';
 import '../utils/image_headers.dart';
 import '../widgets/sns_badge.dart';
 import 'browser_post_debug_screen.dart';
@@ -123,16 +124,10 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
       if (!mounted) return;
 
       if (success) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('投稿しました')),
-        );
+        showAppSnackBar(context, '投稿しました', type: SnackType.success);
         Navigator.of(context).pop(true);
       } else {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('投稿に失敗 (${statusCode ?? "?"}). 詳細はアクティビティログで確認'),
-          ),
-        );
+        showAppSnackBar(context, '投稿に失敗 (${statusCode ?? "?"}). 詳細はアクティビティログで確認', type: SnackType.error);
         setState(() => _isPosting = false);
       }
     } catch (e) {
@@ -147,9 +142,7 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
       );
 
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('エラー: $e')),
-      );
+      showAppSnackBar(context, 'エラー: $e', type: SnackType.error);
       setState(() => _isPosting = false);
     }
   }
@@ -447,13 +440,11 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
                     constraints: const BoxConstraints(),
                     tooltip: entry.value,
                     onPressed: () {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(
-                          content: Text(
-                            '${entry.value}は対応予定なし（公式アプリをご利用ください）',
-                          ),
-                          duration: const Duration(seconds: 2),
-                        ),
+                      showAppSnackBar(
+                        context,
+                        '${entry.value}は対応予定なし（公式アプリをご利用ください）',
+                        type: SnackType.warning,
+                        duration: const Duration(seconds: 2),
                       );
                     },
                   ),

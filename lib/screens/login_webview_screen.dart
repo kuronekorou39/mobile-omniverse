@@ -9,6 +9,7 @@ import 'package:http/http.dart' as http;
 import '../models/account.dart';
 import '../models/sns_service.dart';
 import '../services/debug_log_service.dart';
+import '../utils/app_snackbar.dart';
 import '../services/x_api_service.dart';
 import '../services/x_bearer_token_service.dart';
 import '../services/x_features_service.dart';
@@ -160,14 +161,16 @@ class _LoginWebViewScreenState extends State<LoginWebViewScreen> {
 
   Widget _buildStatusRow(String label, bool done) {
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 2),
+      padding: const EdgeInsets.symmetric(vertical: 3),
       child: Row(
-        mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(
-            done ? Icons.check_circle : Icons.hourglass_empty,
-            size: 16,
-            color: done ? Colors.green : Colors.grey,
+          SizedBox(
+            width: 20,
+            child: Icon(
+              done ? Icons.check_circle : Icons.hourglass_empty,
+              size: 16,
+              color: done ? Colors.green : Colors.grey,
+            ),
           ),
           const SizedBox(width: 8),
           Text(label, style: TextStyle(fontSize: 13, color: done ? Colors.green : Colors.grey)),
@@ -402,6 +405,9 @@ class _LoginWebViewScreenState extends State<LoginWebViewScreen> {
                     padding: const EdgeInsets.all(24),
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: widget.service == SnsService.x
+                          ? CrossAxisAlignment.start
+                          : CrossAxisAlignment.center,
                       children: [
                         const CircularProgressIndicator(),
                         const SizedBox(height: 20),
@@ -410,11 +416,13 @@ class _LoginWebViewScreenState extends State<LoginWebViewScreen> {
                           style: const TextStyle(fontSize: 14),
                           textAlign: TextAlign.center,
                         ),
-                        const SizedBox(height: 16),
-                        _buildStatusRow('Bearer Token', _gotBearerToken),
-                        _buildStatusRow('queryId', _gotQueryIds),
-                        _buildStatusRow('ユーザー情報', _gotUserInfo),
-                        _buildStatusRow('通知 queryId', _gotNotifications),
+                        if (widget.service == SnsService.x) ...[
+                          const SizedBox(height: 16),
+                          _buildStatusRow('Bearer Token', _gotBearerToken),
+                          _buildStatusRow('queryId', _gotQueryIds),
+                          _buildStatusRow('ユーザー情報', _gotUserInfo),
+                          _buildStatusRow('通知 queryId', _gotNotifications),
+                        ],
                       ],
                     ),
                   ),
@@ -493,9 +501,7 @@ class _LoginWebViewScreenState extends State<LoginWebViewScreen> {
     } catch (e) {
       debugPrint('[LoginWebView] Error: $e');
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('認証情報の取得に失敗しました: $e')),
-        );
+        showAppSnackBar(context, '認証情報の取得に失敗しました: $e', type: SnackType.error);
       }
     }
 
@@ -530,10 +536,7 @@ class _LoginWebViewScreenState extends State<LoginWebViewScreen> {
 
     if (result == null || result == 'null') {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-              content: Text('Bluesky にログインしてから「完了」を押してください')),
-        );
+        showAppSnackBar(context, 'Bluesky にログインしてから「完了」を押してください', type: SnackType.info);
       }
       return;
     }
@@ -547,9 +550,7 @@ class _LoginWebViewScreenState extends State<LoginWebViewScreen> {
 
     if (session == null) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('セッション情報が見つかりませんでした')),
-        );
+        showAppSnackBar(context, 'セッション情報が見つかりませんでした', type: SnackType.error);
       }
       return;
     }
@@ -672,10 +673,7 @@ class _LoginWebViewScreenState extends State<LoginWebViewScreen> {
 
     if (authToken == null || ct0 == null) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-              content: Text('X にログインしてから「完了」を押してください')),
-        );
+        showAppSnackBar(context, 'X にログインしてから「完了」を押してください', type: SnackType.info);
       }
       return;
     }
@@ -850,6 +848,7 @@ class _LoginWebViewScreenState extends State<LoginWebViewScreen> {
           title: const Text('取得状況'),
           content: Column(
             mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               _buildStatusRow('Bearer Token', _gotBearerToken),
               _buildStatusRow('queryId', _gotQueryIds),

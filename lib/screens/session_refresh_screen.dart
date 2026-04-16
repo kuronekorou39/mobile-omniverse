@@ -5,6 +5,7 @@ import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 
 import '../models/account.dart';
 import '../models/sns_service.dart';
+import '../utils/app_snackbar.dart';
 
 /// セッション更新の結果
 class SessionRefreshResult {
@@ -188,9 +189,7 @@ class _SessionRefreshScreenState extends State<SessionRefreshScreen> {
     } catch (e) {
       debugPrint('[SessionRefresh] Error: $e');
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('認証情報の更新に失敗しました: $e')),
-        );
+        showAppSnackBar(context, '認証情報の更新に失敗しました: $e', type: SnackType.error);
       }
     }
 
@@ -224,9 +223,7 @@ class _SessionRefreshScreenState extends State<SessionRefreshScreen> {
 
     if (authToken == null || ct0 == null) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Cookie が取得できませんでした。ログインし直してください。')),
-        );
+        showAppSnackBar(context, 'Cookie が取得できませんでした。ログインし直してください。', type: SnackType.error);
       }
       return;
     }
@@ -267,9 +264,7 @@ class _SessionRefreshScreenState extends State<SessionRefreshScreen> {
 
     if (result == null || result == 'null') {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('セッション情報が見つかりませんでした')),
-        );
+        showAppSnackBar(context, 'セッション情報が見つかりませんでした', type: SnackType.error);
       }
       return;
     }
@@ -282,9 +277,7 @@ class _SessionRefreshScreenState extends State<SessionRefreshScreen> {
 
     if (session == null) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('セッション情報が見つかりませんでした')),
-        );
+        showAppSnackBar(context, 'セッション情報が見つかりませんでした', type: SnackType.error);
       }
       return;
     }

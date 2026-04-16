@@ -1,9 +1,23 @@
 import 'package:flutter/material.dart';
 
-/// エンゲージメントエラー用のSnackBarを生成
+import 'app_snackbar.dart';
+
+/// エンゲージメントエラーをSnackBarで表示
+void showEngagementError(BuildContext context, String action, int? statusCode) {
+  showAppSnackBar(context, engagementErrorMessage(action, statusCode),
+      type: SnackType.error, duration: const Duration(seconds: 4));
+}
+
+/// 後方互換: SnackBar オブジェクトが必要な既存コード用
 SnackBar engagementErrorSnackBar(String action, int? statusCode) {
   return SnackBar(
-    content: Text(engagementErrorMessage(action, statusCode)),
+    content: Row(
+      children: [
+        const Icon(Icons.error_outline, color: Colors.redAccent, size: 20),
+        const SizedBox(width: 10),
+        Expanded(child: Text(engagementErrorMessage(action, statusCode))),
+      ],
+    ),
     duration: const Duration(seconds: 4),
     behavior: SnackBarBehavior.floating,
   );
@@ -14,9 +28,9 @@ String engagementErrorMessage(String action, int? statusCode) {
   final codeStr = statusCode != null ? ' ($statusCode)' : '';
   final reason = _knownErrors[statusCode];
   if (reason != null) {
-    return '${action}に失敗$codeStr: $reason';
+    return '$actionに失敗$codeStr: $reason';
   }
-  return '${action}に失敗しました$codeStr';
+  return '$actionに失敗しました$codeStr';
 }
 
 const _knownErrors = <int, String>{

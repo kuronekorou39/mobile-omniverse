@@ -14,6 +14,7 @@ import '../services/account_storage_service.dart';
 import '../services/bluesky_api_service.dart';
 import '../services/notification_cache_service.dart';
 import '../services/x_api_service.dart';
+import '../widgets/empty_state.dart';
 import '../widgets/sns_badge.dart';
 import 'notification_webview_screen.dart';
 import 'post_detail_screen.dart';
@@ -265,23 +266,10 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen>
             ],
           ),
         ),
-        body: Center(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Text('🔔', style: TextStyle(fontSize: 48)),
-              const SizedBox(height: 12),
-              Text(
-                'シーン...',
-                style: TextStyle(fontSize: 16, color: Colors.grey[500]),
-              ),
-              const SizedBox(height: 4),
-              Text(
-                'アカウントを追加すると通知が届きます',
-                style: TextStyle(fontSize: 13, color: Colors.grey[400]),
-              ),
-            ],
-          ),
+        body: const EmptyState(
+          icon: Icons.notifications_none,
+          title: '通知がありません',
+          subtitle: 'アカウントを追加すると通知が届きます',
         ),
       );
     }
@@ -658,7 +646,7 @@ class _NotificationListState extends ConsumerState<_NotificationList>
     }
 
     if (_notifications.isEmpty) {
-      return const Center(child: Text('通知はありません'));
+      return const EmptyState(icon: Icons.notifications_none, title: '通知はありません');
     }
 
     final types = _availableTypes;
@@ -1174,7 +1162,7 @@ class _UnifiedNotificationListState
     }
 
     if (_allNotifications.isEmpty) {
-      return const Center(child: Text('通知はありません'));
+      return const EmptyState(icon: Icons.notifications_none, title: '通知はありません');
     }
 
     final types = _availableTypes;

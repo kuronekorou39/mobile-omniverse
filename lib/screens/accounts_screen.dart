@@ -8,6 +8,8 @@ import '../providers/fetch_status_provider.dart';
 import '../providers/settings_provider.dart';
 import '../services/timeline_fetch_scheduler.dart';
 import '../services/x_query_id_service.dart';
+import '../utils/app_snackbar.dart';
+import '../widgets/empty_state.dart';
 import '../widgets/sns_badge.dart';
 import 'login_webview_screen.dart';
 import 'session_refresh_screen.dart';
@@ -62,33 +64,14 @@ class _AccountsScreenState extends ConsumerState<AccountsScreen> {
               ),
             ),
       body: accounts.isEmpty
-          ? Center(
-              child: Padding(
-                padding: const EdgeInsets.all(32),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const Icon(Icons.person_add, size: 64, color: Colors.grey),
-                    const SizedBox(height: 16),
-                    const Text(
-                      'アカウント未登録',
-                      style:
-                          TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
-                    ),
-                    const SizedBox(height: 8),
-                    const Text(
-                      'SNS アカウントを追加して\nタイムラインを取得しましょう',
-                      textAlign: TextAlign.center,
-                      style: TextStyle(color: Colors.grey),
-                    ),
-                    const SizedBox(height: 24),
-                    FilledButton.icon(
-                      onPressed: () => _showAddAccountDialog(context, ref),
-                      icon: const Icon(Icons.add),
-                      label: const Text('アカウント追加'),
-                    ),
-                  ],
-                ),
+          ? EmptyState(
+              icon: Icons.person_add,
+              title: 'アカウント未登録',
+              subtitle: 'SNS アカウントを追加して\nタイムラインを取得しましょう',
+              action: FilledButton.icon(
+                onPressed: () => _showAddAccountDialog(context, ref),
+                icon: const Icon(Icons.add),
+                label: const Text('アカウント追加'),
               ),
             )
           : Column(
@@ -213,9 +196,7 @@ class _AccountsScreenState extends ConsumerState<AccountsScreen> {
         a.handle.toLowerCase() == result.handle.toLowerCase());
     if (duplicate) {
       if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('${result.handle} は既に追加されています')),
-        );
+        showAppSnackBar(context, '${result.handle} は既に追加されています', type: SnackType.warning);
       }
       return;
     }
@@ -533,12 +514,7 @@ class _AccountDetailScreen extends ConsumerWidget {
     }
 
     if (context.mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('セッションを更新しました$detail'),
-          duration: const Duration(seconds: 5),
-        ),
-      );
+      showAppSnackBar(context, 'セッションを更新しました$detail', type: SnackType.success, duration: const Duration(seconds: 5));
     }
   }
 

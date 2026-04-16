@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -18,6 +19,7 @@ import '../utils/image_headers.dart';
 import '../providers/settings_provider.dart';
 import '../widgets/account_picker_modal.dart';
 import '../widgets/image_viewer.dart';
+import '../widgets/empty_state.dart';
 import '../widgets/post_card.dart';
 import '../widgets/sns_badge.dart';
 import 'compose_screen.dart';
@@ -462,9 +464,7 @@ class _UserProfileScreenState extends ConsumerState<UserProfileScreen>
     if (posts.isEmpty) {
       return [
         const SliverFillRemaining(
-          child: Center(
-            child: Text('投稿はありません', style: TextStyle(color: Colors.grey)),
-          ),
+          child: EmptyState(icon: Icons.article_outlined, title: '投稿はありません'),
         ),
       ];
     }
@@ -562,6 +562,7 @@ class _UserProfileScreenState extends ConsumerState<UserProfileScreen>
   }
 
   Future<void> _handleLike(Post post) async {
+    HapticFeedback.lightImpact();
     final account = await _resolveAccount(post, 'いいね');
     if (account == null) return;
 
@@ -600,6 +601,7 @@ class _UserProfileScreenState extends ConsumerState<UserProfileScreen>
   }
 
   Future<void> _handleRepost(Post post) async {
+    HapticFeedback.lightImpact();
     final account = await _resolveAccount(post, 'リポスト');
     if (account == null) return;
 

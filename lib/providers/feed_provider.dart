@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/foundation.dart';
@@ -192,20 +193,22 @@ class FeedNotifier extends StateNotifier<FeedState> {
   void Function(String accountId, String handle)? onTokenExpired;
 
   void _listenToOverlayCommands() {
-    FlutterOverlayWindow.setMainAppCommandHandler((message) {
-      if (message is Map) {
-        final cmd = message['cmd'];
-        if (cmd == 'refresh') {
-          refresh();
-        } else if (cmd == 'loadMore') {
-          loadMore();
-        } else if (cmd == 'close') {
-          setOverlayActive(false);
-        } else if (cmd == 'overlayScrollAtTop') {
-          setOverlayScrollAtTop(message['atTop'] as bool? ?? true);
+    if (Platform.isAndroid) {
+      FlutterOverlayWindow.setMainAppCommandHandler((message) {
+        if (message is Map) {
+          final cmd = message['cmd'];
+          if (cmd == 'refresh') {
+            refresh();
+          } else if (cmd == 'loadMore') {
+            loadMore();
+          } else if (cmd == 'close') {
+            setOverlayActive(false);
+          } else if (cmd == 'overlayScrollAtTop') {
+            setOverlayScrollAtTop(message['atTop'] as bool? ?? true);
+          }
         }
-      }
-    });
+      });
+    }
   }
 
   void _onTokenExpired(String accountId, String handle) {
@@ -292,7 +295,9 @@ class FeedNotifier extends StateNotifier<FeedState> {
         payload['posts'] = visiblePosts.take(100).map((p) => p.toJson()).toList();
       }
 
-      await FlutterOverlayWindow.shareData(jsonEncode(payload));
+      if (Platform.isAndroid) {
+        await FlutterOverlayWindow.shareData(jsonEncode(payload));
+      }
     } catch (_) {}
   }
 
@@ -844,7 +849,9 @@ class FeedNotifier extends StateNotifier<FeedState> {
     _dripTimer?.cancel();
     _dripDelayTimer?.cancel();
     _countdownTimer?.cancel();
-    FlutterOverlayWindow.setMainAppCommandHandler(null);
+    if (Platform.isAndroid) {
+      FlutterOverlayWindow.setMainAppCommandHandler(null);
+    }
     super.dispose();
   }
 }

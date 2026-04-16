@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -210,9 +211,9 @@ class _OmniFeedScreenState extends ConsumerState<OmniFeedScreen>
 
   Future<void> _closeOverlayIfActive() async {
     try {
-      final isActive = await FlutterOverlayWindow.isActive();
+      final isActive = Platform.isAndroid ? await FlutterOverlayWindow.isActive() : false;
       if (isActive) {
-        await FlutterOverlayWindow.closeOverlay();
+        if (Platform.isAndroid) await FlutterOverlayWindow.closeOverlay();
       }
       ref.read(feedProvider.notifier).setOverlayActive(false);
     } catch (e) {
@@ -222,7 +223,7 @@ class _OmniFeedScreenState extends ConsumerState<OmniFeedScreen>
 
   Future<void> _pauseFetchingIfIdle() async {
     try {
-      final isOverlayActive = await FlutterOverlayWindow.isActive();
+      final isOverlayActive = Platform.isAndroid ? await FlutterOverlayWindow.isActive() : false;
       if (!isOverlayActive) {
         ref.read(settingsProvider.notifier).pauseFetching();
       }
@@ -233,7 +234,7 @@ class _OmniFeedScreenState extends ConsumerState<OmniFeedScreen>
 
   Future<void> _checkPendingPostDetail() async {
     try {
-      final json = await FlutterOverlayWindow.getPendingPostDetail();
+      final json = Platform.isAndroid ? await FlutterOverlayWindow.getPendingPostDetail() : null;
       if (json == null || !mounted) return;
       final post = Post.fromCache(
           jsonDecode(json) as Map<String, dynamic>);
@@ -578,9 +579,9 @@ class _OmniFeedScreenState extends ConsumerState<OmniFeedScreen>
                   icon: const Icon(Icons.settings),
                   label: const Text('オーバーレイ権限の設定を開く'),
                   onPressed: () async {
-                    await FlutterOverlayWindow.requestPermission();
+                    if (Platform.isAndroid) await FlutterOverlayWindow.requestPermission();
                     final granted =
-                        await FlutterOverlayWindow.isPermissionGranted();
+                        Platform.isAndroid ? await FlutterOverlayWindow.isPermissionGranted() : false;
                     if (ctx.mounted) Navigator.of(ctx).pop(granted);
                   },
                 ),
@@ -596,19 +597,19 @@ class _OmniFeedScreenState extends ConsumerState<OmniFeedScreen>
   Future<void> _launchOverlay(FeedState feed) async {
     final messenger = ScaffoldMessenger.of(context);
 
-    var granted = await FlutterOverlayWindow.isPermissionGranted();
+    var granted = Platform.isAndroid ? await FlutterOverlayWindow.isPermissionGranted() : false;
     if (!granted) {
       if (!mounted) return;
       final result = await _showOverlayPermissionGuide();
       if (result == true) {
-        granted = await FlutterOverlayWindow.isPermissionGranted();
+        granted = Platform.isAndroid ? await FlutterOverlayWindow.isPermissionGranted() : false;
       }
       if (!granted) return;
     }
 
-    final isActive = await FlutterOverlayWindow.isActive();
+    final isActive = Platform.isAndroid ? await FlutterOverlayWindow.isActive() : false;
     if (isActive) {
-      await FlutterOverlayWindow.closeOverlay();
+      if (Platform.isAndroid) await FlutterOverlayWindow.closeOverlay();
       ref.read(feedProvider.notifier).setOverlayActive(false);
       return;
     }
@@ -620,31 +621,35 @@ class _OmniFeedScreenState extends ConsumerState<OmniFeedScreen>
       final prefs = await SharedPreferences.getInstance();
       final wIndex = (prefs.getInt('overlay_wIndex') ?? 0).clamp(0, 2);
       final hIndex = (prefs.getInt('overlay_hIndex') ?? 0).clamp(0, 2);
-      await FlutterOverlayWindow.showOverlay(
-        height: heights[hIndex],
-        width: widths[wIndex],
-        enableDrag: false,
-        overlayTitle: 'OmniVerse',
-        flag: OverlayFlag.defaultFlag,
-        positionGravity: PositionGravity.none,
-      );
+      if (Platform.isAndroid) {
+        await FlutterOverlayWindow.showOverlay(
+          height: heights[hIndex],
+          width: widths[wIndex],
+          enableDrag: false,
+          overlayTitle: 'OmniVerse',
+          flag: OverlayFlag.defaultFlag,
+          positionGravity: PositionGravity.none,
+        );
+      }
 
       final posts = feed.posts.take(100).map((p) => p.toJson()).toList();
       final settings = ref.read(settingsProvider);
-      await FlutterOverlayWindow.shareData(jsonEncode({
-        'posts': posts,
-        'fetch': {
-          'remaining': 0,
-          'total': settings.fetchIntervalSeconds,
-          'isFetching': ref.read(feedProvider).isFetching,
-        },
-        'showFetchTimer': settings.showFetchTimer,
-      }));
+      if (Platform.isAndroid) {
+        await FlutterOverlayWindow.shareData(jsonEncode({
+          'posts': posts,
+          'fetch': {
+            'remaining': 0,
+            'total': settings.fetchIntervalSeconds,
+            'isFetching': ref.read(feedProvider).isFetching,
+          },
+          'showFetchTimer': settings.showFetchTimer,
+        }));
+      }
 
       ref.read(feedProvider.notifier).setOverlayActive(true);
 
       // ホーム画面に戻る（Activityを破棄せずバックグラウンドへ）
-      if (mounted) {
+      if (mounted && Platform.isAndroid) {
         await FlutterOverlayWindow.moveToBackground();
       }
     } catch (e) {
@@ -726,13 +731,14 @@ class _OmniFeedScreenState extends ConsumerState<OmniFeedScreen>
                 children: [
                   ..._buildAppBarLeftButtons(settings),
                   const Spacer(),
-                  IconButton(
-                    icon: const Icon(Icons.picture_in_picture_alt, size: 20),
-                    tooltip: 'オーバーレイ',
-                    onPressed: () => _launchOverlay(ref.read(feedProvider)),
-                    constraints: const BoxConstraints(minWidth: 40, minHeight: 40),
-                    padding: EdgeInsets.zero,
-                  ),
+                  if (Platform.isAndroid)
+                    IconButton(
+                      icon: const Icon(Icons.picture_in_picture_alt, size: 20),
+                      tooltip: 'オーバーレイ',
+                      onPressed: () => _launchOverlay(ref.read(feedProvider)),
+                      constraints: const BoxConstraints(minWidth: 40, minHeight: 40),
+                      padding: EdgeInsets.zero,
+                    ),
                   IconButton(
                     icon: const Icon(Icons.settings_outlined, size: 20),
                     tooltip: '設定',

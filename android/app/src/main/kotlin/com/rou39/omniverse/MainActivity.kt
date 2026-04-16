@@ -1,4 +1,4 @@
-package com.omniverse.mobile_omniverse
+package com.rou39.omniverse
 
 import android.content.Intent
 import android.content.IntentFilter

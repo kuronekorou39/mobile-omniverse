@@ -64,11 +64,17 @@ class _ImageViewerState extends State<ImageViewer> {
     final url = widget.imageUrls[_currentIndex];
     try {
       final file = await DefaultCacheManager().getSingleFile(url, headers: kImageHeaders);
-      final dir = await getExternalStorageDirectory();
-      if (dir == null) throw Exception('ストレージにアクセスできません');
       final prefs = await SharedPreferences.getInstance();
       final saveFolder = prefs.getString('settings_image_save_folder') ?? 'Pictures/OmniVerse';
-      final picDir = Directory('${dir.parent.parent.parent.parent.path}/$saveFolder');
+      final Directory picDir;
+      if (Platform.isIOS) {
+        final docDir = await getApplicationDocumentsDirectory();
+        picDir = Directory('${docDir.path}/$saveFolder');
+      } else {
+        final dir = await getExternalStorageDirectory();
+        if (dir == null) throw Exception('ストレージにアクセスできません');
+        picDir = Directory('${dir.parent.parent.parent.parent.path}/$saveFolder');
+      }
       if (!await picDir.exists()) await picDir.create(recursive: true);
       final ext = url.contains('.png') ? 'png' : 'jpg';
       final name = 'omni_${DateTime.now().millisecondsSinceEpoch}.$ext';

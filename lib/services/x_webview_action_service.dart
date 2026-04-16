@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
+import '../utils/platform_ua.dart';
 
 import '../models/account.dart';
 import 'debug_log_service.dart';
@@ -36,8 +37,7 @@ class XWebViewActionService {
       initialUrlRequest: URLRequest(url: WebUri('about:blank')),
       initialSettings: InAppWebViewSettings(
         javaScriptEnabled: true,
-        userAgent:
-            'Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Mobile Safari/537.36',
+        userAgent: platformUserAgent,
         domStorageEnabled: true,
       ),
       onLoadStop: (controller, url) {

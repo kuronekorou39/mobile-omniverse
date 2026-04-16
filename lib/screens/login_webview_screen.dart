@@ -11,6 +11,7 @@ import '../models/account.dart';
 import '../models/sns_service.dart';
 import '../services/debug_log_service.dart';
 import '../utils/app_snackbar.dart';
+import '../utils/platform_ua.dart';
 import '../services/x_bearer_token_service.dart';
 import '../services/x_features_service.dart';
 import '../services/x_query_id_service.dart';
@@ -46,15 +47,6 @@ class LoginWebViewScreen extends StatefulWidget {
 }
 
 /// X の fetch をインターセプトしてユーザー情報・BearerToken・queryIdをキャプチャするスクリプト
-/// プラットフォーム別ユーザーエージェント
-final String _userAgent = Platform.isIOS
-    ? 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) '
-      'AppleWebKit/605.1.15 (KHTML, like Gecko) '
-      'Version/17.0 Mobile/15E148 Safari/604.1'
-    : 'Mozilla/5.0 (Linux; Android 14; Pixel 8) '
-      'AppleWebKit/537.36 (KHTML, like Gecko) '
-      'Chrome/131.0.0.0 Mobile Safari/537.36';
-
 const _xFetchInterceptorScript = '''
 (function() {
   window.__xCapturedUser = null;
@@ -259,7 +251,7 @@ class _LoginWebViewScreenState extends State<LoginWebViewScreen> {
                 url: WebUri(widget.service.homeUrl),
               ),
               initialSettings: InAppWebViewSettings(
-                userAgent: _userAgent,
+                userAgent: platformUserAgent,
                 javaScriptEnabled: true,
                 domStorageEnabled: true,
                 useShouldOverrideUrlLoading: true,
@@ -282,7 +274,7 @@ class _LoginWebViewScreenState extends State<LoginWebViewScreen> {
                         child: InAppWebView(
                           windowId: createWindowAction.windowId,
                           initialSettings: InAppWebViewSettings(
-                            userAgent: _userAgent,
+                            userAgent: platformUserAgent,
                             javaScriptEnabled: true,
                             domStorageEnabled: true,
                             thirdPartyCookiesEnabled: true,

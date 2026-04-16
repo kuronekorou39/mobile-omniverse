@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
+import '../utils/platform_ua.dart';
 
 import '../models/account.dart';
 import '../models/sns_service.dart';
@@ -121,10 +122,7 @@ class _SessionRefreshScreenState extends State<SessionRefreshScreen> {
                           url: WebUri(service.homeUrl),
                         ),
                         initialSettings: InAppWebViewSettings(
-                          userAgent:
-                              'Mozilla/5.0 (Linux; Android 14; Pixel 8) '
-                              'AppleWebKit/537.36 (KHTML, like Gecko) '
-                              'Chrome/131.0.0.0 Mobile Safari/537.36',
+                          userAgent: platformUserAgent,
                           javaScriptEnabled: true,
                           domStorageEnabled: true,
                           useShouldOverrideUrlLoading: true,

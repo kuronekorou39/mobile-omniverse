@@ -256,8 +256,8 @@ class _LoginWebViewScreenState extends State<LoginWebViewScreen> {
                 domStorageEnabled: true,
                 useShouldOverrideUrlLoading: true,
                 thirdPartyCookiesEnabled: true,
-                javaScriptCanOpenWindowsAutomatically: true,
-                supportMultipleWindows: true,
+                javaScriptCanOpenWindowsAutomatically: Platform.isAndroid,
+                supportMultipleWindows: Platform.isAndroid,
               ),
               // Google OAuth: ポップアップウィンドウ内のWebViewを作成し、
               // 認証完了後にpostMessageで親に返すフローを処理

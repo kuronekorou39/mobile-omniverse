@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../models/account.dart';
+import '../utils/app_snackbar.dart';
 import '../models/activity_log.dart';
 import '../models/notification_item.dart';
 import '../models/post.dart';
@@ -875,9 +876,7 @@ class _NotificationTileState extends State<_NotificationTile> {
         onTap: () {
           if (_isSystemNotification) {
             final fullText = '${notification.actorName} ${notification.targetPostBody ?? ''}';
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(content: Text(fullText), duration: const Duration(seconds: 5)),
-            );
+            showAppSnackBar(context, fullText, duration: const Duration(seconds: 5));
             return;
           }
           if (notification.type == NotificationType.follow ||
@@ -1035,16 +1034,12 @@ class _NotificationTileState extends State<_NotificationTile> {
           ),
         );
       } else {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('投稿が見つかりませんでした')),
-        );
+        showAppSnackBar(context, '投稿が見つかりませんでした', type: SnackType.error);
       }
     } catch (e) {
       if (!context.mounted) return;
       Navigator.of(context, rootNavigator: true).pop(); // ローディングを閉じる
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('投稿の読み込みに失敗しました: $e')),
-      );
+      showAppSnackBar(context, '投稿の読み込みに失敗しました: $e', type: SnackType.error);
     }
   }
 

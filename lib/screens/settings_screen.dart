@@ -376,6 +376,21 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             ),
           ),
 
+          if (Platform.isAndroid)
+            ListTile(
+              leading: const Icon(Icons.picture_in_picture_alt),
+              title: const Text('オーバーレイの位置・サイズをリセット'),
+              subtitle: const Text('操作不能になった場合に使用'),
+              onTap: () async {
+                final prefs = await SharedPreferences.getInstance();
+                await prefs.remove('overlay_wIndex');
+                await prefs.remove('overlay_hIndex');
+                if (mounted) {
+                  showAppSnackBar(context, 'オーバーレイの設定をリセットしました（次回起動時に反映）',
+                      type: SnackType.success);
+                }
+              },
+            ),
           ListTile(
             leading: const Icon(Icons.settings_backup_restore),
             title: const Text('設定をデフォルトに戻す'),

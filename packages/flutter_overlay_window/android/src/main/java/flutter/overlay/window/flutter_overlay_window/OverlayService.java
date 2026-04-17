@@ -422,10 +422,14 @@ public class OverlayService extends Service implements View.OnTouchListener {
     }
 
     private void moveOverlay(int x, int y, MethodChannel.Result result) {
-        if (windowManager != null) {
+        if (windowManager != null && flutterView != null) {
             WindowManager.LayoutParams params = (WindowManager.LayoutParams) flutterView.getLayoutParams();
             params.x = (x == -1999 || x == -1) ? -1 : dpToPx(x);
             params.y = dpToPx(y);
+            // クランプ: 画面外に飛び出さないようにする
+            int[] clamped = clampPosition(params.x, params.y);
+            params.x = clamped[0];
+            params.y = clamped[1];
             windowManager.updateViewLayout(flutterView, params);
             if (result != null)
                 result.success(true);

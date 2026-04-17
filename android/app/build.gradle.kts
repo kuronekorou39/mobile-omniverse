@@ -42,7 +42,7 @@ android {
     defaultConfig {
         applicationId = "com.rou39.omniverse"
         minSdk = flutter.minSdkVersion
-        targetSdk = 34
+        targetSdk = 35
         versionCode = flutter.versionCode
         versionName = flutter.versionName
     }

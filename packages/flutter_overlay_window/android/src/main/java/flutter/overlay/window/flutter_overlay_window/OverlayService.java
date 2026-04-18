@@ -256,6 +256,14 @@ public class OverlayService extends Service implements View.OnTouchListener {
         return mNavigationBarHeight;
     }
 
+    /** 画面サイズを最新の値に更新（全画面切替・画面回転対応） */
+    private void refreshScreenSize() {
+        if (windowManager == null) return;
+        DisplayMetrics dm = new DisplayMetrics();
+        windowManager.getDefaultDisplay().getRealMetrics(dm);
+        szWindow.set(dm.widthPixels, dm.heightPixels);
+    }
+
 
     private void updateOverlayFlag(MethodChannel.Result result, String flag) {
         if (windowManager != null) {
@@ -278,9 +286,10 @@ public class OverlayService extends Service implements View.OnTouchListener {
 
     private void resizeOverlay(int width, int height, boolean enableDrag, MethodChannel.Result result) {
         if (windowManager != null) {
+            refreshScreenSize();
             float density = mResources.getDisplayMetrics().density;
             int margin = (int) (8 * density);
-            int topMargin = (int) (100 * density); // ステータスバー＋通知ジェスチャー領域を避ける
+            int topMargin = (int) (48 * density);
             int bottomMargin = margin + navigationBarHeightPx();
             int screenW = szWindow.x;
             int screenH = szWindow.y;
@@ -716,9 +725,10 @@ public class OverlayService extends Service implements View.OnTouchListener {
 
     /** 指を離した後のハードクランプ: 指定サイズで計算 */
     private int[] clampPosition(int x, int y, int overlayW, int overlayH) {
+        refreshScreenSize();
         float density = mResources.getDisplayMetrics().density;
         int margin = (int) (8 * density);
-        int topMargin = (int) (100 * density);
+        int topMargin = (int) (48 * density);  // ステータスバー+少し余白
         int bottomMargin = margin + navigationBarHeightPx();
         int screenW = szWindow.x;
         int screenH = szWindow.y;
@@ -727,7 +737,11 @@ public class OverlayService extends Service implements View.OnTouchListener {
             int minY = -((screenH - overlayH) / 2 - topMargin);
             int maxY = (screenH - overlayH) / 2 - bottomMargin;
             if (maxX < 0) maxX = 0;
-            if (minY > maxY) minY = maxY = 0;
+            if (minY > maxY) {
+                // オーバーレイが画面に対して大きい場合: 上端をtopMarginに合わせる
+                int centerY = -(screenH / 2 - overlayH / 2 - topMargin);
+                minY = maxY = centerY;
+            }
             x = Math.max(-maxX, Math.min(x, maxX));
             y = Math.max(minY, Math.min(y, maxY));
         } else {

@@ -393,8 +393,8 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen>
       body: TabBarView(
         controller: _tabController,
         children: [
-          _UnifiedNotificationList(accounts: accounts),
-          ...accounts.map((a) => _NotificationList(account: a)),
+          _UnifiedNotificationList(key: ValueKey(accounts.map((a) => a.id).join(',')), accounts: accounts),
+          ...accounts.map((a) => _NotificationList(key: ValueKey(a.id), account: a)),
         ],
       ),
     );
@@ -403,7 +403,7 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen>
 
 /// アカウントごとの通知リスト
 class _NotificationList extends ConsumerStatefulWidget {
-  const _NotificationList({required this.account});
+  const _NotificationList({super.key, required this.account});
   final Account account;
 
   @override
@@ -1056,7 +1056,7 @@ class _NotificationTileState extends State<_NotificationTile> {
 // ─── 統合通知リスト（「すべて」タブ） ───
 
 class _UnifiedNotificationList extends ConsumerStatefulWidget {
-  const _UnifiedNotificationList({required this.accounts});
+  const _UnifiedNotificationList({super.key, required this.accounts});
   final List<Account> accounts;
 
   @override
@@ -1092,6 +1092,20 @@ class _UnifiedNotificationListState
   @override
   void initState() {
     super.initState();
+    _init();
+  }
+
+  @override
+  void didUpdateWidget(covariant _UnifiedNotificationList oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    final oldIds = oldWidget.accounts.map((a) => a.id).toSet();
+    final newIds = widget.accounts.map((a) => a.id).toSet();
+    if (!oldIds.containsAll(newIds) || !newIds.containsAll(oldIds)) {
+      _init();
+    }
+  }
+
+  void _init() {
     final accountIds = widget.accounts.map((a) => a.id).toList();
     _readLine = _cacheService.openAllTab(accountIds);
     _loadFromCache();

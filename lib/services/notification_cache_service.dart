@@ -40,24 +40,23 @@ class NotificationCacheService {
 
     final existingMap = {for (final n in existing.notifications) n.id: n};
     final newItems = <NotificationItem>[];
+    int updatedCount = 0;
     for (final n in stamped) {
       final old = existingMap[n.id];
       if (old == null) {
         newItems.add(n);
       } else if (n.totalActorCount > old.totalActorCount) {
+        // 既存アイテムを更新（newItemsには追加しない = 重複防止）
         final idx = existing.notifications.indexOf(old);
         if (idx >= 0) existing.notifications[idx] = n;
-        newItems.add(n);
+        updatedCount++;
       }
     }
     if (newItems.isNotEmpty) {
-      final newOnly = newItems.where((n) => !existingMap.containsKey(n.id)).toList();
-      if (newOnly.isNotEmpty) {
-        existing.notifications.insertAll(0, newOnly);
-      }
+      existing.notifications.insertAll(0, newItems);
     }
     if (cursor != null) existing.cursor = cursor;
-    return newItems.length;
+    return newItems.length + updatedCount;
   }
 
   /// loadMore結果を末尾に追加

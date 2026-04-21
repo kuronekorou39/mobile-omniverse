@@ -2,6 +2,23 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/notification_item.dart';
 
+/// merge() の結果
+class NotificationMergeResult {
+  const NotificationMergeResult({
+    required this.newCount,
+    required this.updatedCount,
+  });
+
+  /// 新規追加された通知の件数
+  final int newCount;
+
+  /// 既存通知が更新された件数（アクター追加 or timestamp 進行）
+  final int updatedCount;
+
+  /// 何らかの変更があったか
+  bool get hasChanges => newCount > 0 || updatedCount > 0;
+}
+
 /// アプリ全体で共有する通知キャッシュ（メモリ内）
 class NotificationCacheService {
   NotificationCacheService._();
@@ -27,69 +44,88 @@ class NotificationCacheService {
     _cache.clear();
   }
 
-  /// 新規フェッチ結果をマージ（重複排除、新しいものを先頭に）
-  int merge(String accountId, List<NotificationItem> fetched, {String? cursor}) {
-    final stamped = fetched.map((n) =>
-        n.accountId == accountId ? n : n.copyWith(accountId: accountId)).toList();
+  /// 同一イベント判定キー
+  /// - targetPostId があれば `type:postId` （同じ投稿への複数アクションを集約）
+  /// - なければ `type:id` （フォロー等は通知ID単位で独立）
+  static String _eventKey(NotificationItem n) => n.targetPostId != null
+      ? '${n.type.name}:${n.targetPostId}'
+      : '${n.type.name}:${n.id}';
+
+  /// 新規フェッチ結果をマージ
+  ///
+  /// 同一イベント (type+targetPostId) の既存通知があれば:
+  /// - 新データの timestamp が新しい or actor 数が増えていれば上書き
+  /// - 最後に timestamp 降順で全体再ソート → 更新された通知が自動的に先頭へ移動
+  ///
+  /// 同一イベントの既存がなければ新規追加。
+  NotificationMergeResult merge(
+    String accountId,
+    List<NotificationItem> fetched, {
+    String? cursor,
+  }) {
+    final stamped = fetched
+        .map((n) => n.accountId == accountId
+            ? n
+            : n.copyWith(accountId: accountId))
+        .toList();
 
     final existing = _cache[accountId];
     if (existing == null || existing.notifications.isEmpty) {
-      _cache[accountId] = _AccountNotifications(List.of(stamped), cursor);
-      return stamped.length;
+      final list = List.of(stamped)
+        ..sort((a, b) => b.timestamp.compareTo(a.timestamp));
+      _cache[accountId] = _AccountNotifications(list, cursor);
+      return NotificationMergeResult(
+        newCount: stamped.length,
+        updatedCount: 0,
+      );
     }
 
-    final existingMap = {for (final n in existing.notifications) n.id: n};
-    // type+targetPostIdで同一イベントの重複を検出（IDが異なるケース対応）
-    final existingEventKeys = <String>{
-      for (final n in existing.notifications)
-        if (n.targetPostId != null) '${n.type.name}:${n.targetPostId}',
+    final byKey = <String, NotificationItem>{
+      for (final n in existing.notifications) _eventKey(n): n,
     };
-    final newItems = <NotificationItem>[];
+
+    int newCount = 0;
     int updatedCount = 0;
     for (final n in stamped) {
-      final old = existingMap[n.id];
-      if (old != null) {
-        // ID完全一致: アクター数が増えていれば更新
-        if (n.totalActorCount > old.totalActorCount) {
+      final key = _eventKey(n);
+      final old = byKey[key];
+      if (old == null) {
+        existing.notifications.add(n);
+        byKey[key] = n;
+        newCount++;
+      } else {
+        final isNewerTime = n.timestamp.isAfter(old.timestamp);
+        final hasMoreActors = n.totalActorCount > old.totalActorCount;
+        if (isNewerTime || hasMoreActors) {
           final idx = existing.notifications.indexOf(old);
           if (idx >= 0) existing.notifications[idx] = n;
+          byKey[key] = n;
           updatedCount++;
-        }
-      } else {
-        // IDは異なるが同一イベント（同じtype+targetPostId）なら
-        // 既存をアクター数が多い方に更新して重複追加しない
-        final eventKey = n.targetPostId != null ? '${n.type.name}:${n.targetPostId}' : null;
-        if (eventKey != null && existingEventKeys.contains(eventKey)) {
-          final oldEvent = existing.notifications.firstWhere(
-            (e) => e.targetPostId == n.targetPostId && e.type == n.type,
-          );
-          if (n.totalActorCount >= oldEvent.totalActorCount) {
-            final idx = existing.notifications.indexOf(oldEvent);
-            if (idx >= 0) existing.notifications[idx] = n;
-          }
-          updatedCount++;
-        } else {
-          newItems.add(n);
-          if (eventKey != null) existingEventKeys.add(eventKey);
         }
       }
     }
-    if (newItems.isNotEmpty) {
-      existing.notifications.insertAll(0, newItems);
-    }
+
+    existing.notifications.sort((a, b) => b.timestamp.compareTo(a.timestamp));
+
     if (cursor != null) existing.cursor = cursor;
-    return newItems.length + updatedCount;
+    return NotificationMergeResult(
+      newCount: newCount,
+      updatedCount: updatedCount,
+    );
   }
 
-  /// loadMore結果を末尾に追加
+  /// loadMore 結果を末尾に追加（eventKey ベースで重複排除）
   void append(String accountId, List<NotificationItem> items, String? cursor) {
     final existing = _cache[accountId];
     if (existing == null) {
       _cache[accountId] = _AccountNotifications(List.of(items), cursor);
       return;
     }
-    final existingIds = existing.notifications.map((n) => n.id).toSet();
-    final newItems = items.where((n) => !existingIds.contains(n.id)).toList();
+    final existingKeys = <String>{
+      for (final n in existing.notifications) _eventKey(n),
+    };
+    final newItems =
+        items.where((n) => !existingKeys.contains(_eventKey(n))).toList();
     existing.notifications.addAll(newItems);
     if (cursor != null) existing.cursor = cursor;
   }
@@ -137,14 +173,15 @@ class NotificationCacheService {
     final prefs = await SharedPreferences.getInstance();
     final line = _readLines[accountId];
     if (line != null) {
-      await prefs.setInt('notif_read_line_$accountId', line.millisecondsSinceEpoch);
+      await prefs.setInt(
+          'notif_read_line_$accountId', line.millisecondsSinceEpoch);
     }
   }
 
   /// 通知が既読ラインより新しいかどうか
-  bool isNew(String accountId, DateTime readLine, DateTime notificationTimestamp) {
-    return notificationTimestamp.isAfter(readLine);
-  }
+  bool isNew(String accountId, DateTime readLine,
+          DateTime notificationTimestamp) =>
+      notificationTimestamp.isAfter(readLine);
 
   /// 全アカウントの通知を時系列でマージして返す
   List<NotificationItem> getAllMerged(List<String> accountIds) {
@@ -155,7 +192,6 @@ class NotificationCacheService {
     all.sort((a, b) => b.timestamp.compareTo(a.timestamp));
     return all;
   }
-
 }
 
 class _AccountNotifications {

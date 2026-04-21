@@ -420,7 +420,6 @@ class _NotificationList extends ConsumerStatefulWidget {
 class _NotificationListState extends ConsumerState<_NotificationList>
     with AutomaticKeepAliveClientMixin {
   final _notifications = <NotificationItem>[];
-  final _listKey = GlobalKey<AnimatedListState>();
   bool _isLoading = true;
   String? _error;
   String? _cursor;
@@ -502,53 +501,17 @@ class _NotificationListState extends ConsumerState<_NotificationList>
 
       if (!mounted) return;
 
-      if (isRefresh) {
-        // 既存 + 新規をマージして時系列ソート（ID + type+targetPostId で二重排除）
-        final existingIds = _notifications.map((n) => n.id).toSet();
-        final existingEvents = <String>{
-          for (final n in _notifications)
-            if (n.targetPostId != null) '${n.type.name}:${n.targetPostId}',
-        };
-        final newItems = fetched.where((n) {
-          if (existingIds.contains(n.id)) return false;
-          if (n.targetPostId != null && existingEvents.contains('${n.type.name}:${n.targetPostId}')) return false;
-          return true;
-        }).toList();
-        if (newItems.isNotEmpty) {
-          _notifications.addAll(newItems);
-          _notifications.sort((a, b) => b.timestamp.compareTo(a.timestamp));
-          // AnimatedList を全件リビルド
-          for (var i = 0; i < newItems.length; i++) {
-            final idx = _notifications.indexOf(newItems[i]);
-            _listKey.currentState?.insertItem(idx,
-                duration: const Duration(milliseconds: 300));
-          }
-        }
-        setState(() => _cursor = newCursor);
-      } else {
-        // 初回ロード: キャッシュと重複しない分のみ追加（ID + type+targetPostId）
-        final existingIds = _notifications.map((n) => n.id).toSet();
-        final existingEvents = <String>{
-          for (final n in _notifications)
-            if (n.targetPostId != null) '${n.type.name}:${n.targetPostId}',
-        };
-        final newItems = fetched.where((n) {
-          if (existingIds.contains(n.id)) return false;
-          if (n.targetPostId != null && existingEvents.contains('${n.type.name}:${n.targetPostId}')) return false;
-          return true;
-        }).toList();
-        _notifications.addAll(newItems);
-        if (_notifications.length > fetched.length) {
-          _notifications.sort((a, b) => b.timestamp.compareTo(a.timestamp));
-        }
-        setState(() {
-          _cursor = newCursor;
-          _isLoading = false;
-        });
-      }
-
-      // キャッシュに同期
+      // キャッシュへマージ → キャッシュから最新状態を読み直す
+      // merge() が同一イベント (type+targetPostId) の上書き＋再ソートを担う
       _cacheService.merge(widget.account.id, fetched, cursor: newCursor);
+
+      setState(() {
+        _notifications
+          ..clear()
+          ..addAll(_cacheService.get(widget.account.id));
+        _cursor = _cacheService.getCursor(widget.account.id) ?? newCursor;
+        _isLoading = false;
+      });
 
       _isFetching = false;
 
@@ -600,24 +563,12 @@ class _NotificationListState extends ConsumerState<_NotificationList>
   }
 
   void _appendItems(List<NotificationItem> items, String? newCursor) {
-    final existingIds = _notifications.map((n) => n.id).toSet();
-    final existingEvents = <String>{
-      for (final n in _notifications)
-        if (n.targetPostId != null) '${n.type.name}:${n.targetPostId}',
-    };
-    final newItems = items.where((n) {
-      if (existingIds.contains(n.id)) return false;
-      if (n.targetPostId != null && existingEvents.contains('${n.type.name}:${n.targetPostId}')) return false;
-      return true;
-    }).toList();
-    final startIndex = _notifications.length;
-    _notifications.addAll(newItems);
-    for (var i = 0; i < newItems.length; i++) {
-      _listKey.currentState?.insertItem(startIndex + i,
-          duration: const Duration(milliseconds: 200));
-    }
+    _cacheService.append(widget.account.id, items, newCursor);
     setState(() {
-      _cursor = newCursor;
+      _notifications
+        ..clear()
+        ..addAll(_cacheService.get(widget.account.id));
+      _cursor = _cacheService.getCursor(widget.account.id) ?? newCursor;
       _isLoadingMore = false;
     });
   }
@@ -747,48 +698,31 @@ class _NotificationListState extends ConsumerState<_NotificationList>
         ),
         Divider(height: 1, thickness: 0.5, color: Colors.grey.withAlpha(40)),
 
-        // 通知リスト
+        // 通知リスト（キャッシュ駆動で差分更新）
         Expanded(
           child: RefreshIndicator(
             onRefresh: _fetch,
-            child: isFiltered
-                // フィルタ中は通常ListView（AnimatedListはフィルタと相性が悪い）
-                ? ListView.builder(
-                    itemCount: filtered.length,
-                    itemBuilder: (context, index) {
-                      final n = filtered[index];
-                      return _NotificationTile(
-                        notification: n,
-                        account: widget.account,
-                        isNew: n.timestamp.isAfter(_readLine),
-                        showSnsBadge: false,
-                      );
-                    },
-                  )
-                // フィルタなしはAnimatedList（新着アニメーション対応）
-                : AnimatedList(
-                    key: _listKey,
-                    initialItemCount: _notifications.length + (_cursor != null ? 1 : 0),
-                    itemBuilder: (context, index, animation) {
-                      if (index == _notifications.length) {
-                        _loadMore();
-                        return const Padding(
-                          padding: EdgeInsets.all(16),
-                          child: Center(child: CircularProgressIndicator()),
-                        );
-                      }
-                      final n = _notifications[index];
-                      return SizeTransition(
-                        sizeFactor: animation,
-                        child: _NotificationTile(
-                          notification: n,
-                          account: widget.account,
-                          isNew: n.timestamp.isAfter(_readLine),
-                          showSnsBadge: false,
-                        ),
-                      );
-                    },
-                  ),
+            child: ListView.builder(
+              itemCount:
+                  filtered.length + (!isFiltered && _cursor != null ? 1 : 0),
+              itemBuilder: (context, index) {
+                // フィルタなし時の末尾ローディング＝loadMore トリガ
+                if (!isFiltered && index == filtered.length) {
+                  _loadMore();
+                  return const Padding(
+                    padding: EdgeInsets.all(16),
+                    child: Center(child: CircularProgressIndicator()),
+                  );
+                }
+                final n = filtered[index];
+                return _NotificationTile(
+                  notification: n,
+                  account: widget.account,
+                  isNew: n.timestamp.isAfter(_readLine),
+                  showSnsBadge: false,
+                );
+              },
+            ),
           ),
         ),
       ],

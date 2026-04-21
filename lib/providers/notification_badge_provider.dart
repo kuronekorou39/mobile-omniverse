@@ -46,20 +46,23 @@ class NotificationBadgeNotifier extends StateNotifier<Set<String>> {
 
     for (final account in accounts) {
       try {
-        int newCount;
+        final NotificationMergeResult mergeResult;
 
         if (account.service == SnsService.x) {
           // バックグラウンドではall.jsonのみ（レート制限節約）
-          final notifResult = await XApiService.instance.getNotifications(account.xCredentials);
-          newCount = _cache.merge(account.id, notifResult.notifications, cursor: notifResult.cursor);
+          final notifResult = await XApiService.instance
+              .getNotifications(account.xCredentials);
+          mergeResult = _cache.merge(account.id, notifResult.notifications,
+              cursor: notifResult.cursor);
         } else {
           final result = await BlueskyApiService.instance
               .getNotificationsWithRefresh(account.blueskyCredentials);
-          newCount = _cache.merge(account.id, result.notifications, cursor: result.cursor);
+          mergeResult = _cache.merge(account.id, result.notifications,
+              cursor: result.cursor);
         }
 
-        // 実際にキャッシュに新規追加された件数でバッジ判定
-        if (newCount > 0) {
+        // 新規追加 or 既存更新（アクター追加/timestamp進行）でバッジ点灯
+        if (mergeResult.hasChanges) {
           newUnread.add(account.id);
         }
       } catch (e) {

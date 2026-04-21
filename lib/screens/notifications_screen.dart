@@ -749,6 +749,11 @@ class _NotificationTile extends StatefulWidget {
 }
 
 class _NotificationTileState extends State<_NotificationTile> {
+  /// 一度ハイライト発火した通知IDを保持し、再発火を防ぐ
+  /// スクロールや setState で ListView のタイルが破棄・再生成されても、
+  /// 既に光ったものは再度光らせない（loadMore で上部が再ハイライトされる問題の対策）
+  static final Set<String> _pulsedIds = <String>{};
+
   double _highlightOpacity = 0.0;
 
   NotificationItem get notification => widget.notification;
@@ -758,20 +763,22 @@ class _NotificationTileState extends State<_NotificationTile> {
   @override
   void initState() {
     super.initState();
-    _activateHighlight();
+    _maybeActivate();
   }
 
   @override
   void didUpdateWidget(covariant _NotificationTile oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (widget.isNew && !oldWidget.isNew) {
-      _activateHighlight();
+      _maybeActivate();
     }
   }
 
-  void _activateHighlight() {
+  void _maybeActivate() {
     if (!widget.isNew) return;
-    setState(() => _highlightOpacity = 1.0);
+    if (_pulsedIds.contains(widget.notification.id)) return;
+    _pulsedIds.add(widget.notification.id);
+    _highlightOpacity = 1.0;
     Future.delayed(const Duration(seconds: 10), () {
       if (mounted) setState(() => _highlightOpacity = 0.0);
     });

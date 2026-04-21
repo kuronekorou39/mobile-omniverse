@@ -443,12 +443,27 @@ class _LoginWebViewScreenState extends State<LoginWebViewScreen> {
       final hasCt0 = cookies.any((c) => c.name == 'ct0');
       loggedIn = hasAuth && hasCt0;
     } else {
-      // Bluesky: ログイン後にbsky.appドメインでセッション情報がlocalStorageに保存される
+      // Bluesky: ログイン後にセッション情報がlocalStorageに保存される
       if (_controller != null) {
         final session = await _controller!.evaluateJavascript(
-          source: 'localStorage.getItem("BSKY_STORAGE") || ""',
+          source: '''
+            (function() {
+              // 既知のキーを試す
+              var keys = ['BSKY_STORAGE', 'root', 'session'];
+              for (var i = 0; i < keys.length; i++) {
+                var val = localStorage.getItem(keys[i]);
+                if (val && val.indexOf('accessJwt') !== -1) return 'found';
+              }
+              // 全キーを探索
+              for (var i = 0; i < localStorage.length; i++) {
+                var val = localStorage.getItem(localStorage.key(i));
+                if (val && val.indexOf('accessJwt') !== -1) return 'found';
+              }
+              return '';
+            })()
+          ''',
         );
-        loggedIn = session != null && session.toString().contains('accessJwt');
+        loggedIn = session != null && session.toString().contains('found');
       }
     }
 
@@ -563,30 +578,32 @@ class _LoginWebViewScreenState extends State<LoginWebViewScreen> {
     String? avatarUrl = session['avatar'] as String?;
     String displayName = session['displayName'] as String? ?? creds.handle;
 
-    // アバターがなければ getProfile API で取得
+    // アバターがなければ getProfile API で取得（PDS → public API の順にフォールバック）
     if (avatarUrl == null || avatarUrl.isEmpty) {
-      try {
-        final profileResp = await http.get(
-          Uri.parse(
-            '${creds.pdsUrl}/xrpc/app.bsky.actor.getProfile'
-            '?actor=${Uri.encodeComponent(creds.did)}',
-          ),
-          headers: {
-            'Authorization': 'Bearer ${creds.accessJwt}',
-            'Accept': 'application/json',
-          },
-        );
-        debugPrint('[LoginWebView] Bluesky getProfile status: ${profileResp.statusCode}');
-        if (profileResp.statusCode == 200) {
-          final profile =
-              json.decode(profileResp.body) as Map<String, dynamic>;
-          avatarUrl = profile['avatar'] as String?;
-          final dn = profile['displayName'] as String?;
-          if (dn != null && dn.isNotEmpty) displayName = dn;
-          debugPrint('[LoginWebView] Bluesky avatar: $avatarUrl');
+      final urls = [
+        '${creds.pdsUrl}/xrpc/app.bsky.actor.getProfile?actor=${Uri.encodeComponent(creds.did)}',
+        'https://public.api.bsky.app/xrpc/app.bsky.actor.getProfile?actor=${Uri.encodeComponent(creds.did)}',
+      ];
+      for (final url in urls) {
+        try {
+          final profileResp = await http.get(
+            Uri.parse(url),
+            headers: {
+              'Authorization': 'Bearer ${creds.accessJwt}',
+              'Accept': 'application/json',
+            },
+          );
+          debugPrint('[LoginWebView] Bluesky getProfile ($url) status: ${profileResp.statusCode}');
+          if (profileResp.statusCode == 200) {
+            final profile = json.decode(profileResp.body) as Map<String, dynamic>;
+            avatarUrl = profile['avatar'] as String?;
+            final dn = profile['displayName'] as String?;
+            if (dn != null && dn.isNotEmpty) displayName = dn;
+            if (avatarUrl != null && avatarUrl.isNotEmpty) break;
+          }
+        } catch (e) {
+          debugPrint('[LoginWebView] Error fetching Bluesky profile: $e');
         }
-      } catch (e) {
-        debugPrint('[LoginWebView] Error fetching Bluesky profile: $e');
       }
     }
 

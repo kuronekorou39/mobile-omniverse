@@ -12,6 +12,13 @@ final notificationBadgeProvider =
   (ref) => NotificationBadgeNotifier(),
 );
 
+/// 通知タブが現在アクティブ（bottom nav で選択中）か
+///
+/// IndexedStack は非アクティブタブも layout するため、バックグラウンドで
+/// ListView.builder がタイルを mount → initState で markSeen が走ってしまう。
+/// このフラグでタブ非アクティブ時の markSeen を抑制する。
+final notificationTabActiveProvider = StateProvider<bool>((ref) => false);
+
 /// 通知バッジ（未読ドット）の管理 + バックグラウンド通知フェッチ
 /// state = 新着通知があるアカウントIDの集合
 class NotificationBadgeNotifier extends StateNotifier<Set<String>> {

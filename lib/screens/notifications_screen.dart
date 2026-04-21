@@ -728,7 +728,7 @@ class _NotificationListState extends ConsumerState<_NotificationList>
   }
 }
 
-class _NotificationTile extends StatefulWidget {
+class _NotificationTile extends ConsumerStatefulWidget {
   const _NotificationTile({
     super.key,
     required this.notification,
@@ -742,43 +742,49 @@ class _NotificationTile extends StatefulWidget {
   final bool showSnsBadge;
 
   @override
-  State<_NotificationTile> createState() => _NotificationTileState();
+  ConsumerState<_NotificationTile> createState() => _NotificationTileState();
 }
 
-class _NotificationTileState extends State<_NotificationTile> {
+class _NotificationTileState extends ConsumerState<_NotificationTile> {
   double _highlightOpacity = 0.0;
+
+  /// このタイルで既にハイライト発火判定を実行済みか
+  /// タブ active 時に 1 度だけ発火し、以降は skip
+  bool _activationAttempted = false;
 
   NotificationItem get notification => widget.notification;
   Account get account => widget.account;
   bool get showRecipient => widget.showRecipient;
 
   @override
-  void initState() {
-    super.initState();
-    _maybeActivate();
-  }
-
-  @override
   void didUpdateWidget(covariant _NotificationTile oldWidget) {
     super.didUpdateWidget(oldWidget);
     // 同一 widget が別通知に差し替わった or 同一イベントが timestamp 進行で更新された場合
+    // → 発火判定をリセットして再試行対象にする
     final idChanged = oldWidget.notification.id != widget.notification.id;
     final timestampAdvanced =
         widget.notification.timestamp.isAfter(oldWidget.notification.timestamp);
     if (idChanged || timestampAdvanced) {
-      _maybeActivate();
+      _activationAttempted = false;
     }
   }
 
-  /// ハイライト発火判定は NotificationCacheService.isNew() に一元化
-  /// - 未見 (seenAt が古い or 無い) なら発火 → markSeen で既読化
-  /// - 既見なら早期 return（スクロールやタブ往復での再発火を防ぐ）
-  /// - 同一イベントが timestamp 進行で更新されれば自動的に未見復活 → 再発火
-  void _maybeActivate() {
+  /// ハイライト発火判定
+  /// - 通知タブが active でない時は skip（バックグラウンド layout 時の誤発火防止）
+  /// - 既見 (seenAt にあり n.timestamp <= seen) なら skip
+  /// - 未見なら markSeen + ハイライト発火
+  /// - 一度試行したら `_activationAttempted=true` で再試行を止める
+  void _tryActivate() {
+    if (!mounted) return;
+    if (_activationAttempted) return;
+    final tabActive = ref.read(notificationTabActiveProvider);
+    if (!tabActive) return;
+    _activationAttempted = true;
+
     final cache = NotificationCacheService.instance;
     if (!cache.isNew(widget.notification)) return;
     cache.markSeen(widget.notification);
-    _highlightOpacity = 1.0;
+    setState(() => _highlightOpacity = 1.0);
     Future.delayed(const Duration(seconds: 10), () {
       if (mounted) setState(() => _highlightOpacity = 0.0);
     });
@@ -846,6 +852,15 @@ class _NotificationTileState extends State<_NotificationTile> {
 
   @override
   Widget build(BuildContext context) {
+    // タブ active を watch → false→true 遷移 or 初回 active 時に発火試行
+    // post-frame callback 経由で「layout 後に安全に setState」
+    final tabActive = ref.watch(notificationTabActiveProvider);
+    if (tabActive && !_activationAttempted) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted && !_activationAttempted) _tryActivate();
+      });
+    }
+
     final timeAgo = _formatTimeAgo(notification.timestamp);
     final actors = notification.additionalActors;
 

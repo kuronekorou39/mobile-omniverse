@@ -30,6 +30,17 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   ];
 
   @override
+  void initState() {
+    super.initState();
+    // 初期タブが通知タブ (index 2) だった場合のみ active=true
+    if (_currentIndex == 2) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        ref.read(notificationTabActiveProvider.notifier).state = true;
+      });
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
     final hasUnread = ref.watch(notificationBadgeProvider).isNotEmpty;
 
@@ -85,10 +96,15 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       // 切替元のタブをルートに戻す
       _navigatorKeys[_currentIndex].currentState?.popUntil((route) => route.isFirst);
 
-      // 通知タブに入った時に既読マーク（ドットを消す）
-      // 開いた時点のハイライトが現在の未読なので、入る瞬間にバッジを消す
+      // 通知タブに入る/離れる時の active 状態更新
+      // タブ active = true の間だけ各タイルが markSeen を実行できる
+      // （IndexedStack でバックグラウンドでも layout されて ListView.builder の
+      //   itemBuilder が呼ばれ勝手に既読化される問題を防ぐ）
       if (index == 2 && _currentIndex != 2) {
         ref.read(notificationBadgeProvider.notifier).markSeen();
+        ref.read(notificationTabActiveProvider.notifier).state = true;
+      } else if (_currentIndex == 2 && index != 2) {
+        ref.read(notificationTabActiveProvider.notifier).state = false;
       }
       setState(() => _currentIndex = index);
     }

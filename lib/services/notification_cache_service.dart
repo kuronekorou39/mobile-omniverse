@@ -155,18 +155,17 @@ class NotificationCacheService {
     return oldLine ?? DateTime.now();
   }
 
-  /// 「すべて」タブを開いたときに呼ぶ: 全アカウントの既読ラインを更新
-  /// 戻り値は「最も古い旧既読ライン」
+  /// 「すべて」タブ専用の readLine キー
+  /// 個別アカウントの readLine と干渉しないよう独立管理
+  static const _allTabKey = '__all__';
+
+  /// 「すべて」タブを開いたときに呼ぶ
+  /// 個別アカウントの readLine は一切触らない（個別タブと独立してハイライト判定する）
   DateTime openAllTab(List<String> accountIds) {
-    final now = DateTime.now();
-    DateTime oldest = now;
-    for (final id in accountIds) {
-      final oldLine = _readLines[id] ?? now; // 初回は全て既読扱い
-      if (oldLine.isBefore(oldest)) oldest = oldLine;
-      _readLines[id] = now;
-      _saveReadLine(id);
-    }
-    return oldest;
+    final oldLine = _readLines[_allTabKey];
+    _readLines[_allTabKey] = DateTime.now();
+    _saveReadLine(_allTabKey);
+    return oldLine ?? DateTime.now();
   }
 
   Future<void> _saveReadLine(String accountId) async {

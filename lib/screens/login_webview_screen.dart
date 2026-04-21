@@ -262,14 +262,7 @@ class _LoginWebViewScreenState extends State<LoginWebViewScreen> {
               // Google OAuth: ポップアップウィンドウ内のWebViewを作成し、
               // 認証完了後にpostMessageで親に返すフローを処理
               onCreateWindow: (controller, createWindowAction) async {
-                if (Platform.isIOS) {
-                  // iOS: ポップアップではなく同一WebViewで開く（Cookie共有の問題回避）
-                  if (createWindowAction.request.url != null) {
-                    controller.loadUrl(urlRequest: createWindowAction.request);
-                  }
-                  return false;
-                }
-                // Android: ポップアップダイアログで開く
+                // ポップアップダイアログで開く（windowIdでCookie共有）
                 showDialog(
                   context: context,
                   builder: (ctx) => Dialog(

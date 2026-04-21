@@ -1,3 +1,6 @@
+import 'dart:convert';
+
+import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/notification_item.dart';
@@ -20,14 +23,19 @@ class NotificationMergeResult {
 }
 
 /// アプリ全体で共有する通知キャッシュ（メモリ内）
+///
+/// ハイライト判定は eventKey ベースの `_seenAt` マップで一元管理する:
+/// - `isNew(n)` = n.timestamp が前回閲覧時刻より新しい
+/// - `markSeen(n)` = 閲覧時刻を now で更新（次からは既読扱い）
+/// - 同一イベントが内容更新 (timestamp 進行) されれば自動的に未読復活 → 再ハイライト
 class NotificationCacheService {
   NotificationCacheService._();
   static final instance = NotificationCacheService._();
 
   final Map<String, _AccountNotifications> _cache = {};
 
-  /// アカウントごとの既読ライン（この時刻より新しい通知がハイライト対象）
-  final Map<String, DateTime> _readLines = {};
+  /// eventKey ごとの「ユーザーが最後にハイライトを見た時刻」
+  final Map<String, DateTime> _seenAt = {};
   bool _loaded = false;
 
   /// キャッシュ取得
@@ -53,11 +61,12 @@ class NotificationCacheService {
 
   /// 新規フェッチ結果をマージ
   ///
-  /// 同一イベント (type+targetPostId) の既存通知があれば:
+  /// 同一イベント (eventKey) の既存通知があれば:
   /// - 新データの timestamp が新しい or actor 数が増えていれば上書き
   /// - 最後に timestamp 降順で全体再ソート → 更新された通知が自動的に先頭へ移動
   ///
   /// 同一イベントの既存がなければ新規追加。
+  /// 最後に eventKey の重複を保険的に除去（race condition や parse 異常対策）。
   NotificationMergeResult merge(
     String accountId,
     List<NotificationItem> fetched, {
@@ -71,11 +80,11 @@ class NotificationCacheService {
 
     final existing = _cache[accountId];
     if (existing == null || existing.notifications.isEmpty) {
-      final list = List.of(stamped)
+      final list = _dedupByEventKey(stamped)
         ..sort((a, b) => b.timestamp.compareTo(a.timestamp));
       _cache[accountId] = _AccountNotifications(list, cursor);
       return NotificationMergeResult(
-        newCount: stamped.length,
+        newCount: list.length,
         updatedCount: 0,
       );
     }
@@ -105,7 +114,9 @@ class NotificationCacheService {
       }
     }
 
+    // ソート＋保険の重複除去
     existing.notifications.sort((a, b) => b.timestamp.compareTo(a.timestamp));
+    _removeDuplicatesInPlace(existing.notifications);
 
     if (cursor != null) existing.cursor = cursor;
     return NotificationMergeResult(
@@ -114,11 +125,14 @@ class NotificationCacheService {
     );
   }
 
-  /// loadMore 結果を末尾に追加（eventKey ベースで重複排除）
+  /// loadMore 結果を末尾に追加（eventKey ベースで重複排除、末尾追加後に全体ソート）
   void append(String accountId, List<NotificationItem> items, String? cursor) {
     final existing = _cache[accountId];
     if (existing == null) {
-      _cache[accountId] = _AccountNotifications(List.of(items), cursor);
+      _cache[accountId] = _AccountNotifications(
+          _dedupByEventKey(items)
+            ..sort((a, b) => b.timestamp.compareTo(a.timestamp)),
+          cursor);
       return;
     }
     final existingKeys = <String>{
@@ -127,65 +141,128 @@ class NotificationCacheService {
     final newItems =
         items.where((n) => !existingKeys.contains(_eventKey(n))).toList();
     existing.notifications.addAll(newItems);
+    existing.notifications.sort((a, b) => b.timestamp.compareTo(a.timestamp));
+    _removeDuplicatesInPlace(existing.notifications);
     if (cursor != null) existing.cursor = cursor;
   }
 
-  /// 永続化された表示済みIDを読み込む
-  Future<void> loadReadLines() async {
+  /// 同じ eventKey の要素を先頭優先で除去した新リストを返す
+  List<NotificationItem> _dedupByEventKey(List<NotificationItem> items) {
+    final seen = <String>{};
+    final result = <NotificationItem>[];
+    for (final n in items) {
+      final key = _eventKey(n);
+      if (seen.add(key)) result.add(n);
+    }
+    return result;
+  }
+
+  /// in-place で eventKey の重複を除去（先に現れたものを残す）
+  void _removeDuplicatesInPlace(List<NotificationItem> items) {
+    final seen = <String>{};
+    items.removeWhere((n) {
+      final key = _eventKey(n);
+      if (seen.contains(key)) {
+        debugPrint('[NotifCache] Removed duplicate eventKey=$key id=${n.id}');
+        return true;
+      }
+      seen.add(key);
+      return false;
+    });
+  }
+
+  // ──────────── ハイライト判定 ────────────
+
+  /// 通知が未見か（= ハイライト対象）
+  bool isNew(NotificationItem n) {
+    final seen = _seenAt[_eventKey(n)];
+    if (seen == null) return true;
+    return n.timestamp.isAfter(seen);
+  }
+
+  /// 通知を「見た」ことにする（ハイライト発火と同時に呼ぶ）
+  void markSeen(NotificationItem n) {
+    _seenAt[_eventKey(n)] = DateTime.now();
+    _persistSeenAt();
+  }
+
+  /// アカウントに未見の通知があるか（バッジ用）
+  bool hasUnseenFor(String accountId) {
+    for (final n in get(accountId)) {
+      if (isNew(n)) return true;
+    }
+    return false;
+  }
+
+  /// 全有効アカウントのうち未見がある accountId 集合
+  Set<String> unseenAccountIds(List<String> accountIds) {
+    return {
+      for (final id in accountIds)
+        if (hasUnseenFor(id)) id,
+    };
+  }
+
+  // ──────────── 永続化 ────────────
+
+  /// 起動時に呼ぶ: 保存された seenAt を復元
+  Future<void> loadSeenAt() async {
     if (_loaded) return;
     _loaded = true;
     final prefs = await SharedPreferences.getInstance();
-    final keys = prefs.getKeys().where((k) => k.startsWith('notif_read_line_'));
-    for (final key in keys) {
-      final accountId = key.replaceFirst('notif_read_line_', '');
-      final ms = prefs.getInt(key);
-      if (ms != null) {
-        _readLines[accountId] = DateTime.fromMillisecondsSinceEpoch(ms);
+    final json = prefs.getString('notif_seen_at');
+    if (json != null) {
+      try {
+        final map = jsonDecode(json) as Map<String, dynamic>;
+        for (final e in map.entries) {
+          final ms = e.value;
+          if (ms is int) {
+            _seenAt[e.key] = DateTime.fromMillisecondsSinceEpoch(ms);
+          }
+        }
+      } catch (e) {
+        debugPrint('[NotifCache] Failed to load seenAt: $e');
       }
     }
-  }
-
-  /// タブを開いたときに呼ぶ: 既読ラインを読み取り、新しい既読ラインを保存
-  /// 戻り値は「旧既読ライン」（ハイライト判定に使う）
-  DateTime openTab(String accountId) {
-    final oldLine = _readLines[accountId];
-    _readLines[accountId] = DateTime.now();
-    _saveReadLine(accountId);
-    // 初回（既読ラインなし）は全て既読扱い
-    return oldLine ?? DateTime.now();
-  }
-
-  /// 「すべて」タブ専用の readLine キー
-  /// 個別アカウントの readLine と干渉しないよう独立管理
-  static const _allTabKey = '__all__';
-
-  /// 「すべて」タブを開いたときに呼ぶ
-  /// 個別アカウントの readLine は一切触らない（個別タブと独立してハイライト判定する）
-  DateTime openAllTab(List<String> accountIds) {
-    final oldLine = _readLines[_allTabKey];
-    _readLines[_allTabKey] = DateTime.now();
-    _saveReadLine(_allTabKey);
-    return oldLine ?? DateTime.now();
-  }
-
-  Future<void> _saveReadLine(String accountId) async {
-    final prefs = await SharedPreferences.getInstance();
-    final line = _readLines[accountId];
-    if (line != null) {
-      await prefs.setInt(
-          'notif_read_line_$accountId', line.millisecondsSinceEpoch);
+    // 旧仕様の notif_read_line_* キーをクリーンアップ
+    final legacyKeys =
+        prefs.getKeys().where((k) => k.startsWith('notif_read_line_')).toList();
+    for (final key in legacyKeys) {
+      await prefs.remove(key);
     }
   }
 
-  /// 通知が既読ラインより新しいかどうか
-  bool isNew(String accountId, DateTime readLine,
-          DateTime notificationTimestamp) =>
-      notificationTimestamp.isAfter(readLine);
+  /// seenAt マップが肥大化するので定期的に剪定（1000件超えたら古い500件を削除）
+  void _pruneSeenAtIfNeeded() {
+    if (_seenAt.length <= 1000) return;
+    final entries = _seenAt.entries.toList()
+      ..sort((a, b) => a.value.compareTo(b.value));
+    for (var i = 0; i < entries.length - 500; i++) {
+      _seenAt.remove(entries[i].key);
+    }
+  }
+
+  DateTime? _lastPersist;
+  Future<void> _persistSeenAt() async {
+    _pruneSeenAtIfNeeded();
+    // 連続呼び出しを抑制（500ms デバウンス的挙動）
+    final now = DateTime.now();
+    if (_lastPersist != null &&
+        now.difference(_lastPersist!) < const Duration(milliseconds: 500)) {
+      return;
+    }
+    _lastPersist = now;
+    final prefs = await SharedPreferences.getInstance();
+    final map = {
+      for (final e in _seenAt.entries) e.key: e.value.millisecondsSinceEpoch,
+    };
+    await prefs.setString('notif_seen_at', jsonEncode(map));
+  }
 
   /// 全アカウントの通知を時系列でマージして返す
   List<NotificationItem> getAllMerged(List<String> accountIds) {
     final all = <NotificationItem>[];
-    for (final id in accountIds) {
+    // account_id 重複に備えて Set 経由で
+    for (final id in accountIds.toSet()) {
       all.addAll(get(id));
     }
     all.sort((a, b) => b.timestamp.compareTo(a.timestamp));

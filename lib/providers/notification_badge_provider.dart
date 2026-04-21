@@ -36,41 +36,54 @@ class NotificationBadgeNotifier extends StateNotifier<Set<String>> {
   }
 
   /// 全有効アカウントの通知をフェッチしてキャッシュ + バッジ更新
+  ///
+  /// バッジ点灯判定は cache.hasUnseenFor() で毎回再計算する:
+  /// - 未見通知がある → 点灯
+  /// - 全て既読化済み → 消灯
+  /// これにより「通知タブで見た→自動消灯」が次スケジューラサイクルで反映される
   Future<void> _fetchAndCheck() async {
     final accounts = AccountStorageService.instance.accounts
         .where((a) => a.isEnabled)
         .toList();
     if (accounts.isEmpty) return;
 
-    final newUnread = <String>{...state};
-
     for (final account in accounts) {
       try {
-        final NotificationMergeResult mergeResult;
-
         if (account.service == SnsService.x) {
           // バックグラウンドではall.jsonのみ（レート制限節約）
           final notifResult = await XApiService.instance
               .getNotifications(account.xCredentials);
-          mergeResult = _cache.merge(account.id, notifResult.notifications,
+          _cache.merge(account.id, notifResult.notifications,
               cursor: notifResult.cursor);
         } else {
           final result = await BlueskyApiService.instance
               .getNotificationsWithRefresh(account.blueskyCredentials);
-          mergeResult = _cache.merge(account.id, result.notifications,
+          _cache.merge(account.id, result.notifications,
               cursor: result.cursor);
-        }
-
-        // 新規追加 or 既存更新（アクター追加/timestamp進行）でバッジ点灯
-        if (mergeResult.hasChanges) {
-          newUnread.add(account.id);
         }
       } catch (e) {
         debugPrint('[NotifBadge] Error fetching ${account.handle}: $e');
       }
     }
 
-    if (newUnread != state) state = newUnread;
+    final accountIds = accounts.map((a) => a.id).toList();
+    final newUnread = _cache.unseenAccountIds(accountIds);
+    if (!_setEquals(newUnread, state)) state = newUnread;
+  }
+
+  bool _setEquals(Set<String> a, Set<String> b) {
+    if (a.length != b.length) return false;
+    for (final v in a) {
+      if (!b.contains(v)) return false;
+    }
+    return true;
+  }
+
+  /// 通知タブに入った時などに呼ぶ: バッジを即座に消す
+  /// （個別通知の既読化は各タイルの cacheService.markSeen() が担当）
+  void refreshBadge(List<String> accountIds) {
+    final newUnread = _cache.unseenAccountIds(accountIds);
+    if (!_setEquals(newUnread, state)) state = newUnread;
   }
 
   /// 通知画面を開いたとき、バッジを消して既読マーク

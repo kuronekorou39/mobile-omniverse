@@ -30,7 +30,7 @@ void main() async {
   await XQueryIdService.instance.init();
   await XFeaturesService.instance.init();
   await DebugLogService.instance.init();
-  await NotificationCacheService.instance.loadReadLines();
+  await NotificationCacheService.instance.loadSeenAt();
   MemoryGuardService.instance.start();
   runApp(const ProviderScope(child: OmniVerseApp()));
 }

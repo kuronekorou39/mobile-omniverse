@@ -427,7 +427,6 @@ class _NotificationListState extends ConsumerState<_NotificationList>
   bool _isFetching = false;
   bool _gqlFailed = false;
   DateTime? _lastFetchTime;
-  late DateTime _readLine;
 
   /// フィルタ: 非表示にするタイプ（空 = 全表示）
   final Set<NotificationType> _hiddenTypes = {};
@@ -450,7 +449,6 @@ class _NotificationListState extends ConsumerState<_NotificationList>
   @override
   void initState() {
     super.initState();
-    _readLine = _cacheService.openTab(widget.account.id);
     // キャッシュがあれば即表示
     if (_cacheService.hasData(widget.account.id)) {
       _notifications.addAll(_cacheService.get(widget.account.id));
@@ -716,9 +714,9 @@ class _NotificationListState extends ConsumerState<_NotificationList>
                 }
                 final n = filtered[index];
                 return _NotificationTile(
+                  key: ValueKey(n.id),
                   notification: n,
                   account: widget.account,
-                  isNew: n.timestamp.isAfter(_readLine),
                   showSnsBadge: false,
                 );
               },
@@ -732,15 +730,14 @@ class _NotificationListState extends ConsumerState<_NotificationList>
 
 class _NotificationTile extends StatefulWidget {
   const _NotificationTile({
+    super.key,
     required this.notification,
     required this.account,
-    this.isNew = false,
     this.showRecipient = false,
     this.showSnsBadge = true,
   });
   final NotificationItem notification;
   final Account account;
-  final bool isNew;
   final bool showRecipient;
   final bool showSnsBadge;
 
@@ -749,11 +746,6 @@ class _NotificationTile extends StatefulWidget {
 }
 
 class _NotificationTileState extends State<_NotificationTile> {
-  /// 一度ハイライト発火した通知IDを保持し、再発火を防ぐ
-  /// スクロールや setState で ListView のタイルが破棄・再生成されても、
-  /// 既に光ったものは再度光らせない（loadMore で上部が再ハイライトされる問題の対策）
-  static final Set<String> _pulsedIds = <String>{};
-
   double _highlightOpacity = 0.0;
 
   NotificationItem get notification => widget.notification;
@@ -769,15 +761,23 @@ class _NotificationTileState extends State<_NotificationTile> {
   @override
   void didUpdateWidget(covariant _NotificationTile oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (widget.isNew && !oldWidget.isNew) {
+    // 同一 widget が別通知に差し替わった or 同一イベントが timestamp 進行で更新された場合
+    final idChanged = oldWidget.notification.id != widget.notification.id;
+    final timestampAdvanced =
+        widget.notification.timestamp.isAfter(oldWidget.notification.timestamp);
+    if (idChanged || timestampAdvanced) {
       _maybeActivate();
     }
   }
 
+  /// ハイライト発火判定は NotificationCacheService.isNew() に一元化
+  /// - 未見 (seenAt が古い or 無い) なら発火 → markSeen で既読化
+  /// - 既見なら早期 return（スクロールやタブ往復での再発火を防ぐ）
+  /// - 同一イベントが timestamp 進行で更新されれば自動的に未見復活 → 再発火
   void _maybeActivate() {
-    if (!widget.isNew) return;
-    if (_pulsedIds.contains(widget.notification.id)) return;
-    _pulsedIds.add(widget.notification.id);
+    final cache = NotificationCacheService.instance;
+    if (!cache.isNew(widget.notification)) return;
+    cache.markSeen(widget.notification);
     _highlightOpacity = 1.0;
     Future.delayed(const Duration(seconds: 10), () {
       if (mounted) setState(() => _highlightOpacity = 0.0);
@@ -1057,7 +1057,6 @@ class _UnifiedNotificationListState
   bool _isFetching = false;
   DateTime? _lastFetchTime;
   List<NotificationItem> _allNotifications = [];
-  late DateTime _readLine;
 
   final Set<NotificationType> _hiddenTypes = {};
 
@@ -1093,8 +1092,6 @@ class _UnifiedNotificationListState
   }
 
   void _init() {
-    final accountIds = widget.accounts.map((a) => a.id).toList();
-    _readLine = _cacheService.openAllTab(accountIds);
     _loadFromCache();
     _fetchAll();
   }
@@ -1196,9 +1193,9 @@ class _UnifiedNotificationListState
                 final account = _accountForNotification(n);
                 if (account == null) return const SizedBox.shrink();
                 return _NotificationTile(
+                  key: ValueKey(n.id),
                   notification: n,
                   account: account,
-                  isNew: n.timestamp.isAfter(_readLine),
                   showRecipient: true,
                 );
               },

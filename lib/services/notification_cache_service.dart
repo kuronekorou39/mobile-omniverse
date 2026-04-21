@@ -39,17 +39,39 @@ class NotificationCacheService {
     }
 
     final existingMap = {for (final n in existing.notifications) n.id: n};
+    // type+targetPostIdで同一イベントの重複を検出（IDが異なるケース対応）
+    final existingEventKeys = <String>{
+      for (final n in existing.notifications)
+        if (n.targetPostId != null) '${n.type.name}:${n.targetPostId}',
+    };
     final newItems = <NotificationItem>[];
     int updatedCount = 0;
     for (final n in stamped) {
       final old = existingMap[n.id];
-      if (old == null) {
-        newItems.add(n);
-      } else if (n.totalActorCount > old.totalActorCount) {
-        // 既存アイテムを更新（newItemsには追加しない = 重複防止）
-        final idx = existing.notifications.indexOf(old);
-        if (idx >= 0) existing.notifications[idx] = n;
-        updatedCount++;
+      if (old != null) {
+        // ID完全一致: アクター数が増えていれば更新
+        if (n.totalActorCount > old.totalActorCount) {
+          final idx = existing.notifications.indexOf(old);
+          if (idx >= 0) existing.notifications[idx] = n;
+          updatedCount++;
+        }
+      } else {
+        // IDは異なるが同一イベント（同じtype+targetPostId）なら
+        // 既存をアクター数が多い方に更新して重複追加しない
+        final eventKey = n.targetPostId != null ? '${n.type.name}:${n.targetPostId}' : null;
+        if (eventKey != null && existingEventKeys.contains(eventKey)) {
+          final oldEvent = existing.notifications.firstWhere(
+            (e) => e.targetPostId == n.targetPostId && e.type == n.type,
+          );
+          if (n.totalActorCount >= oldEvent.totalActorCount) {
+            final idx = existing.notifications.indexOf(oldEvent);
+            if (idx >= 0) existing.notifications[idx] = n;
+          }
+          updatedCount++;
+        } else {
+          newItems.add(n);
+          if (eventKey != null) existingEventKeys.add(eventKey);
+        }
       }
     }
     if (newItems.isNotEmpty) {

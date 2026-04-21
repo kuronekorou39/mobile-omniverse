@@ -503,9 +503,17 @@ class _NotificationListState extends ConsumerState<_NotificationList>
       if (!mounted) return;
 
       if (isRefresh) {
-        // 既存 + 新規をマージして時系列ソート
+        // 既存 + 新規をマージして時系列ソート（ID + type+targetPostId で二重排除）
         final existingIds = _notifications.map((n) => n.id).toSet();
-        final newItems = fetched.where((n) => !existingIds.contains(n.id)).toList();
+        final existingEvents = <String>{
+          for (final n in _notifications)
+            if (n.targetPostId != null) '${n.type.name}:${n.targetPostId}',
+        };
+        final newItems = fetched.where((n) {
+          if (existingIds.contains(n.id)) return false;
+          if (n.targetPostId != null && existingEvents.contains('${n.type.name}:${n.targetPostId}')) return false;
+          return true;
+        }).toList();
         if (newItems.isNotEmpty) {
           _notifications.addAll(newItems);
           _notifications.sort((a, b) => b.timestamp.compareTo(a.timestamp));
@@ -518,9 +526,17 @@ class _NotificationListState extends ConsumerState<_NotificationList>
         }
         setState(() => _cursor = newCursor);
       } else {
-        // 初回ロード: キャッシュと重複しない分のみ追加
+        // 初回ロード: キャッシュと重複しない分のみ追加（ID + type+targetPostId）
         final existingIds = _notifications.map((n) => n.id).toSet();
-        final newItems = fetched.where((n) => !existingIds.contains(n.id)).toList();
+        final existingEvents = <String>{
+          for (final n in _notifications)
+            if (n.targetPostId != null) '${n.type.name}:${n.targetPostId}',
+        };
+        final newItems = fetched.where((n) {
+          if (existingIds.contains(n.id)) return false;
+          if (n.targetPostId != null && existingEvents.contains('${n.type.name}:${n.targetPostId}')) return false;
+          return true;
+        }).toList();
         _notifications.addAll(newItems);
         if (_notifications.length > fetched.length) {
           _notifications.sort((a, b) => b.timestamp.compareTo(a.timestamp));
@@ -585,7 +601,15 @@ class _NotificationListState extends ConsumerState<_NotificationList>
 
   void _appendItems(List<NotificationItem> items, String? newCursor) {
     final existingIds = _notifications.map((n) => n.id).toSet();
-    final newItems = items.where((n) => !existingIds.contains(n.id)).toList();
+    final existingEvents = <String>{
+      for (final n in _notifications)
+        if (n.targetPostId != null) '${n.type.name}:${n.targetPostId}',
+    };
+    final newItems = items.where((n) {
+      if (existingIds.contains(n.id)) return false;
+      if (n.targetPostId != null && existingEvents.contains('${n.type.name}:${n.targetPostId}')) return false;
+      return true;
+    }).toList();
     final startIndex = _notifications.length;
     _notifications.addAll(newItems);
     for (var i = 0; i < newItems.length; i++) {

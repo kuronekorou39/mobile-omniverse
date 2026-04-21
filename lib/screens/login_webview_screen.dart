@@ -263,6 +263,7 @@ class _LoginWebViewScreenState extends State<LoginWebViewScreen> {
               // 認証完了後にpostMessageで親に返すフローを処理
               onCreateWindow: (controller, createWindowAction) async {
                 // ポップアップダイアログで開く（windowIdでCookie共有）
+                var visitedGoogle = false;
                 showDialog(
                   context: context,
                   builder: (ctx) => Dialog(
@@ -283,8 +284,11 @@ class _LoginWebViewScreenState extends State<LoginWebViewScreen> {
                           onLoadStop: (ctrl, url) {
                             final urlStr = url?.toString() ?? '';
                             debugPrint('[LoginWebView] popup onLoadStop: $urlStr');
-                            // ポップアップがx.comに戻ったら認証完了の可能性
-                            if (Platform.isIOS && urlStr.contains('x.com')) {
+                            if (urlStr.contains('accounts.google.com')) {
+                              visitedGoogle = true;
+                            }
+                            // Google認証後にx.comに戻ったら自動クローズ
+                            if (Platform.isIOS && visitedGoogle && urlStr.contains('x.com')) {
                               Future.delayed(const Duration(seconds: 2), () {
                                 if (Navigator.of(ctx).canPop()) {
                                   Navigator.of(ctx).pop();

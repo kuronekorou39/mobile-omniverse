@@ -447,7 +447,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             title: const Text('プライバシーポリシー・免責事項'),
             trailing: const Icon(Icons.open_in_new, size: 16),
             onTap: () => launchUrl(
-              Uri.parse('https://kuronekorou39.github.io/mobile-omniverse/privacy-policy.html'),
+              Uri.parse('https://rou39.com/omniverse/privacy-policy.html'),
               mode: LaunchMode.externalApplication,
             ),
           ),
@@ -877,7 +877,7 @@ class _PostStylePreview extends StatelessWidget {
           // 通常モード: アバター
           const CircleAvatar(
             radius: 16,
-            backgroundImage: AssetImage('assets/logo.png'),
+            backgroundImage: AssetImage('assets/icon.png'),
           ),
           const SizedBox(width: 10),
         ] else ...[

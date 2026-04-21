@@ -68,7 +68,14 @@ Future<_NotificationFetchResult> fetchAccountNotifications(
         as ({List<NotificationItem> notifications, String? cursor, String? responseSnippet});
     final gqlResult = results[1] as ({List<NotificationItem> notifications, bool ok});
 
-    final merged = [...notifResult.notifications, ...gqlResult.notifications];
+    // REST を優先し、GraphQL の重複を排除（IDが異なるため targetPostId でも比較）
+    final restPostIds = <String>{
+      for (final n in notifResult.notifications)
+        if (n.targetPostId != null) n.targetPostId!,
+    };
+    final dedupedGql = gqlResult.notifications.where((n) =>
+        n.targetPostId == null || !restPostIds.contains(n.targetPostId)).toList();
+    final merged = [...notifResult.notifications, ...dedupedGql];
     final seen = <String>{};
     merged.retainWhere((n) => seen.add(n.id));
     merged.sort((a, b) => b.timestamp.compareTo(a.timestamp));
@@ -509,8 +516,13 @@ class _NotificationListState extends ConsumerState<_NotificationList>
         }
         setState(() => _cursor = newCursor);
       } else {
-        // 初回ロード: 全件セット（fetchedはソート済み）
-        _notifications.addAll(fetched);
+        // 初回ロード: キャッシュと重複しない分のみ追加
+        final existingIds = _notifications.map((n) => n.id).toSet();
+        final newItems = fetched.where((n) => !existingIds.contains(n.id)).toList();
+        _notifications.addAll(newItems);
+        if (_notifications.length > fetched.length) {
+          _notifications.sort((a, b) => b.timestamp.compareTo(a.timestamp));
+        }
         setState(() {
           _cursor = newCursor;
           _isLoading = false;
@@ -566,9 +578,11 @@ class _NotificationListState extends ConsumerState<_NotificationList>
   }
 
   void _appendItems(List<NotificationItem> items, String? newCursor) {
+    final existingIds = _notifications.map((n) => n.id).toSet();
+    final newItems = items.where((n) => !existingIds.contains(n.id)).toList();
     final startIndex = _notifications.length;
-    _notifications.addAll(items);
-    for (var i = 0; i < items.length; i++) {
+    _notifications.addAll(newItems);
+    for (var i = 0; i < newItems.length; i++) {
       _listKey.currentState?.insertItem(startIndex + i,
           duration: const Duration(milliseconds: 200));
     }

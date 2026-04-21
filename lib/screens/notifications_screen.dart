@@ -427,6 +427,7 @@ class _NotificationListState extends ConsumerState<_NotificationList>
   bool _isLoadingMore = false;
   bool _isFetching = false;
   bool _gqlFailed = false;
+  DateTime? _lastFetchTime;
   late DateTime _readLine;
 
   /// フィルタ: 非表示にするタイプ（空 = 全表示）
@@ -474,6 +475,7 @@ class _NotificationListState extends ConsumerState<_NotificationList>
   Future<void> _fetch() async {
     if (_isFetching) return;
     _isFetching = true;
+    _lastFetchTime = DateTime.now();
 
     final isRefresh = _notifications.isNotEmpty;
     if (!isRefresh) {
@@ -565,14 +567,18 @@ class _NotificationListState extends ConsumerState<_NotificationList>
         debugPrint('[Notifications] Transient error, keeping cached data');
         setState(() => _isLoading = false);
       } else {
-        // 初回ロードで失敗 → エラー表示 + 自動リトライ
+        // 初回ロードで失敗 → エラー表示
+        final errorStr = '$e';
         setState(() {
-          _error = '$e';
+          _error = errorStr;
           _isLoading = false;
         });
-        Future.delayed(const Duration(seconds: 10), () {
-          if (mounted && _error != null) _fetch();
-        });
+        // 429(レート制限)以外なら自動リトライ
+        if (!errorStr.contains('429')) {
+          Future.delayed(const Duration(seconds: 30), () {
+            if (mounted && _error != null) _fetch();
+          });
+        }
       }
     }
   }
@@ -614,9 +620,10 @@ class _NotificationListState extends ConsumerState<_NotificationList>
   Widget build(BuildContext context) {
     super.build(context);
 
-    // バックグラウンドフェッチで新着がある場合、自動リフェッチ
+    // バックグラウンドフェッチで新着がある場合、自動リフェッチ（30秒クールダウン）
     final unreadAccountIds = ref.watch(notificationBadgeProvider);
-    if (unreadAccountIds.contains(widget.account.id) && !_isFetching) {
+    if (unreadAccountIds.contains(widget.account.id) && !_isFetching &&
+        (_lastFetchTime == null || DateTime.now().difference(_lastFetchTime!) > const Duration(seconds: 30))) {
       Future.microtask(() => _fetch());
     }
 
@@ -1083,6 +1090,7 @@ class _UnifiedNotificationListState
     with AutomaticKeepAliveClientMixin {
   bool _isLoading = true;
   bool _isFetching = false;
+  DateTime? _lastFetchTime;
   List<NotificationItem> _allNotifications = [];
   late DateTime _readLine;
 
@@ -1137,6 +1145,7 @@ class _UnifiedNotificationListState
   Future<void> _fetchAll() async {
     if (_isFetching) return;
     _isFetching = true;
+    _lastFetchTime = DateTime.now();
 
     try {
       final futures = widget.accounts.map((account) async {
@@ -1173,9 +1182,10 @@ class _UnifiedNotificationListState
   Widget build(BuildContext context) {
     super.build(context);
 
-    // バックグラウンドフェッチで新着がある場合、自動リフェッチ
+    // バックグラウンドフェッチで新着がある場合、自動リフェッチ（30秒クールダウン）
     final unreadAccountIds = ref.watch(notificationBadgeProvider);
-    if (unreadAccountIds.isNotEmpty && !_isFetching) {
+    if (unreadAccountIds.isNotEmpty && !_isFetching &&
+        (_lastFetchTime == null || DateTime.now().difference(_lastFetchTime!) > const Duration(seconds: 30))) {
       Future.microtask(() => _fetchAll());
     }
 

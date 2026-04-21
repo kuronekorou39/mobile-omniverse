@@ -283,15 +283,30 @@ class _LoginWebViewScreenState extends State<LoginWebViewScreen> {
                           onLoadStop: (ctrl, url) {
                             final urlStr = url?.toString() ?? '';
                             debugPrint('[LoginWebView] popup onLoadStop: $urlStr');
+                            // ポップアップがx.comに戻ったら認証完了の可能性
+                            if (Platform.isIOS && urlStr.contains('x.com')) {
+                              Future.delayed(const Duration(seconds: 2), () {
+                                if (Navigator.of(ctx).canPop()) {
+                                  Navigator.of(ctx).pop();
+                                }
+                                Future.delayed(const Duration(seconds: 1), () {
+                                  if (mounted) _checkLoginState();
+                                });
+                              });
+                            }
                           },
                           onCloseWindow: (ctrl) {
                             debugPrint('[LoginWebView] popup onCloseWindow');
                             if (Navigator.of(ctx).canPop()) {
                               Navigator.of(ctx).pop();
                             }
-                            controller.loadUrl(
-                              urlRequest: URLRequest(url: WebUri('https://x.com/home')),
-                            );
+                            if (Platform.isAndroid) {
+                              // Android: GISが認証を完了済みなので直接/homeへ
+                              controller.loadUrl(
+                                urlRequest: URLRequest(url: WebUri('https://x.com/home')),
+                              );
+                            }
+                            // iOS: ページ遷移せず認証状態の反映を待つ
                             Future.delayed(const Duration(seconds: 3), () {
                               if (mounted) _checkLoginState();
                             });

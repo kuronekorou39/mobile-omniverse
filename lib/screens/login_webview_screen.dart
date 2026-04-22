@@ -773,60 +773,55 @@ class _LoginWebViewScreenState extends State<LoginWebViewScreen> {
     final queryId = XQueryIdService.instance.getQueryId('UserByRestId', creds: creds);
     await _log.log('Login', '>>> step5 userId=$userId queryId=${queryId.isNotEmpty} controller=${_controller != null}');
 
-    if (userId != null && bearerToken.isNotEmpty && queryId.isNotEmpty) {
+    if (userId != null && _controller != null && bearerToken.isNotEmpty && queryId.isNotEmpty) {
       try {
-        await _log.log('Login', '>>> step5 before http UserByRestId');
-        // iPad では callAsyncJavaScript がネイティブクラッシュする（iOS 17.7.x WKWebView）。
-        // Cookie/ct0/bearer は既に取得済みなので Dart 側から直接 HTTP で叩く。
-        final variables = Uri.encodeComponent(json.encode({
-          'userId': userId,
-          'withSafetyModeUserFields': true,
-        }));
-        final features = Uri.encodeComponent(json.encode({
-          'hidden_profile_subscriptions_enabled': true,
-          'rweb_tipjar_consumption_enabled': true,
-          'responsive_web_graphql_exclude_directive_enabled': true,
-          'verified_phone_label_enabled': false,
-          'creator_subscriptions_tweet_preview_api_enabled': true,
-          'responsive_web_graphql_skip_user_profile_image_extensions_enabled': false,
-          'responsive_web_graphql_timeline_navigation_enabled': true,
-        }));
-        final url = Uri.parse(
-            'https://x.com/i/api/graphql/$queryId/UserByRestId?variables=$variables&features=$features');
-        final resp = await http.get(url, headers: {
-          'Authorization': 'Bearer $bearerToken',
-          'x-csrf-token': ct0,
-          'Content-Type': 'application/json',
-          'Cookie': allCookies,
-          'Origin': 'https://x.com',
-          'Referer': 'https://x.com/',
-          'User-Agent': platformUserAgent,
-        });
-        await _log.log('Login', '>>> step5 after http status=${resp.statusCode}');
-        if (resp.statusCode == 200) {
-          final decoded = json.decode(resp.body) as Map<String, dynamic>;
-          Map<String, dynamic>? user =
-              (decoded['data']?['user']?['result']) as Map<String, dynamic>?;
-          if (user != null) {
-            // JS 側と同じ: user ラップがある場合はアンラップ
-            final typename = user['__typename'] as String?;
-            if (typename != null && typename != 'User' && user['user'] is Map<String, dynamic>) {
-              user = user['user'] as Map<String, dynamic>;
-            }
-            final core = (user['core'] ?? {}) as Map<String, dynamic>;
-            final legacy = (user['legacy'] ?? {}) as Map<String, dynamic>;
-            final avatarObj = (user['avatar'] ?? {}) as Map<String, dynamic>;
-            final sn = (core['screen_name'] ?? legacy['screen_name']) as String?;
-            final name = (core['name'] ?? legacy['name']) as String?;
-            final rawAv = (legacy['profile_image_url_https'] ?? avatarObj['image_url'] ?? '') as String;
-            final av = rawAv.replaceFirst('_normal', '_400x400');
+        await _log.log('Login', '>>> step5 before callAsyncJavaScript');
+        final jsResult = await _controller!.callAsyncJavaScript(
+          functionBody: '''
+            try {
+              var resp = await fetch("https://x.com/i/api/graphql/" + queryId_ + "/UserByRestId?variables=" +
+                encodeURIComponent(JSON.stringify({userId: userId_, withSafetyModeUserFields: true})) +
+                "&features=" + encodeURIComponent(JSON.stringify({
+                  hidden_profile_subscriptions_enabled: true, rweb_tipjar_consumption_enabled: true,
+                  responsive_web_graphql_exclude_directive_enabled: true, verified_phone_label_enabled: false,
+                  creator_subscriptions_tweet_preview_api_enabled: true,
+                  responsive_web_graphql_skip_user_profile_image_extensions_enabled: false,
+                  responsive_web_graphql_timeline_navigation_enabled: true
+                })), {
+                headers: {"Authorization": "Bearer " + bearerToken_, "x-csrf-token": ct0_, "Content-Type": "application/json"},
+                credentials: "include"
+              });
+              if (!resp.ok) return JSON.stringify({error: "HTTP " + resp.status});
+              var data = await resp.json();
+              var user = data.data.user.result;
+              if (user.__typename && user.__typename !== 'User' && user.user) user = user.user;
+              var core = user.core || {};
+              var legacy = user.legacy || {};
+              var avatarObj = user.avatar || {};
+              return JSON.stringify({
+                screenName: core.screen_name || legacy.screen_name || "",
+                name: core.name || legacy.name || "",
+                avatar: (legacy.profile_image_url_https || avatarObj.image_url || "").replace('_normal', '_400x400'),
+                isProtected: legacy.protected || user.privacy === "protected" || false
+              });
+            } catch(e) { return JSON.stringify({error: e.toString()}); }
+          ''',
+          arguments: {'userId_': userId, 'ct0_': ct0, 'queryId_': queryId, 'bearerToken_': bearerToken},
+        );
+        await _log.log('Login', '>>> step5 after callAsyncJavaScript');
+        await _log.log('Login', 'UserByRestId result: ${jsResult?.value}');
+        if (jsResult?.value != null) {
+          final data = json.decode(jsResult!.value.toString()) as Map<String, dynamic>;
+          if (data['error'] == null) {
+            final sn = data['screenName'] as String?;
+            final name = data['name'] as String?;
+            final av = data['avatar'] as String?;
             if (sn != null && sn.isNotEmpty) {
               handle = '@$sn';
               displayName = (name != null && name.isNotEmpty) ? name : sn;
             }
-            if (av.isNotEmpty) avatarUrl = av;
-            isProtected = (legacy['protected'] as bool?) == true ||
-                (user['privacy'] == 'protected');
+            if (av != null && av.isNotEmpty) avatarUrl = av;
+            isProtected = data['isProtected'] as bool? ?? false;
           }
         }
       } catch (e) {

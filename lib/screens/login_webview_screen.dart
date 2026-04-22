@@ -773,6 +773,59 @@ class _LoginWebViewScreenState extends State<LoginWebViewScreen> {
     final queryId = XQueryIdService.instance.getQueryId('UserByRestId', creds: creds);
     await _log.log('Login', '>>> step5 userId=$userId queryId=${queryId.isNotEmpty} controller=${_controller != null}');
 
+    // ========================================================================
+    // [iPad 調査用] evaluateJavascript がこの時点で動作するか検証。
+    // 結果をログに書くだけで、既存フローには一切介入しない。
+    // Android/iPhone では通常通りテスト成功＋既存 callAsyncJavaScript が動く。
+    // iPad ではテスト結果が記録された後、既存 callAsyncJavaScript でクラッシュ。
+    // 次のリリースで確定修正に使う判断材料。
+    // ========================================================================
+    if (_controller != null) {
+      // Test 1: 単純な evaluateJavascript（同期JS）
+      try {
+        final r1 = await _controller!.evaluateJavascript(source: '''
+          JSON.stringify({href: location.href, ready: document.readyState})
+        ''');
+        await _log.log('Login', '>>> EXP test1 (simple eval) result: ${r1?.value}');
+      } catch (e) {
+        await _log.log('Login', '>>> EXP test1 dart error: $e');
+      }
+
+      // Test 2: evaluateJavascript + async IIFE + window 変数 + ポーリング（方式Aの検証）
+      try {
+        await _controller!.evaluateJavascript(source: '''
+          (function() {
+            window.__exp_result = null;
+            (async function() {
+              try {
+                await new Promise(function(r){ setTimeout(r, 100); });
+                window.__exp_result = JSON.stringify({ok: true, ts: Date.now()});
+              } catch(e) {
+                window.__exp_result = JSON.stringify({error: e.toString()});
+              }
+            })();
+          })();
+        ''');
+        String? expResult;
+        for (var i = 0; i < 20; i++) {
+          await Future.delayed(const Duration(milliseconds: 250));
+          final r = await _controller!.evaluateJavascript(source: 'window.__exp_result');
+          final v = r?.value;
+          if (v != null && v.toString() != 'null') {
+            expResult = v.toString();
+            await _log.log('Login', '>>> EXP test2 (async poll) result after ${(i + 1) * 250}ms: $expResult');
+            break;
+          }
+        }
+        if (expResult == null) {
+          await _log.log('Login', '>>> EXP test2 timeout after 5s');
+        }
+      } catch (e) {
+        await _log.log('Login', '>>> EXP test2 dart error: $e');
+      }
+    }
+    // ========================================================================
+
     if (userId != null && _controller != null && bearerToken.isNotEmpty && queryId.isNotEmpty) {
       try {
         await _log.log('Login', '>>> step5 before callAsyncJavaScript');

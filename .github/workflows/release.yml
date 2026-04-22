@@ -196,8 +196,38 @@ jobs:
           APPSTORE_API_ISSUER_ID: ${{ secrets.APPSTORE_API_ISSUER_ID }}
           APPSTORE_API_PRIVATE_KEY: ${{ secrets.APPSTORE_API_PRIVATE_KEY }}
         run: |
-          mkdir -p ~/.appstoreconnect/private_keys
-          printf '%s' "$APPSTORE_API_PRIVATE_KEY" > ~/.appstoreconnect/private_keys/AuthKey_${APPSTORE_API_KEY_ID}.p8
+          KEY_DIR=~/.appstoreconnect/private_keys
+          KEY_FILE="$KEY_DIR/AuthKey_${APPSTORE_API_KEY_ID}.p8"
+          mkdir -p "$KEY_DIR"
+          # CRLF を LF に正規化し、末尾改行を確実に付ける。
+          # altool は PEM パース厳密なので不正な改行/末尾で失敗することがある。
+          printf '%s\n' "$APPSTORE_API_PRIVATE_KEY" | tr -d '\r' > "$KEY_FILE"
+          chmod 600 "$KEY_FILE"
+
+          # 診断: 鍵本体をログに出さずに形式だけチェック
+          echo "=== .p8 format check ==="
+          echo "File size: $(wc -c < "$KEY_FILE") bytes"
+          echo "Line count: $(wc -l < "$KEY_FILE")"
+          echo "First line: $(head -n 1 "$KEY_FILE")"
+          echo "Last line:  $(tail -n 1 "$KEY_FILE")"
+          if head -n 1 "$KEY_FILE" | grep -q "BEGIN PRIVATE KEY"; then
+            echo "Header OK"
+          else
+            echo "!!! Header missing or malformed"
+          fi
+          if tail -n 1 "$KEY_FILE" | grep -q "END PRIVATE KEY" \
+             || tail -n 2 "$KEY_FILE" | head -n 1 | grep -q "END PRIVATE KEY"; then
+            echo "Footer OK"
+          else
+            echo "!!! Footer missing or malformed"
+          fi
+          # openssl で秘密鍵として読めるか検証
+          if openssl pkey -in "$KEY_FILE" -noout 2>/dev/null; then
+            echo "openssl: valid EC/RSA private key"
+          else
+            echo "!!! openssl failed to parse key"
+          fi
+
           IPA=$(ls OmniVerse-v*-AppStore.ipa | head -1)
           echo "Uploading $IPA to App Store Connect..."
           xcrun altool --upload-app \

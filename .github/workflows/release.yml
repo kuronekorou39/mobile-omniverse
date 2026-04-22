@@ -145,6 +145,44 @@ jobs:
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
         id: ipa
 
+      - name: Install App Store provisioning profile
+        if: env.IOS_APPSTORE_PROVISIONING_PROFILE_BASE64 != ''
+        env:
+          IOS_APPSTORE_PROVISIONING_PROFILE_BASE64: ${{ secrets.IOS_APPSTORE_PROVISIONING_PROFILE_BASE64 }}
+        run: |
+          PP_PATH=$RUNNER_TEMP/appstore.mobileprovision
+          echo "$IOS_APPSTORE_PROVISIONING_PROFILE_BASE64" | base64 --decode > "$PP_PATH"
+          mkdir -p ~/Library/MobileDevice/Provisioning\ Profiles
+          cp "$PP_PATH" ~/Library/MobileDevice/Provisioning\ Profiles/
+
+      - name: Build App Store IPA
+        if: env.IOS_APPSTORE_PROVISIONING_PROFILE_BASE64 != ''
+        env:
+          IOS_APPSTORE_PROVISIONING_PROFILE_BASE64: ${{ secrets.IOS_APPSTORE_PROVISIONING_PROFILE_BASE64 }}
+        run: |
+          flutter build ipa --release \
+            --export-options-plist=ios/ExportOptions-AppStore.plist
+          VERSION=$(grep '^version:' pubspec.yaml | sed 's/version: //' | cut -d+ -f1)
+          IPA_SRC=$(ls build/ios/ipa/*.ipa | head -1)
+          cp "$IPA_SRC" "OmniVerse-v${VERSION}-AppStore.ipa"
+
+      - name: Upload to App Store Connect
+        if: env.APPSTORE_API_KEY_ID != ''
+        env:
+          APPSTORE_API_KEY_ID: ${{ secrets.APPSTORE_API_KEY_ID }}
+          APPSTORE_API_ISSUER_ID: ${{ secrets.APPSTORE_API_ISSUER_ID }}
+          APPSTORE_API_PRIVATE_KEY: ${{ secrets.APPSTORE_API_PRIVATE_KEY }}
+        run: |
+          mkdir -p ~/.appstoreconnect/private_keys
+          printf '%s' "$APPSTORE_API_PRIVATE_KEY" > ~/.appstoreconnect/private_keys/AuthKey_${APPSTORE_API_KEY_ID}.p8
+          IPA=$(ls OmniVerse-v*-AppStore.ipa | head -1)
+          echo "Uploading $IPA to App Store Connect..."
+          xcrun altool --upload-app \
+            --type ios \
+            --file "$IPA" \
+            --apiKey "$APPSTORE_API_KEY_ID" \
+            --apiIssuer "$APPSTORE_API_ISSUER_ID"
+
       - name: Upload IPA artifact
         if: env.IOS_CERTIFICATE_BASE64 != ''
         env:

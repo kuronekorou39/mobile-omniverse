@@ -3,6 +3,15 @@
 *.log
 *.pyc
 *.swp
+
+# iOS signing secrets (never commit)
+*.mobileprovision
+*.p12
+*.p8
+*.cer
+*.certSigningRequest
+profile.b64
+p8.b64
 .DS_Store
 .atom/
 .build/

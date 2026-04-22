@@ -110,6 +110,37 @@ public class OverlayService extends Service implements View.OnTouchListener {
         super.onTaskRemoved(rootIntent);
     }
 
+    @Override
+    public void onConfigurationChanged(Configuration newConfig) {
+        super.onConfigurationChanged(newConfig);
+        // 画面回転時は迷子防止のため中央に戻す（端にあると新しい向きでクランプ範囲外になるため）
+        if (windowManager == null || flutterView == null) return;
+        refreshScreenSize();
+        WindowManager.LayoutParams params = (WindowManager.LayoutParams) flutterView.getLayoutParams();
+
+        // 新しい向きでサイズが大きすぎる場合はクランプ
+        float density = mResources.getDisplayMetrics().density;
+        int margin = (int) (8 * density);
+        int topMargin = (int) (48 * density);
+        int bottomMargin = margin + navigationBarHeightPx();
+        int maxW = szWindow.x - margin * 2;
+        int maxH = szWindow.y - topMargin - bottomMargin;
+        if (params.width > 0 && params.width > maxW) params.width = maxW;
+        if (params.height > 0 && params.height > maxH) params.height = maxH;
+
+        if (WindowSetup.gravity == Gravity.CENTER) {
+            params.x = 0;
+            params.y = 0;
+        } else {
+            int w = params.width > 0 ? params.width : szWindow.x;
+            int h = params.height > 0 ? params.height : szWindow.y;
+            params.x = (szWindow.x - w) / 2;
+            params.y = (szWindow.y - h) / 2;
+        }
+        isMinimized = false;
+        windowManager.updateViewLayout(flutterView, params);
+    }
+
     @RequiresApi(api = Build.VERSION_CODES.JELLY_BEAN_MR1)
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
@@ -694,6 +725,8 @@ public class OverlayService extends Service implements View.OnTouchListener {
     private int[] clampPositionSoft(int x, int y) {
         float density = mResources.getDisplayMetrics().density;
         int headerPx = (int) (HEADER_HEIGHT_DP * density);
+        // 上方向はステータスバー/システムUIに食い込ませない。ハードクランプと同じ topMargin を上限にする。
+        int topMargin = (int) (48 * density);
         int overlayW = flutterView.getWidth();
         int overlayH = flutterView.getHeight();
         int screenW = szWindow.x;
@@ -702,7 +735,7 @@ public class OverlayService extends Service implements View.OnTouchListener {
             // CENTER: x=0が画面中央、overlayLeft = screenW/2 + x - overlayW/2
             int minX = -(screenW / 2 + overlayW / 2 - headerPx);  // 右端headerPx分残す
             int maxX = screenW / 2 + overlayW / 2 - headerPx;     // 左端headerPx分残す
-            int minY = -(screenH / 2 - overlayH / 2);             // 上端: overlay上端が画面上端
+            int minY = -(screenH / 2 - overlayH / 2 - topMargin); // 上端: ヘッダーがシステムUI領域に入らない
             int maxY = screenH / 2 - headerPx;                    // 下端: ヘッダーが画面内
             x = Math.max(minX, Math.min(x, maxX));
             y = Math.max(minY, Math.min(y, maxY));
@@ -710,7 +743,7 @@ public class OverlayService extends Service implements View.OnTouchListener {
             // TOP_LEFT: x,yは左上角の位置
             int minX = -(overlayW - headerPx);  // 右端headerPx分残す
             int maxX = screenW - headerPx;       // 左端headerPx分残す
-            int minY = 0;                         // 上端: 画面上端より上に行かない
+            int minY = topMargin;                 // 上端: ヘッダーがシステムUI領域に入らない
             int maxY = screenH - headerPx;        // 下端: ヘッダーが画面内
             x = Math.max(minX, Math.min(x, maxX));
             y = Math.max(minY, Math.min(y, maxY));

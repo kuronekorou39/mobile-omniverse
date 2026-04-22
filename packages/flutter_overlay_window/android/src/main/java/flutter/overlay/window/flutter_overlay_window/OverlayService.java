@@ -121,7 +121,7 @@ public class OverlayService extends Service implements View.OnTouchListener {
         // 新しい向きでサイズが大きすぎる場合はクランプ
         float density = mResources.getDisplayMetrics().density;
         int margin = (int) (8 * density);
-        int topMargin = (int) (48 * density);
+        int topMargin = safeTopMarginPx();
         int bottomMargin = margin + navigationBarHeightPx();
         int maxW = szWindow.x - margin * 2;
         int maxH = szWindow.y - topMargin - bottomMargin;
@@ -320,7 +320,7 @@ public class OverlayService extends Service implements View.OnTouchListener {
             refreshScreenSize();
             float density = mResources.getDisplayMetrics().density;
             int margin = (int) (8 * density);
-            int topMargin = (int) (48 * density);
+            int topMargin = safeTopMarginPx();
             int bottomMargin = margin + navigationBarHeightPx();
             int screenW = szWindow.x;
             int screenH = szWindow.y;
@@ -721,12 +721,32 @@ public class OverlayService extends Service implements View.OnTouchListener {
         });
     }
 
+    /** ステータスバー + ノッチ/パンチホールなどのシステムUI領域の高さを取得し、余白を足した値を返す */
+    private int safeTopMarginPx() {
+        float density = mResources.getDisplayMetrics().density;
+        int inset = statusBarHeightPx();
+        if (flutterView != null) {
+            try {
+                android.view.WindowInsets wi = flutterView.getRootWindowInsets();
+                if (wi != null) {
+                    inset = Math.max(inset, wi.getSystemWindowInsetTop());
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                        android.view.DisplayCutout dc = wi.getDisplayCutout();
+                        if (dc != null) inset = Math.max(inset, dc.getSafeInsetTop());
+                    }
+                }
+            } catch (Exception ignored) {}
+        }
+        // システムUI領域 + 16dp の余白、最低でも 48dp は確保
+        return Math.max((int) (48 * density), inset + (int) (16 * density));
+    }
+
     /** ドラッグ中のソフトクランプ: ヘッダー(32dp)が画面内に残る範囲で移動可能 */
     private int[] clampPositionSoft(int x, int y) {
         float density = mResources.getDisplayMetrics().density;
         int headerPx = (int) (HEADER_HEIGHT_DP * density);
-        // 上方向はステータスバー/システムUIに食い込ませない。ハードクランプと同じ topMargin を上限にする。
-        int topMargin = (int) (48 * density);
+        // 上方向はステータスバー/ノッチ/パンチホールに食い込ませない
+        int topMargin = safeTopMarginPx();
         int overlayW = flutterView.getWidth();
         int overlayH = flutterView.getHeight();
         int screenW = szWindow.x;
@@ -761,7 +781,7 @@ public class OverlayService extends Service implements View.OnTouchListener {
         refreshScreenSize();
         float density = mResources.getDisplayMetrics().density;
         int margin = (int) (8 * density);
-        int topMargin = (int) (48 * density);  // ステータスバー+少し余白
+        int topMargin = safeTopMarginPx();       // ステータスバー/ノッチを避ける
         int bottomMargin = margin + navigationBarHeightPx();
         int screenW = szWindow.x;
         int screenH = szWindow.y;

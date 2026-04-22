@@ -251,7 +251,8 @@ class DebugLogService {
         final batch = _writeBuffer.join();
         _writeBuffer.clear();
         final bytes = utf8.encode(batch);
-        await _logFile!.writeAsBytes(bytes, mode: FileMode.append, flush: false);
+        // flush:true で即ディスクに落とす。クラッシュ直前のログを取りこぼさないため。
+        await _logFile!.writeAsBytes(bytes, mode: FileMode.append, flush: true);
         _logBytes += bytes.length;
       }
       if (_logBytes > _maxLogSize) {

@@ -262,6 +262,9 @@ class _LoginWebViewScreenState extends State<LoginWebViewScreen> {
               // Google OAuth: ポップアップウィンドウ内のWebViewを作成し、
               // 認証完了後にpostMessageで親に返すフローを処理
               onCreateWindow: (controller, createWindowAction) async {
+                await DebugLogService.instance.log('Login',
+                    '>>> onCreateWindow windowId=${createWindowAction.windowId} '
+                    'url=${createWindowAction.request.url}');
                 // ポップアップダイアログで開く（windowIdでCookie共有）
                 showDialog(
                   context: context,
@@ -749,13 +752,16 @@ class _LoginWebViewScreenState extends State<LoginWebViewScreen> {
     await _log.log('Login', 'NotificationsTimeline=${XQueryIdService.instance.getQueryId("NotificationsTimeline", creds: creds)}');
 
     // === 5. ユーザー情報取得 ===
+    await _log.log('Login', '>>> step5 enter');
     _updateExtractStatus('ユーザー情報を取得中…');
+    await _log.log('Login', '>>> step5 after updateStatus');
     String displayName = 'X User';
     String handle = '@user';
     String? avatarUrl;
     bool isProtected = false;
 
     final bearerToken = XBearerTokenService.instance.token;
+    await _log.log('Login', '>>> step5 bearer=${bearerToken.isNotEmpty} twid=${twid != null}');
 
     // WebView JS で UserByRestId を呼んでユーザー情報を取得
     String? userId;
@@ -765,9 +771,11 @@ class _LoginWebViewScreenState extends State<LoginWebViewScreen> {
       userId = match?.group(1);
     }
     final queryId = XQueryIdService.instance.getQueryId('UserByRestId', creds: creds);
+    await _log.log('Login', '>>> step5 userId=$userId queryId=${queryId.isNotEmpty} controller=${_controller != null}');
 
     if (userId != null && _controller != null && bearerToken.isNotEmpty && queryId.isNotEmpty) {
       try {
+        await _log.log('Login', '>>> step5 before callAsyncJavaScript');
         final jsResult = await _controller!.callAsyncJavaScript(
           functionBody: '''
             try {
@@ -800,6 +808,7 @@ class _LoginWebViewScreenState extends State<LoginWebViewScreen> {
           ''',
           arguments: {'userId_': userId, 'ct0_': ct0, 'queryId_': queryId, 'bearerToken_': bearerToken},
         );
+        await _log.log('Login', '>>> step5 after callAsyncJavaScript');
         await _log.log('Login', 'UserByRestId result: ${jsResult?.value}');
         if (jsResult?.value != null) {
           final data = json.decode(jsResult!.value.toString()) as Map<String, dynamic>;

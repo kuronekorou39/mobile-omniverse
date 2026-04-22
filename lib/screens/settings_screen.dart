@@ -562,9 +562,14 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                   final tmpDir = await getTemporaryDirectory();
                   final tmpPath = '${tmpDir.path}/omniverse_debug_$ts.log';
                   await File(path).copy(tmpPath);
+                  // iPad では sharePositionOrigin を渡さないと popover 未指定で落ちる
+                  final box = context.findRenderObject() as RenderBox?;
                   await Share.shareXFiles(
                     [XFile(tmpPath)],
                     text: 'OmniVerse デバッグログ ($ts)',
+                    sharePositionOrigin: box != null
+                        ? box.localToGlobal(Offset.zero) & box.size
+                        : null,
                   );
                 },
               ),

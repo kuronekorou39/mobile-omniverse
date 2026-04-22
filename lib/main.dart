@@ -1,3 +1,6 @@
+import 'dart:async';
+import 'dart:ui';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -24,15 +27,30 @@ void overlayMain() {
 }
 
 void main() async {
-  WidgetsFlutterBinding.ensureInitialized();
-  await AccountStorageService.instance.load();
-  await XBearerTokenService.instance.init();
-  await XQueryIdService.instance.init();
-  await XFeaturesService.instance.init();
-  await DebugLogService.instance.init();
-  await NotificationCacheService.instance.loadSeenAt();
-  MemoryGuardService.instance.start();
-  runApp(const ProviderScope(child: OmniVerseApp()));
+  runZonedGuarded<Future<void>>(() async {
+    WidgetsFlutterBinding.ensureInitialized();
+    await AccountStorageService.instance.load();
+    await XBearerTokenService.instance.init();
+    await XQueryIdService.instance.init();
+    await XFeaturesService.instance.init();
+    await DebugLogService.instance.init();
+    await NotificationCacheService.instance.loadSeenAt();
+    MemoryGuardService.instance.start();
+
+    // 未処理例外をクラッシュログとして記録（enabled 非依存）
+    FlutterError.onError = (details) {
+      DebugLogService.instance.logCrash('FlutterError', details.exception, details.stack);
+      FlutterError.presentError(details);
+    };
+    PlatformDispatcher.instance.onError = (error, stack) {
+      DebugLogService.instance.logCrash('DartError', error, stack);
+      return true;
+    };
+
+    runApp(const ProviderScope(child: OmniVerseApp()));
+  }, (error, stack) {
+    DebugLogService.instance.logCrash('ZoneError', error, stack);
+  });
 }
 
 class OmniVerseApp extends ConsumerWidget {

@@ -180,6 +180,26 @@ class DebugLogService {
     await _append('[$tag] ${now.toIso8601String()} $message\n');
   }
 
+  /// 未処理クラッシュを記録（enabled フラグを無視して常に書き出す）
+  Future<void> logCrash(String source, Object error, StackTrace? stack) async {
+    final buf = StringBuffer();
+    final now = DateTime.now();
+    buf.writeln('════════════════════════════════════════════════════════════');
+    buf.writeln('[CRASH:$source] ${now.toIso8601String()}');
+    buf.writeln('Platform: ${Platform.operatingSystem} ${Platform.operatingSystemVersion}');
+    buf.writeln('');
+    buf.writeln('── Exception ──');
+    buf.writeln(error.toString());
+    buf.writeln('');
+    if (stack != null) {
+      buf.writeln('── Stack Trace ──');
+      buf.writeln(stack.toString());
+      buf.writeln('');
+    }
+    // クラッシュは enabled に関係なく常に記録
+    await _append(buf.toString());
+  }
+
   static const int _oneGb = 1024 * 1024 * 1024;
   static const int _maxBodyLog = 2048;
 

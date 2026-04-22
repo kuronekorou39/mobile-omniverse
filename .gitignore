@@ -12,6 +12,9 @@
 *.certSigningRequest
 profile.b64
 p8.b64
+
+# Root-level scratch icons (masters live under assets/)
+/icon_*.png
 .DS_Store
 .atom/
 .build/

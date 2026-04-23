@@ -277,45 +277,52 @@ class _LoginWebViewScreenState extends State<LoginWebViewScreen> {
                 await DebugLogService.instance.log('Login',
                     '>>> onCreateWindow windowId=${createWindowAction.windowId} '
                     'url=${createWindowAction.request.url}');
+                // [iPad 診断] showDialog 前後に通過ログを追加。ログ書き込みのみで
+                // widget tree / callback は一切変更しないため非 iPad への影響なし。
+                await DebugLogService.instance.log('Login', '>>> onCreateWindow before showDialog');
                 // ポップアップダイアログで開く（windowIdでCookie共有）
                 showDialog(
                   context: context,
-                  builder: (ctx) => Dialog(
-                    insetPadding: const EdgeInsets.all(16),
-                    child: ClipRRect(
-                      borderRadius: BorderRadius.circular(12),
-                      child: SizedBox(
-                        width: double.infinity,
-                        height: MediaQuery.of(context).size.height * 0.8,
-                        child: InAppWebView(
-                          windowId: createWindowAction.windowId,
-                          initialSettings: InAppWebViewSettings(
-                            userAgent: platformUserAgent,
-                            javaScriptEnabled: true,
-                            domStorageEnabled: true,
-                            thirdPartyCookiesEnabled: true,
+                  builder: (ctx) {
+                    DebugLogService.instance.log('Login', '>>> onCreateWindow dialog builder reached');
+                    return Dialog(
+                      insetPadding: const EdgeInsets.all(16),
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(12),
+                        child: SizedBox(
+                          width: double.infinity,
+                          height: MediaQuery.of(context).size.height * 0.8,
+                          child: InAppWebView(
+                            windowId: createWindowAction.windowId,
+                            initialSettings: InAppWebViewSettings(
+                              userAgent: platformUserAgent,
+                              javaScriptEnabled: true,
+                              domStorageEnabled: true,
+                              thirdPartyCookiesEnabled: true,
+                            ),
+                            onCloseWindow: (ctrl) {
+                              debugPrint('[LoginWebView] popup onCloseWindow');
+                              if (Navigator.of(ctx).canPop()) {
+                                Navigator.of(ctx).pop();
+                              }
+                              if (Platform.isAndroid) {
+                                // Android: GISが認証を完了済みなので直接/homeへ
+                                controller.loadUrl(
+                                  urlRequest: URLRequest(url: WebUri('https://x.com/home')),
+                                );
+                              }
+                              // iOS: ページ遷移せず認証状態の反映を待つ
+                              Future.delayed(const Duration(seconds: 3), () {
+                                if (mounted) _checkLoginState();
+                              });
+                            },
                           ),
-                          onCloseWindow: (ctrl) {
-                            debugPrint('[LoginWebView] popup onCloseWindow');
-                            if (Navigator.of(ctx).canPop()) {
-                              Navigator.of(ctx).pop();
-                            }
-                            if (Platform.isAndroid) {
-                              // Android: GISが認証を完了済みなので直接/homeへ
-                              controller.loadUrl(
-                                urlRequest: URLRequest(url: WebUri('https://x.com/home')),
-                              );
-                            }
-                            // iOS: ページ遷移せず認証状態の反映を待つ
-                            Future.delayed(const Duration(seconds: 3), () {
-                              if (mounted) _checkLoginState();
-                            });
-                          },
                         ),
                       ),
-                    ),
-                  ),
+                    );
+                  },
                 );
+                await DebugLogService.instance.log('Login', '>>> onCreateWindow after showDialog call');
                 return true;
               },
               shouldOverrideUrlLoading: (controller, navigationAction) async {

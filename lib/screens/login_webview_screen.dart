@@ -277,8 +277,51 @@ class _LoginWebViewScreenState extends State<LoginWebViewScreen> {
                 await DebugLogService.instance.log('Login',
                     '>>> onCreateWindow windowId=${createWindowAction.windowId} '
                     'url=${createWindowAction.request.url}');
-                // [iPad 診断] showDialog 前後に通過ログを追加。ログ書き込みのみで
-                // widget tree / callback は一切変更しないため非 iPad への影響なし。
+
+                // iPad: Dialog 内のネストした InAppWebView(windowId) の native
+                // 初期化で WKWebView がクラッシュするため、全画面ルートに切り替える。
+                // 非 iPad は従来どおり Dialog で表示する。
+                if (_isIPad) {
+                  await DebugLogService.instance.log('Login', '>>> onCreateWindow (iPad) push full-screen route');
+                  Navigator.of(context).push(MaterialPageRoute(
+                    builder: (ctx) {
+                      DebugLogService.instance.log('Login', '>>> onCreateWindow (iPad) route builder reached');
+                      return Scaffold(
+                        appBar: AppBar(
+                          title: const Text('Google ログイン'),
+                          leading: IconButton(
+                            icon: const Icon(Icons.close),
+                            onPressed: () {
+                              if (Navigator.of(ctx).canPop()) Navigator.of(ctx).pop();
+                            },
+                          ),
+                        ),
+                        body: InAppWebView(
+                          windowId: createWindowAction.windowId,
+                          initialSettings: InAppWebViewSettings(
+                            userAgent: platformUserAgent,
+                            javaScriptEnabled: true,
+                            domStorageEnabled: true,
+                            thirdPartyCookiesEnabled: true,
+                          ),
+                          onCloseWindow: (ctrl) {
+                            debugPrint('[LoginWebView] popup onCloseWindow (iPad)');
+                            if (Navigator.of(ctx).canPop()) {
+                              Navigator.of(ctx).pop();
+                            }
+                            // iOS: ページ遷移せず認証状態の反映を待つ
+                            Future.delayed(const Duration(seconds: 3), () {
+                              if (mounted) _checkLoginState();
+                            });
+                          },
+                        ),
+                      );
+                    },
+                  ));
+                  return true;
+                }
+
+                // [iPad 診断] showDialog 前後に通過ログ（非 iPad への影響なし）
                 await DebugLogService.instance.log('Login', '>>> onCreateWindow before showDialog');
                 // ポップアップダイアログで開く（windowIdでCookie共有）
                 showDialog(

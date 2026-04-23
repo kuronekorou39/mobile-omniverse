@@ -159,6 +159,18 @@ class _LoginWebViewScreenState extends State<LoginWebViewScreen> {
   bool _loginDetected = false;
   bool _pageReady = false;
 
+  /// iPad 判定（iPad Pro / Air / mini など画面短辺 600pt 超の iOS 端末）
+  /// iPadOS 17.x の WKWebView バグで callAsyncJavaScript がネイティブクラッシュ
+  /// するため、iPad のみ別経路（evaluateJavascript + window変数ポーリング）を使う。
+  bool get _isIPad {
+    if (!Platform.isIOS) return false;
+    final views = WidgetsBinding.instance.platformDispatcher.views;
+    if (views.isEmpty) return false;
+    final view = views.first;
+    final shortestSide = view.physicalSize.shortestSide / view.devicePixelRatio;
+    return shortestSide > 600;
+  }
+
   Widget _buildStatusRow(String label, bool done) {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 3),
@@ -773,112 +785,142 @@ class _LoginWebViewScreenState extends State<LoginWebViewScreen> {
     final queryId = XQueryIdService.instance.getQueryId('UserByRestId', creds: creds);
     await _log.log('Login', '>>> step5 userId=$userId queryId=${queryId.isNotEmpty} controller=${_controller != null}');
 
-    // ========================================================================
-    // [iPad 調査用] evaluateJavascript がこの時点で動作するか検証。
-    // 結果をログに書くだけで、既存フローには一切介入しない。
-    // Android/iPhone では通常通りテスト成功＋既存 callAsyncJavaScript が動く。
-    // iPad ではテスト結果が記録された後、既存 callAsyncJavaScript でクラッシュ。
-    // 次のリリースで確定修正に使う判断材料。
-    // ========================================================================
-    if (_controller != null) {
-      // Test 1: 単純な evaluateJavascript（同期JS）
-      try {
-        final r1 = await _controller!.evaluateJavascript(source: '''
-          JSON.stringify({href: location.href, ready: document.readyState})
-        ''');
-        await _log.log('Login', '>>> EXP test1 (simple eval) result: ${r1?.value}');
-      } catch (e) {
-        await _log.log('Login', '>>> EXP test1 dart error: $e');
-      }
-
-      // Test 2: evaluateJavascript + async IIFE + window 変数 + ポーリング（方式Aの検証）
-      try {
-        await _controller!.evaluateJavascript(source: '''
-          (function() {
-            window.__exp_result = null;
-            (async function() {
-              try {
-                await new Promise(function(r){ setTimeout(r, 100); });
-                window.__exp_result = JSON.stringify({ok: true, ts: Date.now()});
-              } catch(e) {
-                window.__exp_result = JSON.stringify({error: e.toString()});
-              }
-            })();
-          })();
-        ''');
-        String? expResult;
-        for (var i = 0; i < 20; i++) {
-          await Future.delayed(const Duration(milliseconds: 250));
-          final r = await _controller!.evaluateJavascript(source: 'window.__exp_result');
-          final v = r?.value;
-          if (v != null && v.toString() != 'null') {
-            expResult = v.toString();
-            await _log.log('Login', '>>> EXP test2 (async poll) result after ${(i + 1) * 250}ms: $expResult');
-            break;
-          }
-        }
-        if (expResult == null) {
-          await _log.log('Login', '>>> EXP test2 timeout after 5s');
-        }
-      } catch (e) {
-        await _log.log('Login', '>>> EXP test2 dart error: $e');
-      }
-    }
-    // ========================================================================
-
     if (userId != null && _controller != null && bearerToken.isNotEmpty && queryId.isNotEmpty) {
-      try {
-        await _log.log('Login', '>>> step5 before callAsyncJavaScript');
-        final jsResult = await _controller!.callAsyncJavaScript(
-          functionBody: '''
-            try {
-              var resp = await fetch("https://x.com/i/api/graphql/" + queryId_ + "/UserByRestId?variables=" +
-                encodeURIComponent(JSON.stringify({userId: userId_, withSafetyModeUserFields: true})) +
-                "&features=" + encodeURIComponent(JSON.stringify({
-                  hidden_profile_subscriptions_enabled: true, rweb_tipjar_consumption_enabled: true,
-                  responsive_web_graphql_exclude_directive_enabled: true, verified_phone_label_enabled: false,
-                  creator_subscriptions_tweet_preview_api_enabled: true,
-                  responsive_web_graphql_skip_user_profile_image_extensions_enabled: false,
-                  responsive_web_graphql_timeline_navigation_enabled: true
-                })), {
-                headers: {"Authorization": "Bearer " + bearerToken_, "x-csrf-token": ct0_, "Content-Type": "application/json"},
-                credentials: "include"
-              });
-              if (!resp.ok) return JSON.stringify({error: "HTTP " + resp.status});
-              var data = await resp.json();
-              var user = data.data.user.result;
-              if (user.__typename && user.__typename !== 'User' && user.user) user = user.user;
-              var core = user.core || {};
-              var legacy = user.legacy || {};
-              var avatarObj = user.avatar || {};
-              return JSON.stringify({
-                screenName: core.screen_name || legacy.screen_name || "",
-                name: core.name || legacy.name || "",
-                avatar: (legacy.profile_image_url_https || avatarObj.image_url || "").replace('_normal', '_400x400'),
-                isProtected: legacy.protected || user.privacy === "protected" || false
-              });
-            } catch(e) { return JSON.stringify({error: e.toString()}); }
-          ''',
-          arguments: {'userId_': userId, 'ct0_': ct0, 'queryId_': queryId, 'bearerToken_': bearerToken},
-        );
-        await _log.log('Login', '>>> step5 after callAsyncJavaScript');
-        await _log.log('Login', 'UserByRestId result: ${jsResult?.value}');
-        if (jsResult?.value != null) {
-          final data = json.decode(jsResult!.value.toString()) as Map<String, dynamic>;
-          if (data['error'] == null) {
-            final sn = data['screenName'] as String?;
-            final name = data['name'] as String?;
-            final av = data['avatar'] as String?;
-            if (sn != null && sn.isNotEmpty) {
-              handle = '@$sn';
-              displayName = (name != null && name.isNotEmpty) ? name : sn;
+      if (_isIPad) {
+        // ====================================================================
+        // iPad 専用経路: iPadOS 17.x の WKWebView で callAsyncJavaScript が
+        // ネイティブクラッシュするため、evaluateJavascript + IIFE + window
+        // 変数ポーリングで等価な処理を行う。JS のロジックは非 iPad 経路と
+        // 同じ（fetch / パース / JSON.stringify の中身すべて同一）。
+        // iPhone / Android はこのブロックを通らないため影響は一切ない。
+        // ====================================================================
+        try {
+          await _log.log('Login', '>>> step5 (iPad) using evaluateJavascript path');
+          String esc(String s) => s.replaceAll('\\', r'\\').replaceAll('"', r'\"');
+          await _controller!.evaluateJavascript(source: '''
+            (function() {
+              window.__omni_userbyid = null;
+              var queryId_ = "${esc(queryId)}";
+              var userId_ = "${esc(userId)}";
+              var ct0_ = "${esc(ct0)}";
+              var bearerToken_ = "${esc(bearerToken)}";
+              (async function() {
+                try {
+                  var resp = await fetch("https://x.com/i/api/graphql/" + queryId_ + "/UserByRestId?variables=" +
+                    encodeURIComponent(JSON.stringify({userId: userId_, withSafetyModeUserFields: true})) +
+                    "&features=" + encodeURIComponent(JSON.stringify({
+                      hidden_profile_subscriptions_enabled: true, rweb_tipjar_consumption_enabled: true,
+                      responsive_web_graphql_exclude_directive_enabled: true, verified_phone_label_enabled: false,
+                      creator_subscriptions_tweet_preview_api_enabled: true,
+                      responsive_web_graphql_skip_user_profile_image_extensions_enabled: false,
+                      responsive_web_graphql_timeline_navigation_enabled: true
+                    })), {
+                    headers: {"Authorization": "Bearer " + bearerToken_, "x-csrf-token": ct0_, "Content-Type": "application/json"},
+                    credentials: "include"
+                  });
+                  if (!resp.ok) { window.__omni_userbyid = JSON.stringify({error: "HTTP " + resp.status}); return; }
+                  var data = await resp.json();
+                  var user = data.data.user.result;
+                  if (user.__typename && user.__typename !== 'User' && user.user) user = user.user;
+                  var core = user.core || {};
+                  var legacy = user.legacy || {};
+                  var avatarObj = user.avatar || {};
+                  window.__omni_userbyid = JSON.stringify({
+                    screenName: core.screen_name || legacy.screen_name || "",
+                    name: core.name || legacy.name || "",
+                    avatar: (legacy.profile_image_url_https || avatarObj.image_url || "").replace('_normal', '_400x400'),
+                    isProtected: legacy.protected || user.privacy === "protected" || false
+                  });
+                } catch(e) { window.__omni_userbyid = JSON.stringify({error: e.toString()}); }
+              })();
+            })();
+          ''');
+
+          String? raw;
+          for (var i = 0; i < 60; i++) {
+            await Future.delayed(const Duration(milliseconds: 250));
+            final r = await _controller!.evaluateJavascript(source: 'window.__omni_userbyid');
+            if (r != null) {
+              final str = r is String ? r : r.toString();
+              if (str.isNotEmpty && str != 'null') {
+                raw = str;
+                break;
+              }
             }
-            if (av != null && av.isNotEmpty) avatarUrl = av;
-            isProtected = data['isProtected'] as bool? ?? false;
           }
+          await _log.log('Login', 'UserByRestId result (iPad): $raw');
+          if (raw != null) {
+            final data = json.decode(raw) as Map<String, dynamic>;
+            if (data['error'] == null) {
+              final sn = data['screenName'] as String?;
+              final name = data['name'] as String?;
+              final av = data['avatar'] as String?;
+              if (sn != null && sn.isNotEmpty) {
+                handle = '@$sn';
+                displayName = (name != null && name.isNotEmpty) ? name : sn;
+              }
+              if (av != null && av.isNotEmpty) avatarUrl = av;
+              isProtected = data['isProtected'] as bool? ?? false;
+            }
+          }
+        } catch (e) {
+          await _log.log('Login', 'UserByRestId error (iPad): $e');
         }
-      } catch (e) {
-        await _log.log('Login', 'UserByRestId error: $e');
+      } else {
+        // iPhone / Android: 既存経路（1行も変えない）
+        try {
+          await _log.log('Login', '>>> step5 before callAsyncJavaScript');
+          final jsResult = await _controller!.callAsyncJavaScript(
+            functionBody: '''
+              try {
+                var resp = await fetch("https://x.com/i/api/graphql/" + queryId_ + "/UserByRestId?variables=" +
+                  encodeURIComponent(JSON.stringify({userId: userId_, withSafetyModeUserFields: true})) +
+                  "&features=" + encodeURIComponent(JSON.stringify({
+                    hidden_profile_subscriptions_enabled: true, rweb_tipjar_consumption_enabled: true,
+                    responsive_web_graphql_exclude_directive_enabled: true, verified_phone_label_enabled: false,
+                    creator_subscriptions_tweet_preview_api_enabled: true,
+                    responsive_web_graphql_skip_user_profile_image_extensions_enabled: false,
+                    responsive_web_graphql_timeline_navigation_enabled: true
+                  })), {
+                  headers: {"Authorization": "Bearer " + bearerToken_, "x-csrf-token": ct0_, "Content-Type": "application/json"},
+                  credentials: "include"
+                });
+                if (!resp.ok) return JSON.stringify({error: "HTTP " + resp.status});
+                var data = await resp.json();
+                var user = data.data.user.result;
+                if (user.__typename && user.__typename !== 'User' && user.user) user = user.user;
+                var core = user.core || {};
+                var legacy = user.legacy || {};
+                var avatarObj = user.avatar || {};
+                return JSON.stringify({
+                  screenName: core.screen_name || legacy.screen_name || "",
+                  name: core.name || legacy.name || "",
+                  avatar: (legacy.profile_image_url_https || avatarObj.image_url || "").replace('_normal', '_400x400'),
+                  isProtected: legacy.protected || user.privacy === "protected" || false
+                });
+              } catch(e) { return JSON.stringify({error: e.toString()}); }
+            ''',
+            arguments: {'userId_': userId, 'ct0_': ct0, 'queryId_': queryId, 'bearerToken_': bearerToken},
+          );
+          await _log.log('Login', '>>> step5 after callAsyncJavaScript');
+          await _log.log('Login', 'UserByRestId result: ${jsResult?.value}');
+          if (jsResult?.value != null) {
+            final data = json.decode(jsResult!.value.toString()) as Map<String, dynamic>;
+            if (data['error'] == null) {
+              final sn = data['screenName'] as String?;
+              final name = data['name'] as String?;
+              final av = data['avatar'] as String?;
+              if (sn != null && sn.isNotEmpty) {
+                handle = '@$sn';
+                displayName = (name != null && name.isNotEmpty) ? name : sn;
+              }
+              if (av != null && av.isNotEmpty) avatarUrl = av;
+              isProtected = data['isProtected'] as bool? ?? false;
+            }
+          }
+        } catch (e) {
+          await _log.log('Login', 'UserByRestId error: $e');
+        }
       }
     }
 

@@ -86,6 +86,9 @@ jobs:
       - name: Install dependencies
         run: flutter pub get
 
+      - name: Patch flutter_inappwebview_ios for iPad windowId crash (PR #2776)
+        run: python3 scripts/patch_inappwebview.py
+
       - name: Install CocoaPods dependencies
         run: cd ios && pod install
 

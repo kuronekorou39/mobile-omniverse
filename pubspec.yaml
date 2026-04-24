@@ -16,7 +16,7 @@ publish_to: 'none' # Remove this line if you wish to publish to pub.dev
 # https://developer.apple.com/library/archive/documentation/General/Reference/InfoPlistKeyReference/Articles/CoreFoundationKeys.html
 # In Windows, build-name is used as the major, minor, and patch parts
 # of the product and file versions while build-number is used as the build suffix.
-version: 1.13.50+285
+version: 1.13.51+286
 
 environment:
   sdk: ^3.11.0
@@ -37,7 +37,9 @@ dependencies:
   http: ^1.2.0
   shared_preferences: ^2.2.0
   url_launcher: ^6.2.0
-  share_plus: ^13.1.0
+  # share_plus 13.x は win32 ^6.0.1 を要求し file_picker 11.0.2 (win32 ^5.9.0) と競合するため、
+  # Privacy Manifest が同梱されていて win32 ^5.5.3 依存の 12.0.2 を採用（ITMS-91061 対応に十分）
+  share_plus: ^12.0.2
   flutter_secure_storage: ^9.0.0
   cached_network_image: ^3.3.0
   flutter_cache_manager: ^3.3.0

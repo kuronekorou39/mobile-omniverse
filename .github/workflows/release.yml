@@ -71,7 +71,10 @@ jobs:
 
   # ── iOS IPA ──
   build-ios:
-    runs-on: macos-latest
+    # Apple要件（2026-04-28以降）: iOS 26 SDK / Xcode 26 以降が必須。
+    # macos-26 runner には Xcode 26.0.1〜26.5 がインストール済みで、
+    # デフォルトは Xcode 26.2（iOS 26.2 SDK）。
+    runs-on: macos-26
     permissions:
       contents: write
 

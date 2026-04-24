@@ -75,5 +75,13 @@
 	</array>
 	<key>ITSAppUsesNonExemptEncryption</key>
 	<false/>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>投稿に添付する画像を選択するためにフォトライブラリへアクセスします</string>
+	<key>NSPhotoLibraryAddUsageDescription</key>
+	<string>画像を保存するためにフォトライブラリへアクセスします</string>
+	<key>NSCameraUsageDescription</key>
+	<string>投稿用の写真を撮影するためにカメラへアクセスします</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>動画投稿時に音声を録音するためにマイクへアクセスします</string>
 </dict>
 </plist>

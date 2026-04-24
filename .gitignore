@@ -67,5 +67,8 @@ android/key.properties
 # Screenshots / images (debug)
 Screenshot_*.png
 
+# App Store submission working folder
+スナップショット/
+
 # Claude Code
 .claude/

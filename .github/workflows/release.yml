@@ -270,10 +270,20 @@ jobs:
           VERSION=$(grep '^version:' pubspec.yaml | sed 's/version: //' | cut -d+ -f1)
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
 
-      - name: Download artifacts
+      # name と path を明示してダウンロード先を固定する。
+      # name 未指定だと artifact 数によって展開先パスが変わり glob が外れる。
+      - name: Download Android artifacts
         uses: actions/download-artifact@v5
         with:
-          path: artifacts
+          name: android-apk
+          path: artifacts/android-apk
+
+      - name: Download iOS artifacts
+        if: needs.build-ios.result == 'success'
+        uses: actions/download-artifact@v5
+        with:
+          name: ios-ipa
+          path: artifacts/ios-ipa
 
       - name: Create Release
         uses: softprops/action-gh-release@v2

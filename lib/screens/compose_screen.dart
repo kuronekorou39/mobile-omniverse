@@ -204,7 +204,7 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
             Padding(
               padding: const EdgeInsets.fromLTRB(8, 8, 8, 0),
               child: SizedBox(
-                height: 44,
+                height: 72,
                 child: ListView.separated(
                   scrollDirection: Axis.horizontal,
                   padding: const EdgeInsets.symmetric(horizontal: 4),
@@ -450,48 +450,61 @@ class _AccountChip extends StatelessWidget {
         : Theme.of(context).dividerColor;
     return InkWell(
       onTap: onTap,
-      borderRadius: BorderRadius.circular(22),
+      borderRadius: BorderRadius.circular(12),
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 120),
-        padding: const EdgeInsets.fromLTRB(4, 3, 10, 3),
+        width: 64,
+        height: 64,
+        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
         decoration: BoxDecoration(
           color: selected ? primary.withValues(alpha: 0.12) : null,
           border: Border.all(
             color: borderColor,
             width: selected ? 2 : 1,
           ),
-          borderRadius: BorderRadius.circular(22),
+          borderRadius: BorderRadius.circular(12),
         ),
-        child: Row(
+        child: Column(
           mainAxisSize: MainAxisSize.min,
+          mainAxisAlignment: MainAxisAlignment.center,
           children: [
             Opacity(
               opacity: selected ? 1.0 : 0.55,
-              child: CircleAvatar(
-                radius: 14,
-                backgroundImage: account.avatarUrl != null
-                    ? CachedNetworkImageProvider(
-                        account.avatarUrl!,
-                        headers: kImageHeaders,
-                      )
-                    : null,
-                child: account.avatarUrl == null
-                    ? Text(
-                        account.displayName.isNotEmpty
-                            ? account.displayName[0]
-                            : '?',
-                        style: const TextStyle(fontSize: 12),
-                      )
-                    : null,
+              child: Stack(
+                clipBehavior: Clip.none,
+                children: [
+                  CircleAvatar(
+                    radius: 16,
+                    backgroundImage: account.avatarUrl != null
+                        ? CachedNetworkImageProvider(
+                            account.avatarUrl!,
+                            headers: kImageHeaders,
+                          )
+                        : null,
+                    child: account.avatarUrl == null
+                        ? Text(
+                            account.displayName.isNotEmpty
+                                ? account.displayName[0]
+                                : '?',
+                            style: const TextStyle(fontSize: 12),
+                          )
+                        : null,
+                  ),
+                  Positioned(
+                    right: -4,
+                    bottom: -2,
+                    child: SnsBadge(service: account.service, size: 7),
+                  ),
+                ],
               ),
             ),
-            const SizedBox(width: 6),
-            SnsBadge(service: account.service),
-            const SizedBox(width: 6),
+            const SizedBox(height: 4),
             Text(
               account.handle,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
               style: TextStyle(
-                fontSize: 13,
+                fontSize: 10,
                 fontWeight: selected ? FontWeight.bold : FontWeight.normal,
                 color: selected ? null : Colors.grey[600],
               ),

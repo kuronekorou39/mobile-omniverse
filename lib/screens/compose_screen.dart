@@ -199,89 +199,27 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
               opacity: _isPosting ? 0.5 : 1.0,
               child: Column(
         children: [
-          // アカウント選択
-          if (_accounts.length > 1)
+          // アカウント選択（チップ横並び、単一選択）
+          if (_accounts.isNotEmpty)
             Padding(
-              padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
-              child: DropdownButtonFormField<Account>(
-                value: _selectedAccount,
-                isExpanded: true,
-                decoration: const InputDecoration(
-                  labelText: '投稿アカウント',
-                  border: OutlineInputBorder(),
-                  contentPadding:
-                      EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              padding: const EdgeInsets.fromLTRB(8, 8, 8, 0),
+              child: SizedBox(
+                height: 44,
+                child: ListView.separated(
+                  scrollDirection: Axis.horizontal,
+                  padding: const EdgeInsets.symmetric(horizontal: 4),
+                  itemCount: _accounts.length,
+                  separatorBuilder: (_, _) => const SizedBox(width: 8),
+                  itemBuilder: (context, i) {
+                    final account = _accounts[i];
+                    final selected = _selectedAccount?.id == account.id;
+                    return _AccountChip(
+                      account: account,
+                      selected: selected,
+                      onTap: () => setState(() => _selectedAccount = account),
+                    );
+                  },
                 ),
-                items: _accounts.map((account) {
-                  return DropdownMenuItem(
-                    value: account,
-                    child: Row(
-                      children: [
-                        CircleAvatar(
-                          radius: 14,
-                          backgroundImage: account.avatarUrl != null
-                              ? CachedNetworkImageProvider(
-                                  account.avatarUrl!,
-                                  headers: kImageHeaders,
-                                )
-                              : null,
-                          child: account.avatarUrl == null
-                              ? Text(
-                                  account.displayName.isNotEmpty
-                                      ? account.displayName[0]
-                                      : '?',
-                                  style: const TextStyle(fontSize: 14),
-                                )
-                              : null,
-                        ),
-                        const SizedBox(width: 8),
-                        SnsBadge(service: account.service),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: Text(
-                            '${account.displayName} (${account.handle})',
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ),
-                      ],
-                    ),
-                  );
-                }).toList(),
-                onChanged: (account) {
-                  setState(() => _selectedAccount = account);
-                },
-              ),
-            )
-          else if (_selectedAccount != null)
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
-              child: Row(
-                children: [
-                  CircleAvatar(
-                    radius: 14,
-                    backgroundImage: _selectedAccount!.avatarUrl != null
-                        ? CachedNetworkImageProvider(
-                            _selectedAccount!.avatarUrl!,
-                            headers: kImageHeaders,
-                          )
-                        : null,
-                    child: _selectedAccount!.avatarUrl == null
-                        ? Text(
-                            _selectedAccount!.displayName.isNotEmpty
-                                ? _selectedAccount!.displayName[0]
-                                : '?',
-                            style: const TextStyle(fontSize: 14),
-                          )
-                        : null,
-                  ),
-                  const SizedBox(width: 8),
-                  SnsBadge(service: _selectedAccount!.service),
-                  const SizedBox(width: 8),
-                  Text(
-                    '${_selectedAccount!.displayName} (${_selectedAccount!.handle})',
-                    style: TextStyle(color: Colors.grey[600]),
-                  ),
-                ],
               ),
             ),
 
@@ -489,6 +427,78 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
         ],
       ),
     ),
+    );
+  }
+}
+
+class _AccountChip extends StatelessWidget {
+  const _AccountChip({
+    required this.account,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final Account account;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final primary = Theme.of(context).colorScheme.primary;
+    final borderColor = selected
+        ? primary
+        : Theme.of(context).dividerColor;
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(22),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 120),
+        padding: const EdgeInsets.fromLTRB(4, 3, 10, 3),
+        decoration: BoxDecoration(
+          color: selected ? primary.withValues(alpha: 0.12) : null,
+          border: Border.all(
+            color: borderColor,
+            width: selected ? 2 : 1,
+          ),
+          borderRadius: BorderRadius.circular(22),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Opacity(
+              opacity: selected ? 1.0 : 0.55,
+              child: CircleAvatar(
+                radius: 14,
+                backgroundImage: account.avatarUrl != null
+                    ? CachedNetworkImageProvider(
+                        account.avatarUrl!,
+                        headers: kImageHeaders,
+                      )
+                    : null,
+                child: account.avatarUrl == null
+                    ? Text(
+                        account.displayName.isNotEmpty
+                            ? account.displayName[0]
+                            : '?',
+                        style: const TextStyle(fontSize: 12),
+                      )
+                    : null,
+              ),
+            ),
+            const SizedBox(width: 6),
+            SnsBadge(service: account.service),
+            const SizedBox(width: 6),
+            Text(
+              account.handle,
+              style: TextStyle(
+                fontSize: 13,
+                fontWeight: selected ? FontWeight.bold : FontWeight.normal,
+                color: selected ? null : Colors.grey[600],
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }

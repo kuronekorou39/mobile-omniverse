@@ -113,16 +113,49 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
     super.dispose();
   }
 
-  /// 選択中のアカウントの中で最も厳しい文字数上限を採用する。
-  /// X(280) と Bluesky(300) が混在 → 280。Bluesky のみ → 300。X のみ／無選択 → 280。
+  /// 選択中のアカウントの中で最も「緩い」文字数上限を採用する。
+  /// 個別アカウントが超過する場合は警告を出して投稿は通すが、
+  /// その違反アカウントだけ投稿失敗扱いになる（_postToX / _postToBluesky 側で判定）。
+  /// X のみ → 280、Bluesky を含む → 300、無選択 → 300。
   int get _maxLength {
     final selected = _selectedAccounts;
-    if (selected.isEmpty) return 280;
-    final hasX = selected.any((a) => a.service == SnsService.x);
-    return hasX ? 280 : 300;
+    if (selected.isEmpty) return 300;
+    final hasBluesky = selected.any((a) => a.service == SnsService.bluesky);
+    return hasBluesky ? 300 : 280;
   }
 
   int get _remaining => _maxLength - _textController.text.length;
+
+  /// 各アカウントごとの制約違反メッセージを集める。
+  /// 違反があっても投稿ボタンは押せるが、該当アカウントは投稿失敗で扱われる。
+  List<String> get _violations {
+    final list = <String>[];
+    final hasX = _selectedAccounts.any((a) => a.service == SnsService.x);
+    final hasBluesky =
+        _selectedAccounts.any((a) => a.service == SnsService.bluesky);
+    final textLen = _textController.text.length;
+
+    if (hasX && textLen > 280) {
+      list.add('X: 文字数オーバー ($textLen / 280)');
+    }
+    if (hasBluesky && textLen > 300) {
+      list.add('Bluesky: 文字数オーバー ($textLen / 300)');
+    }
+    for (var i = 0; i < _images.length; i++) {
+      final p = _images[i];
+      if (!p.isGif) continue; // 通常画像はリサイズで収まる
+      if (hasX && p.sizeBytes > ImageResizeService.xMaxBytes) {
+        list.add('X: 画像 ${i + 1} がサイズオーバー (${_mb(p.sizeBytes)} / 5MB)');
+      }
+      if (hasBluesky && p.sizeBytes > ImageResizeService.blueskyMaxBytes) {
+        list.add(
+            'Bluesky: 画像 ${i + 1} がサイズオーバー (${_mb(p.sizeBytes)} / 2MB)');
+      }
+    }
+    return list;
+  }
+
+  String _mb(int bytes) => '${(bytes / (1024 * 1024)).toStringAsFixed(1)}MB';
 
   void _post() {
     final accounts = _selectedAccounts;
@@ -309,8 +342,7 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
             ),
           FilledButton(
             onPressed: _selectedAccountIds.isEmpty ||
-                    (_textController.text.trim().isEmpty && _images.isEmpty) ||
-                    _remaining < 0
+                    (_textController.text.trim().isEmpty && _images.isEmpty)
                 ? null
                 : _post,
             child: const Text('投稿'),
@@ -495,15 +527,74 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
                   separatorBuilder: (_, _) => const SizedBox(width: 8),
                   itemBuilder: (context, i) {
                     final picked = _images[i];
-                    // GIF はそのまま送信するので縮小マークは出さない
+                    final hasX = _hasXSelected;
+                    final hasBluesky = _hasBlueskySelected;
+                    // 通常画像はアップロード時にリサイズされるので縮小マークだけ
                     final willResize = !picked.isGif &&
                         picked.sizeBytes > _strictestImageMaxBytes;
+                    // GIF は再エンコードしないので、選択 SNS の上限を超えると失敗する
+                    final overflow = picked.isGif &&
+                        ((hasX &&
+                                picked.sizeBytes >
+                                    ImageResizeService.xMaxBytes) ||
+                            (hasBluesky &&
+                                picked.sizeBytes >
+                                    ImageResizeService.blueskyMaxBytes));
                     return _ImageThumb(
                       picked: picked,
                       willResize: willResize,
+                      overflowWarning: overflow,
                       onRemove: () => _removeImage(i),
                     );
                   },
+                ),
+              ),
+            ),
+
+          // 警告ボックス（選択中の SNS で投稿失敗となる条件をリストアップ）
+          if (_violations.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+              child: Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: Colors.orange.shade50,
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: Colors.orange.shade300),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Icon(Icons.warning_amber_outlined,
+                            size: 16, color: Colors.orange.shade800),
+                        const SizedBox(width: 6),
+                        Expanded(
+                          child: Text(
+                            '一部のアカウントは投稿失敗になります',
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: Colors.orange.shade900,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 4),
+                    for (final v in _violations)
+                      Padding(
+                        padding: const EdgeInsets.only(left: 22, top: 2),
+                        child: Text(
+                          '・$v',
+                          style: TextStyle(
+                            fontSize: 11,
+                            color: Colors.orange.shade900,
+                          ),
+                        ),
+                      ),
+                  ],
                 ),
               ),
             ),
@@ -703,10 +794,12 @@ class _ImageThumb extends StatelessWidget {
     required this.picked,
     required this.willResize,
     required this.onRemove,
+    this.overflowWarning = false,
   });
 
   final _PickedImage picked;
   final bool willResize;
+  final bool overflowWarning;
   final VoidCallback onRemove;
 
   @override
@@ -726,7 +819,7 @@ class _ImageThumb extends StatelessWidget {
               fit: BoxFit.cover,
             ),
           ),
-          // 縮小予定マーク（左下）
+          // 縮小予定マーク（左下、通常画像で再エンコード対象のとき）
           if (willResize)
             Positioned(
               left: 4,
@@ -745,6 +838,35 @@ class _ImageThumb extends StatelessWidget {
                     SizedBox(width: 2),
                     Text(
                       '縮小',
+                      style: TextStyle(
+                        fontSize: 9,
+                        color: Colors.white,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          // 容量超過マーク（GIF が選択中 SNS の上限を超えるとき）
+          if (overflowWarning)
+            Positioned(
+              left: 4,
+              bottom: 4,
+              child: Container(
+                padding: const EdgeInsets.symmetric(
+                    horizontal: 4, vertical: 1),
+                decoration: BoxDecoration(
+                  color: Colors.red.shade700.withValues(alpha: 0.9),
+                  borderRadius: BorderRadius.circular(4),
+                ),
+                child: const Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.error_outline, size: 10, color: Colors.white),
+                    SizedBox(width: 2),
+                    Text(
+                      '容量超',
                       style: TextStyle(
                         fontSize: 9,
                         color: Colors.white,

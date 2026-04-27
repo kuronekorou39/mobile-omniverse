@@ -141,6 +141,25 @@ class ComposeQueueNotifier extends StateNotifier<ComposeQueueState> {
 
         _updateJob(job.id, status: PostJobStatus.posting);
 
+        // 事前バリデーション: 画像と文章をセットで投げて文章だけ届く事故を避けるため
+        // 個別アカウントの上限違反は、ここで丸ごと失敗扱いにして API を呼ばない。
+        final violation = await _validateJob(job);
+        if (violation != null) {
+          _updateJob(job.id,
+              status: PostJobStatus.failure, errorMessage: violation);
+          _ref.read(activityLogProvider.notifier).logAction(
+                action: ActivityAction.post,
+                platform: job.account.service,
+                accountHandle: job.account.handle,
+                accountId: job.account.id,
+                targetSummary: _summary(job.text),
+                success: false,
+                errorMessage: violation,
+              );
+          await Future.delayed(const Duration(milliseconds: 300));
+          continue;
+        }
+
         try {
           if (job.account.service == SnsService.x) {
             await _postToX(job);
@@ -168,6 +187,30 @@ class ComposeQueueNotifier extends StateNotifier<ComposeQueueState> {
     } finally {
       _running = false;
     }
+  }
+
+  /// アカウントごとの制約違反をチェック。違反があればその内容を文字列で返す。
+  /// 通常画像はアップロード時にリサイズで上限内に収まるためスキップし、
+  /// GIF（マジックバイト判別）と文字数だけを事前にチェックする。
+  Future<String?> _validateJob(PostJob job) async {
+    final isX = job.account.service == SnsService.x;
+    final textMax = isX ? 280 : 300;
+    if (job.text.length > textMax) {
+      return '${isX ? "X" : "Bluesky"} の文字数上限超過 (${job.text.length}/$textMax)';
+    }
+    final imgMaxBytes =
+        isX ? ImageResizeService.xMaxBytes : ImageResizeService.blueskyMaxBytes;
+    for (var i = 0; i < job.images.length; i++) {
+      final f = job.images[i];
+      if (!ImageResizeService.isGifByExtension(f.mimeType, f.path)) continue;
+      final size = await f.length();
+      if (size > imgMaxBytes) {
+        final mb = (size / (1024 * 1024)).toStringAsFixed(1);
+        final cap = isX ? '5MB' : '2MB';
+        return '${isX ? "X" : "Bluesky"} 画像 ${i + 1} がサイズ上限超過 (${mb}MB/$cap)';
+      }
+    }
+    return null;
   }
 
   /// 全ジョブ完了時に下書きを保存（失敗があれば）または該当下書きを削除

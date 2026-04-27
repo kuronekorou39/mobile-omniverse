@@ -47,6 +47,13 @@ class ImageResizeService {
 
   static bool isGifBytes(Uint8List bytes) =>
       detectMimeType(bytes) == 'image/gif';
+
+  /// XFile が GIF かどうかを mimeType / 拡張子から軽量に判定する
+  /// （bytes を読まずに済ませたい事前バリデーション用）。
+  static bool isGifByExtension(String? mimeType, String path) {
+    if (mimeType == 'image/gif') return true;
+    return path.toLowerCase().endsWith('.gif');
+  }
 }
 
 class _ResizeParams {

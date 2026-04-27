@@ -7,6 +7,7 @@ import '../models/activity_log.dart';
 import '../models/post.dart';
 import '../models/sns_service.dart';
 import '../services/bluesky_api_service.dart';
+import '../services/draft_service.dart';
 import '../services/x_webview_action_service.dart';
 import 'activity_log_provider.dart';
 
@@ -80,7 +81,8 @@ class ComposeQueueNotifier extends StateNotifier<ComposeQueueState> {
   final Ref _ref;
   bool _running = false;
 
-  /// 投稿をキューに追加（複数アカウント対応のため accounts はリスト）
+  /// 投稿をキューに追加（複数アカウント対応のため accounts はリスト）。
+  /// 既に古い完了結果が残っている場合はリセットしてから新規ジョブを積む。
   void enqueue({
     required String text,
     required List<Account> accounts,
@@ -98,7 +100,8 @@ class ComposeQueueNotifier extends StateNotifier<ComposeQueueState> {
           quotedPost: quotedPost,
         ),
     ];
-    state = ComposeQueueState(jobs: [...state.jobs, ...newJobs]);
+    final base0 = state.isAllDone ? const <PostJob>[] : state.jobs;
+    state = ComposeQueueState(jobs: [...base0, ...newJobs]);
     unawaited(_process());
   }
 
@@ -147,8 +150,29 @@ class ComposeQueueNotifier extends StateNotifier<ComposeQueueState> {
         // 連続投稿時の bot 検知回避＋ UI のチカチカ抑制
         await Future.delayed(const Duration(milliseconds: 300));
       }
+      await _finalize();
     } finally {
       _running = false;
+    }
+  }
+
+  /// 全ジョブ完了時に下書きを保存（失敗があれば）またはクリア（全成功なら）。
+  Future<void> _finalize() async {
+    if (state.jobs.isEmpty) return;
+    if (state.hasFailure) {
+      final base = state.jobs.first;
+      final failedIds = [
+        for (final j in state.jobs)
+          if (j.status == PostJobStatus.failure) j.account.id,
+      ];
+      await DraftService.instance.save(Draft(
+        text: base.text,
+        inReplyToPost: base.inReplyToPost,
+        quotedPost: base.quotedPost,
+        failedAccountIds: failedIds,
+      ));
+    } else {
+      await DraftService.instance.clear();
     }
   }
 

@@ -8,16 +8,27 @@ import '../models/sns_service.dart';
 import '../providers/compose_queue_provider.dart';
 import '../providers/settings_provider.dart';
 import '../services/account_storage_service.dart';
+import '../services/draft_service.dart';
 import '../utils/app_snackbar.dart';
 import '../utils/image_headers.dart';
 import '../widgets/sns_badge.dart';
 import 'browser_post_debug_screen.dart';
 
 class ComposeScreen extends ConsumerStatefulWidget {
-  const ComposeScreen({super.key, this.quotedPost, this.inReplyToPost});
+  const ComposeScreen({
+    super.key,
+    this.quotedPost,
+    this.inReplyToPost,
+    this.draft,
+  });
 
   final Post? quotedPost;
   final Post? inReplyToPost;
+
+  /// 失敗バナーから再投稿する経路で渡される下書き。
+  /// テキスト/添付情報を復元し、failedAccountIds の最初に該当するアカウントを
+  /// 初期選択する（複数アカウント対応は Phase 4 で拡張）。
+  final Draft? draft;
 
   @override
   ConsumerState<ComposeScreen> createState() => _ComposeScreenState();
@@ -40,8 +51,22 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
   @override
   void initState() {
     super.initState();
+    final draft = widget.draft;
+    if (draft != null) {
+      _textController.text = draft.text;
+    }
     if (_accounts.isNotEmpty) {
-      _selectedAccount = _accounts.first;
+      Account? preselected;
+      if (draft != null) {
+        for (final id in draft.failedAccountIds) {
+          final hit = _accounts.where((a) => a.id == id);
+          if (hit.isNotEmpty) {
+            preselected = hit.first;
+            break;
+          }
+        }
+      }
+      _selectedAccount = preselected ?? _accounts.first;
     }
   }
 

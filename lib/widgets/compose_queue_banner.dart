@@ -4,6 +4,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../providers/compose_queue_provider.dart';
+import '../screens/compose_screen.dart';
+import '../services/draft_service.dart';
 
 /// 投稿キューの進捗を表示する細いバナー。
 /// HomeScreen の bottomNavigationBar の真上に常駐させる前提。
@@ -100,12 +102,16 @@ class _Banner extends ConsumerWidget {
           : '投稿中… ${state.completedCount}/${state.totalCount}';
     }
 
+    final hasFailure = state.isAllDone && state.hasFailure;
+
     return Material(
       color: bg,
       child: InkWell(
-        onTap: state.isAllDone
-            ? () => ref.read(composeQueueProvider.notifier).dismiss()
-            : null,
+        onTap: hasFailure
+            ? () => _retry(context, ref)
+            : state.isAllDone
+                ? () => ref.read(composeQueueProvider.notifier).dismiss()
+                : null,
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
           child: Column(
@@ -127,7 +133,19 @@ class _Banner extends ConsumerWidget {
                       overflow: TextOverflow.ellipsis,
                     ),
                   ),
-                  if (state.isAllDone)
+                  if (hasFailure)
+                    Padding(
+                      padding: const EdgeInsets.only(left: 4),
+                      child: Text(
+                        '再投稿',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: fg,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    )
+                  else if (state.isAllDone)
                     Padding(
                       padding: const EdgeInsets.only(left: 4),
                       child: Icon(Icons.close, size: 16, color: fg),
@@ -148,6 +166,25 @@ class _Banner extends ConsumerWidget {
               ],
             ],
           ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _retry(BuildContext context, WidgetRef ref) async {
+    final draft = await DraftService.instance.load();
+    if (!context.mounted) return;
+    if (draft == null) {
+      // 下書きが見つからなければバナーだけ消す
+      ref.read(composeQueueProvider.notifier).dismiss();
+      return;
+    }
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => ComposeScreen(
+          inReplyToPost: draft.inReplyToPost,
+          quotedPost: draft.quotedPost,
+          draft: draft,
         ),
       ),
     );

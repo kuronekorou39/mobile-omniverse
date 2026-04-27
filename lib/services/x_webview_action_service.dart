@@ -279,7 +279,9 @@ class XWebViewActionService {
       ''');
 
       // 5. 投稿完了を待つ（投稿画面が閉じる or エディタが空になる）
-      final posted = await _waitForPostCompletion(timeoutSeconds: 15);
+      // 画像/GIF 投稿時は X 側の処理が長引くため、メディアありで 30s、それ以外 15s。
+      final posted = await _waitForPostCompletion(
+          timeoutSeconds: (images != null && images.isNotEmpty) ? 30 : 15);
       sw.stop();
 
       await _saveCookies(creds.authToken);
@@ -382,14 +384,20 @@ class XWebViewActionService {
   }
 
   /// 画像アップロード完了を検知。プレビュー DOM が指定枚数ぶん表示されるまで待つ。
+  /// GIF は X 内部で MP4 に変換されて <video> として表示されることがあるため、
+  /// img だけでなく video / gifPlayer もカウント対象にする。
   Future<bool> _waitForImageUpload(int expected,
-      {int timeoutSeconds = 60}) async {
+      {int timeoutSeconds = 90}) async {
     final deadline = DateTime.now().add(Duration(seconds: timeoutSeconds));
     while (DateTime.now().isBefore(deadline)) {
-      // attachments 領域にプレビュー画像が並ぶ
       final result = await _controller!.evaluateJavascript(source: '''
         (function() {
-          var nodes = document.querySelectorAll('[data-testid="attachments"] img, [data-testid="tweetPhoto"]');
+          var nodes = document.querySelectorAll(
+            '[data-testid="attachments"] img,'
+            + '[data-testid="attachments"] video,'
+            + '[data-testid="tweetPhoto"],'
+            + '[data-testid="gifPlayer"]'
+          );
           return nodes.length;
         })()
       ''');
@@ -421,7 +429,8 @@ class XWebViewActionService {
     return false;
   }
 
-  /// 投稿完了を検知（投稿画面が閉じた or エディタが消えた or URL変化）
+  /// 投稿完了を検知（投稿画面が閉じた or エディタが消えた or URL変化 or
+  /// 投稿ボタンが DOM から消えた）。
   Future<bool> _waitForPostCompletion({int timeoutSeconds = 15}) async {
     final deadline = DateTime.now().add(Duration(seconds: timeoutSeconds));
 
@@ -454,6 +463,15 @@ class XWebViewActionService {
         ''',
       );
       if (editorGone == true || editorGone == 'true') return true;
+
+      // 投稿ボタンが DOM から消えた（モーダルが投稿後にクローズ中）
+      final buttonGone = await _controller!.evaluateJavascript(
+        source: '''
+          document.querySelector('[data-testid="tweetButton"]') === null
+          && document.querySelector('[data-testid="tweetButtonInline"]') === null
+        ''',
+      );
+      if (buttonGone == true || buttonGone == 'true') return true;
     }
     return false;
   }

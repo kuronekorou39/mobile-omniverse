@@ -431,6 +431,9 @@ class XWebViewActionService {
 
   /// 投稿完了を検知（投稿画面が閉じた or エディタが消えた or URL変化 or
   /// 投稿ボタンが DOM から消えた）。
+  /// タイムアウトしても、エディタに入力テキストが残っていなければ「投稿は通った」
+  /// とみなす。GIF→MP4 変換などで X 側の後処理が長引いて検知サインを取り逃しても、
+  /// 実投稿に成功していれば誤って失敗にしないため。
   Future<bool> _waitForPostCompletion({int timeoutSeconds = 15}) async {
     final deadline = DateTime.now().add(Duration(seconds: timeoutSeconds));
 
@@ -472,6 +475,24 @@ class XWebViewActionService {
         ''',
       );
       if (buttonGone == true || buttonGone == 'true') return true;
+    }
+
+    // タイムアウト時の最終確認: エディタが空なら投稿は通っているとみなす
+    final editorEmpty = await _controller!.evaluateJavascript(
+      source: '''
+        (function() {
+          var editor = document.querySelector('[data-testid="tweetTextarea_0"]')
+                    || document.querySelector('[role="textbox"][contenteditable="true"]');
+          if (!editor) return true;
+          var text = editor.textContent || editor.innerText || '';
+          return text.trim().length === 0;
+        })()
+      ''',
+    );
+    if (editorEmpty == true || editorEmpty == 'true') {
+      DebugLogService.instance.log('XWebView',
+          '_waitForPostCompletion: timeout but editor is empty -> treat as success');
+      return true;
     }
     return false;
   }

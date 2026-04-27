@@ -6,11 +6,13 @@ import '../models/account.dart';
 import '../models/post.dart';
 import '../models/sns_service.dart';
 import '../providers/compose_queue_provider.dart';
+import '../providers/draft_list_provider.dart';
 import '../providers/settings_provider.dart';
 import '../services/account_storage_service.dart';
 import '../services/draft_service.dart';
 import '../utils/app_snackbar.dart';
 import '../utils/image_headers.dart';
+import '../widgets/draft_list_sheet.dart';
 import '../widgets/sns_badge.dart';
 import 'browser_post_debug_screen.dart';
 
@@ -20,15 +22,18 @@ class ComposeScreen extends ConsumerStatefulWidget {
     this.quotedPost,
     this.inReplyToPost,
     this.draft,
+    this.restoreFailedAccounts = false,
   });
 
   final Post? quotedPost;
   final Post? inReplyToPost;
 
-  /// 失敗バナーから再投稿する経路で渡される下書き。
-  /// テキスト/添付情報を復元し、failedAccountIds の最初に該当するアカウントを
-  /// 初期選択する（複数アカウント対応は Phase 4 で拡張）。
+  /// 復元対象の下書き（失敗バナーからの再投稿経路、または下書き一覧から選択）。
   final Draft? draft;
+
+  /// true のとき draft.failedAccountIds に該当するアカウントを初期選択する。
+  /// 失敗バナーからの「再投稿」経路でのみ true を渡す。
+  final bool restoreFailedAccounts;
 
   @override
   ConsumerState<ComposeScreen> createState() => _ComposeScreenState();
@@ -37,6 +42,11 @@ class ComposeScreen extends ConsumerStatefulWidget {
 class _ComposeScreenState extends ConsumerState<ComposeScreen> {
   final _textController = TextEditingController();
   Account? _selectedAccount;
+
+  /// 編集中の下書き id（draft 引数で開かれた、または下書き一覧で選んだもの）。
+  /// 未保存の変更を下書きに保存するときは、この id があれば更新、無ければ新規。
+  String? _currentDraftId;
+  String _initialText = '';
 
   List<Account> get _accounts {
     final all = AccountStorageService.instance.accounts.where((a) => a.isEnabled).toList();
@@ -54,10 +64,12 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
     final draft = widget.draft;
     if (draft != null) {
       _textController.text = draft.text;
+      _currentDraftId = draft.id;
+      _initialText = draft.text;
     }
     if (_accounts.isNotEmpty) {
       Account? preselected;
-      if (draft != null) {
+      if (widget.restoreFailedAccounts && draft != null) {
         for (final id in draft.failedAccountIds) {
           final hit = _accounts.where((a) => a.id == id);
           if (hit.isNotEmpty) {
@@ -68,6 +80,13 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
       }
       _selectedAccount = preselected ?? _accounts.first;
     }
+  }
+
+  /// 戻る時に下書き保存を促すべきか（未保存の変更があるか）。
+  bool get _hasUnsavedChanges {
+    final current = _textController.text.trim();
+    final original = _initialText.trim();
+    return current.isNotEmpty && current != original;
   }
 
   @override
@@ -90,13 +109,93 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
           accounts: [_selectedAccount!],
           inReplyToPost: widget.inReplyToPost,
           quotedPost: widget.quotedPost,
+          sourceDraftId: _currentDraftId,
         );
     Navigator.of(context).pop();
   }
 
+  /// 戻る時の確認ダイアログ：「下書きに保存」「破棄」、枠外タップでキャンセル。
+  /// 戻ってよければ true を返す。
+  Future<bool> _confirmDiscard() async {
+    final result = await showDialog<String>(
+      context: context,
+      barrierDismissible: true,
+      builder: (ctx) => AlertDialog(
+        title: const Text('編集を破棄しますか？'),
+        content: const Text('入力中の文章があります。'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop('save'),
+            child: const Text('下書きに保存'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop('discard'),
+            style: TextButton.styleFrom(foregroundColor: Colors.red),
+            child: const Text('破棄'),
+          ),
+        ],
+      ),
+    );
+
+    if (result == 'save') {
+      final id = _currentDraftId ?? Draft.newId();
+      final draft = Draft(
+        id: id,
+        updatedAt: DateTime.now(),
+        text: _textController.text,
+        inReplyToPost: widget.inReplyToPost,
+        quotedPost: widget.quotedPost,
+        failedAccountIds: const [],
+      );
+      await ref.read(draftListProvider.notifier).upsert(draft);
+      return true;
+    }
+    if (result == 'discard') return true;
+    // null（barrierDismissible でキャンセル）→ 戻らない
+    return false;
+  }
+
+  Future<void> _openDraftList() async {
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      builder: (ctx) => DraftListSheet(
+        onPick: (draft) {
+          Navigator.of(ctx).pop();
+          // 復元先を新しい画面に置き換える（reply/quote ごと差し替えるため）。
+          // 一覧経由は失敗アカウントを事前選択しない仕様。
+          Navigator.of(context).pushReplacement(
+            MaterialPageRoute(
+              builder: (_) => ComposeScreen(
+                inReplyToPost: draft.inReplyToPost,
+                quotedPost: draft.quotedPost,
+                draft: draft,
+                restoreFailedAccounts: false,
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
+    final draftCount = ref.watch(draftListProvider).maybeWhen(
+          data: (list) => list.length,
+          orElse: () => 0,
+        );
+    return PopScope(
+      canPop: !_hasUnsavedChanges,
+      onPopInvokedWithResult: (didPop, _) async {
+        if (didPop) return;
+        final ok = await _confirmDiscard();
+        if (ok && mounted) {
+          Navigator.of(context).pop();
+        }
+      },
+      child: Scaffold(
       appBar: AppBar(
         title: Text(widget.inReplyToPost != null
             ? 'リプライ'
@@ -119,6 +218,11 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
                   ),
                 );
               },
+            ),
+          if (draftCount > 0)
+            TextButton(
+              onPressed: _openDraftList,
+              child: Text('下書き ($draftCount)'),
             ),
           FilledButton(
             onPressed:
@@ -343,6 +447,7 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
             ),
           ),
         ],
+      ),
       ),
     );
   }

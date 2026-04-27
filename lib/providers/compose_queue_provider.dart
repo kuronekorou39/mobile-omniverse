@@ -10,6 +10,7 @@ import '../services/bluesky_api_service.dart';
 import '../services/draft_service.dart';
 import '../services/x_webview_action_service.dart';
 import 'activity_log_provider.dart';
+import 'draft_list_provider.dart';
 
 enum PostJobStatus { pending, posting, success, failure }
 
@@ -80,14 +81,18 @@ class ComposeQueueNotifier extends StateNotifier<ComposeQueueState> {
 
   final Ref _ref;
   bool _running = false;
+  String? _sourceDraftId;
 
   /// 投稿をキューに追加（複数アカウント対応のため accounts はリスト）。
   /// 既に古い完了結果が残っている場合はリセットしてから新規ジョブを積む。
+  /// sourceDraftId を渡すと、全成功時にその下書きを削除し、失敗時はその id で
+  /// 失敗下書きを上書き保存する（=再投稿経路で開いた下書きを更新する）。
   void enqueue({
     required String text,
     required List<Account> accounts,
     Post? inReplyToPost,
     Post? quotedPost,
+    String? sourceDraftId,
   }) {
     final base = DateTime.now().microsecondsSinceEpoch;
     final newJobs = [
@@ -102,6 +107,7 @@ class ComposeQueueNotifier extends StateNotifier<ComposeQueueState> {
     ];
     final base0 = state.isAllDone ? const <PostJob>[] : state.jobs;
     state = ComposeQueueState(jobs: [...base0, ...newJobs]);
+    _sourceDraftId = sourceDraftId;
     unawaited(_process());
   }
 
@@ -156,7 +162,8 @@ class ComposeQueueNotifier extends StateNotifier<ComposeQueueState> {
     }
   }
 
-  /// 全ジョブ完了時に下書きを保存（失敗があれば）またはクリア（全成功なら）。
+  /// 全ジョブ完了時に下書きを保存（失敗があれば）または該当下書きを削除
+  /// （再投稿経路で全成功なら）。
   Future<void> _finalize() async {
     if (state.jobs.isEmpty) return;
     if (state.hasFailure) {
@@ -165,15 +172,20 @@ class ComposeQueueNotifier extends StateNotifier<ComposeQueueState> {
         for (final j in state.jobs)
           if (j.status == PostJobStatus.failure) j.account.id,
       ];
-      await DraftService.instance.save(Draft(
+      final draft = Draft(
+        id: _sourceDraftId ?? Draft.newId(),
+        updatedAt: DateTime.now(),
         text: base.text,
         inReplyToPost: base.inReplyToPost,
         quotedPost: base.quotedPost,
         failedAccountIds: failedIds,
-      ));
-    } else {
-      await DraftService.instance.clear();
+      );
+      await _ref.read(draftListProvider.notifier).upsert(draft);
+    } else if (_sourceDraftId != null) {
+      // 再投稿経路で全成功 → 元の下書きを片付ける
+      await _ref.read(draftListProvider.notifier).delete(_sourceDraftId!);
     }
+    _sourceDraftId = null;
   }
 
   Future<void> _postToX(PostJob job) async {

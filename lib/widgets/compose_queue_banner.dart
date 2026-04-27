@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../providers/compose_queue_provider.dart';
+import '../providers/draft_list_provider.dart';
 import '../screens/compose_screen.dart';
 import '../services/draft_service.dart';
 
@@ -172,9 +173,19 @@ class _Banner extends ConsumerWidget {
   }
 
   Future<void> _retry(BuildContext context, WidgetRef ref) async {
-    final draft = await DraftService.instance.load();
+    // 一覧を最新化してから最新の失敗下書きを取り出す
+    await ref.read(draftListProvider.notifier).reload();
+    final list = ref.read(draftListProvider).valueOrNull ?? const [];
+    Draft? draft;
+    for (final d in list) {
+      if (d.isFailureDraft) {
+        draft = d;
+        break;
+      }
+    }
     if (!context.mounted) return;
-    if (draft == null) {
+    final picked = draft;
+    if (picked == null) {
       // 下書きが見つからなければバナーだけ消す
       ref.read(composeQueueProvider.notifier).dismiss();
       return;
@@ -182,9 +193,10 @@ class _Banner extends ConsumerWidget {
     Navigator.of(context).push(
       MaterialPageRoute(
         builder: (_) => ComposeScreen(
-          inReplyToPost: draft.inReplyToPost,
-          quotedPost: draft.quotedPost,
-          draft: draft,
+          inReplyToPost: picked.inReplyToPost,
+          quotedPost: picked.quotedPost,
+          draft: picked,
+          restoreFailedAccounts: true,
         ),
       ),
     );

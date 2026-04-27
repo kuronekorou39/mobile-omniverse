@@ -211,11 +211,18 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
       );
       if (picked.isEmpty) return;
       final added = <_PickedImage>[];
+      final base = DateTime.now().microsecondsSinceEpoch;
+      var counter = 0;
       for (final xfile in picked.take(remaining)) {
         final size = await File(xfile.path).length();
         final isGif = (xfile.mimeType == 'image/gif') ||
             xfile.path.toLowerCase().endsWith('.gif');
-        added.add(_PickedImage(file: xfile, sizeBytes: size, isGif: isGif));
+        added.add(_PickedImage(
+          id: 'img_${base}_${counter++}',
+          file: xfile,
+          sizeBytes: size,
+          isGif: isGif,
+        ));
       }
       if (!mounted) return;
       setState(() => _images.addAll(added));
@@ -515,24 +522,37 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
               ),
             ),
 
-          // 添付画像のサムネ列
+          // 添付画像のサムネ列（長押しで並び替え可能）
           if (_images.isNotEmpty)
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
               child: SizedBox(
                 height: 80,
-                child: ListView.separated(
+                child: ReorderableListView.builder(
                   scrollDirection: Axis.horizontal,
+                  buildDefaultDragHandles: false,
                   itemCount: _images.length,
-                  separatorBuilder: (_, _) => const SizedBox(width: 8),
+                  onReorder: (oldIndex, newIndex) {
+                    setState(() {
+                      if (newIndex > oldIndex) newIndex -= 1;
+                      final item = _images.removeAt(oldIndex);
+                      _images.insert(newIndex, item);
+                    });
+                  },
+                  proxyDecorator: (child, index, animation) {
+                    return Material(
+                      color: Colors.transparent,
+                      elevation: 6,
+                      borderRadius: BorderRadius.circular(8),
+                      child: child,
+                    );
+                  },
                   itemBuilder: (context, i) {
                     final picked = _images[i];
                     final hasX = _hasXSelected;
                     final hasBluesky = _hasBlueskySelected;
-                    // 通常画像はアップロード時にリサイズされるので縮小マークだけ
                     final willResize = !picked.isGif &&
                         picked.sizeBytes > _strictestImageMaxBytes;
-                    // GIF は再エンコードしないので、選択 SNS の上限を超えると失敗する
                     final overflow = picked.isGif &&
                         ((hasX &&
                                 picked.sizeBytes >
@@ -540,11 +560,18 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
                             (hasBluesky &&
                                 picked.sizeBytes >
                                     ImageResizeService.blueskyMaxBytes));
-                    return _ImageThumb(
-                      picked: picked,
-                      willResize: willResize,
-                      overflowWarning: overflow,
-                      onRemove: () => _removeImage(i),
+                    return Padding(
+                      key: ValueKey(picked.id),
+                      padding: const EdgeInsets.only(right: 8),
+                      child: ReorderableDelayedDragStartListener(
+                        index: i,
+                        child: _ImageThumb(
+                          picked: picked,
+                          willResize: willResize,
+                          overflowWarning: overflow,
+                          onRemove: () => _removeImage(i),
+                        ),
+                      ),
                     );
                   },
                 ),
@@ -780,10 +807,12 @@ class _AccountChip extends StatelessWidget {
 
 class _PickedImage {
   const _PickedImage({
+    required this.id,
     required this.file,
     required this.sizeBytes,
     this.isGif = false,
   });
+  final String id;
   final XFile file;
   final int sizeBytes;
   final bool isGif;

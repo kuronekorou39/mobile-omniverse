@@ -22,6 +22,8 @@ class Post {
     this.inReplyToId,
     this.uri,
     this.cid,
+    this.bskyReplyRootUri,
+    this.bskyReplyRootCid,
     this.isRetweet = false,
     this.retweetedByUsername,
     this.retweetedByHandle,
@@ -74,6 +76,12 @@ class Post {
   // Platform-specific identifiers (for API operations)
   final String? uri; // Bluesky AT URI
   final String? cid; // Bluesky CID
+
+  // Bluesky のリプライツリーで、この post が属するスレッドの最上位 post の AT URI/CID。
+  // この post 自体が root（=他のリプライではない）なら null。
+  // この post に対してリプライを書く際の reply.root を埋めるために必要。
+  final String? bskyReplyRootUri;
+  final String? bskyReplyRootCid;
 
   // RT / Quote
   final bool isRetweet;
@@ -188,6 +196,8 @@ class Post {
       inReplyToId: inReplyToId ?? this.inReplyToId,
       uri: uri ?? this.uri,
       cid: cid ?? this.cid,
+      bskyReplyRootUri: bskyReplyRootUri,
+      bskyReplyRootCid: bskyReplyRootCid,
       isRetweet: isRetweet ?? this.isRetweet,
       retweetedByUsername: retweetedByUsername ?? this.retweetedByUsername,
       retweetedByHandle: retweetedByHandle ?? this.retweetedByHandle,
@@ -221,6 +231,8 @@ class Post {
         'inReplyToId': inReplyToId,
         'uri': uri,
         'cid': cid,
+        'bskyReplyRootUri': bskyReplyRootUri,
+        'bskyReplyRootCid': bskyReplyRootCid,
         'isRetweet': isRetweet,
         'retweetedByUsername': retweetedByUsername,
         'retweetedByHandle': retweetedByHandle,
@@ -283,6 +295,8 @@ class Post {
       inReplyToId: json['inReplyToId'] as String?,
       uri: json['uri'] as String?,
       cid: json['cid'] as String?,
+      bskyReplyRootUri: json['bskyReplyRootUri'] as String?,
+      bskyReplyRootCid: json['bskyReplyRootCid'] as String?,
       isRetweet: json['isRetweet'] as bool? ?? false,
       retweetedByUsername: json['retweetedByUsername'] as String?,
       retweetedByHandle: json['retweetedByHandle'] as String?,

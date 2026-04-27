@@ -550,6 +550,8 @@ class BlueskyApiService {
     // Reply info
     final replyRef = record['reply'] as Map<String, dynamic>?;
     final inReplyToUri = replyRef?['parent']?['uri'] as String?;
+    final replyRootUri = replyRef?['root']?['uri'] as String?;
+    final replyRootCid = replyRef?['root']?['cid'] as String?;
 
     // Media extraction from embed
     final imageUrls = <String>[];
@@ -601,6 +603,8 @@ class BlueskyApiService {
       inReplyToId: inReplyToUri,
       uri: atUri,
       cid: postCid,
+      bskyReplyRootUri: replyRootUri,
+      bskyReplyRootCid: replyRootCid,
       quotedPost: quotedPost,
       isSensitive: isSensitive,
       bskyLikeUris: bskyLikeUri != null && accountId != null ? {accountId: bskyLikeUri} : null,

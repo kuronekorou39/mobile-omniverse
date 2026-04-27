@@ -310,9 +310,15 @@ class ComposeQueueNotifier extends StateNotifier<ComposeQueueState> {
     }
     String? replyUri;
     String? replyCid;
+    String? replyRootUri;
+    String? replyRootCid;
     if (job.inReplyToPost != null) {
       replyUri = job.inReplyToPost!.uri;
       replyCid = job.inReplyToPost!.cid;
+      // 対象 post が他のリプライなら、そのスレッドの root をそのまま引き継ぐ。
+      // 対象 post 自体が root（=他のリプライではない）なら、root = parent。
+      replyRootUri = job.inReplyToPost!.bskyReplyRootUri ?? replyUri;
+      replyRootCid = job.inReplyToPost!.bskyReplyRootCid ?? replyCid;
     }
 
     // 画像があればリサイズ → uploadBlob → embed.images の形に組み立てる
@@ -366,6 +372,8 @@ class ComposeQueueNotifier extends StateNotifier<ComposeQueueState> {
       quoteCid: quoteCid,
       replyUri: replyUri,
       replyCid: replyCid,
+      replyRootUri: replyRootUri,
+      replyRootCid: replyRootCid,
       imageEmbeds: imageEmbeds,
     );
     _updateJob(job.id,

@@ -297,8 +297,11 @@ class _LoginWebViewScreenState extends State<LoginWebViewScreen> {
                             // Android: popup の WebView は親の UA を継承しないため
                             //   明示指定しないと ; wv 付きのデフォルト UA になり
                             //   Google OAuth に disallowed_useragent で弾かれる。
-                            // iOS: windowId 使用時は無視される仕様。iPadOS 17.x で
-                            //   再適用が WKWebView クラッシュを引き起こすため渡さない。
+                            // iOS: 親から継承されるとされていたが実際は継承されず、
+                            //   embedded WKWebView 扱いの UA になって Google に弾かれる。
+                            //   iPadOS 17.x の WKWebView クラッシュを避けるため、
+                            //   userAgent だけ渡し、JS/Storage 等は親から継承させる
+                            //   （これらの再適用が過去にクラッシュ要因だったため）。
                             initialSettings: Platform.isAndroid
                                 ? InAppWebViewSettings(
                                     userAgent: platformUserAgent,
@@ -306,7 +309,9 @@ class _LoginWebViewScreenState extends State<LoginWebViewScreen> {
                                     domStorageEnabled: true,
                                     thirdPartyCookiesEnabled: true,
                                   )
-                                : null,
+                                : InAppWebViewSettings(
+                                    userAgent: platformUserAgent,
+                                  ),
                             onCloseWindow: (ctrl) {
                               debugPrint('[LoginWebView] popup onCloseWindow');
                               if (Navigator.of(ctx).canPop()) {

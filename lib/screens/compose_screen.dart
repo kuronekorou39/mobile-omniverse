@@ -41,7 +41,9 @@ class ComposeScreen extends ConsumerStatefulWidget {
 
 class _ComposeScreenState extends ConsumerState<ComposeScreen> {
   final _textController = TextEditingController();
-  Account? _selectedAccount;
+
+  /// 選択中のアカウント id 集合（複数選択）
+  final Set<String> _selectedAccountIds = {};
 
   /// 編集中の下書き id（draft 引数で開かれた、または下書き一覧で選んだもの）。
   /// 未保存の変更を下書きに保存するときは、この id があれば更新、無ければ新規。
@@ -58,6 +60,11 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
     return all;
   }
 
+  List<Account> get _selectedAccounts => [
+        for (final a in _accounts)
+          if (_selectedAccountIds.contains(a.id)) a,
+      ];
+
   @override
   void initState() {
     super.initState();
@@ -68,17 +75,18 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
       _initialText = draft.text;
     }
     if (_accounts.isNotEmpty) {
-      Account? preselected;
+      // 失敗バナーからの再投稿経路: 失敗したアカウント全部を事前選択
       if (widget.restoreFailedAccounts && draft != null) {
         for (final id in draft.failedAccountIds) {
-          final hit = _accounts.where((a) => a.id == id);
-          if (hit.isNotEmpty) {
-            preselected = hit.first;
-            break;
+          if (_accounts.any((a) => a.id == id)) {
+            _selectedAccountIds.add(id);
           }
         }
       }
-      _selectedAccount = preselected ?? _accounts.first;
+      // 何も選択されていなければ先頭アカウントをデフォルト選択
+      if (_selectedAccountIds.isEmpty) {
+        _selectedAccountIds.add(_accounts.first.id);
+      }
     }
   }
 
@@ -95,23 +103,40 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
     super.dispose();
   }
 
-  int get _maxLength =>
-      _selectedAccount?.service == SnsService.bluesky ? 300 : 280;
+  /// 選択中のアカウントの中で最も厳しい文字数上限を採用する。
+  /// X(280) と Bluesky(300) が混在 → 280。Bluesky のみ → 300。X のみ／無選択 → 280。
+  int get _maxLength {
+    final selected = _selectedAccounts;
+    if (selected.isEmpty) return 280;
+    final hasX = selected.any((a) => a.service == SnsService.x);
+    return hasX ? 280 : 300;
+  }
 
   int get _remaining => _maxLength - _textController.text.length;
 
   void _post() {
-    if (_selectedAccount == null || _textController.text.trim().isEmpty) return;
+    final accounts = _selectedAccounts;
+    if (accounts.isEmpty || _textController.text.trim().isEmpty) return;
 
     final text = _textController.text.trim();
     ref.read(composeQueueProvider.notifier).enqueue(
           text: text,
-          accounts: [_selectedAccount!],
+          accounts: accounts,
           inReplyToPost: widget.inReplyToPost,
           quotedPost: widget.quotedPost,
           sourceDraftId: _currentDraftId,
         );
     Navigator.of(context).pop();
+  }
+
+  void _toggleAccount(Account account) {
+    setState(() {
+      if (_selectedAccountIds.contains(account.id)) {
+        _selectedAccountIds.remove(account.id);
+      } else {
+        _selectedAccountIds.add(account.id);
+      }
+    });
   }
 
   /// 戻る時の確認ダイアログ：「下書きに保存」「破棄」、枠外タップでキャンセル。
@@ -203,9 +228,10 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
                 ? '引用リポスト'
                 : '投稿'),
         actions: [
-          // ブラウザ投稿デバッグ（設定でON + Xアカウント選択時のみ）
+          // ブラウザ投稿デバッグ（設定でON、X アカウント単独選択時のみ）
           if (ref.watch(settingsProvider).debugPostEnabled &&
-              _selectedAccount?.service == SnsService.x)
+              _selectedAccounts.length == 1 &&
+              _selectedAccounts.first.service == SnsService.x)
             IconButton(
               icon: const Icon(Icons.bug_report_outlined, size: 20),
               tooltip: 'ブラウザで投稿（デバッグ）',
@@ -213,7 +239,7 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
                 Navigator.of(context).push(
                   MaterialPageRoute(
                     builder: (_) => BrowserPostDebugScreen(
-                      account: _selectedAccount!,
+                      account: _selectedAccounts.first,
                     ),
                   ),
                 );
@@ -225,10 +251,11 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
               child: Text('下書き ($draftCount)'),
             ),
           FilledButton(
-            onPressed:
-                _textController.text.trim().isEmpty || _remaining < 0
-                    ? null
-                    : _post,
+            onPressed: _selectedAccountIds.isEmpty ||
+                    _textController.text.trim().isEmpty ||
+                    _remaining < 0
+                ? null
+                : _post,
             child: const Text('投稿'),
           ),
           const SizedBox(width: 8),
@@ -236,7 +263,7 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
       ),
       body: Column(
         children: [
-          // アカウント選択（チップ横並び、単一選択）
+          // アカウント選択（チップ横並び、複数選択。タップで toggle）
           if (_accounts.isNotEmpty)
             Padding(
               padding: const EdgeInsets.fromLTRB(8, 8, 8, 0),
@@ -249,11 +276,15 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
                   separatorBuilder: (_, _) => const SizedBox(width: 8),
                   itemBuilder: (context, i) {
                     final account = _accounts[i];
-                    final selected = _selectedAccount?.id == account.id;
+                    final selected = _selectedAccountIds.contains(account.id);
+                    final failedBefore =
+                        widget.draft?.failedAccountIds.contains(account.id) ??
+                            false;
                     return _AccountChip(
                       account: account,
                       selected: selected,
-                      onTap: () => setState(() => _selectedAccount = account),
+                      failedBefore: failedBefore,
+                      onTap: () => _toggleAccount(account),
                     );
                   },
                 ),
@@ -458,18 +489,25 @@ class _AccountChip extends StatelessWidget {
     required this.account,
     required this.selected,
     required this.onTap,
+    this.failedBefore = false,
   });
 
   final Account account;
   final bool selected;
   final VoidCallback onTap;
 
+  /// 失敗下書きから再投稿で開いた場合、このアカウントが失敗側に含まれているか。
+  /// true なら左上に小さい赤い ! マークを overlay する。
+  final bool failedBefore;
+
   @override
   Widget build(BuildContext context) {
     final primary = Theme.of(context).colorScheme.primary;
-    final borderColor = selected
-        ? primary
-        : Theme.of(context).dividerColor;
+    final borderColor = failedBefore
+        ? Colors.red.shade700
+        : selected
+            ? primary
+            : Theme.of(context).dividerColor;
     return InkWell(
       onTap: onTap,
       borderRadius: BorderRadius.circular(12),
@@ -517,6 +555,22 @@ class _AccountChip extends StatelessWidget {
                     bottom: -2,
                     child: SnsBadge(service: account.service, size: 7),
                   ),
+                  if (failedBefore)
+                    Positioned(
+                      left: -4,
+                      top: -4,
+                      child: Container(
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Icon(
+                          Icons.error,
+                          size: 14,
+                          color: Colors.red.shade700,
+                        ),
+                      ),
+                    ),
                 ],
               ),
             ),

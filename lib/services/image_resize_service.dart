@@ -23,6 +23,30 @@ class ImageResizeService {
     if (bytes.length <= maxBytes) return bytes;
     return compute(_resizeWorker, _ResizeParams(bytes, maxBytes));
   }
+
+  /// マジックバイトからファイル形式を推定する（拡張子に依存しない）。
+  /// PNG/JPEG/GIF のみ判別。それ以外は null を返す。
+  static String? detectMimeType(Uint8List bytes) {
+    if (bytes.length >= 6 &&
+        bytes[0] == 0x47 && bytes[1] == 0x49 && bytes[2] == 0x46 &&
+        bytes[3] == 0x38 && (bytes[4] == 0x37 || bytes[4] == 0x39) &&
+        bytes[5] == 0x61) {
+      return 'image/gif';
+    }
+    if (bytes.length >= 8 &&
+        bytes[0] == 0x89 && bytes[1] == 0x50 && bytes[2] == 0x4E &&
+        bytes[3] == 0x47) {
+      return 'image/png';
+    }
+    if (bytes.length >= 3 &&
+        bytes[0] == 0xFF && bytes[1] == 0xD8 && bytes[2] == 0xFF) {
+      return 'image/jpeg';
+    }
+    return null;
+  }
+
+  static bool isGifBytes(Uint8List bytes) =>
+      detectMimeType(bytes) == 'image/gif';
 }
 
 class _ResizeParams {

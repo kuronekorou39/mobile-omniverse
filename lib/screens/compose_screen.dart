@@ -180,7 +180,9 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
       final added = <_PickedImage>[];
       for (final xfile in picked.take(remaining)) {
         final size = await File(xfile.path).length();
-        added.add(_PickedImage(file: xfile, sizeBytes: size));
+        final isGif = (xfile.mimeType == 'image/gif') ||
+            xfile.path.toLowerCase().endsWith('.gif');
+        added.add(_PickedImage(file: xfile, sizeBytes: size, isGif: isGif));
       }
       if (!mounted) return;
       setState(() => _images.addAll(added));
@@ -493,7 +495,9 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
                   separatorBuilder: (_, _) => const SizedBox(width: 8),
                   itemBuilder: (context, i) {
                     final picked = _images[i];
-                    final willResize = picked.sizeBytes > _strictestImageMaxBytes;
+                    // GIF はそのまま送信するので縮小マークは出さない
+                    final willResize = !picked.isGif &&
+                        picked.sizeBytes > _strictestImageMaxBytes;
                     return _ImageThumb(
                       picked: picked,
                       willResize: willResize,
@@ -684,9 +688,14 @@ class _AccountChip extends StatelessWidget {
 }
 
 class _PickedImage {
-  const _PickedImage({required this.file, required this.sizeBytes});
+  const _PickedImage({
+    required this.file,
+    required this.sizeBytes,
+    this.isGif = false,
+  });
   final XFile file;
   final int sizeBytes;
+  final bool isGif;
 }
 
 class _ImageThumb extends StatelessWidget {

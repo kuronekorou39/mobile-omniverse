@@ -206,22 +206,28 @@ class ComposeQueueNotifier extends StateNotifier<ComposeQueueState> {
       inReplyToId = job.inReplyToPost!.id.replaceFirst('x_', '');
     }
 
-    // 画像があれば各画像を読み込んでリサイズして渡す（X 上限 5MB/枚、フリー前提）
+    // 画像があれば各画像を読み込んでリサイズして渡す（X 上限 5MB/枚、フリー前提）。
+    // GIF はそのまま送信（アニメーション・色を保持）。
     List<({Uint8List bytes, String mime, String name})>? xImages;
     if (job.images.isNotEmpty) {
       xImages = [];
       for (var i = 0; i < job.images.length; i++) {
         final xfile = job.images[i];
         final raw = await xfile.readAsBytes();
-        final resized = await ImageResizeService.instance.resizeIfNeeded(
-          raw,
-          maxBytes: ImageResizeService.xMaxBytes,
-        );
-        xImages.add((
-          bytes: resized,
-          mime: 'image/jpeg',
-          name: 'image_$i.jpg',
-        ));
+        final isGif = ImageResizeService.isGifBytes(raw);
+        if (isGif) {
+          xImages.add((bytes: raw, mime: 'image/gif', name: 'image_$i.gif'));
+        } else {
+          final resized = await ImageResizeService.instance.resizeIfNeeded(
+            raw,
+            maxBytes: ImageResizeService.xMaxBytes,
+          );
+          xImages.add((
+            bytes: resized,
+            mime: 'image/jpeg',
+            name: 'image_$i.jpg',
+          ));
+        }
       }
     }
 
@@ -267,19 +273,29 @@ class ComposeQueueNotifier extends StateNotifier<ComposeQueueState> {
     }
 
     // 画像があればリサイズ → uploadBlob → embed.images の形に組み立てる
+    // GIF はアニメーションと色を保持するため再エンコードしない（そのまま送信）
     List<Map<String, dynamic>>? imageEmbeds;
     if (job.images.isNotEmpty) {
       imageEmbeds = [];
       for (final xfile in job.images) {
         final raw = await xfile.readAsBytes();
-        final resized = await ImageResizeService.instance.resizeIfNeeded(
-          raw,
-          maxBytes: ImageResizeService.blueskyMaxBytes,
-        );
+        final isGif = ImageResizeService.isGifBytes(raw);
+        final Uint8List finalBytes;
+        final String mimeType;
+        if (isGif) {
+          finalBytes = raw;
+          mimeType = 'image/gif';
+        } else {
+          finalBytes = await ImageResizeService.instance.resizeIfNeeded(
+            raw,
+            maxBytes: ImageResizeService.blueskyMaxBytes,
+          );
+          mimeType = 'image/jpeg';
+        }
         final blob = await BlueskyApiService.instance.uploadBlob(
           job.account.blueskyCredentials,
-          resized,
-          mimeType: 'image/jpeg',
+          finalBytes,
+          mimeType: mimeType,
         );
         if (blob == null) {
           _updateJob(job.id,

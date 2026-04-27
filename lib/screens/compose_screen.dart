@@ -1,6 +1,9 @@
+import 'dart:io';
+
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:image_picker/image_picker.dart';
 
 import '../models/account.dart';
 import '../models/post.dart';
@@ -10,6 +13,7 @@ import '../providers/draft_list_provider.dart';
 import '../providers/settings_provider.dart';
 import '../services/account_storage_service.dart';
 import '../services/draft_service.dart';
+import '../services/image_resize_service.dart';
 import '../utils/app_snackbar.dart';
 import '../utils/image_headers.dart';
 import '../widgets/draft_list_sheet.dart';
@@ -40,10 +44,16 @@ class ComposeScreen extends ConsumerStatefulWidget {
 }
 
 class _ComposeScreenState extends ConsumerState<ComposeScreen> {
+  static const int _maxImages = 4;
+
   final _textController = TextEditingController();
+  final _picker = ImagePicker();
 
   /// 選択中のアカウント id 集合（複数選択）
   final Set<String> _selectedAccountIds = {};
+
+  /// 添付画像（最大 4 枚）。サイズはアップロード時に必要に応じてリサイズ。
+  final List<_PickedImage> _images = [];
 
   /// 編集中の下書き id（draft 引数で開かれた、または下書き一覧で選んだもの）。
   /// 未保存の変更を下書きに保存するときは、この id があれば更新、無ければ新規。
@@ -124,6 +134,7 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
           accounts: accounts,
           inReplyToPost: widget.inReplyToPost,
           quotedPost: widget.quotedPost,
+          images: [for (final p in _images) p.file],
           sourceDraftId: _currentDraftId,
         );
     Navigator.of(context).pop();
@@ -137,6 +148,48 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
         _selectedAccountIds.add(account.id);
       }
     });
+  }
+
+  /// 選択中のアカウントの中に X が含まれていれば true。Phase 5a では X への画像投稿は
+  /// 未対応のため、画像を選択していて X が混ざっていると警告を出す。
+  bool get _hasXSelected =>
+      _selectedAccounts.any((a) => a.service == SnsService.x);
+
+  bool get _hasBlueskySelected =>
+      _selectedAccounts.any((a) => a.service == SnsService.bluesky);
+
+  /// 画像が縮小される判定で使う、選択アカウント中で最も厳しいバイト上限。
+  /// Bluesky 単独 → Bluesky の上限、X のみ → X の上限、混在 → Bluesky の上限。
+  int get _strictestImageMaxBytes {
+    if (_hasBlueskySelected) return ImageResizeService.blueskyMaxBytes;
+    if (_hasXSelected) return ImageResizeService.xMaxBytes;
+    return ImageResizeService.blueskyMaxBytes;
+  }
+
+  Future<void> _pickImages() async {
+    final remaining = _maxImages - _images.length;
+    if (remaining <= 0) return;
+    try {
+      final picked = await _picker.pickMultiImage(
+        imageQuality: 100,
+        limit: remaining,
+      );
+      if (picked.isEmpty) return;
+      final added = <_PickedImage>[];
+      for (final xfile in picked.take(remaining)) {
+        final size = await File(xfile.path).length();
+        added.add(_PickedImage(file: xfile, sizeBytes: size));
+      }
+      if (!mounted) return;
+      setState(() => _images.addAll(added));
+    } catch (e) {
+      if (!mounted) return;
+      showAppSnackBar(context, '画像選択エラー: $e', type: SnackType.error);
+    }
+  }
+
+  void _removeImage(int index) {
+    setState(() => _images.removeAt(index));
   }
 
   /// 戻る時の確認ダイアログ：「下書きに保存」「破棄」、枠外タップでキャンセル。
@@ -426,13 +479,71 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
               ),
             ),
 
-          // 未対応機能プレースホルダーボタン
+          // 添付画像のサムネ列
+          if (_images.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+              child: SizedBox(
+                height: 80,
+                child: ListView.separated(
+                  scrollDirection: Axis.horizontal,
+                  itemCount: _images.length,
+                  separatorBuilder: (_, _) => const SizedBox(width: 8),
+                  itemBuilder: (context, i) {
+                    final picked = _images[i];
+                    final willResize = picked.sizeBytes > _strictestImageMaxBytes;
+                    return _ImageThumb(
+                      picked: picked,
+                      willResize: willResize,
+                      onRemove: () => _removeImage(i),
+                    );
+                  },
+                ),
+              ),
+            ),
+
+          // X 警告（X が選ばれていて画像ありのとき表示）
+          if (_images.isNotEmpty && _hasXSelected)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 6, 16, 0),
+              child: Row(
+                children: [
+                  Icon(Icons.info_outline,
+                      size: 14, color: Colors.orange.shade800),
+                  const SizedBox(width: 4),
+                  Expanded(
+                    child: Text(
+                      'X への投稿は画像なしで送信されます（画像対応は次バージョン予定）',
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: Colors.orange.shade800,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+
+          // 機能ボタン列（画像のみ実機能、それ以外はプレースホルダー）
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16),
             child: Row(
               children: [
+                IconButton(
+                  icon: Icon(
+                    Icons.image_outlined,
+                    color: _images.length >= _maxImages
+                        ? Colors.grey[400]
+                        : Theme.of(context).colorScheme.primary,
+                    size: 20,
+                  ),
+                  iconSize: 20,
+                  padding: const EdgeInsets.all(6),
+                  constraints: const BoxConstraints(),
+                  tooltip: '画像を追加',
+                  onPressed: _images.length >= _maxImages ? null : _pickImages,
+                ),
                 for (final entry in <MapEntry<IconData, String>>[
-                  const MapEntry(Icons.image_outlined, '画像'),
                   const MapEntry(Icons.videocam_outlined, '動画'),
                   const MapEntry(Icons.schedule_outlined, '予約投稿'),
                   const MapEntry(Icons.poll_outlined, 'アンケート'),
@@ -591,3 +702,92 @@ class _AccountChip extends StatelessWidget {
     );
   }
 }
+
+class _PickedImage {
+  const _PickedImage({required this.file, required this.sizeBytes});
+  final XFile file;
+  final int sizeBytes;
+}
+
+class _ImageThumb extends StatelessWidget {
+  const _ImageThumb({
+    required this.picked,
+    required this.willResize,
+    required this.onRemove,
+  });
+
+  final _PickedImage picked;
+  final bool willResize;
+  final VoidCallback onRemove;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: 80,
+      height: 80,
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          ClipRRect(
+            borderRadius: BorderRadius.circular(8),
+            child: Image.file(
+              File(picked.file.path),
+              width: 80,
+              height: 80,
+              fit: BoxFit.cover,
+            ),
+          ),
+          // 縮小予定マーク（左下）
+          if (willResize)
+            Positioned(
+              left: 4,
+              bottom: 4,
+              child: Container(
+                padding: const EdgeInsets.symmetric(
+                    horizontal: 4, vertical: 1),
+                decoration: BoxDecoration(
+                  color: Colors.black.withValues(alpha: 0.7),
+                  borderRadius: BorderRadius.circular(4),
+                ),
+                child: const Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.compress, size: 10, color: Colors.white),
+                    SizedBox(width: 2),
+                    Text(
+                      '縮小',
+                      style: TextStyle(
+                        fontSize: 9,
+                        color: Colors.white,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          // 削除ボタン（右上）
+          Positioned(
+            top: -6,
+            right: -6,
+            child: InkWell(
+              onTap: onRemove,
+              borderRadius: BorderRadius.circular(12),
+              child: Container(
+                width: 22,
+                height: 22,
+                decoration: BoxDecoration(
+                  color: Colors.black.withValues(alpha: 0.7),
+                  borderRadius: BorderRadius.circular(11),
+                  border: Border.all(color: Colors.white, width: 1),
+                ),
+                child: const Icon(Icons.close, size: 14, color: Colors.white),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+

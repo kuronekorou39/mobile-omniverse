@@ -1,4 +1,6 @@
 import 'dart:convert';
+import 'dart:typed_data';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter/widgets.dart' show visibleForTesting;
 
@@ -284,7 +286,8 @@ class BlueskyApiService {
   /// 投稿を作成
   Future<bool> createPost(BlueskyCredentials creds, String text,
       {String? quoteUri, String? quoteCid,
-       String? replyUri, String? replyCid, String? replyRootUri, String? replyRootCid}) async {
+       String? replyUri, String? replyCid, String? replyRootUri, String? replyRootCid,
+       List<Map<String, dynamic>>? imageEmbeds}) async {
     final uri = Uri.parse(
       '${creds.pdsUrl}/xrpc/com.atproto.repo.createRecord',
     );
@@ -309,8 +312,27 @@ class BlueskyApiService {
       };
     }
 
-    // 引用リポスト
-    if (quoteUri != null && quoteCid != null) {
+    // embed 構築：画像 > 引用リポスト > 画像と引用の両立（recordWithMedia）
+    final hasImages = imageEmbeds != null && imageEmbeds.isNotEmpty;
+    final hasQuote = quoteUri != null && quoteCid != null;
+    if (hasImages && hasQuote) {
+      record['embed'] = {
+        '\$type': 'app.bsky.embed.recordWithMedia',
+        'record': {
+          '\$type': 'app.bsky.embed.record',
+          'record': {'uri': quoteUri, 'cid': quoteCid},
+        },
+        'media': {
+          '\$type': 'app.bsky.embed.images',
+          'images': imageEmbeds,
+        },
+      };
+    } else if (hasImages) {
+      record['embed'] = {
+        '\$type': 'app.bsky.embed.images',
+        'images': imageEmbeds,
+      };
+    } else if (hasQuote) {
       record['embed'] = {
         '\$type': 'app.bsky.embed.record',
         'record': {
@@ -335,6 +357,37 @@ class BlueskyApiService {
     _logResponse('createPost', 'POST', uri, hdrs, reqBody, response, sw);
     debugPrint('[BlueskyApi] createPost: ${response.statusCode}');
     return response.statusCode == 200;
+  }
+
+  /// バイナリを Bluesky の blob としてアップロードし、blob 参照（embed に組み込める形）を返す。
+  /// 画像 1 枚ごとに 1 回呼ぶ。失敗時は null。
+  Future<Map<String, dynamic>?> uploadBlob(
+    BlueskyCredentials creds,
+    Uint8List bytes, {
+    required String mimeType,
+  }) async {
+    final uri = Uri.parse('${creds.pdsUrl}/xrpc/com.atproto.repo.uploadBlob');
+    final hdrs = {
+      'Authorization': 'Bearer ${creds.accessJwt}',
+      'Content-Type': mimeType,
+    };
+    final sw = Stopwatch()..start();
+    final response = await _client.post(uri, headers: hdrs, body: bytes);
+    sw.stop();
+    _logResponse('uploadBlob', 'POST', uri, hdrs, '<binary ${bytes.length}B>',
+        response, sw);
+    if (response.statusCode != 200) {
+      debugPrint('[BlueskyApi] uploadBlob failed: ${response.statusCode}');
+      return null;
+    }
+    try {
+      final body = json.decode(response.body) as Map<String, dynamic>;
+      final blob = body['blob'];
+      if (blob is Map<String, dynamic>) return blob;
+    } catch (e) {
+      debugPrint('[BlueskyApi] uploadBlob decode failed: $e');
+    }
+    return null;
   }
 
   /// ユーザープロフィールを取得

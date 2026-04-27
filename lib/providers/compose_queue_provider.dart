@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:cross_file/cross_file.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../models/account.dart';
@@ -8,6 +9,7 @@ import '../models/post.dart';
 import '../models/sns_service.dart';
 import '../services/bluesky_api_service.dart';
 import '../services/draft_service.dart';
+import '../services/image_resize_service.dart';
 import '../services/x_webview_action_service.dart';
 import 'activity_log_provider.dart';
 import 'draft_list_provider.dart';
@@ -21,6 +23,7 @@ class PostJob {
     required this.account,
     this.inReplyToPost,
     this.quotedPost,
+    this.images = const [],
     this.status = PostJobStatus.pending,
     this.errorMessage,
     this.statusCode,
@@ -31,6 +34,7 @@ class PostJob {
   final Account account;
   final Post? inReplyToPost;
   final Post? quotedPost;
+  final List<XFile> images;
   final PostJobStatus status;
   final String? errorMessage;
   final int? statusCode;
@@ -46,6 +50,7 @@ class PostJob {
       account: account,
       inReplyToPost: inReplyToPost,
       quotedPost: quotedPost,
+      images: images,
       status: status ?? this.status,
       errorMessage: errorMessage ?? this.errorMessage,
       statusCode: statusCode ?? this.statusCode,
@@ -92,6 +97,7 @@ class ComposeQueueNotifier extends StateNotifier<ComposeQueueState> {
     required List<Account> accounts,
     Post? inReplyToPost,
     Post? quotedPost,
+    List<XFile> images = const [],
     String? sourceDraftId,
   }) {
     final base = DateTime.now().microsecondsSinceEpoch;
@@ -103,6 +109,7 @@ class ComposeQueueNotifier extends StateNotifier<ComposeQueueState> {
           account: accounts[i],
           inReplyToPost: inReplyToPost,
           quotedPost: quotedPost,
+          images: images,
         ),
     ];
     final base0 = state.isAllDone ? const <PostJob>[] : state.jobs;
@@ -236,6 +243,41 @@ class ComposeQueueNotifier extends StateNotifier<ComposeQueueState> {
       replyUri = job.inReplyToPost!.uri;
       replyCid = job.inReplyToPost!.cid;
     }
+
+    // 画像があればリサイズ → uploadBlob → embed.images の形に組み立てる
+    List<Map<String, dynamic>>? imageEmbeds;
+    if (job.images.isNotEmpty) {
+      imageEmbeds = [];
+      for (final xfile in job.images) {
+        final raw = await xfile.readAsBytes();
+        final resized = await ImageResizeService.instance.resizeIfNeeded(
+          raw,
+          maxBytes: ImageResizeService.blueskyMaxBytes,
+        );
+        final blob = await BlueskyApiService.instance.uploadBlob(
+          job.account.blueskyCredentials,
+          resized,
+          mimeType: 'image/jpeg',
+        );
+        if (blob == null) {
+          _updateJob(job.id,
+              status: PostJobStatus.failure,
+              errorMessage: 'Bluesky 画像アップロード失敗');
+          _ref.read(activityLogProvider.notifier).logAction(
+                action: ActivityAction.post,
+                platform: SnsService.bluesky,
+                accountHandle: job.account.handle,
+                accountId: job.account.id,
+                targetSummary: _summary(job.text),
+                success: false,
+                errorMessage: 'uploadBlob failed',
+              );
+          return;
+        }
+        imageEmbeds.add({'alt': '', 'image': blob});
+      }
+    }
+
     final ok = await BlueskyApiService.instance.createPost(
       job.account.blueskyCredentials,
       job.text,
@@ -243,6 +285,7 @@ class ComposeQueueNotifier extends StateNotifier<ComposeQueueState> {
       quoteCid: quoteCid,
       replyUri: replyUri,
       replyCid: replyCid,
+      imageEmbeds: imageEmbeds,
     );
     _updateJob(job.id,
         status: ok ? PostJobStatus.success : PostJobStatus.failure,

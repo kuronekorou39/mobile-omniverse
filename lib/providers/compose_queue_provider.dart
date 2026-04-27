@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:typed_data';
 
 import 'package:cross_file/cross_file.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -204,11 +205,32 @@ class ComposeQueueNotifier extends StateNotifier<ComposeQueueState> {
     if (job.inReplyToPost != null) {
       inReplyToId = job.inReplyToPost!.id.replaceFirst('x_', '');
     }
+
+    // 画像があれば各画像を読み込んでリサイズして渡す（X 上限 5MB/枚、フリー前提）
+    List<({Uint8List bytes, String mime, String name})>? xImages;
+    if (job.images.isNotEmpty) {
+      xImages = [];
+      for (var i = 0; i < job.images.length; i++) {
+        final xfile = job.images[i];
+        final raw = await xfile.readAsBytes();
+        final resized = await ImageResizeService.instance.resizeIfNeeded(
+          raw,
+          maxBytes: ImageResizeService.xMaxBytes,
+        );
+        xImages.add((
+          bytes: resized,
+          mime: 'image/jpeg',
+          name: 'image_$i.jpg',
+        ));
+      }
+    }
+
     final result = await XWebViewActionService.instance.createTweet(
       job.account.xCredentials,
       job.text,
       attachmentUrl: attachmentUrl,
       inReplyToId: inReplyToId,
+      images: xImages,
     );
     _updateJob(job.id,
         status: result.success ? PostJobStatus.success : PostJobStatus.failure,

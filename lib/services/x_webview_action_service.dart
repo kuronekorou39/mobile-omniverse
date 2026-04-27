@@ -1,5 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:typed_data';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import '../utils/platform_ua.dart';
@@ -160,9 +162,13 @@ class XWebViewActionService {
 
   /// x.com/compose/post をDOM操作して投稿する
   /// 公式のJSが x-client-transaction-id 等を付与するため bot 検知を回避できる
+  /// images が指定された場合は、エディタにテキストを入れた後に input[type=file]
+  /// にプログラム的に流し込んでアップロードを開始させる。
   Future<({bool success, int statusCode, String body})> createTweet(
       XCredentials creds, String text,
-      {String? attachmentUrl, String? inReplyToId}) async {
+      {String? attachmentUrl,
+      String? inReplyToId,
+      List<({Uint8List bytes, String mime, String name})>? images}) async {
     if (!_isReady || _currentAuthToken != creds.authToken) {
       await init(creds);
     }
@@ -230,6 +236,27 @@ class XWebViewActionService {
 
       await Future.delayed(const Duration(milliseconds: 500));
 
+      // 3.5 画像があれば input[type=file] に流し込んでアップロード完了を待つ
+      if (images != null && images.isNotEmpty) {
+        final attachOk = await _attachImages(images);
+        if (!attachOk) {
+          sw.stop();
+          const msg = 'Failed to attach images (input not found or upload failed)';
+          debugPrint('[XWebView] createTweet: $msg');
+          DebugLogService.instance.log('XWebView', 'createTweet FAIL: $msg (${sw.elapsedMilliseconds}ms)');
+          return (success: false, statusCode: 0, body: msg);
+        }
+        final uploaded = await _waitForImageUpload(
+            images.length, timeoutSeconds: 60);
+        if (!uploaded) {
+          sw.stop();
+          const msg = 'Image upload did not complete';
+          debugPrint('[XWebView] createTweet: $msg');
+          DebugLogService.instance.log('XWebView', 'createTweet FAIL: $msg (${sw.elapsedMilliseconds}ms)');
+          return (success: false, statusCode: 0, body: msg);
+        }
+      }
+
       // 4. 投稿ボタンをクリック
       final buttonReady = await _waitForElement(
         '[data-testid="tweetButton"]:not([disabled]), [data-testid="tweetButtonInline"]:not([disabled])',
@@ -293,6 +320,92 @@ class XWebViewActionService {
       DebugLogService.instance.log('XWebView', 'createTweet ERROR: $e (${sw.elapsedMilliseconds}ms)');
       return (success: false, statusCode: 0, body: e.toString());
     }
+  }
+
+  /// 画像を WebView 内の input[type=file] に注入してアップロードを開始させる。
+  /// React の controlled input でも反応するよう、ネイティブ setter 経由で files を
+  /// 書き換えて change イベントを発火させる。
+  Future<bool> _attachImages(
+      List<({Uint8List bytes, String mime, String name})> images) async {
+    final filesArg = [
+      for (var i = 0; i < images.length; i++)
+        {
+          'b64': base64Encode(images[i].bytes),
+          'mime': images[i].mime,
+          'name': images[i].name,
+        },
+    ];
+
+    try {
+      final result = await _controller!.callAsyncJavaScript(
+        functionBody: r'''
+          try {
+            var dt = new DataTransfer();
+            for (var i = 0; i < files.length; i++) {
+              var f = files[i];
+              var bin = atob(f.b64);
+              var arr = new Uint8Array(bin.length);
+              for (var j = 0; j < bin.length; j++) arr[j] = bin.charCodeAt(j);
+              var blob = new Blob([arr], { type: f.mime });
+              var file = new File([blob], f.name, { type: f.mime });
+              dt.items.add(file);
+            }
+            // input[type=file] を見つける（X が使う代表的セレクタを順に試す）
+            var input = document.querySelector('input[type=file][data-testid="fileInput"]')
+                     || document.querySelector('input[data-testid="fileInput"]')
+                     || document.querySelector('input[type=file][accept*="image"]')
+                     || document.querySelector('input[type=file]');
+            if (!input) return { ok: false, reason: 'input_not_found' };
+            // React 経由でも動くようネイティブ setter を呼ぶ
+            var setter = Object.getOwnPropertyDescriptor(
+              window.HTMLInputElement.prototype, 'files').set;
+            setter.call(input, dt.files);
+            input.dispatchEvent(new Event('change', { bubbles: true }));
+            return { ok: true, count: dt.files.length };
+          } catch (e) {
+            return { ok: false, reason: 'js_error', message: String(e) };
+          }
+        ''',
+        arguments: {'files': filesArg},
+      );
+      final value = result?.value;
+      debugPrint('[XWebView] _attachImages result: $value error=${result?.error}');
+      DebugLogService.instance.log('XWebView',
+          '_attachImages: $value error=${result?.error}');
+      if (value is Map && value['ok'] == true) return true;
+      return false;
+    } catch (e) {
+      debugPrint('[XWebView] _attachImages error: $e');
+      DebugLogService.instance.log('XWebView', '_attachImages ERROR: $e');
+      return false;
+    }
+  }
+
+  /// 画像アップロード完了を検知。プレビュー DOM が指定枚数ぶん表示されるまで待つ。
+  Future<bool> _waitForImageUpload(int expected,
+      {int timeoutSeconds = 60}) async {
+    final deadline = DateTime.now().add(Duration(seconds: timeoutSeconds));
+    while (DateTime.now().isBefore(deadline)) {
+      // attachments 領域にプレビュー画像が並ぶ
+      final result = await _controller!.evaluateJavascript(source: '''
+        (function() {
+          var nodes = document.querySelectorAll('[data-testid="attachments"] img, [data-testid="tweetPhoto"]');
+          return nodes.length;
+        })()
+      ''');
+      final count = (result is num) ? result.toInt() : int.tryParse('$result') ?? 0;
+      if (count >= expected) {
+        // プレビュー出現後、X 内部のアップロード完了 (投稿ボタン enable) を 1 秒安定確認
+        await Future.delayed(const Duration(milliseconds: 1000));
+        final btnEnabled = await _controller!.evaluateJavascript(source: '''
+          document.querySelector('[data-testid="tweetButton"]:not([disabled])') !== null
+          || document.querySelector('[data-testid="tweetButtonInline"]:not([disabled])') !== null
+        ''');
+        if (btnEnabled == true || btnEnabled == 'true') return true;
+      }
+      await Future.delayed(const Duration(milliseconds: 500));
+    }
+    return false;
   }
 
   /// 指定セレクタの要素が出現するまでポーリング

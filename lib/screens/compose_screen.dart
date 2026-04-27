@@ -502,28 +502,6 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
               ),
             ),
 
-          // X 警告（X が選ばれていて画像ありのとき表示）
-          if (_images.isNotEmpty && _hasXSelected)
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 6, 16, 0),
-              child: Row(
-                children: [
-                  Icon(Icons.info_outline,
-                      size: 14, color: Colors.orange.shade800),
-                  const SizedBox(width: 4),
-                  Expanded(
-                    child: Text(
-                      'X への投稿は画像なしで送信されます（画像対応は次バージョン予定）',
-                      style: TextStyle(
-                        fontSize: 11,
-                        color: Colors.orange.shade800,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-
           // 機能ボタン列（画像のみ実機能、それ以外はプレースホルダー）
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16),

@@ -268,13 +268,12 @@ class _PostDetailScreenState extends ConsumerState<PostDetailScreen> {
                     },
                     onLike: () => _handleLike(reply),
                     onRepost: () => _handleRepost(reply),
-                    onReply: () async {
-                      final posted = await Navigator.of(context).push<bool>(
+                    onReply: () {
+                      Navigator.of(context).push(
                         MaterialPageRoute(
                           builder: (_) => ComposeScreen(inReplyToPost: reply),
                         ),
                       );
-                      if (posted == true) _loadReplies();
                     },
                   );
                 },
@@ -418,13 +417,12 @@ class _PostDetailScreenState extends ConsumerState<PostDetailScreen> {
                 icon: const Icon(Icons.chat_bubble_outline),
                 count: post.replyCount,
                 showCounts: showCounts,
-                onPressed: () async {
-                  final posted = await Navigator.of(context).push<bool>(
+                onPressed: () {
+                  Navigator.of(context).push(
                     MaterialPageRoute(
                       builder: (_) => ComposeScreen(inReplyToPost: post),
                     ),
                   );
-                  if (posted == true) _loadReplies();
                 },
               ),
               _buildActionWithCount(

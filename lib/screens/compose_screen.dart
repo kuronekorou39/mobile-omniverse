@@ -124,7 +124,7 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
 
       if (success) {
         showAppSnackBar(context, '投稿しました', type: SnackType.success);
-        Navigator.of(context).pop(true);
+        Navigator.of(context).pop();
       } else {
         showAppSnackBar(context, '投稿に失敗 (${statusCode ?? "?"}). 詳細はアクティビティログで確認', type: SnackType.error);
         setState(() => _isPosting = false);

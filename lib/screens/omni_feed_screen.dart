@@ -812,13 +812,10 @@ class _OmniFeedScreenState extends ConsumerState<OmniFeedScreen>
             opacity: 0.75,
             child: FloatingActionButton(
               heroTag: 'compose',
-              onPressed: () async {
-                final posted = await Navigator.of(context).push<bool>(
+              onPressed: () {
+                Navigator.of(context).push(
                   MaterialPageRoute(builder: (_) => const ComposeScreen()),
                 );
-                if (posted == true) {
-                  ref.read(feedProvider.notifier).refresh();
-                }
               },
               child: const Icon(Icons.edit),
             ),
@@ -1081,15 +1078,12 @@ class _OmniFeedScreenState extends ConsumerState<OmniFeedScreen>
               videoHeight: settings.imagePreviewSize.videoHeight,
               hideUserInfo: settings.hideUserInfo,
               useSeparatorStyle: settings.postCardStyle == PostCardStyle.separator,
-              onQuoteRepost: () async {
-                final posted = await Navigator.of(context).push<bool>(
+              onQuoteRepost: () {
+                Navigator.of(context).push(
                   MaterialPageRoute(
                     builder: (_) => ComposeScreen(quotedPost: post),
                   ),
                 );
-                if (posted == true) {
-                  ref.read(feedProvider.notifier).refresh();
-                }
               },
               onTap: () async {
                 ref.read(feedProvider.notifier).setScreenVisible(false);
@@ -1116,15 +1110,12 @@ class _OmniFeedScreenState extends ConsumerState<OmniFeedScreen>
               },
               onLike: () => _handleLike(post),
               onRepost: () => _handleRepost(post),
-              onReply: () async {
-                final posted = await Navigator.of(context).push<bool>(
+              onReply: () {
+                Navigator.of(context).push(
                   MaterialPageRoute(
                     builder: (_) => ComposeScreen(inReplyToPost: post),
                   ),
                 );
-                if (posted == true) {
-                  ref.read(feedProvider.notifier).refresh();
-                }
               },
             );
 

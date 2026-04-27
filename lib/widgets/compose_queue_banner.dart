@@ -98,8 +98,9 @@ class _Banner extends ConsumerWidget {
       );
       final current = state.currentlyPosting;
       final position = state.completedCount + 1;
+      String atHandle(String h) => h.startsWith('@') ? h : '@$h';
       message = current != null
-          ? '@${current.account.handle} 投稿中… $position/${state.totalCount}'
+          ? '${atHandle(current.account.handle)} 投稿中… $position/${state.totalCount}'
           : '投稿中… ${state.completedCount}/${state.totalCount}';
     }
 

@@ -126,7 +126,9 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
 
   void _post() {
     final accounts = _selectedAccounts;
-    if (accounts.isEmpty || _textController.text.trim().isEmpty) return;
+    final hasContent =
+        _textController.text.trim().isNotEmpty || _images.isNotEmpty;
+    if (accounts.isEmpty || !hasContent) return;
 
     final text = _textController.text.trim();
     ref.read(composeQueueProvider.notifier).enqueue(
@@ -305,7 +307,7 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
             ),
           FilledButton(
             onPressed: _selectedAccountIds.isEmpty ||
-                    _textController.text.trim().isEmpty ||
+                    (_textController.text.trim().isEmpty && _images.isEmpty) ||
                     _remaining < 0
                 ? null
                 : _post,

@@ -3,14 +3,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../models/account.dart';
-import '../models/activity_log.dart';
 import '../models/post.dart';
 import '../models/sns_service.dart';
-import '../providers/activity_log_provider.dart';
+import '../providers/compose_queue_provider.dart';
 import '../providers/settings_provider.dart';
 import '../services/account_storage_service.dart';
-import '../services/bluesky_api_service.dart';
-import '../services/x_webview_action_service.dart';
 import '../utils/app_snackbar.dart';
 import '../utils/image_headers.dart';
 import '../widgets/sns_badge.dart';
@@ -29,7 +26,6 @@ class ComposeScreen extends ConsumerStatefulWidget {
 class _ComposeScreenState extends ConsumerState<ComposeScreen> {
   final _textController = TextEditingController();
   Account? _selectedAccount;
-  bool _isPosting = false;
 
   List<Account> get _accounts {
     final all = AccountStorageService.instance.accounts.where((a) => a.isEnabled).toList();
@@ -60,99 +56,23 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
 
   int get _remaining => _maxLength - _textController.text.length;
 
-  Future<void> _post() async {
+  void _post() {
     if (_selectedAccount == null || _textController.text.trim().isEmpty) return;
 
-    setState(() => _isPosting = true);
-
     final text = _textController.text.trim();
-    final account = _selectedAccount!;
-    final postSummary = text.length > 40 ? '${text.substring(0, 40)}…' : text;
-
-    try {
-      bool success = false;
-      int? statusCode;
-      String? responseSnippet;
-
-      if (account.service == SnsService.x) {
-        // WebView 経由で投稿 (ブラウザ環境を利用してbot検知を回避)
-        String? attachmentUrl;
-        String? inReplyToId;
-        if (widget.quotedPost != null && widget.quotedPost!.permalink != null) {
-          attachmentUrl = widget.quotedPost!.permalink;
-        }
-        if (widget.inReplyToPost != null) {
-          inReplyToId = widget.inReplyToPost!.id.replaceFirst('x_', '');
-        }
-        final wvResult = await XWebViewActionService.instance
-            .createTweet(account.xCredentials, text,
-                attachmentUrl: attachmentUrl, inReplyToId: inReplyToId);
-        success = wvResult.success;
-        statusCode = wvResult.statusCode;
-        responseSnippet = '[WebView] ${wvResult.body.length > 500 ? '${wvResult.body.substring(0, 500)}...' : wvResult.body}';
-      } else {
-        String? quoteUri;
-        String? quoteCid;
-        if (widget.quotedPost != null) {
-          quoteUri = widget.quotedPost!.uri;
-          quoteCid = widget.quotedPost!.cid;
-        }
-        String? replyUri;
-        String? replyCid;
-        if (widget.inReplyToPost != null) {
-          replyUri = widget.inReplyToPost!.uri;
-          replyCid = widget.inReplyToPost!.cid;
-        }
-        success = await BlueskyApiService.instance
-            .createPost(account.blueskyCredentials, text,
-                quoteUri: quoteUri, quoteCid: quoteCid,
-                replyUri: replyUri, replyCid: replyCid);
-      }
-
-      ref.read(activityLogProvider.notifier).logAction(
-        action: ActivityAction.post,
-        platform: account.service,
-        accountHandle: account.handle,
-        accountId: account.id,
-        targetSummary: postSummary,
-        success: success,
-        statusCode: statusCode,
-        responseSnippet: responseSnippet,
-      );
-
-      if (!mounted) return;
-
-      if (success) {
-        showAppSnackBar(context, '投稿しました', type: SnackType.success);
-        Navigator.of(context).pop();
-      } else {
-        showAppSnackBar(context, '投稿に失敗 (${statusCode ?? "?"}). 詳細はアクティビティログで確認', type: SnackType.error);
-        setState(() => _isPosting = false);
-      }
-    } catch (e) {
-      ref.read(activityLogProvider.notifier).logAction(
-        action: ActivityAction.post,
-        platform: account.service,
-        accountHandle: account.handle,
-        accountId: account.id,
-        targetSummary: postSummary,
-        success: false,
-        errorMessage: '$e',
-      );
-
-      if (!mounted) return;
-      showAppSnackBar(context, 'エラー: $e', type: SnackType.error);
-      setState(() => _isPosting = false);
-    }
+    ref.read(composeQueueProvider.notifier).enqueue(
+          text: text,
+          accounts: [_selectedAccount!],
+          inReplyToPost: widget.inReplyToPost,
+          quotedPost: widget.quotedPost,
+        );
+    Navigator.of(context).pop();
   }
 
   @override
   Widget build(BuildContext context) {
-    return PopScope(
-      canPop: !_isPosting,
-      child: Scaffold(
+    return Scaffold(
       appBar: AppBar(
-        leading: _isPosting ? const SizedBox.shrink() : null,
         title: Text(widget.inReplyToPost != null
             ? 'リプライ'
             : widget.quotedPost != null
@@ -177,27 +97,15 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
             ),
           FilledButton(
             onPressed:
-                _isPosting || _textController.text.trim().isEmpty || _remaining < 0
+                _textController.text.trim().isEmpty || _remaining < 0
                     ? null
                     : _post,
-            child: _isPosting
-                ? const SizedBox(
-                    width: 16,
-                    height: 16,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  )
-                : const Text('投稿'),
+            child: const Text('投稿'),
           ),
           const SizedBox(width: 8),
         ],
       ),
-      body: Stack(
-        children: [
-          AbsorbPointer(
-            absorbing: _isPosting,
-            child: Opacity(
-              opacity: _isPosting ? 0.5 : 1.0,
-              child: Column(
+      body: Column(
         children: [
           // アカウント選択（チップ横並び、単一選択）
           if (_accounts.isNotEmpty)
@@ -411,22 +319,6 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
           ),
         ],
       ),
-            ),
-          ),
-          if (_isPosting)
-            const Center(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  CircularProgressIndicator(),
-                  SizedBox(height: 16),
-                  Text('投稿中...', style: TextStyle(fontSize: 16)),
-                ],
-              ),
-            ),
-        ],
-      ),
-    ),
     );
   }
 }

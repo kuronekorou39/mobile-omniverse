@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../providers/notification_badge_provider.dart';
 import '../services/account_storage_service.dart';
+import '../widgets/compose_queue_banner.dart';
 import 'accounts_screen.dart';
 import 'notifications_screen.dart';
 import 'omni_feed_screen.dart';
@@ -68,7 +69,13 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             _buildTabNavigator(2, const NotificationsScreen()),
           ],
         ),
-        bottomNavigationBar: _buildBottomBar(hasUnread),
+        bottomNavigationBar: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const ComposeQueueBanner(),
+            _buildBottomBar(hasUnread),
+          ],
+        ),
       ),
     );
   }

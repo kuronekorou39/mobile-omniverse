@@ -156,6 +156,11 @@ class _LoginWebViewScreenState extends State<LoginWebViewScreen> {
   bool _gotUserInfo = false;
   bool _gotNotifications = false;
   bool _cookiesCleared = false;
+
+  /// iOS だけ：初回ロード後に WebStorage（localStorage / sessionStorage）を
+  /// 消してから再ロードしたかどうか。WKWebView は CookieManager.deleteAllCookies
+  /// では WebStorage がクリアされないため、JavaScript 経由で消す必要がある。
+  bool _iosStoragePurged = false;
   bool _loginDetected = false;
   bool _pageReady = false;
 
@@ -385,12 +390,38 @@ class _LoginWebViewScreenState extends State<LoginWebViewScreen> {
                   }
                 }
               },
-              onLoadStop: (controller, url) {
+              onLoadStop: (controller, url) async {
                 debugPrint('[LoginWebView] onLoadStop: $url');
                 if (!_pageReady && mounted) {
                   setState(() => _pageReady = true);
                 }
                 final urlStr = url?.toString() ?? '';
+                // iOS の WKWebView は CookieManager.deleteAllCookies() では
+                // localStorage / sessionStorage がクリアされない。Bluesky 等は
+                // 認証セッションを localStorage に置くため、初回ロード直後に
+                // JS 経由で消してリロードする。
+                if (Platform.isIOS &&
+                    !_iosStoragePurged &&
+                    urlStr.startsWith('https://')) {
+                  _iosStoragePurged = true;
+                  try {
+                    await controller.evaluateJavascript(source: '''
+                      try {
+                        localStorage.clear();
+                        sessionStorage.clear();
+                        if (window.indexedDB && indexedDB.databases) {
+                          indexedDB.databases().then(function(dbs) {
+                            dbs.forEach(function(db) {
+                              if (db && db.name) indexedDB.deleteDatabase(db.name);
+                            });
+                          }).catch(function() {});
+                        }
+                      } catch(e) {}
+                    ''');
+                  } catch (_) {}
+                  await controller.reload();
+                  return;
+                }
                 if (urlStr.contains(widget.service.domain)) {
                   debugPrint('[LoginWebView] Returned to ${widget.service.domain}');
                   // ログイン自動検知

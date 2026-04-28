@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:image_cropper/image_cropper.dart';
 import 'package:image_picker/image_picker.dart';
 
 import '../models/account.dart';
@@ -234,6 +235,57 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
 
   void _removeImage(int index) {
     setState(() => _images.removeAt(index));
+  }
+
+  /// サムネタップでトリミング画面を開き、結果で元画像を差し替える。
+  /// GIF はトリミングするとアニメーションが失われるため対象外。
+  Future<void> _editImage(int index) async {
+    final picked = _images[index];
+    if (picked.isGif) {
+      showAppSnackBar(
+        context,
+        'GIF はトリミングできません（アニメーションを保つため）',
+        type: SnackType.warning,
+      );
+      return;
+    }
+    try {
+      final theme = Theme.of(context);
+      final cropped = await ImageCropper().cropImage(
+        sourcePath: picked.file.path,
+        compressFormat: ImageCompressFormat.jpg,
+        compressQuality: 95,
+        uiSettings: [
+          AndroidUiSettings(
+            toolbarTitle: 'トリミング',
+            toolbarColor: theme.colorScheme.primary,
+            toolbarWidgetColor: Colors.white,
+            initAspectRatio: CropAspectRatioPreset.original,
+            lockAspectRatio: false,
+            hideBottomControls: false,
+          ),
+          IOSUiSettings(
+            title: 'トリミング',
+            aspectRatioLockEnabled: false,
+            resetAspectRatioEnabled: true,
+          ),
+        ],
+      );
+      if (cropped == null) return;
+      final size = await File(cropped.path).length();
+      if (!mounted) return;
+      setState(() {
+        _images[index] = _PickedImage(
+          id: 'img_${DateTime.now().microsecondsSinceEpoch}',
+          file: XFile(cropped.path),
+          sizeBytes: size,
+          isGif: false,
+        );
+      });
+    } catch (e) {
+      if (!mounted) return;
+      showAppSnackBar(context, 'トリミングエラー: $e', type: SnackType.error);
+    }
   }
 
   /// 戻る時の確認ダイアログ：「下書きに保存」「破棄」、枠外タップでキャンセル。
@@ -588,6 +640,7 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
                           willResize: willResize,
                           overflowWarning: overflow,
                           onRemove: () => _removeImage(i),
+                          onTap: () => _editImage(i),
                         ),
                       ),
                     );
@@ -842,12 +895,14 @@ class _ImageThumb extends StatelessWidget {
     required this.willResize,
     required this.onRemove,
     this.overflowWarning = false,
+    this.onTap,
   });
 
   final _PickedImage picked;
   final bool willResize;
   final bool overflowWarning;
   final VoidCallback onRemove;
+  final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
@@ -857,13 +912,16 @@ class _ImageThumb extends StatelessWidget {
       child: Stack(
         clipBehavior: Clip.none,
         children: [
-          ClipRRect(
-            borderRadius: BorderRadius.circular(8),
-            child: Image.file(
-              File(picked.file.path),
-              width: 80,
-              height: 80,
-              fit: BoxFit.cover,
+          GestureDetector(
+            onTap: onTap,
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(8),
+              child: Image.file(
+                File(picked.file.path),
+                width: 80,
+                height: 80,
+                fit: BoxFit.cover,
+              ),
             ),
           ),
           // 縮小予定マーク（左下、通常画像で再エンコード対象のとき）

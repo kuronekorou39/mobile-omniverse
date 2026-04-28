@@ -540,11 +540,29 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
                     });
                   },
                   proxyDecorator: (child, index, animation) {
-                    return Material(
-                      color: Colors.transparent,
-                      elevation: 6,
-                      borderRadius: BorderRadius.circular(8),
-                      child: child,
+                    final primary = Theme.of(context).colorScheme.primary;
+                    return AnimatedBuilder(
+                      animation: animation,
+                      builder: (context, c) {
+                        final t = Curves.easeOut.transform(animation.value);
+                        return Transform.scale(
+                          scale: 1.0 + 0.08 * t,
+                          child: c,
+                        );
+                      },
+                      child: Material(
+                        color: Colors.transparent,
+                        elevation: 8,
+                        shadowColor: primary,
+                        borderRadius: BorderRadius.circular(10),
+                        child: Container(
+                          decoration: BoxDecoration(
+                            borderRadius: BorderRadius.circular(10),
+                            border: Border.all(color: primary, width: 2),
+                          ),
+                          child: child,
+                        ),
+                      ),
                     );
                   },
                   itemBuilder: (context, i) {

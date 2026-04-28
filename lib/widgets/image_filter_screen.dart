@@ -21,8 +21,6 @@ class ImageFilterScreen extends StatefulWidget {
 class _ImageFilterScreenState extends State<ImageFilterScreen> {
   ImageFilter _selectedFilter = ImageFilter.none;
   Uint8List? _originalBytes;
-  Uint8List? _previewBytes;
-  bool _processing = false;
   bool _saving = false;
 
   @override
@@ -34,40 +32,29 @@ class _ImageFilterScreenState extends State<ImageFilterScreen> {
   Future<void> _loadBytes() async {
     final bytes = await widget.file.readAsBytes();
     if (!mounted) return;
-    setState(() {
-      _originalBytes = bytes;
-      _previewBytes = bytes;
-    });
+    setState(() => _originalBytes = bytes);
   }
 
-  Future<void> _selectFilter(ImageFilter filter) async {
-    if (_originalBytes == null || _processing) return;
-    setState(() {
-      _selectedFilter = filter;
-      _processing = true;
-    });
-    final result =
-        await ImageFilterService.instance.apply(_originalBytes!, filter);
-    if (!mounted) return;
-    setState(() {
-      _previewBytes = result;
-      _processing = false;
-    });
+  void _selectFilter(ImageFilter filter) {
+    setState(() => _selectedFilter = filter);
   }
 
   Future<void> _apply() async {
     if (_saving) return;
-    if (_selectedFilter == ImageFilter.none || _previewBytes == null) {
+    if (_selectedFilter == ImageFilter.none || _originalBytes == null) {
       Navigator.of(context).pop();
       return;
     }
     setState(() => _saving = true);
     try {
+      // プレビューと同じ matrix を CPU で焼き込み
+      final filtered = await ImageFilterService.instance
+          .apply(_originalBytes!, _selectedFilter);
       final dir = await getTemporaryDirectory();
       final path =
           '${dir.path}/filter_${DateTime.now().microsecondsSinceEpoch}.jpg';
       final file = File(path);
-      await file.writeAsBytes(_previewBytes!);
+      await file.writeAsBytes(filtered);
       if (!mounted) return;
       Navigator.of(context).pop(XFile(path));
     } catch (e) {
@@ -86,8 +73,14 @@ class _ImageFilterScreenState extends State<ImageFilterScreen> {
         title: const Text('フィルタ'),
         actions: [
           TextButton(
-            onPressed: _processing || _saving ? null : _apply,
-            child: const Text('適用'),
+            onPressed: _saving ? null : _apply,
+            child: _saving
+                ? const SizedBox(
+                    width: 14,
+                    height: 14,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Text('適用'),
           ),
         ],
       ),
@@ -97,18 +90,14 @@ class _ImageFilterScreenState extends State<ImageFilterScreen> {
             child: Container(
               color: Colors.black,
               child: Center(
-                child: _previewBytes != null
-                    ? Stack(
-                        alignment: Alignment.center,
-                        children: [
-                          Image.memory(
-                            _previewBytes!,
-                            fit: BoxFit.contain,
-                            gaplessPlayback: true,
-                          ),
-                          if (_processing)
-                            const CircularProgressIndicator(),
-                        ],
+                child: _originalBytes != null
+                    ? ColorFiltered(
+                        colorFilter: _selectedFilter.colorFilter,
+                        child: Image.memory(
+                          _originalBytes!,
+                          fit: BoxFit.contain,
+                          gaplessPlayback: true,
+                        ),
                       )
                     : const CircularProgressIndicator(),
               ),

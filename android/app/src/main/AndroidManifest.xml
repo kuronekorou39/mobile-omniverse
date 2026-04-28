@@ -43,11 +43,13 @@
                 android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
                 android:value="Display timeline overlay for social media monitoring"/>
         </service>
-        <!-- image_cropper（uCrop）の Activity 登録 -->
+        <!-- image_cropper（uCrop）の Activity 登録。
+             ステータス/ナビゲーションバーに UI が埋もれないよう SafeArea 対応の
+             カスタムテーマ UCropTheme を当てる（Android 15+ edge-to-edge 強制対策）。 -->
         <activity
             android:name="com.yalantis.ucrop.UCropActivity"
             android:screenOrientation="portrait"
-            android:theme="@style/Theme.AppCompat.Light.NoActionBar"/>
+            android:theme="@style/UCropTheme"/>
     </application>
     <!-- Required to query activities that can process text, see:
          https://developer.android.com/training/package-visibility and

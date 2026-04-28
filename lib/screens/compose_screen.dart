@@ -18,6 +18,7 @@ import '../services/image_resize_service.dart';
 import '../utils/app_snackbar.dart';
 import '../utils/image_headers.dart';
 import '../widgets/draft_list_sheet.dart';
+import '../widgets/image_filter_screen.dart';
 import '../widgets/sns_badge.dart';
 import 'browser_post_debug_screen.dart';
 
@@ -237,18 +238,52 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
     setState(() => _images.removeAt(index));
   }
 
-  /// サムネタップでトリミング画面を開き、結果で元画像を差し替える。
-  /// GIF はトリミングするとアニメーションが失われるため対象外。
+  /// サムネタップで編集メニュー（トリミング / フィルタ）を開く。
+  /// GIF はどちらもアニメーション/色を壊すため対象外。
   Future<void> _editImage(int index) async {
     final picked = _images[index];
     if (picked.isGif) {
       showAppSnackBar(
         context,
-        'GIF はトリミングできません（アニメーションを保つため）',
+        'GIF は編集できません（アニメーションを保つため）',
         type: SnackType.warning,
       );
       return;
     }
+    final action = await showModalBottomSheet<String>(
+      context: context,
+      showDragHandle: true,
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.crop),
+              title: const Text('トリミング'),
+              onTap: () => Navigator.of(ctx).pop('crop'),
+            ),
+            ListTile(
+              leading: const Icon(Icons.color_lens_outlined),
+              title: const Text('フィルタ'),
+              onTap: () => Navigator.of(ctx).pop('filter'),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (!mounted) return;
+    switch (action) {
+      case 'crop':
+        await _cropImage(index);
+        break;
+      case 'filter':
+        await _filterImage(index);
+        break;
+    }
+  }
+
+  Future<void> _cropImage(int index) async {
+    final picked = _images[index];
     try {
       final theme = Theme.of(context);
       final cropped = await ImageCropper().cropImage(
@@ -286,6 +321,26 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
       if (!mounted) return;
       showAppSnackBar(context, 'トリミングエラー: $e', type: SnackType.error);
     }
+  }
+
+  Future<void> _filterImage(int index) async {
+    final picked = _images[index];
+    final result = await Navigator.of(context).push<XFile?>(
+      MaterialPageRoute(
+        builder: (_) => ImageFilterScreen(file: picked.file),
+      ),
+    );
+    if (result == null || !mounted) return;
+    final size = await File(result.path).length();
+    if (!mounted) return;
+    setState(() {
+      _images[index] = _PickedImage(
+        id: 'img_${DateTime.now().microsecondsSinceEpoch}',
+        file: result,
+        sizeBytes: size,
+        isGif: false,
+      );
+    });
   }
 
   /// 戻る時の確認ダイアログ：「下書きに保存」「破棄」、枠外タップでキャンセル。

@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -14,6 +16,7 @@ import '../providers/fetch_status_provider.dart';
 import '../providers/notification_badge_provider.dart';
 import '../providers/notification_fetch_status_provider.dart';
 import '../providers/notification_highlight_provider.dart';
+import '../providers/settings_provider.dart';
 import '../services/bluesky_api_service.dart';
 import '../services/notification_cache_service.dart';
 import '../services/x_api_service.dart';
@@ -368,9 +371,14 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
           _UnifiedNotificationList(
             key: ValueKey(accounts.map((a) => a.id).join(',')),
             accounts: accounts,
+            isVisible: _selectedIndex == 0,
           ),
-          ...accounts.map((a) =>
-              _NotificationList(key: ValueKey(a.id), account: a)),
+          for (var i = 0; i < accounts.length; i++)
+            _NotificationList(
+              key: ValueKey(accounts[i].id),
+              account: accounts[i],
+              isVisible: _selectedIndex == i + 1,
+            ),
         ],
       ),
     );
@@ -602,8 +610,16 @@ class _AllChip extends StatelessWidget {
 
 /// アカウントごとの通知リスト
 class _NotificationList extends ConsumerStatefulWidget {
-  const _NotificationList({super.key, required this.account});
+  const _NotificationList({
+    super.key,
+    required this.account,
+    this.isVisible = true,
+  });
   final Account account;
+
+  /// 親 IndexedStack で現在このタブが選ばれているか。
+  /// true かつ通知タブ active のときだけ自動フェッチ Timer が動く。
+  final bool isVisible;
 
   @override
   ConsumerState<_NotificationList> createState() => _NotificationListState();
@@ -618,7 +634,7 @@ class _NotificationListState extends ConsumerState<_NotificationList>
   bool _isLoadingMore = false;
   bool _isFetching = false;
   bool _gqlFailed = false;
-  DateTime? _lastFetchTime;
+  Timer? _autoFetchTimer;
 
   /// フィルタ: 非表示にするタイプ（空 = 全表示）
   final Set<NotificationType> _hiddenTypes = {};
@@ -648,6 +664,42 @@ class _NotificationListState extends ConsumerState<_NotificationList>
       _isLoading = false;
     }
     _fetch();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _scheduleAutoFetch();
+    });
+  }
+
+  @override
+  void didUpdateWidget(covariant _NotificationList oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.isVisible != widget.isVisible) {
+      _scheduleAutoFetch();
+    }
+  }
+
+  @override
+  void dispose() {
+    _autoFetchTimer?.cancel();
+    super.dispose();
+  }
+
+  void _scheduleAutoFetch() {
+    _autoFetchTimer?.cancel();
+    if (!mounted || !widget.isVisible) return;
+    final tabActive = ref.read(notificationTabActiveProvider);
+    if (!tabActive) return;
+    final intervalSec = ref.read(settingsProvider).fetchIntervalSeconds;
+    final period = Duration(seconds: intervalSec < 30 ? 30 : intervalSec);
+    _autoFetchTimer = Timer.periodic(period, (_) => _maybeAutoFetch());
+  }
+
+  void _maybeAutoFetch() {
+    if (!mounted || !widget.isVisible) return;
+    if (!ref.read(notificationTabActiveProvider)) return;
+    final intervalSec = ref.read(settingsProvider).fetchIntervalSeconds;
+    final cooldown = Duration(seconds: intervalSec);
+    if (_cacheService.isInCooldown(widget.account.id, cooldown)) return;
+    _fetch();
   }
 
   Future<void> _openQueryIdWebView() async {
@@ -664,7 +716,7 @@ class _NotificationListState extends ConsumerState<_NotificationList>
   Future<void> _fetch() async {
     if (_isFetching) return;
     _isFetching = true;
-    _lastFetchTime = DateTime.now();
+    _cacheService.recordFetch(widget.account.id);
 
     final isRefresh = _notifications.isNotEmpty;
     if (!isRefresh) {
@@ -791,10 +843,19 @@ class _NotificationListState extends ConsumerState<_NotificationList>
   Widget build(BuildContext context) {
     super.build(context);
 
-    // バックグラウンドフェッチで新着がある場合、自動リフェッチ（30秒クールダウン）
-    final unreadAccountIds = ref.watch(notificationBadgeProvider);
-    if (unreadAccountIds.contains(widget.account.id) && !_isFetching &&
-        (_lastFetchTime == null || DateTime.now().difference(_lastFetchTime!) > const Duration(seconds: 30))) {
+    // 通知タブの active 状態が変わったら自動フェッチ Timer を再構成
+    ref.listen<bool>(notificationTabActiveProvider, (prev, next) {
+      _scheduleAutoFetch();
+    });
+
+    // バックグラウンドフェッチで新着があり、かつ直近フェッチからフェッチ間隔が
+    // 経過している場合のみ自動リフェッチ（手動 pull 直後の連続発火を防ぐ）
+    final badge = ref.watch(notificationBadgeProvider);
+    final intervalSec = ref.read(settingsProvider).fetchIntervalSeconds;
+    final cooldown = Duration(seconds: intervalSec);
+    if (badge.contains(widget.account.id) &&
+        !_isFetching &&
+        !_cacheService.isInCooldown(widget.account.id, cooldown)) {
       Future.microtask(() => _fetch());
     }
 
@@ -1218,8 +1279,15 @@ class _NotificationTileState extends ConsumerState<_NotificationTile> {
 // ─── 統合通知リスト（「すべて」タブ） ───
 
 class _UnifiedNotificationList extends ConsumerStatefulWidget {
-  const _UnifiedNotificationList({super.key, required this.accounts});
+  const _UnifiedNotificationList({
+    super.key,
+    required this.accounts,
+    this.isVisible = true,
+  });
   final List<Account> accounts;
+
+  /// 親 IndexedStack で現在このタブが選ばれているか。
+  final bool isVisible;
 
   @override
   ConsumerState<_UnifiedNotificationList> createState() =>
@@ -1232,6 +1300,7 @@ class _UnifiedNotificationListState
   bool _isLoading = true;
   bool _isFetching = false;
   DateTime? _lastFetchTime;
+  Timer? _autoFetchTimer;
   List<NotificationItem> _allNotifications = [];
 
   final Set<NotificationType> _hiddenTypes = {};
@@ -1255,6 +1324,9 @@ class _UnifiedNotificationListState
   void initState() {
     super.initState();
     _init();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _scheduleAutoFetch();
+    });
   }
 
   @override
@@ -1265,10 +1337,44 @@ class _UnifiedNotificationListState
     if (!oldIds.containsAll(newIds) || !newIds.containsAll(oldIds)) {
       _init();
     }
+    if (oldWidget.isVisible != widget.isVisible) {
+      _scheduleAutoFetch();
+    }
+  }
+
+  @override
+  void dispose() {
+    _autoFetchTimer?.cancel();
+    super.dispose();
   }
 
   void _init() {
     _loadFromCache();
+    _fetchAll();
+  }
+
+  void _scheduleAutoFetch() {
+    _autoFetchTimer?.cancel();
+    if (!mounted || !widget.isVisible) return;
+    final tabActive = ref.read(notificationTabActiveProvider);
+    if (!tabActive) return;
+    final intervalSec = ref.read(settingsProvider).fetchIntervalSeconds;
+    final period = Duration(seconds: intervalSec < 30 ? 30 : intervalSec);
+    _autoFetchTimer = Timer.periodic(period, (_) => _maybeAutoFetch());
+  }
+
+  void _maybeAutoFetch() {
+    if (!mounted || !widget.isVisible) return;
+    if (!ref.read(notificationTabActiveProvider)) return;
+    final intervalSec = ref.read(settingsProvider).fetchIntervalSeconds;
+    final cooldown = Duration(seconds: intervalSec);
+    // 全アカウントについて、1 つでもクールダウン外なら fetchAll を走らせる。
+    // _fetchAll 側の各アカウントで個別にクールダウン判定するわけではないが、
+    // _lastFetchTime ベースの粗い判定でも目的は満たせる。
+    if (_lastFetchTime != null &&
+        DateTime.now().difference(_lastFetchTime!) < cooldown) {
+      return;
+    }
     _fetchAll();
   }
 
@@ -1287,6 +1393,7 @@ class _UnifiedNotificationListState
 
     try {
       final futures = widget.accounts.map((account) async {
+        _cacheService.recordFetch(account.id);
         try {
           final result = await fetchAccountNotifications(account);
           _cacheService.merge(account.id, result.notifications, cursor: result.cursor);
@@ -1326,10 +1433,20 @@ class _UnifiedNotificationListState
   Widget build(BuildContext context) {
     super.build(context);
 
-    // バックグラウンドフェッチで新着がある場合、自動リフェッチ（30秒クールダウン）
-    final unreadAccountIds = ref.watch(notificationBadgeProvider);
-    if (unreadAccountIds.isNotEmpty && !_isFetching &&
-        (_lastFetchTime == null || DateTime.now().difference(_lastFetchTime!) > const Duration(seconds: 30))) {
+    // 通知タブの active 状態が変わったら自動フェッチ Timer を再構成
+    ref.listen<bool>(notificationTabActiveProvider, (prev, next) {
+      _scheduleAutoFetch();
+    });
+
+    // バックグラウンドフェッチで新着があり、フェッチ間隔分は経過している時のみ
+    // 自動リフェッチ（手動 pull 直後の連続発火を防ぐ）
+    final badge = ref.watch(notificationBadgeProvider);
+    final intervalSec = ref.read(settingsProvider).fetchIntervalSeconds;
+    final cooldown = Duration(seconds: intervalSec);
+    if (badge.isNotEmpty &&
+        !_isFetching &&
+        (_lastFetchTime == null ||
+            DateTime.now().difference(_lastFetchTime!) > cooldown)) {
       Future.microtask(() => _fetchAll());
     }
 

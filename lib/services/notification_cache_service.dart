@@ -194,6 +194,22 @@ class NotificationCacheService {
     return false;
   }
 
+  /// 直近のフェッチ時刻（pull / 自動 / バックグラウンドの全経路で記録）。
+  /// クールダウン判定で「同じアカウントを連続フェッチしない」のために使う。
+  final Map<String, DateTime> _lastFetchAt = {};
+
+  void recordFetch(String accountId) {
+    _lastFetchAt[accountId] = DateTime.now();
+  }
+
+  DateTime? getLastFetchAt(String accountId) => _lastFetchAt[accountId];
+
+  bool isInCooldown(String accountId, Duration cooldown) {
+    final last = _lastFetchAt[accountId];
+    if (last == null) return false;
+    return DateTime.now().difference(last) < cooldown;
+  }
+
   /// アカウント単位の未見件数（バッジに数字を出すため）
   int unseenCountFor(String accountId) {
     var count = 0;

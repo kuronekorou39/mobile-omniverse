@@ -7,6 +7,7 @@ import '../services/bluesky_api_service.dart';
 import '../services/notification_cache_service.dart';
 import '../services/x_api_service.dart';
 import 'notification_fetch_status_provider.dart';
+import 'settings_provider.dart';
 
 final notificationBadgeProvider =
     StateNotifierProvider<NotificationBadgeNotifier, NotificationBadgeState>(
@@ -82,7 +83,17 @@ class NotificationBadgeNotifier extends StateNotifier<NotificationBadgeState> {
         .toList();
     if (accounts.isEmpty) return;
 
+    // 通知タブでの手動 pull や自動フェッチと衝突しないようクールダウン判定する。
+    // 直近フェッチからフェッチ間隔（最低 30 秒）以内のアカウントは skip。
+    final intervalSec =
+        _ref.read(settingsProvider).fetchIntervalSeconds;
+    final cooldown = Duration(seconds: intervalSec < 30 ? 30 : intervalSec);
+
     for (final account in accounts) {
+      if (_cache.isInCooldown(account.id, cooldown)) {
+        continue;
+      }
+      _cache.recordFetch(account.id);
       try {
         if (account.service == SnsService.x) {
           // バックグラウンドではall.jsonのみ（レート制限節約）

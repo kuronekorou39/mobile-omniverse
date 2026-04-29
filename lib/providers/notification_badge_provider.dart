@@ -134,8 +134,11 @@ class NotificationBadgeNotifier extends StateNotifier<NotificationBadgeState> {
     _recompute(accountIds);
   }
 
-  /// 通知画面を開いたとき、バッジを消して既読マーク
-  Future<void> markSeen() async {
+  /// バッジ state を即座にクリアする緊急用フック。
+  /// 通常のフローでは使わないこと（cache.seenAt を更新しないので、次の
+  /// _fetchAndCheck や refreshBadge でただちに件数が復活する）。
+  /// 各通知の既読化は _NotificationTile の cache.markSeen 経由で行われる。
+  Future<void> clearBadgeImmediately() async {
     state = const NotificationBadgeState();
   }
 }

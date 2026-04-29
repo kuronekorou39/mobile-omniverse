@@ -108,8 +108,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       // タブ active = true の間だけ各タイルが markSeen を実行できる
       // （IndexedStack でバックグラウンドでも layout されて ListView.builder の
       //   itemBuilder が呼ばれ勝手に既読化される問題を防ぐ）
+      // 件数バッジは cache.seenAt を元に都度再計算されるため、タブ切替で
+      // 全クリア（旧 markSeen()）はしない。クリアしても直後の再計算で
+      // 件数が戻ってきてバッジが点滅する原因になっていた。
       if (index == 2 && _currentIndex != 2) {
-        ref.read(notificationBadgeProvider.notifier).markSeen();
         ref.read(notificationTabActiveProvider.notifier).state = true;
       } else if (_currentIndex == 2 && index != 2) {
         ref.read(notificationTabActiveProvider.notifier).state = false;

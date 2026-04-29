@@ -43,7 +43,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final hasUnread = ref.watch(notificationBadgeProvider).isNotEmpty;
+    final badge = ref.watch(notificationBadgeProvider);
+    final unreadTotal = badge.total;
 
     // 端末の戻るボタンでタブ内のNavigatorを戻す
     return PopScope(
@@ -73,7 +74,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           mainAxisSize: MainAxisSize.min,
           children: [
             const ComposeQueueBanner(),
-            _buildBottomBar(hasUnread),
+            _buildBottomBar(unreadTotal),
           ],
         ),
       ),
@@ -117,7 +118,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     }
   }
 
-  Widget _buildBottomBar(bool hasUnread) {
+  Widget _buildBottomBar(int unreadTotal) {
     final colorScheme = Theme.of(context).colorScheme;
 
     Widget buildTab(int index, IconData icon, IconData selectedIcon, {bool showBadge = false, int flex = 1}) {
@@ -129,8 +130,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       );
       if (showBadge) {
         iconWidget = Badge(
-          isLabelVisible: hasUnread,
-          smallSize: 8,
+          isLabelVisible: unreadTotal > 0,
+          label: Text(unreadTotal >= 1000 ? '999+' : '$unreadTotal'),
           child: iconWidget,
         );
       }

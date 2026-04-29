@@ -930,10 +930,23 @@ class _NotificationTileState extends ConsumerState<_NotificationTile> {
 
     final cache = NotificationCacheService.instance;
     if (!cache.isNew(widget.notification)) return;
-    cache.markSeen(widget.notification);
+    // ハイライトはすぐ表示するが、markSeen（=件数バッジから減算される）は
+    // ハイライトが消えるタイミングまで遅延させる。これでアカウントチップや
+    // ホーム下部のバッジ件数がハイライト中は維持される。
     setState(() => _highlightOpacity = 1.0);
     Future.delayed(const Duration(seconds: 10), () {
-      if (mounted) setState(() => _highlightOpacity = 0.0);
+      if (!mounted) return;
+      setState(() => _highlightOpacity = 0.0);
+      cache.markSeen(widget.notification);
+      // バッジ件数の再計算をトリガーする
+      final accountIds = ref
+          .read(accountProvider)
+          .where((a) => a.isEnabled)
+          .map((a) => a.id)
+          .toList();
+      ref
+          .read(notificationBadgeProvider.notifier)
+          .refreshBadge(accountIds);
     });
   }
 

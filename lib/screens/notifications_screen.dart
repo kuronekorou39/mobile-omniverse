@@ -227,19 +227,19 @@ class NotificationsScreen extends ConsumerStatefulWidget {
       _NotificationsScreenState();
 }
 
-class _NotificationsScreenState extends ConsumerState<NotificationsScreen>
-    with TickerProviderStateMixin {
-  TabController? _tabController;
-
-  @override
-  void dispose() {
-    _tabController?.dispose();
-    super.dispose();
-  }
+class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
+  /// 0 = 「すべて」、1〜N = 各アカウント（accounts と同じ並び）
+  int _selectedIndex = 0;
 
   @override
   Widget build(BuildContext context) {
     final accounts = ref.watch(accountProvider).where((a) => a.isEnabled).toList();
+    final badge = ref.watch(notificationBadgeProvider);
+
+    // accounts が減って _selectedIndex が外を指すようになったときの保険
+    if (_selectedIndex > accounts.length) {
+      _selectedIndex = 0;
+    }
 
     if (accounts.isEmpty) {
       return Scaffold(
@@ -281,16 +281,6 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen>
       );
     }
 
-    // タブ数: 「すべて」+ 各アカウント
-    final tabCount = accounts.length + 1;
-    if (_tabController == null || _tabController!.length != tabCount) {
-      _tabController?.dispose();
-      _tabController = TabController(length: tabCount, vsync: this);
-    }
-
-    final unreadAccountIds = ref.watch(notificationBadgeProvider);
-    final hasAnyUnread = unreadAccountIds.isNotEmpty;
-
     return Scaffold(
       appBar: AppBar(
         leadingWidth: 0,
@@ -325,84 +315,235 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen>
             ),
           ],
         ),
-        bottom: TabBar(
-          controller: _tabController,
-          isScrollable: true,
-          tabs: [
-            // 「すべて」タブ
-            Tab(
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
+        bottom: PreferredSize(
+          preferredSize: const Size.fromHeight(86),
+          child: SizedBox(
+            height: 86,
+            child: ListView(
+              scrollDirection: Axis.horizontal,
+              padding: const EdgeInsets.fromLTRB(8, 4, 8, 8),
+              children: [
+                _AllChip(
+                  selected: _selectedIndex == 0,
+                  totalUnread: badge.total,
+                  onTap: () => setState(() => _selectedIndex = 0),
+                ),
+                const SizedBox(width: 8),
+                for (var i = 0; i < accounts.length; i++) ...[
+                  _NotifAccountChip(
+                    account: accounts[i],
+                    selected: _selectedIndex == i + 1,
+                    unreadCount: badge.countFor(accounts[i].id),
+                    onTap: () => setState(() => _selectedIndex = i + 1),
+                  ),
+                  if (i < accounts.length - 1) const SizedBox(width: 8),
+                ],
+              ],
+            ),
+          ),
+        ),
+      ),
+      body: IndexedStack(
+        index: _selectedIndex,
+        children: [
+          _UnifiedNotificationList(
+            key: ValueKey(accounts.map((a) => a.id).join(',')),
+            accounts: accounts,
+          ),
+          ...accounts.map((a) =>
+              _NotificationList(key: ValueKey(a.id), account: a)),
+        ],
+      ),
+    );
+  }
+}
+
+/// 件数バッジ（999+ 対応）
+class _CountBadge extends StatelessWidget {
+  const _CountBadge({required this.count});
+  final int count;
+
+  @override
+  Widget build(BuildContext context) {
+    final label = count >= 1000 ? '999+' : '$count';
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+      decoration: BoxDecoration(
+        color: Colors.red.shade700,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: Colors.white, width: 1.5),
+      ),
+      constraints: const BoxConstraints(minWidth: 16, minHeight: 16),
+      child: Text(
+        label,
+        textAlign: TextAlign.center,
+        style: const TextStyle(
+          color: Colors.white,
+          fontSize: 9,
+          fontWeight: FontWeight.bold,
+          height: 1.0,
+        ),
+      ),
+    );
+  }
+}
+
+/// 投稿画面のチップを参考にした、通知タブ用のアカウントチップ。
+class _NotifAccountChip extends StatelessWidget {
+  const _NotifAccountChip({
+    required this.account,
+    required this.selected,
+    required this.unreadCount,
+    required this.onTap,
+  });
+
+  final Account account;
+  final bool selected;
+  final int unreadCount;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final primary = Theme.of(context).colorScheme.primary;
+    final borderColor =
+        selected ? primary : Theme.of(context).dividerColor;
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(12),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 120),
+        width: 64,
+        height: 64,
+        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
+        decoration: BoxDecoration(
+          color: selected ? primary.withValues(alpha: 0.12) : null,
+          border: Border.all(
+            color: borderColor,
+            width: selected ? 2 : 1,
+          ),
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Opacity(
+              opacity: selected ? 1.0 : 0.55,
+              child: Stack(
+                clipBehavior: Clip.none,
                 children: [
-                  const Text('すべて'),
-                  if (hasAnyUnread) ...[
-                    const SizedBox(width: 6),
-                    Container(
-                      width: 8,
-                      height: 8,
-                      decoration: BoxDecoration(
-                        color: Theme.of(context).colorScheme.primary,
-                        shape: BoxShape.circle,
-                      ),
+                  CircleAvatar(
+                    radius: 16,
+                    backgroundImage: account.avatarUrl != null
+                        ? NetworkImage(account.avatarUrl!)
+                        : null,
+                    child: account.avatarUrl == null
+                        ? Text(
+                            account.displayName.isNotEmpty
+                                ? account.displayName[0]
+                                : '?',
+                            style: const TextStyle(fontSize: 12),
+                          )
+                        : null,
+                  ),
+                  Positioned(
+                    right: -4,
+                    bottom: -2,
+                    child: SnsBadge(service: account.service, size: 7),
+                  ),
+                  if (unreadCount > 0)
+                    Positioned(
+                      left: -8,
+                      top: -6,
+                      child: _CountBadge(count: unreadCount),
                     ),
-                  ],
                 ],
               ),
             ),
-            // 各アカウントタブ
-            ...accounts.map((a) {
-              final hasNew = unreadAccountIds.contains(a.id);
-              return Tab(
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    SnsBadge(service: a.service, size: 12),
-                    const SizedBox(width: 4),
-                    CircleAvatar(
-                      radius: 10,
-                      backgroundImage: a.avatarUrl != null
-                          ? NetworkImage(a.avatarUrl!)
-                          : null,
-                      child: a.avatarUrl == null
-                          ? Text(
-                              a.displayName.isNotEmpty
-                                  ? a.displayName[0].toUpperCase()
-                                  : '?',
-                              style: const TextStyle(fontSize: 9),
-                            )
-                          : null,
-                    ),
-                    const SizedBox(width: 6),
-                    Flexible(
-                      child: Text(
-                        a.displayName,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ),
-                    if (hasNew) ...[
-                      const SizedBox(width: 6),
-                      Container(
-                        width: 8,
-                        height: 8,
-                        decoration: BoxDecoration(
-                          color: Theme.of(context).colorScheme.primary,
-                          shape: BoxShape.circle,
-                        ),
-                      ),
-                    ],
-                  ],
-                ),
-              );
-            }),
+            const SizedBox(height: 4),
+            Text(
+              account.handle,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                fontSize: 10,
+                fontWeight:
+                    selected ? FontWeight.bold : FontWeight.normal,
+                color: selected ? null : Colors.grey[600],
+              ),
+            ),
           ],
         ),
       ),
-      body: TabBarView(
-        controller: _tabController,
-        children: [
-          _UnifiedNotificationList(key: ValueKey(accounts.map((a) => a.id).join(',')), accounts: accounts),
-          ...accounts.map((a) => _NotificationList(key: ValueKey(a.id), account: a)),
-        ],
+    );
+  }
+}
+
+/// 「すべて」チップ。アイコン + 合計件数バッジ。
+class _AllChip extends StatelessWidget {
+  const _AllChip({
+    required this.selected,
+    required this.totalUnread,
+    required this.onTap,
+  });
+
+  final bool selected;
+  final int totalUnread;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final primary = Theme.of(context).colorScheme.primary;
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(12),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 120),
+        width: 64,
+        height: 64,
+        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
+        decoration: BoxDecoration(
+          color: selected ? primary.withValues(alpha: 0.12) : null,
+          border: Border.all(
+            color: selected ? primary : Theme.of(context).dividerColor,
+            width: selected ? 2 : 1,
+          ),
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Stack(
+              clipBehavior: Clip.none,
+              children: [
+                Icon(
+                  Icons.all_inbox_outlined,
+                  size: 30,
+                  color: selected ? primary : Colors.grey[600],
+                ),
+                if (totalUnread > 0)
+                  Positioned(
+                    right: -10,
+                    top: -6,
+                    child: _CountBadge(count: totalUnread),
+                  ),
+              ],
+            ),
+            const SizedBox(height: 4),
+            Text(
+              'すべて',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                fontSize: 10,
+                fontWeight:
+                    selected ? FontWeight.bold : FontWeight.normal,
+                color: selected ? null : Colors.grey[600],
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -735,11 +876,16 @@ class _NotificationTile extends ConsumerStatefulWidget {
     required this.account,
     this.showRecipient = false,
     this.showSnsBadge = true,
+    this.markSeenOnView = true,
   });
   final NotificationItem notification;
   final Account account;
   final bool showRecipient;
   final bool showSnsBadge;
+
+  /// 「すべて」タブのように、表示しただけでは既読化したくない場合は false。
+  /// 個別アカウントタブで実際にユーザーが見たときだけ既読化する。
+  final bool markSeenOnView;
 
   @override
   ConsumerState<_NotificationTile> createState() => _NotificationTileState();
@@ -777,6 +923,7 @@ class _NotificationTileState extends ConsumerState<_NotificationTile> {
   void _tryActivate() {
     if (!mounted) return;
     if (_activationAttempted) return;
+    if (!widget.markSeenOnView) return; // 「すべて」タブでは既読化しない
     final tabActive = ref.read(notificationTabActiveProvider);
     if (!tabActive) return;
     _activationAttempted = true;
@@ -1212,6 +1359,7 @@ class _UnifiedNotificationListState
                   notification: n,
                   account: account,
                   showRecipient: true,
+                  markSeenOnView: false, // 「すべて」タブは未読のまま保持
                 );
               },
             ),

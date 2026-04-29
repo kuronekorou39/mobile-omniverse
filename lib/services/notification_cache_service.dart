@@ -194,11 +194,27 @@ class NotificationCacheService {
     return false;
   }
 
+  /// アカウント単位の未見件数（バッジに数字を出すため）
+  int unseenCountFor(String accountId) {
+    var count = 0;
+    for (final n in get(accountId)) {
+      if (isNew(n)) count++;
+    }
+    return count;
+  }
+
   /// 全有効アカウントのうち未見がある accountId 集合
   Set<String> unseenAccountIds(List<String> accountIds) {
     return {
       for (final id in accountIds)
         if (hasUnseenFor(id)) id,
+    };
+  }
+
+  /// 全有効アカウントの未見件数 Map
+  Map<String, int> unseenCounts(List<String> accountIds) {
+    return {
+      for (final id in accountIds) id: unseenCountFor(id),
     };
   }
 

@@ -8,7 +8,7 @@ import '../services/notification_cache_service.dart';
 import '../services/x_api_service.dart';
 
 final notificationBadgeProvider =
-    StateNotifierProvider<NotificationBadgeNotifier, Set<String>>(
+    StateNotifierProvider<NotificationBadgeNotifier, NotificationBadgeState>(
   (ref) => NotificationBadgeNotifier(),
 );
 
@@ -19,10 +19,28 @@ final notificationBadgeProvider =
 /// このフラグでタブ非アクティブ時の markSeen を抑制する。
 final notificationTabActiveProvider = StateProvider<bool>((ref) => false);
 
-/// 通知バッジ（未読ドット）の管理 + バックグラウンド通知フェッチ
-/// state = 新着通知があるアカウントIDの集合
-class NotificationBadgeNotifier extends StateNotifier<Set<String>> {
-  NotificationBadgeNotifier() : super({});
+/// 通知バッジの状態。アカウント別の未読件数も保持し、
+/// アカウントタブの数字バッジ + 全体合計（ホーム下部）に使う。
+class NotificationBadgeState {
+  const NotificationBadgeState({
+    this.unreadAccountIds = const {},
+    this.unreadCounts = const {},
+  });
+
+  final Set<String> unreadAccountIds;
+  final Map<String, int> unreadCounts;
+
+  bool get isEmpty => unreadAccountIds.isEmpty;
+  bool get isNotEmpty => unreadAccountIds.isNotEmpty;
+  bool contains(String accountId) => unreadAccountIds.contains(accountId);
+  int countFor(String accountId) => unreadCounts[accountId] ?? 0;
+  int get total =>
+      unreadCounts.values.fold(0, (sum, count) => sum + count);
+}
+
+/// 通知バッジの管理 + バックグラウンド通知フェッチ。
+class NotificationBadgeNotifier extends StateNotifier<NotificationBadgeState> {
+  NotificationBadgeNotifier() : super(const NotificationBadgeState());
 
   int _fetchCycleCount = 0;
   static const _checkEveryNCycles = 5; // 5回に1回チェック
@@ -33,6 +51,12 @@ class NotificationBadgeNotifier extends StateNotifier<Set<String>> {
 
   /// 特定アカウントに未読があるか
   bool hasUnreadFor(String accountId) => state.contains(accountId);
+
+  /// 特定アカウントの未読件数
+  int unreadCountFor(String accountId) => state.countFor(accountId);
+
+  /// 全アカウントの未読合計
+  int get totalUnread => state.total;
 
   /// スケジューラのフェッチサイクルごとに呼ばれる
   /// N回に1回だけ実際の通知チェック+フェッチを行う
@@ -73,9 +97,19 @@ class NotificationBadgeNotifier extends StateNotifier<Set<String>> {
       }
     }
 
-    final accountIds = accounts.map((a) => a.id).toList();
+    _recompute(accounts.map((a) => a.id).toList());
+  }
+
+  void _recompute(List<String> accountIds) {
     final newUnread = _cache.unseenAccountIds(accountIds);
-    if (!_setEquals(newUnread, state)) state = newUnread;
+    final newCounts = _cache.unseenCounts(accountIds);
+    if (!_setEquals(newUnread, state.unreadAccountIds) ||
+        !_mapEquals(newCounts, state.unreadCounts)) {
+      state = NotificationBadgeState(
+        unreadAccountIds: newUnread,
+        unreadCounts: newCounts,
+      );
+    }
   }
 
   bool _setEquals(Set<String> a, Set<String> b) {
@@ -86,15 +120,22 @@ class NotificationBadgeNotifier extends StateNotifier<Set<String>> {
     return true;
   }
 
-  /// 通知タブに入った時などに呼ぶ: バッジを即座に消す
-  /// （個別通知の既読化は各タイルの cacheService.markSeen() が担当）
+  bool _mapEquals(Map<String, int> a, Map<String, int> b) {
+    if (a.length != b.length) return false;
+    for (final entry in a.entries) {
+      if (b[entry.key] != entry.value) return false;
+    }
+    return true;
+  }
+
+  /// 通知タブに入った時や個別通知が既読化された時に呼ぶ。
+  /// バッジドット + 件数バッジを即座に再計算する。
   void refreshBadge(List<String> accountIds) {
-    final newUnread = _cache.unseenAccountIds(accountIds);
-    if (!_setEquals(newUnread, state)) state = newUnread;
+    _recompute(accountIds);
   }
 
   /// 通知画面を開いたとき、バッジを消して既読マーク
   Future<void> markSeen() async {
-    state = {};
+    state = const NotificationBadgeState();
   }
 }

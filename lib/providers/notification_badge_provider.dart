@@ -6,10 +6,11 @@ import '../services/account_storage_service.dart';
 import '../services/bluesky_api_service.dart';
 import '../services/notification_cache_service.dart';
 import '../services/x_api_service.dart';
+import 'notification_fetch_status_provider.dart';
 
 final notificationBadgeProvider =
     StateNotifierProvider<NotificationBadgeNotifier, NotificationBadgeState>(
-  (ref) => NotificationBadgeNotifier(),
+  (ref) => NotificationBadgeNotifier(ref),
 );
 
 /// 通知タブが現在アクティブ（bottom nav で選択中）か
@@ -40,7 +41,10 @@ class NotificationBadgeState {
 
 /// 通知バッジの管理 + バックグラウンド通知フェッチ。
 class NotificationBadgeNotifier extends StateNotifier<NotificationBadgeState> {
-  NotificationBadgeNotifier() : super(const NotificationBadgeState());
+  NotificationBadgeNotifier(this._ref)
+      : super(const NotificationBadgeState());
+
+  final Ref _ref;
 
   int _fetchCycleCount = 0;
   static const _checkEveryNCycles = 5; // 5回に1回チェック
@@ -92,8 +96,14 @@ class NotificationBadgeNotifier extends StateNotifier<NotificationBadgeState> {
           _cache.merge(account.id, result.notifications,
               cursor: result.cursor);
         }
+        _ref
+            .read(notificationFetchStatusProvider.notifier)
+            .update(account.id, true);
       } catch (e) {
         debugPrint('[NotifBadge] Error fetching ${account.handle}: $e');
+        _ref
+            .read(notificationFetchStatusProvider.notifier)
+            .update(account.id, false);
       }
     }
 

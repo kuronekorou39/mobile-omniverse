@@ -10,7 +10,9 @@ import '../models/post.dart';
 import '../models/sns_service.dart';
 import '../providers/account_provider.dart';
 import '../providers/activity_log_provider.dart';
+import '../providers/fetch_status_provider.dart';
 import '../providers/notification_badge_provider.dart';
+import '../providers/notification_fetch_status_provider.dart';
 import '../providers/notification_highlight_provider.dart';
 import '../services/bluesky_api_service.dart';
 import '../services/notification_cache_service.dart';
@@ -406,7 +408,7 @@ class _CountBadge extends StatelessWidget {
 }
 
 /// 投稿画面のチップを参考にした、通知タブ用のアカウントチップ。
-class _NotifAccountChip extends StatelessWidget {
+class _NotifAccountChip extends ConsumerWidget {
   const _NotifAccountChip({
     required this.account,
     required this.selected,
@@ -419,11 +421,27 @@ class _NotifAccountChip extends StatelessWidget {
   final int unreadCount;
   final VoidCallback onTap;
 
+  static Color _healthColor(AccountHealth health) {
+    switch (health) {
+      case AccountHealth.good:
+        return Colors.green;
+      case AccountHealth.warning:
+        return Colors.orange;
+      case AccountHealth.error:
+        return Colors.red;
+      case AccountHealth.unknown:
+        return Colors.grey;
+    }
+  }
+
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final primary = Theme.of(context).colorScheme.primary;
     final borderColor =
         selected ? primary : Theme.of(context).dividerColor;
+    final fetchStatus = ref.watch(notificationFetchStatusProvider);
+    final health =
+        fetchStatus[account.id]?.health ?? AccountHealth.unknown;
     return InkWell(
       onTap: onTap,
       borderRadius: BorderRadius.circular(12),
@@ -467,6 +485,22 @@ class _NotifAccountChip extends StatelessWidget {
                     right: -4,
                     bottom: -2,
                     child: SnsBadge(service: account.service, size: 7),
+                  ),
+                  Positioned(
+                    left: -2,
+                    bottom: -2,
+                    child: Container(
+                      width: 10,
+                      height: 10,
+                      decoration: BoxDecoration(
+                        color: _healthColor(health),
+                        shape: BoxShape.circle,
+                        border: Border.all(
+                          color: Theme.of(context).scaffoldBackgroundColor,
+                          width: 1.5,
+                        ),
+                      ),
+                    ),
                   ),
                   if (unreadCount > 0)
                     Positioned(
@@ -680,6 +714,9 @@ class _NotificationListState extends ConsumerState<_NotificationList>
         success: true,
         responseSnippet: result.responseSnippet,
       );
+      ref
+          .read(notificationFetchStatusProvider.notifier)
+          .update(widget.account.id, true);
     } catch (e, st) {
       debugPrint('[Notifications] Error fetching for ${widget.account.handle}: $e');
       debugPrint('[Notifications] Stack: $st');
@@ -692,6 +729,9 @@ class _NotificationListState extends ConsumerState<_NotificationList>
         success: false,
         errorMessage: '$e',
       );
+      ref
+          .read(notificationFetchStatusProvider.notifier)
+          .update(widget.account.id, false);
 
       _isFetching = false;
       if (!mounted) return;
@@ -1254,8 +1294,14 @@ class _UnifiedNotificationListState
             ref.read(accountProvider.notifier)
                 .updateCredentials(account.id, result.updatedCreds!);
           }
+          ref
+              .read(notificationFetchStatusProvider.notifier)
+              .update(account.id, true);
         } catch (e) {
           debugPrint('[UnifiedNotif] Error fetching ${account.handle}: $e');
+          ref
+              .read(notificationFetchStatusProvider.notifier)
+              .update(account.id, false);
         }
       });
 

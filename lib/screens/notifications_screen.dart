@@ -453,7 +453,7 @@ class _NotifAccountChip extends StatelessWidget {
                   ),
                   if (unreadCount > 0)
                     Positioned(
-                      right: -10,
+                      left: -10,
                       top: -6,
                       child: _CountBadge(count: unreadCount),
                     ),
@@ -524,7 +524,7 @@ class _AllChip extends StatelessWidget {
                 ),
                 if (totalUnread > 0)
                   Positioned(
-                    right: -10,
+                    left: -10,
                     top: -6,
                     child: _CountBadge(count: totalUnread),
                   ),

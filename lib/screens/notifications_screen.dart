@@ -11,6 +11,7 @@ import '../models/sns_service.dart';
 import '../providers/account_provider.dart';
 import '../providers/activity_log_provider.dart';
 import '../providers/notification_badge_provider.dart';
+import '../providers/notification_highlight_provider.dart';
 import '../services/bluesky_api_service.dart';
 import '../services/notification_cache_service.dart';
 import '../services/x_api_service.dart';
@@ -241,6 +242,15 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
       _selectedIndex = 0;
     }
 
+    // 通知タブが他タブから戻ってきた瞬間、現在の個別アカウントの未読を一斉ハイライト
+    ref.listen<bool>(notificationTabActiveProvider, (prev, next) {
+      if (next && _selectedIndex > 0 && _selectedIndex <= accounts.length) {
+        ref
+            .read(notificationHighlightProvider.notifier)
+            .activateForAccount(accounts[_selectedIndex - 1].id);
+      }
+    });
+
     if (accounts.isEmpty) {
       return Scaffold(
         appBar: AppBar(
@@ -334,7 +344,14 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
                     account: accounts[i],
                     selected: _selectedIndex == i + 1,
                     unreadCount: badge.countFor(accounts[i].id),
-                    onTap: () => setState(() => _selectedIndex = i + 1),
+                    onTap: () {
+                      setState(() => _selectedIndex = i + 1);
+                      // 開いた瞬間にそのアカウントの未読を一斉ハイライト →
+                      // 10 秒後にまとめて既読化する
+                      ref
+                          .read(notificationHighlightProvider.notifier)
+                          .activateForAccount(accounts[i].id);
+                    },
                   ),
                   if (i < accounts.length - 1) const SizedBox(width: 8),
                 ],
@@ -892,63 +909,9 @@ class _NotificationTile extends ConsumerStatefulWidget {
 }
 
 class _NotificationTileState extends ConsumerState<_NotificationTile> {
-  double _highlightOpacity = 0.0;
-
-  /// このタイルで既にハイライト発火判定を実行済みか
-  /// タブ active 時に 1 度だけ発火し、以降は skip
-  bool _activationAttempted = false;
-
   NotificationItem get notification => widget.notification;
   Account get account => widget.account;
   bool get showRecipient => widget.showRecipient;
-
-  @override
-  void didUpdateWidget(covariant _NotificationTile oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    // 同一 widget が別通知に差し替わった or 同一イベントが timestamp 進行で更新された場合
-    // → 発火判定をリセットして再試行対象にする
-    final idChanged = oldWidget.notification.id != widget.notification.id;
-    final timestampAdvanced =
-        widget.notification.timestamp.isAfter(oldWidget.notification.timestamp);
-    if (idChanged || timestampAdvanced) {
-      _activationAttempted = false;
-    }
-  }
-
-  /// ハイライト発火判定
-  /// - 通知タブが active でない時は skip（バックグラウンド layout 時の誤発火防止）
-  /// - 既見 (seenAt にあり n.timestamp <= seen) なら skip
-  /// - 未見なら markSeen + ハイライト発火
-  /// - 一度試行したら `_activationAttempted=true` で再試行を止める
-  void _tryActivate() {
-    if (!mounted) return;
-    if (_activationAttempted) return;
-    if (!widget.markSeenOnView) return; // 「すべて」タブでは既読化しない
-    final tabActive = ref.read(notificationTabActiveProvider);
-    if (!tabActive) return;
-    _activationAttempted = true;
-
-    final cache = NotificationCacheService.instance;
-    if (!cache.isNew(widget.notification)) return;
-    // ハイライトはすぐ表示するが、markSeen（=件数バッジから減算される）は
-    // ハイライトが消えるタイミングまで遅延させる。これでアカウントチップや
-    // ホーム下部のバッジ件数がハイライト中は維持される。
-    setState(() => _highlightOpacity = 1.0);
-    Future.delayed(const Duration(seconds: 10), () {
-      if (!mounted) return;
-      setState(() => _highlightOpacity = 0.0);
-      cache.markSeen(widget.notification);
-      // バッジ件数の再計算をトリガーする
-      final accountIds = ref
-          .read(accountProvider)
-          .where((a) => a.isEnabled)
-          .map((a) => a.id)
-          .toList();
-      ref
-          .read(notificationBadgeProvider.notifier)
-          .refreshBadge(accountIds);
-    });
-  }
 
   /// システム通知かどうか（actorHandleが自分自身のアカウント）
   bool get _isSystemNotification {
@@ -1012,14 +975,12 @@ class _NotificationTileState extends ConsumerState<_NotificationTile> {
 
   @override
   Widget build(BuildContext context) {
-    // タブ active を watch → false→true 遷移 or 初回 active 時に発火試行
-    // post-frame callback 経由で「layout 後に安全に setState」
-    final tabActive = ref.watch(notificationTabActiveProvider);
-    if (tabActive && !_activationAttempted) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted && !_activationAttempted) _tryActivate();
-      });
-    }
+    // ハイライト判定はグローバル provider に集約。
+    // 「すべて」タブ（markSeenOnView=false）ではハイライトもしない。
+    final highlighted = widget.markSeenOnView &&
+        ref
+            .watch(notificationHighlightProvider)
+            .contains(notification.id);
 
     final timeAgo = _formatTimeAgo(notification.timestamp);
     final actors = notification.additionalActors;
@@ -1028,10 +989,10 @@ class _NotificationTileState extends ConsumerState<_NotificationTile> {
       mainAxisSize: MainAxisSize.min,
       children: [
         AnimatedContainer(
-      duration: const Duration(seconds: 3),
+      duration: const Duration(milliseconds: 800),
       curve: Curves.easeOut,
-      color: _highlightOpacity > 0
-          ? Theme.of(context).colorScheme.primary.withValues(alpha: 0.15 * _highlightOpacity)
+      color: highlighted
+          ? Theme.of(context).colorScheme.primary.withValues(alpha: 0.15)
           : null,
       child: InkWell(
         onTap: () {

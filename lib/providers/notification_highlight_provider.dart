@@ -18,7 +18,7 @@ class NotificationHighlightNotifier extends StateNotifier<Set<String>> {
   NotificationHighlightNotifier(this._ref) : super(const {});
 
   final Ref _ref;
-  static const _holdDuration = Duration(seconds: 10);
+  static const _holdDuration = Duration(seconds: 5);
 
   /// アカウント単位の遅延既読化タイマー（連打されてもキャンセル＆上書き）
   final Map<String, Timer> _timers = {};

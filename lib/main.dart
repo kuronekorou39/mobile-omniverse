@@ -60,23 +60,31 @@ class OmniVerseApp extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final settings = ref.watch(settingsProvider);
 
-    // Material 3 はデフォルトで AppBar に scrolled-under の primary tint が乗る。
-    // 一覧をスクロールすると上部の AppBar 全体が紫っぽく染まって、通知ハイライトと
-    // 紛らわしいので無効化する。
+    // Material 3 はデフォルトで AppBar / Card / BottomAppBar 等に primary 由来の
+    // surface tint が乗る。スクロール時に AppBar 全体が紫っぽく染まって、通知
+    // ハイライトと紛らわしいので、ColorScheme.surfaceTint 自体を透明にして
+    // tint を全面的に無効化する。Material 3 の elevation overlay は使わない方針。
     const appBarTheme = AppBarTheme(
       scrolledUnderElevation: 0,
       surfaceTintColor: Colors.transparent,
+      elevation: 0,
     );
-    final baseLight = ThemeData(
-      colorSchemeSeed: const Color(0xFF6750A4),
-      useMaterial3: true,
+    final lightScheme = ColorScheme.fromSeed(
+      seedColor: const Color(0xFF6750A4),
       brightness: Brightness.light,
+    ).copyWith(surfaceTint: Colors.transparent);
+    final darkScheme = ColorScheme.fromSeed(
+      seedColor: const Color(0xFF6750A4),
+      brightness: Brightness.dark,
+    ).copyWith(surfaceTint: Colors.transparent);
+    final baseLight = ThemeData(
+      colorScheme: lightScheme,
+      useMaterial3: true,
       appBarTheme: appBarTheme,
     );
     final baseDark = ThemeData(
-      colorSchemeSeed: const Color(0xFF6750A4),
+      colorScheme: darkScheme,
       useMaterial3: true,
-      brightness: Brightness.dark,
       appBarTheme: appBarTheme,
     );
 

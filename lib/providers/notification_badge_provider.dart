@@ -118,12 +118,16 @@ class NotificationBadgeNotifier extends StateNotifier<NotificationBadgeState> {
       }
     }
 
-    _recompute(accounts.map((a) => a.id).toList());
+    _recomputeForAccounts();
   }
 
-  void _recompute(List<String> accountIds) {
-    final newUnread = _cache.unseenAccountIds(accountIds);
-    final newCounts = _cache.unseenCounts(accountIds);
+  void _recomputeForAccounts() {
+    final accounts = AccountStorageService.instance.accounts
+        .where((a) => a.isEnabled)
+        .map((a) => (id: a.id, handle: a.handle))
+        .toList();
+    final newUnread = _cache.unseenAccountIdsExcludingSystem(accounts);
+    final newCounts = _cache.unseenCountsExcludingSystem(accounts);
     if (!_setEquals(newUnread, state.unreadAccountIds) ||
         !_mapEquals(newCounts, state.unreadCounts)) {
       state = NotificationBadgeState(
@@ -151,8 +155,9 @@ class NotificationBadgeNotifier extends StateNotifier<NotificationBadgeState> {
 
   /// 通知タブに入った時や個別通知が既読化された時に呼ぶ。
   /// バッジドット + 件数バッジを即座に再計算する。
-  void refreshBadge(List<String> accountIds) {
-    _recompute(accountIds);
+  /// 引数 accountIds は互換のため受けるが、内部では現在の有効アカウントを参照する。
+  void refreshBadge([List<String>? accountIds]) {
+    _recomputeForAccounts();
   }
 
   /// バッジ state を即座にクリアする緊急用フック。

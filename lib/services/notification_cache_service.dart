@@ -234,6 +234,55 @@ class NotificationCacheService {
     };
   }
 
+  // ─── システム通知（鈴マーク = actorHandle が空 or 自分自身）を除外する版 ───
+
+  static String _normalizeHandle(String handle) =>
+      handle.replaceFirst('@', '').toLowerCase();
+
+  bool _isSystemNotification(NotificationItem n, String ownHandle) {
+    final actor = _normalizeHandle(n.actorHandle);
+    return actor.isEmpty || actor == ownHandle;
+  }
+
+  /// バッジ件数用の未見判定。システム通知（鈴マーク）はカウント対象外。
+  int unseenCountExcludingSystem(String accountId, String ownHandle) {
+    final own = _normalizeHandle(ownHandle);
+    var count = 0;
+    for (final n in get(accountId)) {
+      if (!isNew(n)) continue;
+      if (_isSystemNotification(n, own)) continue;
+      count++;
+    }
+    return count;
+  }
+
+  bool hasUnseenExcludingSystem(String accountId, String ownHandle) {
+    final own = _normalizeHandle(ownHandle);
+    for (final n in get(accountId)) {
+      if (!isNew(n)) continue;
+      if (_isSystemNotification(n, own)) continue;
+      return true;
+    }
+    return false;
+  }
+
+  /// バッジ表示用の集計。Account を渡すことで own handle を考慮できる。
+  Set<String> unseenAccountIdsExcludingSystem(
+      List<({String id, String handle})> accounts) {
+    return {
+      for (final a in accounts)
+        if (hasUnseenExcludingSystem(a.id, a.handle)) a.id,
+    };
+  }
+
+  Map<String, int> unseenCountsExcludingSystem(
+      List<({String id, String handle})> accounts) {
+    return {
+      for (final a in accounts)
+        a.id: unseenCountExcludingSystem(a.id, a.handle),
+    };
+  }
+
   // ──────────── 永続化 ────────────
 
   /// 起動時に呼ぶ: 保存された seenAt を復元

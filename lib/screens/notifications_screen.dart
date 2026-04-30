@@ -246,15 +246,11 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
     if (_selectedIndex > accounts.length) {
       _selectedIndex = 0;
     }
-
-    // 通知タブが他タブから戻ってきた瞬間、現在の個別アカウントの未読を一斉ハイライト
-    ref.listen<bool>(notificationTabActiveProvider, (prev, next) {
-      if (next && _selectedIndex > 0 && _selectedIndex <= accounts.length) {
-        ref
-            .read(notificationHighlightProvider.notifier)
-            .activateForAccount(accounts[_selectedIndex - 1].id);
-      }
-    });
+    // 通知タブが再アクティブ化されたときの「自動再 activate」は意図的にしない。
+    // 再 activate するとバックグラウンドで増えた未読まで自動でハイライトされて
+    // しまい、「上のハイライトが消えた後スクロールしたら下が光る」体験になる
+    // ため。ハイライトはユーザーが明示的にアカウントチップをタップしたときだけ
+    // 発火する（onTap で activateForAccount を呼ぶ）。
 
     if (accounts.isEmpty) {
       return Scaffold(

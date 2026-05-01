@@ -26,14 +26,17 @@ class NotificationHighlightNotifier extends StateNotifier<Set<String>> {
   /// アカウント単位の対象通知（10 秒経過後にまとめて markSeen するため保持）
   final Map<String, List<String>> _pendingByAccount = {};
 
-  /// 指定アカウントの未読通知をハイライトに登録 → 10 秒後にまとめて既読化。
+  /// 指定アカウントの未読通知をハイライトに登録 → 一定秒後にまとめて既読化。
   /// 既に同じアカウントのタイマーが走っている場合はリセットして上書きする。
+  /// システム通知（鈴マーク）はバッジ件数だけでなくハイライトからも除外する。
   void activateForAccount(String accountId) {
     final cache = NotificationCacheService.instance;
-    final unread = [
-      for (final n in cache.get(accountId))
-        if (cache.isNew(n)) n,
-    ];
+    final account = AccountStorageService.instance.accounts
+        .where((a) => a.id == accountId)
+        .firstOrNull;
+    if (account == null) return;
+    final unread =
+        cache.unseenItemsExcludingSystem(accountId, account.handle);
     if (unread.isEmpty) return;
 
     final ids = unread.map((n) => n.id).toSet();

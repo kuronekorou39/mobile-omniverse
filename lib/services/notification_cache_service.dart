@@ -249,6 +249,16 @@ class NotificationCacheService {
     return actor.isEmpty || actor == ownHandle;
   }
 
+  /// 未見かつシステム通知でない通知一覧（ハイライト発火対象に使う）。
+  List<NotificationItem> unseenItemsExcludingSystem(
+      String accountId, String ownHandle) {
+    final own = _normalizeHandle(ownHandle);
+    return [
+      for (final n in get(accountId))
+        if (isNew(n) && !_isSystemNotification(n, own)) n,
+    ];
+  }
+
   /// バッジ件数用の未見判定。システム通知（鈴マーク）はカウント対象外。
   int unseenCountExcludingSystem(String accountId, String ownHandle) {
     final own = _normalizeHandle(ownHandle);

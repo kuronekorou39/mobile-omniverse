@@ -239,7 +239,12 @@ class NotificationCacheService {
   static String _normalizeHandle(String handle) =>
       handle.replaceFirst('@', '').toLowerCase();
 
+  /// 「システム通知」=ユーザーが「鈴マーク」と呼んでいる、件数に含めたくない通知。
+  /// 判定基準：
+  ///   - NotificationType.unknown（分類できない通知 = 鈴マークアイコン）
+  ///   - actorHandle が空、またはオーナー自身のハンドル（自分宛の自動通知）
   bool _isSystemNotification(NotificationItem n, String ownHandle) {
+    if (n.type == NotificationType.unknown) return true;
     final actor = _normalizeHandle(n.actorHandle);
     return actor.isEmpty || actor == ownHandle;
   }

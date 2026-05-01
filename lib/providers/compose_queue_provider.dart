@@ -12,6 +12,7 @@ import '../services/bluesky_api_service.dart';
 import '../services/draft_service.dart';
 import '../services/image_resize_service.dart';
 import '../services/x_webview_action_service.dart';
+import 'account_provider.dart';
 import 'activity_log_provider.dart';
 import 'draft_list_provider.dart';
 
@@ -322,7 +323,10 @@ class ComposeQueueNotifier extends StateNotifier<ComposeQueueState> {
     }
 
     // 画像があればリサイズ → uploadBlob → embed.images の形に組み立てる
-    // GIF はアニメーションと色を保持するため再エンコードしない（そのまま送信）
+    // GIF はアニメーションと色を保持するため再エンコードしない（そのまま送信）。
+    // uploadBlob が refresh で新しい creds を返してきたら、後続の uploadBlob /
+    // createPost にもその creds を使う + accountProvider にも反映する。
+    BlueskyCredentials creds = job.account.blueskyCredentials;
     List<Map<String, dynamic>>? imageEmbeds;
     if (job.images.isNotEmpty) {
       imageEmbeds = [];
@@ -341,12 +345,18 @@ class ComposeQueueNotifier extends StateNotifier<ComposeQueueState> {
           );
           mimeType = 'image/jpeg';
         }
-        final blob = await BlueskyApiService.instance.uploadBlob(
-          job.account.blueskyCredentials,
+        final result = await BlueskyApiService.instance.uploadBlob(
+          creds,
           finalBytes,
           mimeType: mimeType,
         );
-        if (blob == null) {
+        if (result.updatedCreds != null) {
+          creds = result.updatedCreds!;
+          await _ref
+              .read(accountProvider.notifier)
+              .updateCredentials(job.account.id, creds);
+        }
+        if (result.blob == null) {
           _updateJob(job.id,
               status: PostJobStatus.failure,
               errorMessage: 'Bluesky 画像アップロード失敗');
@@ -361,12 +371,12 @@ class ComposeQueueNotifier extends StateNotifier<ComposeQueueState> {
               );
           return;
         }
-        imageEmbeds.add({'alt': '', 'image': blob});
+        imageEmbeds.add({'alt': '', 'image': result.blob});
       }
     }
 
     final ok = await BlueskyApiService.instance.createPost(
-      job.account.blueskyCredentials,
+      creds,
       job.text,
       quoteUri: quoteUri,
       quoteCid: quoteCid,

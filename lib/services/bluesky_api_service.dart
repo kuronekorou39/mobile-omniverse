@@ -359,13 +359,40 @@ class BlueskyApiService {
     return response.statusCode == 200;
   }
 
-  /// バイナリを Bluesky の blob としてアップロードし、blob 参照（embed に組み込める形）を返す。
-  /// 画像 1 枚ごとに 1 回呼ぶ。失敗時は null。
-  Future<Map<String, dynamic>?> uploadBlob(
+  /// バイナリを Bluesky の blob としてアップロードし、blob 参照を返す。
+  /// 画像 1 枚ごとに 1 回呼ぶ。失敗時は blob が null。
+  /// 401 が返ってきた場合は refreshSession で再試行し、成功時は updatedCreds を
+  /// 返す（呼び出し側はこれを accountProvider に反映 + 後続の createPost に使う）。
+  Future<({Map<String, dynamic>? blob, BlueskyCredentials? updatedCreds})>
+      uploadBlob(
     BlueskyCredentials creds,
     Uint8List bytes, {
     required String mimeType,
   }) async {
+    final first = await _doUploadBlob(creds, bytes, mimeType);
+    if (first.statusCode == 200 && first.blob != null) {
+      return (blob: first.blob, updatedCreds: null);
+    }
+    // 401 はトークン期限切れの典型。400 系も refresh で復活するケースがあるため試す。
+    if (first.statusCode == 401 || first.statusCode == 400) {
+      try {
+        final newCreds = await refreshSession(creds);
+        final retry = await _doUploadBlob(newCreds, bytes, mimeType);
+        if (retry.statusCode == 200 && retry.blob != null) {
+          return (blob: retry.blob, updatedCreds: newCreds);
+        }
+      } catch (e) {
+        debugPrint('[BlueskyApi] uploadBlob refresh-retry failed: $e');
+      }
+    }
+    return (blob: null, updatedCreds: null);
+  }
+
+  Future<({Map<String, dynamic>? blob, int statusCode})> _doUploadBlob(
+    BlueskyCredentials creds,
+    Uint8List bytes,
+    String mimeType,
+  ) async {
     final uri = Uri.parse('${creds.pdsUrl}/xrpc/com.atproto.repo.uploadBlob');
     final hdrs = {
       'Authorization': 'Bearer ${creds.accessJwt}',
@@ -378,16 +405,18 @@ class BlueskyApiService {
         response, sw);
     if (response.statusCode != 200) {
       debugPrint('[BlueskyApi] uploadBlob failed: ${response.statusCode}');
-      return null;
+      return (blob: null, statusCode: response.statusCode);
     }
     try {
       final body = json.decode(response.body) as Map<String, dynamic>;
       final blob = body['blob'];
-      if (blob is Map<String, dynamic>) return blob;
+      if (blob is Map<String, dynamic>) {
+        return (blob: blob, statusCode: 200);
+      }
     } catch (e) {
       debugPrint('[BlueskyApi] uploadBlob decode failed: $e');
     }
-    return null;
+    return (blob: null, statusCode: 200);
   }
 
   /// ユーザープロフィールを取得

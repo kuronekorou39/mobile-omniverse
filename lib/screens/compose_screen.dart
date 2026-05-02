@@ -207,8 +207,15 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
     final remaining = _maxImages - _images.length;
     if (remaining <= 0) return;
     try {
+      // iOS だけ写真ピッカーの段階で縮小する。iPad/iPhone は app メモリ上限が
+      // 厳しく、フルサイズ写真（4000x3000 など）を Dart 側で decode すると
+      // RGBA 展開でメモリを使い切ってネイティブクラッシュすることがある。
+      // Android はメモリに余裕があり、後段のリサイズ処理でも安全に処理できる
+      // ためフルサイズのまま受け取る（既存挙動）。
       final picked = await _picker.pickMultiImage(
-        imageQuality: 100,
+        imageQuality: Platform.isIOS ? 85 : 100,
+        maxWidth: Platform.isIOS ? 2400 : null,
+        maxHeight: Platform.isIOS ? 2400 : null,
         limit: remaining,
       );
       if (picked.isEmpty) return;

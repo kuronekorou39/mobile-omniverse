@@ -41,6 +41,13 @@ class XWebViewActionService {
         javaScriptEnabled: true,
         userAgent: platformUserAgent,
         domStorageEnabled: true,
+        // iPad の WKWebView はデフォルトで preferredContentMode が
+        // recommended → desktop 扱いになり、X が desktop 版 UI を返す。
+        // これだと tweetTextarea_0 などの mobile 用セレクタと噛み合わなくなり、
+        // テキスト入力・画像注入・完了検知が全て失敗する。明示的に MOBILE を
+        // 指定して iPhone と同じ DOM が出るようにする。iPhone/Android は
+        // 影響なし（元々 mobile UI が出ている）。
+        preferredContentMode: UserPreferredContentMode.MOBILE,
       ),
       onLoadStop: (controller, url) {
         debugPrint('[XWebView] onLoadStop: $url');

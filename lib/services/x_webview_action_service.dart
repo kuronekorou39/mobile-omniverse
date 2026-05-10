@@ -217,13 +217,49 @@ class XWebViewActionService {
       );
 
       // 2. エディタが表示されるまで待つ
+      // X の DOM は mobile / desktop / iPad で testid が微妙に違うことがある
+      // ため、複数のセレクタを OR で試す。タイムアウトも長めに 20 秒。
+      const editorSelectors =
+          '[data-testid="tweetTextarea_0"],'
+          '[data-testid="tweetTextarea_0RichTextInputContainer"],'
+          '[role="textbox"][contenteditable="true"],'
+          'div[contenteditable="true"][data-text="true"]';
       final editorReady = await _waitForElement(
-        '[data-testid="tweetTextarea_0"], [role="textbox"][contenteditable="true"]',
-        timeoutSeconds: 10,
+        editorSelectors,
+        timeoutSeconds: 20,
       );
       if (!editorReady) {
         sw.stop();
         const msg = 'Editor not found on compose page';
+        // 原因特定用に DOM の概要を debug log に残す（個人情報漏れを避けるため
+        // 最初の 1500 文字だけ、アクセス可能なら現在 URL も）
+        try {
+          final dump = await _controller!.evaluateJavascript(source: '''
+            (function() {
+              try {
+                var url = window.location.href;
+                var bodyHtml = document.body ? document.body.innerHTML.substring(0, 1500) : '';
+                var editables = [];
+                document.querySelectorAll('[contenteditable="true"]').forEach(function(el) {
+                  editables.push({
+                    tag: el.tagName,
+                    testid: el.getAttribute('data-testid') || '',
+                    role: el.getAttribute('role') || '',
+                    aria: el.getAttribute('aria-label') || '',
+                  });
+                });
+                return JSON.stringify({url: url, editables: editables, bodyHead: bodyHtml});
+              } catch(e) {
+                return 'dump_error: ' + e.toString();
+              }
+            })()
+          ''');
+          DebugLogService.instance.log('XWebView',
+              'createTweet FAIL ($msg) DOM dump: ${dump.toString().substring(0, dump.toString().length.clamp(0, 4000))}');
+        } catch (e) {
+          DebugLogService.instance.log('XWebView',
+              'createTweet FAIL ($msg) dump failed: $e');
+        }
         debugPrint('[XWebView] createTweet: $msg');
         DebugLogService.instance.log('XWebView', 'createTweet FAIL: $msg (${sw.elapsedMilliseconds}ms)');
         return (success: false, statusCode: 0, body: msg);

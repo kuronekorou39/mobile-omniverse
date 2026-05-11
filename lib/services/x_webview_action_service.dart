@@ -2,12 +2,14 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:typed_data';
 
+import 'package:cross_file/cross_file.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import '../utils/platform_ua.dart';
 
 import '../models/account.dart';
 import 'debug_log_service.dart';
+import 'image_resize_service.dart';
 
 /// X の投稿を、WebView 上で公式の投稿画面 (x.com/compose/post) を
 /// DOM 操作して実行するサービス。
@@ -184,13 +186,15 @@ class XWebViewActionService {
 
   /// x.com/compose/post をDOM操作して投稿する
   /// 公式のJSが x-client-transaction-id 等を付与するため bot 検知を回避できる
-  /// images が指定された場合は、エディタにテキストを入れた後に input[type=file]
-  /// にプログラム的に流し込んでアップロードを開始させる。
+  /// imageFiles が指定された場合は、エディタにテキストを入れた後に
+  /// input[type=file] にプログラム的に流し込んでアップロードを開始させる。
+  /// 画像は XFile のまま受け取り、_attachImageFiles 内で 1 枚ずつ on-demand に
+  /// 読み込む（iPad の WKWebView を OOM kill しないため）。
   Future<({bool success, int statusCode, String body})> createTweet(
       XCredentials creds, String text,
       {String? attachmentUrl,
       String? inReplyToId,
-      List<({Uint8List bytes, String mime, String name})>? images}) async {
+      List<XFile>? imageFiles}) async {
     if (!_isReady || _currentAuthToken != creds.authToken) {
       await init(creds);
     }
@@ -315,8 +319,8 @@ class XWebViewActionService {
       await Future.delayed(const Duration(milliseconds: 500));
 
       // 3.5 画像があれば input[type=file] に流し込んでアップロード完了を待つ
-      if (images != null && images.isNotEmpty) {
-        final attachOk = await _attachImages(images);
+      if (imageFiles != null && imageFiles.isNotEmpty) {
+        final attachOk = await _attachImageFiles(imageFiles);
         if (!attachOk) {
           sw.stop();
           const msg = 'Failed to attach images (input not found or upload failed)';
@@ -325,7 +329,7 @@ class XWebViewActionService {
           return (success: false, statusCode: 0, body: msg);
         }
         final uploaded = await _waitForImageUpload(
-            images.length, timeoutSeconds: 60);
+            imageFiles.length, timeoutSeconds: 60);
         if (!uploaded) {
           sw.stop();
           const msg = 'Image upload did not complete';
@@ -359,7 +363,8 @@ class XWebViewActionService {
       // 5. 投稿完了を待つ（投稿画面が閉じる or エディタが空になる）
       // 画像/GIF 投稿時は X 側の処理が長引くため、メディアありで 30s、それ以外 15s。
       final posted = await _waitForPostCompletion(
-          timeoutSeconds: (images != null && images.isNotEmpty) ? 30 : 15);
+          timeoutSeconds:
+              (imageFiles != null && imageFiles.isNotEmpty) ? 30 : 15);
       sw.stop();
 
       await _saveCookies(creds.authToken);
@@ -402,22 +407,43 @@ class XWebViewActionService {
     }
   }
 
-  /// 画像を WebView 内の input[type=file] に注入してアップロードを開始させる。
-  /// 1 回の bridge 呼び出しで複数画像の base64 をまとめて渡すと、iPad の
-  /// ヘッドレス WKWebView がメモリ kill されることがあるため、画像を
-  /// 1 枚ずつ別呼び出しで送信し、最後に input.files にセットして change を
-  /// 発火する形に分割している。
-  Future<bool> _attachImages(
-      List<({Uint8List bytes, String mime, String name})> images) async {
+  /// XFile を受け取って、1 枚ずつ on-demand に読み込み→リサイズ→base64→注入する。
+  /// compose URL ロード前に全画像のバッファを main isolate に持つと、iPad の
+  /// 親 app プロセス＋ WKWebView 別プロセスの両方が memory pressure を受けて
+  /// OOM kill されるため、ここで初めてバイナリ展開する。
+  /// 各反復のローカル変数は反復終了時点で参照を失い GC 対象になる。
+  Future<bool> _attachImageFiles(List<XFile> files) async {
     try {
       // 1. 空の DataTransfer をグローバルに用意
       await _controller!.evaluateJavascript(source: r'''
         try { window.__omniverseDT = new DataTransfer(); } catch(e) {}
       ''');
 
-      // 2. 画像 1 枚ずつ追加（bridge 負荷を分散）
-      for (var i = 0; i < images.length; i++) {
-        final img = images[i];
+      // 2. 画像 1 枚ずつ：読み込み → リサイズ → base64 → bridge 送信
+      for (var i = 0; i < files.length; i++) {
+        final xfile = files[i];
+        Uint8List raw = await xfile.readAsBytes();
+        final isGif = ImageResizeService.isGifBytes(raw);
+        Uint8List bytes;
+        final String mime;
+        final String name;
+        if (isGif) {
+          bytes = raw;
+          mime = 'image/gif';
+          name = 'image_$i.gif';
+        } else {
+          bytes = await ImageResizeService.instance.resizeIfNeeded(
+            raw,
+            maxBytes: ImageResizeService.xMaxBytes,
+          );
+          mime = 'image/jpeg';
+          name = 'image_$i.jpg';
+        }
+        // 元バイト列の参照を明示的に破棄（GC 可能に）
+        raw = Uint8List(0);
+        final b64 = base64Encode(bytes);
+        bytes = Uint8List(0);
+
         final r = await _controller!.callAsyncJavaScript(
           functionBody: r'''
             try {
@@ -433,16 +459,12 @@ class XWebViewActionService {
               return { ok: false, message: String(e) };
             }
           ''',
-          arguments: {
-            'b64': base64Encode(img.bytes),
-            'mime': img.mime,
-            'name': img.name,
-          },
+          arguments: {'b64': b64, 'mime': mime, 'name': name},
         );
         final v = r?.value;
         if (v is! Map || v['ok'] != true) {
           DebugLogService.instance.log('XWebView',
-              '_attachImages add #$i failed: $v error=${r?.error}');
+              '_attachImageFiles add #$i failed: $v error=${r?.error}');
           return false;
         }
       }
@@ -470,11 +492,11 @@ class XWebViewActionService {
       );
       final v = finalRes?.value;
       DebugLogService.instance.log('XWebView',
-          '_attachImages commit: $v error=${finalRes?.error}');
+          '_attachImageFiles commit: $v error=${finalRes?.error}');
       return v is Map && v['ok'] == true;
     } catch (e) {
-      debugPrint('[XWebView] _attachImages error: $e');
-      DebugLogService.instance.log('XWebView', '_attachImages ERROR: $e');
+      debugPrint('[XWebView] _attachImageFiles error: $e');
+      DebugLogService.instance.log('XWebView', '_attachImageFiles ERROR: $e');
       return false;
     }
   }

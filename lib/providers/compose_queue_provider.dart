@@ -250,37 +250,16 @@ class ComposeQueueNotifier extends StateNotifier<ComposeQueueState> {
       inReplyToId = job.inReplyToPost!.id.replaceFirst('x_', '');
     }
 
-    // 画像があれば各画像を読み込んでリサイズして渡す（X 上限 5MB/枚、フリー前提）。
-    // GIF はそのまま送信（アニメーション・色を保持）。
-    List<({Uint8List bytes, String mime, String name})>? xImages;
-    if (job.images.isNotEmpty) {
-      xImages = [];
-      for (var i = 0; i < job.images.length; i++) {
-        final xfile = job.images[i];
-        final raw = await xfile.readAsBytes();
-        final isGif = ImageResizeService.isGifBytes(raw);
-        if (isGif) {
-          xImages.add((bytes: raw, mime: 'image/gif', name: 'image_$i.gif'));
-        } else {
-          final resized = await ImageResizeService.instance.resizeIfNeeded(
-            raw,
-            maxBytes: ImageResizeService.xMaxBytes,
-          );
-          xImages.add((
-            bytes: resized,
-            mime: 'image/jpeg',
-            name: 'image_$i.jpg',
-          ));
-        }
-      }
-    }
-
+    // 画像はここで一切バッファ化しない。XFile のまま渡して、
+    // XWebViewActionService 側で「compose URL ロード完了後」に 1 枚ずつ
+    // on-demand に読み込ませる。事前にバイト列を持つと、iPad の親 app プロセス
+    // と WKWebView 別プロセスの両方が memory pressure を受けて OOM kill される。
     final result = await XWebViewActionService.instance.createTweet(
       job.account.xCredentials,
       job.text,
       attachmentUrl: attachmentUrl,
       inReplyToId: inReplyToId,
-      images: xImages,
+      imageFiles: job.images.isNotEmpty ? job.images : null,
     );
     _updateJob(job.id,
         status: result.success ? PostJobStatus.success : PostJobStatus.failure,

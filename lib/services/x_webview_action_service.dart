@@ -41,13 +41,11 @@ class XWebViewActionService {
         javaScriptEnabled: true,
         userAgent: platformUserAgent,
         domStorageEnabled: true,
-        // iPad の WKWebView はデフォルトで preferredContentMode が
-        // recommended → desktop 扱いになり、X が desktop 版 UI を返す。
-        // これだと tweetTextarea_0 などの mobile 用セレクタと噛み合わなくなり、
-        // テキスト入力・画像注入・完了検知が全て失敗する。明示的に MOBILE を
-        // 指定して iPhone と同じ DOM が出るようにする。iPhone/Android は
-        // 影響なし（元々 mobile UI が出ている）。
-        preferredContentMode: UserPreferredContentMode.MOBILE,
+        // v1.13.95 で preferredContentMode: MOBILE を入れたが、iPad では
+        // iPhone UA × iPad viewport の不整合を X が bot 判定し、noscript
+        // エラーページが返ってくるようになった（v1.13.94 以前は問題なく
+        // 動いていた）。MOBILE 強制は撤去して、recommended の挙動（iPad は
+        // desktop UI、iPhone は mobile UI）に戻す。
       ),
       onConsoleMessage: (controller, msg) {
         // X 側の JS が CSP / Cookie / network 失敗で死んでいる場合の手がかり

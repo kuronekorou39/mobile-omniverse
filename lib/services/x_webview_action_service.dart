@@ -49,6 +49,23 @@ class XWebViewActionService {
         // 影響なし（元々 mobile UI が出ている）。
         preferredContentMode: UserPreferredContentMode.MOBILE,
       ),
+      onConsoleMessage: (controller, msg) {
+        // X 側の JS が CSP / Cookie / network 失敗で死んでいる場合の手がかり
+        if (msg.messageLevel == ConsoleMessageLevel.ERROR ||
+            msg.messageLevel == ConsoleMessageLevel.WARNING) {
+          DebugLogService.instance.log(
+              'XWebView',
+              'console[${msg.messageLevel}]: '
+                  '${msg.message.length > 300 ? msg.message.substring(0, 300) : msg.message}');
+        }
+      },
+      onReceivedHttpError: (controller, request, response) {
+        if (response.statusCode != null && response.statusCode! >= 400) {
+          DebugLogService.instance.log(
+              'XWebView',
+              'http error ${response.statusCode} for ${request.url}');
+        }
+      },
       onLoadStop: (controller, url) {
         debugPrint('[XWebView] onLoadStop: $url');
         _controller = controller;
@@ -202,6 +219,24 @@ class XWebViewActionService {
 
       debugPrint('[XWebView] createTweet: loading $composeUrl');
 
+      // 診断: 現時点で WKWebView に届いている Cookie の状況。
+      // 期待: ct0=..., auth_token=... が含まれること。
+      try {
+        final cookieDump = await _controller!.evaluateJavascript(
+            source: 'document.cookie');
+        final cookieStr = cookieDump?.toString() ?? '';
+        final masked = cookieStr
+            .replaceAllMapped(RegExp(r'(auth_token=)([^;]+)'),
+                (m) => '${m.group(1)}<len=${m.group(2)?.length ?? 0}>')
+            .replaceAllMapped(RegExp(r'(ct0=)([^;]+)'),
+                (m) => '${m.group(1)}<len=${m.group(2)?.length ?? 0}>');
+        DebugLogService.instance.log('XWebView',
+            'pre-compose document.cookie: ${masked.length > 600 ? masked.substring(0, 600) : masked}');
+      } catch (e) {
+        DebugLogService.instance.log(
+            'XWebView', 'pre-compose cookie dump failed: $e');
+      }
+
       _isReady = false;
       _readyCompleter = Completer<void>();
       await _controller!.loadUrl(
@@ -238,7 +273,8 @@ class XWebViewActionService {
             (function() {
               try {
                 var url = window.location.href;
-                var bodyHtml = document.body ? document.body.innerHTML.substring(0, 1500) : '';
+                var title = document.title || '';
+                var bodyHtml = document.body ? document.body.innerHTML.substring(0, 5000) : '';
                 var editables = [];
                 document.querySelectorAll('[contenteditable="true"]').forEach(function(el) {
                   editables.push({
@@ -248,14 +284,15 @@ class XWebViewActionService {
                     aria: el.getAttribute('aria-label') || '',
                   });
                 });
-                return JSON.stringify({url: url, editables: editables, bodyHead: bodyHtml});
+                var hasReactRoot = !!document.getElementById('react-root');
+                return JSON.stringify({url: url, title: title, hasReactRoot: hasReactRoot, editables: editables, bodyHead: bodyHtml});
               } catch(e) {
                 return 'dump_error: ' + e.toString();
               }
             })()
           ''');
           DebugLogService.instance.log('XWebView',
-              'createTweet FAIL ($msg) DOM dump: ${dump.toString().substring(0, dump.toString().length.clamp(0, 4000))}');
+              'createTweet FAIL ($msg) DOM dump: ${dump.toString().substring(0, dump.toString().length.clamp(0, 8000))}');
         } catch (e) {
           DebugLogService.instance.log('XWebView',
               'createTweet FAIL ($msg) dump failed: $e');

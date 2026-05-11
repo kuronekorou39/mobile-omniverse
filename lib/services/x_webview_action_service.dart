@@ -403,57 +403,75 @@ class XWebViewActionService {
   }
 
   /// 画像を WebView 内の input[type=file] に注入してアップロードを開始させる。
-  /// React の controlled input でも反応するよう、ネイティブ setter 経由で files を
-  /// 書き換えて change イベントを発火させる。
+  /// 1 回の bridge 呼び出しで複数画像の base64 をまとめて渡すと、iPad の
+  /// ヘッドレス WKWebView がメモリ kill されることがあるため、画像を
+  /// 1 枚ずつ別呼び出しで送信し、最後に input.files にセットして change を
+  /// 発火する形に分割している。
   Future<bool> _attachImages(
       List<({Uint8List bytes, String mime, String name})> images) async {
-    final filesArg = [
-      for (var i = 0; i < images.length; i++)
-        {
-          'b64': base64Encode(images[i].bytes),
-          'mime': images[i].mime,
-          'name': images[i].name,
-        },
-    ];
-
     try {
-      final result = await _controller!.callAsyncJavaScript(
-        functionBody: r'''
-          try {
-            var dt = new DataTransfer();
-            for (var i = 0; i < files.length; i++) {
-              var f = files[i];
-              var bin = atob(f.b64);
+      // 1. 空の DataTransfer をグローバルに用意
+      await _controller!.evaluateJavascript(source: r'''
+        try { window.__omniverseDT = new DataTransfer(); } catch(e) {}
+      ''');
+
+      // 2. 画像 1 枚ずつ追加（bridge 負荷を分散）
+      for (var i = 0; i < images.length; i++) {
+        final img = images[i];
+        final r = await _controller!.callAsyncJavaScript(
+          functionBody: r'''
+            try {
+              var bin = atob(b64);
               var arr = new Uint8Array(bin.length);
               for (var j = 0; j < bin.length; j++) arr[j] = bin.charCodeAt(j);
-              var blob = new Blob([arr], { type: f.mime });
-              var file = new File([blob], f.name, { type: f.mime });
-              dt.items.add(file);
+              var blob = new Blob([arr], { type: mime });
+              var file = new File([blob], name, { type: mime });
+              if (!window.__omniverseDT) window.__omniverseDT = new DataTransfer();
+              window.__omniverseDT.items.add(file);
+              return { ok: true, count: window.__omniverseDT.files.length };
+            } catch (e) {
+              return { ok: false, message: String(e) };
             }
-            // input[type=file] を見つける（X が使う代表的セレクタを順に試す）
+          ''',
+          arguments: {
+            'b64': base64Encode(img.bytes),
+            'mime': img.mime,
+            'name': img.name,
+          },
+        );
+        final v = r?.value;
+        if (v is! Map || v['ok'] != true) {
+          DebugLogService.instance.log('XWebView',
+              '_attachImages add #$i failed: $v error=${r?.error}');
+          return false;
+        }
+      }
+
+      // 3. input にまとめてセット
+      final finalRes = await _controller!.callAsyncJavaScript(
+        functionBody: r'''
+          try {
             var input = document.querySelector('input[type=file][data-testid="fileInput"]')
                      || document.querySelector('input[data-testid="fileInput"]')
                      || document.querySelector('input[type=file][accept*="image"]')
                      || document.querySelector('input[type=file]');
             if (!input) return { ok: false, reason: 'input_not_found' };
-            // React 経由でも動くようネイティブ setter を呼ぶ
             var setter = Object.getOwnPropertyDescriptor(
               window.HTMLInputElement.prototype, 'files').set;
-            setter.call(input, dt.files);
+            setter.call(input, window.__omniverseDT.files);
             input.dispatchEvent(new Event('change', { bubbles: true }));
-            return { ok: true, count: dt.files.length };
+            var count = input.files.length;
+            try { delete window.__omniverseDT; } catch(e) {}
+            return { ok: true, count: count };
           } catch (e) {
             return { ok: false, reason: 'js_error', message: String(e) };
           }
         ''',
-        arguments: {'files': filesArg},
       );
-      final value = result?.value;
-      debugPrint('[XWebView] _attachImages result: $value error=${result?.error}');
+      final v = finalRes?.value;
       DebugLogService.instance.log('XWebView',
-          '_attachImages: $value error=${result?.error}');
-      if (value is Map && value['ok'] == true) return true;
-      return false;
+          '_attachImages commit: $v error=${finalRes?.error}');
+      return v is Map && v['ok'] == true;
     } catch (e) {
       debugPrint('[XWebView] _attachImages error: $e');
       DebugLogService.instance.log('XWebView', '_attachImages ERROR: $e');

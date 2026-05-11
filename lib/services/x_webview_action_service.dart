@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io' show Platform;
 import 'dart:typed_data';
 
 import 'package:cross_file/cross_file.dart';
@@ -408,15 +409,15 @@ class XWebViewActionService {
   }
 
   /// XFile を受け取って、1 枚ずつ on-demand に読み込み→リサイズ→base64→注入する。
-  /// クラッシュ箇所特定のため、各ステップで debug log を取る。
-  /// callAsyncJavaScript（bridge 経由で arguments を渡す）は iPad で巨大データ
-  /// を渡すとクラッシュする疑いがあるため、evaluateJavascript で base64 を
-  /// source に直接埋め込む方式に切り替えた。
+  /// Android は試行錯誤の末に「DataTransfer に全枚積んで最後に setter call
+  /// 1 回」で安定動作している（現状仕様）。iOS は iPad の X 側 React が
+  /// 入力直後に input.files をクリアしてしまい複数枚分が拾われないため、
+  /// 「1 枚ずつ setter call + change 発火 + delay」に分岐する。
   Future<bool> _attachImageFiles(List<XFile> files) async {
     DebugLogService.instance.log(
         'XWebView', '_attachImageFiles START (${files.length} files)');
     try {
-      // 1. 空の DataTransfer をグローバルに用意
+      // 1. 累積 DataTransfer をグローバルに保持
       await _controller!.evaluateJavascript(source: r'''
         try { window.__omniverseDT = new DataTransfer(); } catch(e) {}
       ''');
@@ -428,8 +429,6 @@ class XWebViewActionService {
             'XWebView', '_attachImageFiles #$i begin');
         final xfile = files[i];
 
-        DebugLogService.instance.log(
-            'XWebView', '_attachImageFiles #$i readAsBytes...');
         Uint8List raw = await xfile.readAsBytes();
         DebugLogService.instance.log('XWebView',
             '_attachImageFiles #$i read ${raw.length}B');
@@ -443,8 +442,6 @@ class XWebViewActionService {
           mime = 'image/gif';
           name = 'image_$i.gif';
         } else {
-          DebugLogService.instance.log(
-              'XWebView', '_attachImageFiles #$i resize...');
           bytes = await ImageResizeService.instance.resizeIfNeeded(
             raw,
             maxBytes: ImageResizeService.xMaxBytes,
@@ -456,21 +453,39 @@ class XWebViewActionService {
         }
         raw = Uint8List(0);
 
-        DebugLogService.instance.log(
-            'XWebView', '_attachImageFiles #$i base64...');
         final b64 = base64Encode(bytes);
         DebugLogService.instance.log('XWebView',
             '_attachImageFiles #$i b64 len=${b64.length}');
         bytes = Uint8List(0);
 
-        // evaluateJavascript の source に直接埋め込む（bridge を経由しない）。
-        // JSON エスケープで JS の文字列リテラルとして安全に埋め込む。
         final b64Js = json.encode(b64);
         final mimeJs = json.encode(mime);
         final nameJs = json.encode(name);
 
-        DebugLogService.instance.log(
-            'XWebView', '_attachImageFiles #$i evalJs...');
+        // iOS は 1 枚ごとに setter call + change を発火し、X 側の処理を
+        // 1.2 秒待ってから次の画像に進む。Android は累積 DT に add するだけで
+        // setter call は最後に 1 回（既存挙動）。
+        final perImageJs = Platform.isIOS
+            ? r'''
+              if (!window.__omniverseDT) window.__omniverseDT = new DataTransfer();
+              window.__omniverseDT.items.add(file);
+              var input = document.querySelector('input[type=file][data-testid="fileInput"]')
+                       || document.querySelector('input[data-testid="fileInput"]')
+                       || document.querySelector('input[type=file][accept*="image"]')
+                       || document.querySelector('input[type=file]');
+              if (!input) return JSON.stringify({ ok: false, reason: 'input_not_found' });
+              var setter = Object.getOwnPropertyDescriptor(
+                window.HTMLInputElement.prototype, 'files').set;
+              setter.call(input, window.__omniverseDT.files);
+              input.dispatchEvent(new Event('change', { bubbles: true }));
+              return JSON.stringify({ ok: true, dt: window.__omniverseDT.files.length, inputLen: input.files.length });
+            '''
+            : r'''
+              if (!window.__omniverseDT) window.__omniverseDT = new DataTransfer();
+              window.__omniverseDT.items.add(file);
+              return JSON.stringify({ ok: true, count: window.__omniverseDT.files.length });
+            ''';
+
         final result = await _controller!.evaluateJavascript(source: '''
           (function() {
             try {
@@ -482,16 +497,14 @@ class XWebViewActionService {
               for (var j = 0; j < bin.length; j++) arr[j] = bin.charCodeAt(j);
               var blob = new Blob([arr], { type: mime });
               var file = new File([blob], name, { type: mime });
-              if (!window.__omniverseDT) window.__omniverseDT = new DataTransfer();
-              window.__omniverseDT.items.add(file);
-              return JSON.stringify({ ok: true, count: window.__omniverseDT.files.length });
+              $perImageJs
             } catch (e) {
               return JSON.stringify({ ok: false, message: String(e) });
             }
           })();
         ''');
-        DebugLogService.instance.log(
-            'XWebView', '_attachImageFiles #$i evalJs result: $result');
+        DebugLogService.instance.log('XWebView',
+            '_attachImageFiles #$i evalJs result: $result');
 
         Map? parsed;
         try {
@@ -502,38 +515,53 @@ class XWebViewActionService {
               '_attachImageFiles #$i add failed: $result');
           return false;
         }
+
+        // iOS のみ: X 側がこの 1 枚を上げ終わるのを少し待ってから次へ
+        if (Platform.isIOS) {
+          await Future.delayed(const Duration(milliseconds: 1200));
+        }
       }
 
-      // 3. input にまとめてセット
-      DebugLogService.instance.log('XWebView',
-          '_attachImageFiles commit...');
-      final finalRaw = await _controller!.evaluateJavascript(source: r'''
-        (function() {
-          try {
-            var input = document.querySelector('input[type=file][data-testid="fileInput"]')
-                     || document.querySelector('input[data-testid="fileInput"]')
-                     || document.querySelector('input[type=file][accept*="image"]')
-                     || document.querySelector('input[type=file]');
-            if (!input) return JSON.stringify({ ok: false, reason: 'input_not_found' });
-            var setter = Object.getOwnPropertyDescriptor(
-              window.HTMLInputElement.prototype, 'files').set;
-            setter.call(input, window.__omniverseDT.files);
-            input.dispatchEvent(new Event('change', { bubbles: true }));
-            var count = input.files.length;
-            try { delete window.__omniverseDT; } catch(e) {}
-            return JSON.stringify({ ok: true, count: count });
-          } catch (e) {
-            return JSON.stringify({ ok: false, reason: 'js_error', message: String(e) });
-          }
-        })();
+      // 3. Android は最後にまとめて setter call。iOS は各ループで実施済み。
+      if (!Platform.isIOS) {
+        DebugLogService.instance.log(
+            'XWebView', '_attachImageFiles commit (android batch)...');
+        final finalRaw = await _controller!.evaluateJavascript(source: r'''
+          (function() {
+            try {
+              var input = document.querySelector('input[type=file][data-testid="fileInput"]')
+                       || document.querySelector('input[data-testid="fileInput"]')
+                       || document.querySelector('input[type=file][accept*="image"]')
+                       || document.querySelector('input[type=file]');
+              if (!input) return JSON.stringify({ ok: false, reason: 'input_not_found' });
+              var setter = Object.getOwnPropertyDescriptor(
+                window.HTMLInputElement.prototype, 'files').set;
+              setter.call(input, window.__omniverseDT.files);
+              input.dispatchEvent(new Event('change', { bubbles: true }));
+              var count = input.files.length;
+              try { delete window.__omniverseDT; } catch(e) {}
+              return JSON.stringify({ ok: true, count: count });
+            } catch (e) {
+              return JSON.stringify({ ok: false, reason: 'js_error', message: String(e) });
+            }
+          })();
+        ''');
+        DebugLogService.instance.log('XWebView',
+            '_attachImageFiles commit result: $finalRaw');
+        Map? parsed;
+        try {
+          parsed = json.decode(finalRaw?.toString() ?? '{}') as Map;
+        } catch (_) {}
+        return parsed != null && parsed['ok'] == true;
+      }
+
+      // iOS: 後片付けだけ
+      await _controller!.evaluateJavascript(source: r'''
+        try { delete window.__omniverseDT; } catch(e) {}
       ''');
       DebugLogService.instance.log('XWebView',
-          '_attachImageFiles commit result: $finalRaw');
-      Map? parsed;
-      try {
-        parsed = json.decode(finalRaw?.toString() ?? '{}') as Map;
-      } catch (_) {}
-      return parsed != null && parsed['ok'] == true;
+          '_attachImageFiles DONE (ios per-image)');
+      return true;
     } catch (e, st) {
       debugPrint('[XWebView] _attachImageFiles error: $e\n$st');
       DebugLogService.instance.log('XWebView',

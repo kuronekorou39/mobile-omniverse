@@ -516,9 +516,15 @@ class XWebViewActionService {
           return false;
         }
 
-        // iOS のみ: X 側がこの 1 枚を上げ終わるのを少し待ってから次へ
+        // iOS のみ: 次の change を投げる前に、X 側がこの 1 枚をプレビュー
+        // （attachments の img/video）に反映するまで枚数ベースで同期する。
+        // 固定 delay だと X の処理タイミングと衝突して、先に投げた 1〜2 枚目が
+        // 「もう古い」と捨てられる現象（最後の 2 枚だけ拾われる）が出るため。
         if (Platform.isIOS) {
-          await Future.delayed(const Duration(milliseconds: 1200));
+          final waited = await _waitForAttachmentCount(i + 1,
+              timeoutSeconds: 20);
+          DebugLogService.instance.log('XWebView',
+              '_attachImageFiles #$i previewCount reached: $waited');
         }
       }
 
@@ -568,6 +574,33 @@ class XWebViewActionService {
           '_attachImageFiles ERROR: $e');
       return false;
     }
+  }
+
+  /// プレビュー DOM の枚数が `expected` 以上になるのを待つ。
+  /// iOS の連続注入で「先の枚を入れたら前のを X が捨てる」現象を避け、
+  /// 1 枚ずつ「X がこの 1 枚をプレビューに反映した」ことを確認してから
+  /// 次の change を投げるための短期同期。タイムアウトしても呼び出し側で
+  /// 次に進む（後続の _waitForImageUpload でも最終確認するため）。
+  Future<bool> _waitForAttachmentCount(int expected,
+      {int timeoutSeconds = 15}) async {
+    final deadline = DateTime.now().add(Duration(seconds: timeoutSeconds));
+    while (DateTime.now().isBefore(deadline)) {
+      final r = await _controller!.evaluateJavascript(source: '''
+        (function() {
+          var nodes = document.querySelectorAll(
+            '[data-testid="attachments"] img,'
+            + '[data-testid="attachments"] video,'
+            + '[data-testid="tweetPhoto"],'
+            + '[data-testid="gifPlayer"]'
+          );
+          return nodes.length;
+        })()
+      ''');
+      final count = (r is num) ? r.toInt() : int.tryParse('$r') ?? 0;
+      if (count >= expected) return true;
+      await Future.delayed(const Duration(milliseconds: 400));
+    }
+    return false;
   }
 
   /// 画像アップロード完了を検知。プレビュー DOM が指定枚数ぶん表示されるまで待つ。

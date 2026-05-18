@@ -108,8 +108,13 @@ class XWebViewActionService {
 
     _currentAuthToken = creds.authToken;
 
-    // x.com の cookie をクリア
-    await cookieManager.deleteCookies(url: WebUri('https://x.com'));
+    // x.com の cookie を可能な限り徹底的にクリアする。
+    // deleteCookies(url) だけでは domain/path 違いの cookie が残ることがあり、
+    // 特に __cuid（X の anti-bot fingerprint）が前アカウントのまま残ると、
+    // X が「auth_token と device fingerprint が矛盾」と判定して JS load を
+    // 弾く（ScriptLoadFailure 画面）。 → getCookies で実体を取得して
+    // domain/path を指定して個別削除する。
+    await _purgeAllXCookies(cookieManager);
 
     // アカウントの cookie を復元
     final saved = _accountCookies[creds.authToken];
@@ -168,6 +173,35 @@ class XWebViewActionService {
         'init complete: authToken=${creds.authToken.substring(0, 8)}... '
         'isReady=$_isReady timedOut=$timedOut '
         'savedCookies=${_accountCookies[creds.authToken]?.length ?? 0}');
+  }
+
+  /// x.com の全 cookie を、各 cookie の domain/path を見て個別に削除する。
+  /// 削除漏れ（特に __cuid など）でアカウント切替時に bot 検知される問題を回避。
+  Future<void> _purgeAllXCookies(CookieManager cookieManager) async {
+    for (final urlStr in const ['https://x.com', 'https://twitter.com']) {
+      try {
+        final cookies =
+            await cookieManager.getCookies(url: WebUri(urlStr));
+        for (final c in cookies) {
+          try {
+            await cookieManager.deleteCookie(
+              url: WebUri(urlStr),
+              name: c.name,
+              domain: c.domain,
+              path: c.path ?? '/',
+            );
+          } catch (e) {
+            debugPrint('[XWebView] deleteCookie failed for ${c.name}: $e');
+          }
+        }
+      } catch (e) {
+        debugPrint('[XWebView] getCookies failed for $urlStr: $e');
+      }
+      // 念のため URL ベースの一括削除も呼ぶ
+      try {
+        await cookieManager.deleteCookies(url: WebUri(urlStr));
+      } catch (_) {}
+    }
   }
 
   /// 現在の WebView の全 cookie を保存
@@ -262,10 +296,45 @@ class XWebViewActionService {
           '[data-testid="tweetTextarea_0RichTextInputContainer"],'
           '[role="textbox"][contenteditable="true"],'
           'div[contenteditable="true"][data-text="true"]';
-      final editorReady = await _waitForElement(
+      bool editorReady = await _waitForElement(
         editorSelectors,
         timeoutSeconds: 20,
       );
+
+      // editor が見つからない場合、X の ScriptLoadFailure 画面が出ている
+      // ことがあるので "Try again" ボタンを自動で押してリトライする。
+      if (!editorReady) {
+        final hasScriptFailure = await _controller!.evaluateJavascript(
+            source:
+                "document.getElementById('ScriptLoadFailure') !== null");
+        if (hasScriptFailure == true || hasScriptFailure == 'true') {
+          DebugLogService.instance.log('XWebView',
+              'createTweet: ScriptLoadFailure detected, clicking Try again');
+          try {
+            await _controller!.evaluateJavascript(source: '''
+              (function() {
+                var form = document.querySelector('#ScriptLoadFailure form');
+                if (form) { form.submit(); return; }
+                var btn = document.querySelector('#ScriptLoadFailure button[type=submit]');
+                if (btn) btn.click();
+              })();
+            ''');
+          } catch (e) {
+            debugPrint('[XWebView] Try again click failed: $e');
+          }
+          // page reload を待つ
+          await Future.delayed(const Duration(seconds: 4));
+          editorReady = await _waitForElement(
+            editorSelectors,
+            timeoutSeconds: 15,
+          );
+          if (editorReady) {
+            DebugLogService.instance.log('XWebView',
+                'createTweet: editor recovered after Try again');
+          }
+        }
+      }
+
       if (!editorReady) {
         sw.stop();
         const msg = 'Editor not found on compose page';

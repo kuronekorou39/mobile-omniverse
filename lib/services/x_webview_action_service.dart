@@ -645,13 +645,13 @@ class XWebViewActionService {
     }
   }
 
-  /// プレビュー DOM の枚数が `expected` 以上になるのを待つ。
-  /// iOS の連続注入で「先の枚を入れたら前のを X が捨てる」現象を避け、
-  /// 1 枚ずつ「X がこの 1 枚をプレビューに反映した」ことを確認してから
-  /// 次の change を投げるための短期同期。タイムアウトしても呼び出し側で
-  /// 次に進む（後続の _waitForImageUpload でも最終確認するため）。
+  /// プレビュー DOM の枚数が `expected` 以上 + 進行中の progressbar が
+  /// なくなる（=その 1 枚の upload 完了）まで待つ。
+  /// 単にプレビューが出ただけでは upload 中の可能性があり、その間に次の
+  /// change を投げると X 側の処理がぶつかって枚数が欠けるため、ここで
+  /// 完了を確認する。
   Future<bool> _waitForAttachmentCount(int expected,
-      {int timeoutSeconds = 15}) async {
+      {int timeoutSeconds = 30}) async {
     final deadline = DateTime.now().add(Duration(seconds: timeoutSeconds));
     while (DateTime.now().isBefore(deadline)) {
       final r = await _controller!.evaluateJavascript(source: '''
@@ -662,47 +662,70 @@ class XWebViewActionService {
             + '[data-testid="tweetPhoto"],'
             + '[data-testid="gifPlayer"]'
           );
-          return nodes.length;
+          var progressBars = document.querySelectorAll('[role="progressbar"]');
+          return JSON.stringify({ count: nodes.length, progress: progressBars.length });
         })()
       ''');
-      final count = (r is num) ? r.toInt() : int.tryParse('$r') ?? 0;
-      if (count >= expected) return true;
+      Map? parsed;
+      try {
+        parsed = json.decode(r?.toString() ?? '{}') as Map;
+      } catch (_) {}
+      final count = (parsed?['count'] as int?) ?? 0;
+      final progress = (parsed?['progress'] as int?) ?? 0;
+      if (count >= expected && progress == 0) return true;
       await Future.delayed(const Duration(milliseconds: 400));
     }
     return false;
   }
 
   /// 画像アップロード完了を検知。プレビュー DOM が指定枚数ぶん表示されるまで待つ。
-  /// GIF は X 内部で MP4 に変換されて <video> として表示されることがあるため、
-  /// img だけでなく video / gifPlayer もカウント対象にする。
+  /// 単にプレビューが出ただけでは upload 中のことがあり、その状態で投稿ボタンを
+  /// 押すと X が「現時点で upload 完了済みのものだけ」で tweet を作って投稿
+  /// する事象があった（4 枚指定なのに 2-3 枚で投稿される現象の原因）。
+  /// 完了の確実な目印として、ページ内に role="progressbar" が 1 つも存在しない
+  /// 状態が連続で 1 秒以上維持されることを確認する。
   Future<bool> _waitForImageUpload(int expected,
       {int timeoutSeconds = 90}) async {
     final deadline = DateTime.now().add(Duration(seconds: timeoutSeconds));
     while (DateTime.now().isBefore(deadline)) {
-      final result = await _controller!.evaluateJavascript(source: '''
-        (function() {
-          var nodes = document.querySelectorAll(
-            '[data-testid="attachments"] img,'
-            + '[data-testid="attachments"] video,'
-            + '[data-testid="tweetPhoto"],'
-            + '[data-testid="gifPlayer"]'
-          );
-          return nodes.length;
-        })()
-      ''');
-      final count = (result is num) ? result.toInt() : int.tryParse('$result') ?? 0;
-      if (count >= expected) {
-        // プレビュー出現後、X 内部のアップロード完了 (投稿ボタン enable) を 1 秒安定確認
-        await Future.delayed(const Duration(milliseconds: 1000));
-        final btnEnabled = await _controller!.evaluateJavascript(source: '''
-          document.querySelector('[data-testid="tweetButton"]:not([disabled])') !== null
-          || document.querySelector('[data-testid="tweetButtonInline"]:not([disabled])') !== null
-        ''');
-        if (btnEnabled == true || btnEnabled == 'true') return true;
+      final stable = await _checkUploadStableOnce(expected);
+      if (stable) {
+        // 1 秒待ってもう一度安定確認（フリッカー対策）
+        await Future.delayed(const Duration(seconds: 1));
+        if (await _checkUploadStableOnce(expected)) return true;
       }
       await Future.delayed(const Duration(milliseconds: 500));
     }
     return false;
+  }
+
+  Future<bool> _checkUploadStableOnce(int expected) async {
+    final r = await _controller!.evaluateJavascript(source: '''
+      (function() {
+        var nodes = document.querySelectorAll(
+          '[data-testid="attachments"] img,'
+          + '[data-testid="attachments"] video,'
+          + '[data-testid="tweetPhoto"],'
+          + '[data-testid="gifPlayer"]'
+        );
+        var progressBars = document.querySelectorAll('[role="progressbar"]');
+        var btnEnabled = document.querySelector('[data-testid="tweetButton"]:not([disabled])') !== null
+          || document.querySelector('[data-testid="tweetButtonInline"]:not([disabled])') !== null;
+        return JSON.stringify({
+          count: nodes.length,
+          progress: progressBars.length,
+          btn: btnEnabled
+        });
+      })()
+    ''');
+    Map? parsed;
+    try {
+      parsed = json.decode(r?.toString() ?? '{}') as Map;
+    } catch (_) {}
+    final count = (parsed?['count'] as int?) ?? 0;
+    final progress = (parsed?['progress'] as int?) ?? 0;
+    final btn = (parsed?['btn'] as bool?) ?? false;
+    return count >= expected && progress == 0 && btn;
   }
 
   /// 指定セレクタの要素が出現するまでポーリング

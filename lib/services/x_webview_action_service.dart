@@ -383,6 +383,11 @@ class XWebViewActionService {
           if (!editor) return;
           editor.focus();
           document.execCommand('insertText', false, $textEscaped);
+          // iOS のソフトキーボードがバックグラウンドで出てくるのを抑制するため
+          // すぐ blur する。React は input イベントで内部 state を取り込み
+          // 済みなので blur しても入力テキストは保持される。
+          try { editor.blur(); } catch(e) {}
+          try { if (document.activeElement && document.activeElement.blur) document.activeElement.blur(); } catch(e) {}
         })()
       ''');
 
@@ -547,6 +552,10 @@ class XWebViewActionService {
                 window.HTMLInputElement.prototype, 'files').set;
               setter.call(input, window.__omniverseDT.files);
               input.dispatchEvent(new Event('change', { bubbles: true }));
+              // X 側の React が input.files セット後に editor へ focus を
+              // 戻すことがあり、それで iOS のソフトキーボードが裏で点滅する。
+              // ここで即 blur しておく。
+              try { if (document.activeElement && document.activeElement.blur) document.activeElement.blur(); } catch(e) {}
               return JSON.stringify({ ok: true, dt: window.__omniverseDT.files.length, inputLen: input.files.length });
             '''
             : r'''

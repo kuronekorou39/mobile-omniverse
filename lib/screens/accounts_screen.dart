@@ -310,63 +310,13 @@ class _AccountTile extends ConsumerWidget {
         ],
       ),
       subtitle: Text(account.handle),
-      trailing: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          IconButton(
-            icon: const Icon(Icons.person_outline),
-            tooltip: 'ユーザーホーム',
-            onPressed: () => _openProfile(context),
-          ),
-          PopupMenuButton<int>(
-            icon: const Icon(Icons.favorite_outline),
-            tooltip: 'ふぁぼ / ブックマーク',
-            onSelected: (i) => _openLikesBookmarks(context, i),
-            itemBuilder: (_) => const [
-              PopupMenuItem<int>(
-                value: 0,
-                child: ListTile(
-                  dense: true,
-                  contentPadding: EdgeInsets.zero,
-                  leading: Icon(Icons.favorite_border),
-                  title: Text('ふぁぼ'),
-                ),
-              ),
-              PopupMenuItem<int>(
-                value: 1,
-                child: ListTile(
-                  dense: true,
-                  contentPadding: EdgeInsets.zero,
-                  leading: Icon(Icons.bookmark_border),
-                  title: Text('ブックマーク'),
-                ),
-              ),
-            ],
-          ),
-          Switch(
-            value: account.isEnabled,
-            onChanged: (_) {
-              ref.read(accountProvider.notifier).toggleAccount(account.id);
-            },
-          ),
-          const Icon(Icons.chevron_right, size: 20),
-        ],
+      trailing: Switch(
+        value: account.isEnabled,
+        onChanged: (_) {
+          ref.read(accountProvider.notifier).toggleAccount(account.id);
+        },
       ),
       onTap: () => _openDetail(context),
-    );
-  }
-
-  void _openProfile(BuildContext context) {
-    Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (_) => UserProfileScreen(
-          username: account.displayName,
-          handle: account.handle,
-          service: account.service,
-          avatarUrl: account.avatarUrl,
-          accountId: account.id,
-        ),
-      ),
     );
   }
 
@@ -378,16 +328,6 @@ class _AccountTile extends ConsumerWidget {
     );
   }
 
-  void _openLikesBookmarks(BuildContext context, int initialIndex) {
-    Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (_) => LikesBookmarksScreen(
-          account: account,
-          initialIndex: initialIndex,
-        ),
-      ),
-    );
-  }
 }
 
 /// アカウント詳細画面
@@ -412,23 +352,6 @@ class _AccountDetailScreen extends ConsumerWidget {
       appBar: AppBar(
         title: Text(account.displayName),
         actions: [
-          IconButton(
-            icon: const Icon(Icons.person_outline),
-            tooltip: 'ユーザーホーム',
-            onPressed: () {
-              Navigator.of(context).push(
-                MaterialPageRoute(
-                  builder: (_) => UserProfileScreen(
-                    username: account.displayName,
-                    handle: account.handle,
-                    service: account.service,
-                    avatarUrl: account.avatarUrl,
-                    accountId: account.id,
-                  ),
-                ),
-              );
-            },
-          ),
           IconButton(
             icon: const Icon(Icons.refresh),
             tooltip: 'セッション更新',
@@ -490,6 +413,45 @@ class _AccountDetailScreen extends ConsumerWidget {
                   ],
                 ),
               ],
+            ),
+          ),
+          const Divider(),
+          ListTile(
+            leading: const Icon(Icons.person_outline),
+            title: const Text('プロフィール'),
+            trailing: const Icon(Icons.chevron_right, size: 20),
+            onTap: () => Navigator.of(context).push(
+              MaterialPageRoute(
+                builder: (_) => UserProfileScreen(
+                  username: account.displayName,
+                  handle: account.handle,
+                  service: account.service,
+                  avatarUrl: account.avatarUrl,
+                  accountId: account.id,
+                ),
+              ),
+            ),
+          ),
+          ListTile(
+            leading: const Icon(Icons.favorite_border),
+            title: const Text('ふぁぼ'),
+            trailing: const Icon(Icons.chevron_right, size: 20),
+            onTap: () => Navigator.of(context).push(
+              MaterialPageRoute(
+                builder: (_) =>
+                    LikesBookmarksScreen(account: account, initialIndex: 0),
+              ),
+            ),
+          ),
+          ListTile(
+            leading: const Icon(Icons.bookmark_border),
+            title: const Text('ブックマーク'),
+            trailing: const Icon(Icons.chevron_right, size: 20),
+            onTap: () => Navigator.of(context).push(
+              MaterialPageRoute(
+                builder: (_) =>
+                    LikesBookmarksScreen(account: account, initialIndex: 1),
+              ),
             ),
           ),
           const Divider(),

@@ -5,6 +5,7 @@ import '../models/account.dart';
 import '../models/post.dart';
 import '../models/sns_service.dart';
 import '../providers/account_provider.dart';
+import '../providers/settings_provider.dart';
 import '../services/bluesky_api_service.dart';
 import '../services/x_api_service.dart';
 import '../widgets/empty_state.dart';
@@ -54,12 +55,36 @@ class _LikesBookmarksScreenState extends ConsumerState<LikesBookmarksScreen>
 
   @override
   Widget build(BuildContext context) {
+    final settings = ref.watch(settingsProvider);
+    final notifier = ref.read(settingsProvider.notifier);
+    // センシティブ表示モード（タイムライン設定と同じ値を共有＝同期）
+    final (sensIcon, sensTip) = switch (settings.sensitiveMode) {
+      SensitiveMode.show => (Icons.blur_off, 'モザイク: OFF（完全オフ）'),
+      SensitiveMode.hide => (Icons.blur_on, 'モザイク: センシティブのみ（自動）'),
+      SensitiveMode.hideAll => (Icons.blur_circular, 'モザイク: 全て隠す（完全オン）'),
+    };
     return Scaffold(
       appBar: AppBar(
         title: Text(
           widget.account.displayName,
           overflow: TextOverflow.ellipsis,
         ),
+        actions: [
+          IconButton(
+            icon: Icon(sensIcon),
+            tooltip: sensTip,
+            onPressed: notifier.cycleSensitiveMode,
+          ),
+          IconButton(
+            icon: Icon(
+              settings.hideUserInfo
+                  ? Icons.face_retouching_off
+                  : Icons.face_retouching_natural,
+            ),
+            tooltip: settings.hideUserInfo ? '匿名モード: ON' : '匿名モード: OFF',
+            onPressed: () => notifier.setHideUserInfo(!settings.hideUserInfo),
+          ),
+        ],
         bottom: TabBar(
           controller: _tabController,
           tabs: const [
@@ -232,6 +257,8 @@ class _PostListTabState extends ConsumerState<_PostListTab>
   @override
   Widget build(BuildContext context) {
     super.build(context); // AutomaticKeepAliveClientMixin
+    // タイムラインと同じ表示設定を共有（変更すると双方に反映される）
+    final settings = ref.watch(settingsProvider);
 
     if (_isLoading) {
       return const Center(child: CircularProgressIndicator());
@@ -273,6 +300,9 @@ class _PostListTabState extends ConsumerState<_PostListTab>
           final post = _posts[index];
           return PostCard(
             post: post,
+            sensitiveMode: settings.sensitiveMode,
+            hideUserInfo: settings.hideUserInfo,
+            compactEngagement: settings.compactEngagement,
             onTap: () {
               Navigator.of(context).push(
                 MaterialPageRoute(

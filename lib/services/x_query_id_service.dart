@@ -39,6 +39,8 @@ class XQueryIdService {
     'UserMedia',
     'CreateTweet',
     'NotificationsTimeline',
+    'Likes',
+    'Bookmarks',
   };
 
   /// グローバルキャッシュ (旧形式・マイグレーション用)

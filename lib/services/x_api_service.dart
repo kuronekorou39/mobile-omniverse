@@ -613,6 +613,118 @@ class XApiService {
     });
   }
 
+  /// 指定ユーザー(自分)のいいね一覧を取得 (Likes operation)
+  /// [userId] は対象ユーザーの rest_id。
+  /// 404 時は Likes の queryId のみ更新してリトライ。
+  /// Returns: ({posts, cursor}) — cursor は次ページ取得用
+  Future<({List<Post> posts, String? cursor})> getLikes(
+    XCredentials creds,
+    String userId, {
+    String? accountId,
+    int count = 20,
+    String? cursor,
+  }) async {
+    await _ensureBearerToken(creds);
+    return _withTargetedQueryIdRetry(creds, 'Likes', (queryId) async {
+      final variables = json.encode({
+        'userId': userId,
+        'count': count,
+        'includePromotedContent': false,
+        'withClientEventToken': false,
+        'withBirdwatchNotes': false,
+        'withVoice': true,
+        'withV2Timeline': true,
+        if (cursor != null) 'cursor': cursor,
+      });
+
+      final features = json.encode(XFeatures.forOperation('Likes'));
+
+      final uri = Uri.parse(
+        '${XEndpoints.graphqlBase}/$queryId/Likes'
+        '?variables=${Uri.encodeComponent(variables)}'
+        '&features=${Uri.encodeComponent(features)}',
+      );
+
+      final hdrs = _buildHeaders(creds);
+      final sw = Stopwatch()..start();
+      final response = await _withRateLimitRetry(
+        () => _client.get(uri, headers: hdrs),
+      );
+      sw.stop();
+      _updateCt0FromResponse(creds, response);
+      _logResponse('Likes', 'GET', uri, hdrs, null, response, sw);
+
+      if (response.statusCode == 401 || response.statusCode == 403) {
+        throw XAuthException('Authentication failed: ${response.statusCode}');
+      }
+      if (response.statusCode != 200) {
+        throw XApiException(
+          'Failed to fetch likes: ${response.statusCode}',
+          statusCode: response.statusCode,
+        );
+      }
+
+      final body = json.decode(response.body) as Map<String, dynamic>;
+      return _parseUserTimeline(body, accountId);
+    });
+  }
+
+  /// 自分のブックマーク一覧を取得 (Bookmarks operation, userId 不要)
+  /// 404 時は Bookmarks の queryId のみ更新してリトライ。
+  /// Returns: ({posts, cursor}) — cursor は次ページ取得用
+  Future<({List<Post> posts, String? cursor})> getBookmarks(
+    XCredentials creds, {
+    String? accountId,
+    int count = 20,
+    String? cursor,
+  }) async {
+    await _ensureBearerToken(creds);
+    return _withTargetedQueryIdRetry(creds, 'Bookmarks', (queryId) async {
+      final variables = json.encode({
+        'count': count,
+        'includePromotedContent': true,
+        if (cursor != null) 'cursor': cursor,
+      });
+
+      final features = json.encode(XFeatures.forOperation('Bookmarks'));
+
+      final uri = Uri.parse(
+        '${XEndpoints.graphqlBase}/$queryId/Bookmarks'
+        '?variables=${Uri.encodeComponent(variables)}'
+        '&features=${Uri.encodeComponent(features)}',
+      );
+
+      final hdrs = _buildHeaders(creds);
+      final sw = Stopwatch()..start();
+      final response = await _withRateLimitRetry(
+        () => _client.get(uri, headers: hdrs),
+      );
+      sw.stop();
+      _updateCt0FromResponse(creds, response);
+      _logResponse('Bookmarks', 'GET', uri, hdrs, null, response, sw);
+
+      if (response.statusCode == 401 || response.statusCode == 403) {
+        throw XAuthException('Authentication failed: ${response.statusCode}');
+      }
+      if (response.statusCode != 200) {
+        throw XApiException(
+          'Failed to fetch bookmarks: ${response.statusCode}',
+          statusCode: response.statusCode,
+        );
+      }
+
+      final body = json.decode(response.body) as Map<String, dynamic>;
+      return _parseUserTimeline(body, accountId);
+    });
+  }
+
+  /// screenName から rest_id を解決 (自分のいいね一覧取得で userId が必要なため)
+  Future<String?> getRestId(XCredentials creds, String screenName) async {
+    final profile =
+        await getUserProfile(creds, screenName.replaceFirst('@', ''));
+    return profile?['rest_id'] as String?;
+  }
+
   /// UserTweets レスポンスをパース (カーソル付き)
   ({List<Post> posts, String? cursor}) _parseUserTimeline(
       Map<String, dynamic> body, String? accountId) {
@@ -641,6 +753,13 @@ class XApiService {
             'user',
             'result',
             'timeline',
+            'timeline',
+            'instructions',
+          ]) as List<dynamic>?;
+      // ブックマーク (Bookmarks operation) のパス
+      instructions ??= dig(body, [
+            'data',
+            'bookmark_timeline_v2',
             'timeline',
             'instructions',
           ]) as List<dynamic>?;

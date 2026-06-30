@@ -10,6 +10,7 @@ import '../services/timeline_fetch_scheduler.dart';
 import '../utils/app_snackbar.dart';
 import '../widgets/empty_state.dart';
 import '../widgets/sns_badge.dart';
+import 'likes_bookmarks_screen.dart';
 import 'login_webview_screen.dart';
 import 'session_refresh_screen.dart';
 import 'settings_screen.dart';
@@ -317,6 +318,31 @@ class _AccountTile extends ConsumerWidget {
             tooltip: 'ユーザーホーム',
             onPressed: () => _openProfile(context),
           ),
+          PopupMenuButton<int>(
+            icon: const Icon(Icons.favorite_outline),
+            tooltip: 'ふぁぼ / ブックマーク',
+            onSelected: (i) => _openLikesBookmarks(context, i),
+            itemBuilder: (_) => const [
+              PopupMenuItem<int>(
+                value: 0,
+                child: ListTile(
+                  dense: true,
+                  contentPadding: EdgeInsets.zero,
+                  leading: Icon(Icons.favorite_border),
+                  title: Text('ふぁぼ'),
+                ),
+              ),
+              PopupMenuItem<int>(
+                value: 1,
+                child: ListTile(
+                  dense: true,
+                  contentPadding: EdgeInsets.zero,
+                  leading: Icon(Icons.bookmark_border),
+                  title: Text('ブックマーク'),
+                ),
+              ),
+            ],
+          ),
           Switch(
             value: account.isEnabled,
             onChanged: (_) {
@@ -348,6 +374,17 @@ class _AccountTile extends ConsumerWidget {
     Navigator.of(context).push(
       MaterialPageRoute(
         builder: (_) => _AccountDetailScreen(accountId: account.id),
+      ),
+    );
+  }
+
+  void _openLikesBookmarks(BuildContext context, int initialIndex) {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => LikesBookmarksScreen(
+          account: account,
+          initialIndex: initialIndex,
+        ),
       ),
     );
   }

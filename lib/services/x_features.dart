@@ -102,6 +102,8 @@ class XFeatures {
       case 'UserTweets':
       case 'UserMedia':
       case 'NotificationsTimeline':
+      case 'Likes':
+      case 'Bookmarks':
         return timeline;
       case 'UserByScreenName':
         return userProfile;

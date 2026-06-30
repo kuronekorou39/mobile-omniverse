@@ -476,6 +476,109 @@ class BlueskyApiService {
     return (posts: posts, cursor: nextCursor);
   }
 
+  /// 指定ユーザー(自分)のいいね一覧を取得 (app.bsky.feed.getActorLikes)
+  /// actor は自分の DID または handle。getAuthorFeed と同形のレスポンス。
+  Future<({List<Post> posts, String? cursor})> getActorLikes(
+    BlueskyCredentials creds,
+    String actor, {
+    String? accountId,
+    int limit = 30,
+    String? cursor,
+  }) async {
+    var url = '${creds.pdsUrl}/xrpc/app.bsky.feed.getActorLikes'
+        '?actor=${Uri.encodeComponent(actor)}&limit=$limit';
+    if (cursor != null) {
+      url += '&cursor=${Uri.encodeComponent(cursor)}';
+    }
+    final uri = Uri.parse(url);
+    final hdrs = {
+      'Authorization': 'Bearer ${creds.accessJwt}',
+      'Accept': 'application/json',
+    };
+    final sw = Stopwatch()..start();
+    final response = await _client.get(uri, headers: hdrs);
+    sw.stop();
+    _logResponse('getActorLikes', 'GET', uri, hdrs, null, response, sw);
+    _throwIfAuthError(response);
+    if (response.statusCode != 200) {
+      throw BlueskyApiException(
+        'Failed to fetch actor likes: ${response.statusCode}',
+      );
+    }
+    final body = json.decode(response.body) as Map<String, dynamic>;
+    final feed = body['feed'] as List<dynamic>? ?? [];
+    final nextCursor = body['cursor'] as String?;
+    final posts = feed.map((item) => parsePost(item, accountId)).toList();
+    return (posts: posts, cursor: nextCursor);
+  }
+
+  /// 自分のブックマーク一覧を取得 (app.bsky.bookmark.getBookmarks)
+  /// レスポンスは bookmarks[]{ subject, createdAt, item }。
+  /// item は postView / blockedPost / notFoundPost の union。postView のみ Post 化する。
+  Future<({List<Post> posts, String? cursor})> getBookmarks(
+    BlueskyCredentials creds, {
+    String? accountId,
+    int limit = 50,
+    String? cursor,
+  }) async {
+    var url =
+        '${creds.pdsUrl}/xrpc/app.bsky.bookmark.getBookmarks?limit=$limit';
+    if (cursor != null) {
+      url += '&cursor=${Uri.encodeComponent(cursor)}';
+    }
+    final uri = Uri.parse(url);
+    final hdrs = {
+      'Authorization': 'Bearer ${creds.accessJwt}',
+      'Accept': 'application/json',
+    };
+    final sw = Stopwatch()..start();
+    final response = await _client.get(uri, headers: hdrs);
+    sw.stop();
+    _logResponse('getBookmarks', 'GET', uri, hdrs, null, response, sw);
+    _throwIfAuthError(response);
+    if (response.statusCode != 200) {
+      throw BlueskyApiException(
+        'Failed to fetch bookmarks: ${response.statusCode}',
+      );
+    }
+    final body = json.decode(response.body) as Map<String, dynamic>;
+    final bookmarks = body['bookmarks'] as List<dynamic>? ?? [];
+    final nextCursor = body['cursor'] as String?;
+    final posts = <Post>[];
+    for (final b in bookmarks) {
+      final bm = b as Map<String, dynamic>;
+      final item = bm['item'] as Map<String, dynamic>?;
+      if (item == null) continue;
+      final type = item['\$type'] as String?;
+      // blockedPost / notFoundPost はスキップ
+      if (type == 'app.bsky.feed.defs#blockedPost' ||
+          type == 'app.bsky.feed.defs#notFoundPost') {
+        continue;
+      }
+      if (item['author'] == null || item['record'] == null) continue;
+      posts.add(parsePostObject(item, accountId));
+    }
+    return (posts: posts, cursor: nextCursor);
+  }
+
+  /// 401/期限切れ400 を BlueskyAuthException に正規化する共通ヘルパー
+  void _throwIfAuthError(http.Response response) {
+    if (response.statusCode == 401) {
+      throw BlueskyAuthException('Token expired');
+    }
+    if (response.statusCode == 400) {
+      try {
+        final errBody = json.decode(response.body) as Map<String, dynamic>;
+        final errCode = errBody['error'] as String?;
+        if (errCode == 'ExpiredToken' || errCode == 'InvalidToken') {
+          throw BlueskyAuthException('Token expired (400: $errCode)');
+        }
+      } catch (e) {
+        if (e is BlueskyAuthException) rethrow;
+      }
+    }
+  }
+
   /// フォロー
   Future<String?> follow(BlueskyCredentials creds, String did) async {
     final uri = Uri.parse(
@@ -986,6 +1089,47 @@ class BlueskyApiService {
       debugPrint('[BlueskyApi] Token expired, refreshing...');
       final newCreds = await refreshSession(creds);
       final result = await getTimeline(newCreds, accountId: accountId, cursor: cursor);
+      return (posts: result.posts, cursor: result.cursor, updatedCreds: newCreds);
+    }
+  }
+
+  /// いいね一覧取得 (トークン期限切れ時は自動リフレッシュ)
+  Future<({List<Post> posts, String? cursor, BlueskyCredentials? updatedCreds})>
+      getActorLikesWithRefresh(
+    BlueskyCredentials creds,
+    String actor, {
+    String? accountId,
+    String? cursor,
+  }) async {
+    try {
+      final result =
+          await getActorLikes(creds, actor, accountId: accountId, cursor: cursor);
+      return (posts: result.posts, cursor: result.cursor, updatedCreds: null);
+    } on BlueskyAuthException {
+      debugPrint('[BlueskyApi] Likes token expired, refreshing...');
+      final newCreds = await refreshSession(creds);
+      final result = await getActorLikes(newCreds, actor,
+          accountId: accountId, cursor: cursor);
+      return (posts: result.posts, cursor: result.cursor, updatedCreds: newCreds);
+    }
+  }
+
+  /// ブックマーク一覧取得 (トークン期限切れ時は自動リフレッシュ)
+  Future<({List<Post> posts, String? cursor, BlueskyCredentials? updatedCreds})>
+      getBookmarksWithRefresh(
+    BlueskyCredentials creds, {
+    String? accountId,
+    String? cursor,
+  }) async {
+    try {
+      final result =
+          await getBookmarks(creds, accountId: accountId, cursor: cursor);
+      return (posts: result.posts, cursor: result.cursor, updatedCreds: null);
+    } on BlueskyAuthException {
+      debugPrint('[BlueskyApi] Bookmarks token expired, refreshing...');
+      final newCreds = await refreshSession(creds);
+      final result =
+          await getBookmarks(newCreds, accountId: accountId, cursor: cursor);
       return (posts: result.posts, cursor: result.cursor, updatedCreds: newCreds);
     }
   }

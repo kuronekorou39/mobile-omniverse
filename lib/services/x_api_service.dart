@@ -713,7 +713,16 @@ class XApiService {
         );
       }
 
-      final body = json.decode(response.body) as Map<String, dynamic>;
+      final Map<String, dynamic> body;
+      try {
+        body = json.decode(response.body) as Map<String, dynamic>;
+      } on FormatException {
+        throw XApiException(
+          'Bookmarks: 予期しない応答形式です '
+          '(status ${response.statusCode}, queryId=$queryId)',
+          statusCode: response.statusCode,
+        );
+      }
       return _parseUserTimeline(body, accountId);
     });
   }

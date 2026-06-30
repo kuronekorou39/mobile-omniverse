@@ -85,22 +85,29 @@ class XQueryIdService {
       _lastRefresh = DateTime.fromMillisecondsSinceEpoch(lastRefreshMs);
     }
 
-    // キャッシュが空なら設定ファイルのデフォルト値を読み込む
-    if (_cached.isEmpty && _perAccount.isEmpty) {
-      try {
-        final jsonStr = await rootBundle.loadString('assets/x_defaults.json');
-        final defaults = json.decode(jsonStr) as Map<String, dynamic>;
-        final queryIds = defaults['query_ids'] as Map<String, dynamic>?;
-        if (queryIds != null) {
-          for (final entry in queryIds.entries) {
+    // 設定ファイルのデフォルト queryId を「不足分のみ」マージする。
+    // 既存ユーザー（キャッシュ済み）でも、新機能で追加された未知のオペレーション
+    // (Likes / Bookmarks 等) の seed を埋めるため、起動毎にチェックする。
+    // 既にキャッシュ済みのキー（リフレッシュ済みの最新値）は上書きしない。
+    try {
+      final jsonStr = await rootBundle.loadString('assets/x_defaults.json');
+      final defaults = json.decode(jsonStr) as Map<String, dynamic>;
+      final queryIds = defaults['query_ids'] as Map<String, dynamic>?;
+      if (queryIds != null) {
+        var filled = 0;
+        for (final entry in queryIds.entries) {
+          if (!_cached.containsKey(entry.key)) {
             _cached[entry.key] = entry.value as String;
+            filled++;
           }
-          await _saveToPrefs();
-          debugPrint('[XQueryId] Loaded ${queryIds.length} queryIds from defaults');
         }
-      } catch (e) {
-        debugPrint('[XQueryId] Failed to load defaults: $e');
+        if (filled > 0) {
+          await _saveToPrefs();
+          debugPrint('[XQueryId] Filled $filled missing queryIds from defaults');
+        }
       }
+    } catch (e) {
+      debugPrint('[XQueryId] Failed to load defaults: $e');
     }
   }
 

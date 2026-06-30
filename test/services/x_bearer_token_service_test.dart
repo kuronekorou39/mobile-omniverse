@@ -51,7 +51,12 @@ void main() {
         expect(service.hasToken, true);
       });
 
-      test('キャッシュに空文字列がある場合は読み込まない', () async {
+      test('キャッシュに空文字列がある場合は読み込まず、既定トークンにフォールバックする', () async {
+        // assets/x_defaults.json の既定 Bearer Token
+        const defaultBearerToken =
+            'AAAAAAAAAAAAAAAAAAAAANRILgAAAAAAnNwIzUejRCOuH5E6I8xnZz4puTs'
+            '%3D1Zv7ttfk8LF81IUq16cHjhLTvJu4FA33AGWWjCpTnA';
+
         // まず既知のトークンをセット
         SharedPreferences.setMockInitialValues({
           'x_bearer_token': 'previous_token',
@@ -65,8 +70,11 @@ void main() {
         });
         await service.init();
 
-        // 空文字列は読み込まないので前の値が残る
-        expect(service.token, 'previous_token');
+        // 空文字列はトークンとして読み込まない（空のまま採用しない）。
+        // キャッシュが空/無効な場合は assets/x_defaults.json の既定トークンに
+        // フォールバックする（init の意図された挙動）。
+        expect(service.token, isNot(''));
+        expect(service.token, defaultBearerToken);
       });
     });
 

@@ -256,22 +256,25 @@ class XWebViewActionService {
 
       debugPrint('[XWebView] createTweet: loading $composeUrl');
 
-      // 診断: 現時点で WKWebView に届いている Cookie の状況。
+      // 診断: 現時点で WKWebView に届いている Cookie の状況（ログ有効時のみ）。
       // 期待: ct0=..., auth_token=... が含まれること。
-      try {
-        final cookieDump = await _controller!.evaluateJavascript(
-            source: 'document.cookie');
-        final cookieStr = cookieDump?.toString() ?? '';
-        final masked = cookieStr
-            .replaceAllMapped(RegExp(r'(auth_token=)([^;]+)'),
-                (m) => '${m.group(1)}<len=${m.group(2)?.length ?? 0}>')
-            .replaceAllMapped(RegExp(r'(ct0=)([^;]+)'),
-                (m) => '${m.group(1)}<len=${m.group(2)?.length ?? 0}>');
-        DebugLogService.instance.log('XWebView',
-            'pre-compose document.cookie: ${masked.length > 600 ? masked.substring(0, 600) : masked}');
-      } catch (e) {
-        DebugLogService.instance.log(
-            'XWebView', 'pre-compose cookie dump failed: $e');
+      // ログ無効（既定の本番）では evaluateJavascript 往復ごと省略する。
+      if (DebugLogService.instance.enabled) {
+        try {
+          final cookieDump = await _controller!.evaluateJavascript(
+              source: 'document.cookie');
+          final cookieStr = cookieDump?.toString() ?? '';
+          final masked = cookieStr
+              .replaceAllMapped(RegExp(r'(auth_token=)([^;]+)'),
+                  (m) => '${m.group(1)}<len=${m.group(2)?.length ?? 0}>')
+              .replaceAllMapped(RegExp(r'(ct0=)([^;]+)'),
+                  (m) => '${m.group(1)}<len=${m.group(2)?.length ?? 0}>');
+          DebugLogService.instance.log('XWebView',
+              'pre-compose document.cookie: ${masked.length > 600 ? masked.substring(0, 600) : masked}');
+        } catch (e) {
+          DebugLogService.instance.log(
+              'XWebView', 'pre-compose cookie dump failed: $e');
+        }
       }
 
       _isReady = false;
@@ -376,18 +379,22 @@ class XWebViewActionService {
 
       // 3. テキストを入力
       final textEscaped = json.encode(text);
+      // iOS のソフトキーボードがバックグラウンドで出てくるのを抑制するため、
+      // 入力直後に blur する（iOS 限定。Android はヘッドレス WebView で不要）。
+      // React は input イベントで内部 state を取り込み済みなので、blur しても
+      // 入力テキストは保持される。
+      final iosBlur = Platform.isIOS
+          ? r'''
+          try { editor.blur(); } catch(e) {}
+          try { if (document.activeElement && document.activeElement.blur) document.activeElement.blur(); } catch(e) {}'''
+          : '';
       await _controller!.evaluateJavascript(source: '''
         (function() {
           var editor = document.querySelector('[data-testid="tweetTextarea_0"]')
                     || document.querySelector('[role="textbox"][contenteditable="true"]');
           if (!editor) return;
           editor.focus();
-          document.execCommand('insertText', false, $textEscaped);
-          // iOS のソフトキーボードがバックグラウンドで出てくるのを抑制するため
-          // すぐ blur する。React は input イベントで内部 state を取り込み
-          // 済みなので blur しても入力テキストは保持される。
-          try { editor.blur(); } catch(e) {}
-          try { if (document.activeElement && document.activeElement.blur) document.activeElement.blur(); } catch(e) {}
+          document.execCommand('insertText', false, $textEscaped);$iosBlur
         })()
       ''');
 
@@ -816,109 +823,6 @@ class XWebViewActionService {
       return true;
     }
     return false;
-  }
-
-  // ─── リツイート/アンリツイート (DOM操作方式) ───
-
-  /// ツイートページを開いてRTボタンをDOM操作でクリック
-  Future<({bool success, int statusCode, String body})> retweet(
-      XCredentials creds, String tweetId) async {
-    return _executeRetweetAction(creds, tweetId, undo: false);
-  }
-
-  /// ツイートページを開いてアンRTをDOM操作で実行
-  Future<({bool success, int statusCode, String body})> unretweet(
-      XCredentials creds, String tweetId) async {
-    return _executeRetweetAction(creds, tweetId, undo: true);
-  }
-
-  Future<({bool success, int statusCode, String body})> _executeRetweetAction(
-      XCredentials creds, String tweetId, {required bool undo}) async {
-    if (!_isReady || _currentAuthToken != creds.authToken) {
-      await init(creds);
-    }
-    if (_controller == null) {
-      return (success: false, statusCode: 0, body: 'WebView not ready');
-    }
-
-    final sw = Stopwatch()..start();
-    final operation = undo ? 'DeleteRetweet_DOM' : 'CreateRetweet_DOM';
-
-    try {
-      // 1. ツイートページを開く
-      final tweetUrl = 'https://x.com/i/status/$tweetId';
-      debugPrint('[XWebView] $operation: loading $tweetUrl');
-
-      _isReady = false;
-      _readyCompleter = Completer<void>();
-      await _controller!.loadUrl(
-        urlRequest: URLRequest(url: WebUri(tweetUrl)),
-      );
-
-      await _readyCompleter!.future.timeout(
-        const Duration(seconds: 15),
-        onTimeout: () {
-          _isReady = true;
-        },
-      );
-
-      // 2. RTボタンを探してクリック
-      final rtReady = await _waitForElement(
-        '[data-testid="retweet"], [data-testid="unretweet"]',
-        timeoutSeconds: 10,
-      );
-      if (!rtReady) {
-        sw.stop();
-        const msg = 'Retweet button not found';
-        DebugLogService.instance.log('XWebView', '$operation FAIL: $msg');
-        return (success: false, statusCode: 0, body: msg);
-      }
-
-      await _controller!.evaluateJavascript(source: '''
-        (function() {
-          var btn = document.querySelector('[data-testid="retweet"]')
-                 || document.querySelector('[data-testid="unretweet"]');
-          if (btn) btn.click();
-        })()
-      ''');
-
-      await Future.delayed(const Duration(milliseconds: 500));
-
-      // 3. メニューから「リポスト」または「リポストを取り消す」をクリック
-      final menuSelector = undo
-          ? '[data-testid="unretweetConfirm"]'
-          : '[data-testid="retweetConfirm"]';
-
-      final menuReady = await _waitForElement(menuSelector, timeoutSeconds: 5);
-      if (!menuReady) {
-        // メニューが出ない場合（直接RT/アンRTされた可能性）
-        sw.stop();
-        await _saveCookies(creds.authToken);
-        debugPrint('[XWebView] $operation: no confirm menu, assuming direct action');
-        DebugLogService.instance.log('XWebView', '$operation: completed (no confirm menu) ${sw.elapsedMilliseconds}ms');
-        return (success: true, statusCode: 200, body: 'Direct action (no menu)');
-      }
-
-      await _controller!.evaluateJavascript(source: '''
-        (function() {
-          var item = document.querySelector('$menuSelector');
-          if (item) item.click();
-        })()
-      ''');
-
-      await Future.delayed(const Duration(milliseconds: 500));
-      sw.stop();
-      await _saveCookies(creds.authToken);
-
-      debugPrint('[XWebView] $operation: SUCCESS (${sw.elapsedMilliseconds}ms)');
-      DebugLogService.instance.log('XWebView', '$operation: completed ${sw.elapsedMilliseconds}ms');
-      return (success: true, statusCode: 200, body: 'DOM action succeeded');
-    } catch (e) {
-      sw.stop();
-      debugPrint('[XWebView] $operation error: $e');
-      DebugLogService.instance.log('XWebView', '$operation ERROR: $e');
-      return (success: false, statusCode: 0, body: e.toString());
-    }
   }
 
   void dispose() {

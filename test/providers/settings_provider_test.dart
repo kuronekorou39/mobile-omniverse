@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mobile_omniverse/providers/settings_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -15,7 +16,7 @@ void main() {
       expect(state.themeMode, ThemeMode.system);
       expect(state.fontScale, 0.8);
       expect(state.hideRetweetsAccountIds, isEmpty);
-      expect(state.postCardStyle, PostCardStyle.card);
+      expect(state.postCardStyle, PostCardStyle.separator);
       expect(state.imageCacheSize, 50);
       expect(state.showPerfOverlay, false);
       expect(state.dripIntervalMs, 1500);
@@ -120,6 +121,16 @@ void main() {
   group('SettingsNotifier', () {
     setUp(() {
       SharedPreferences.setMockInitialValues({});
+      // SettingsNotifier 構築時の _loadFromPrefs は keepScreenOn デフォルト true
+      // により WakelockPlus.enable() を呼ぶ。これはプラットフォームチャネル経由
+      // のため、テスト環境では未接続で PlatformException になる。チャネルを
+      // モックして握りつぶす（本番では実機チャネルが応答するので問題ない）。
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMessageHandler(
+        'dev.flutter.pigeon.wakelock_plus_platform_interface.WakelockPlusApi.toggle',
+        (ByteData? message) async =>
+            const StandardMessageCodec().encodeMessage(<Object?>[null]),
+      );
     });
 
     tearDown(() {
@@ -134,7 +145,7 @@ void main() {
       expect(notifier.state.themeMode, ThemeMode.system);
       expect(notifier.state.fontScale, 0.8);
       expect(notifier.state.hideRetweetsAccountIds, isEmpty);
-      expect(notifier.state.postCardStyle, PostCardStyle.card);
+      expect(notifier.state.postCardStyle, PostCardStyle.separator);
       expect(notifier.state.imageCacheSize, 50);
       expect(notifier.state.showPerfOverlay, false);
       expect(notifier.state.dripIntervalMs, 1500);
@@ -337,7 +348,7 @@ void main() {
       expect(notifier.state.themeMode, ThemeMode.system);
       expect(notifier.state.fontScale, 0.8);
       expect(notifier.state.hideRetweetsAccountIds, isEmpty);
-      expect(notifier.state.postCardStyle, PostCardStyle.card);
+      expect(notifier.state.postCardStyle, PostCardStyle.separator);
       expect(notifier.state.imageCacheSize, 50);
       expect(notifier.state.showPerfOverlay, false);
       expect(notifier.state.dripIntervalMs, 1500);

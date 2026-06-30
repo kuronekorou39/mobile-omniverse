@@ -1108,29 +1108,6 @@ void main() {
     });
   });
 
-  group('retweet (HTTP)', () {
-    test('returns true on 200', () async {
-      final creds = XCredentials(authToken: 'a', ct0: 'c');
-      final client = createMockClient(
-        statusCode: 200,
-        body: jsonEncode({'data': {'create_retweet': {'retweet_results': {}}}}),
-      );
-      service.httpClientOverride = client;
-
-      final result = await service.retweet(creds, 'tweet_1');
-      expect(result, isTrue);
-    });
-
-    test('returns false on non-200', () async {
-      final creds = XCredentials(authToken: 'a', ct0: 'c');
-      final client = createMockClient(statusCode: 403, body: '{}');
-      service.httpClientOverride = client;
-
-      final result = await service.retweet(creds, 'tweet_1');
-      expect(result, isFalse);
-    });
-  });
-
   group('retweetWithDetail (HTTP)', () {
     test('returns XApiResult with correct data', () async {
       final creds = XCredentials(authToken: 'a', ct0: 'c');
@@ -1143,29 +1120,6 @@ void main() {
     });
   });
 
-  group('unretweet (HTTP)', () {
-    test('returns true on 200', () async {
-      final creds = XCredentials(authToken: 'a', ct0: 'c');
-      final client = createMockClient(
-        statusCode: 200,
-        body: jsonEncode({'data': {'unretweet': {'unretweet_results': {}}}}),
-      );
-      service.httpClientOverride = client;
-
-      final result = await service.unretweet(creds, 'tweet_1');
-      expect(result, isTrue);
-    });
-
-    test('returns false on non-200', () async {
-      final creds = XCredentials(authToken: 'a', ct0: 'c');
-      final client = createMockClient(statusCode: 400, body: '{}');
-      service.httpClientOverride = client;
-
-      final result = await service.unretweet(creds, 'tweet_1');
-      expect(result, isFalse);
-    });
-  });
-
   group('unretweetWithDetail (HTTP)', () {
     test('returns XApiResult with correct data', () async {
       final creds = XCredentials(authToken: 'a', ct0: 'c');
@@ -1175,33 +1129,6 @@ void main() {
       final result = await service.unretweetWithDetail(creds, 'tweet_1');
       expect(result.success, isTrue);
       expect(result.statusCode, 200);
-    });
-  });
-
-  group('createTweet (HTTP)', () {
-    test('returns success on 200', () async {
-      final creds = XCredentials(authToken: 'a', ct0: 'c');
-      final client = createMockClient(
-        statusCode: 200,
-        body: jsonEncode({'data': {'create_tweet': {'tweet_results': {}}}}),
-      );
-      service.httpClientOverride = client;
-
-      final result = await service.createTweet(creds, 'Hello from test');
-      expect(result.success, isTrue);
-      expect(result.statusCode, 200);
-      expect(result.apiRoute, 'GraphQL');
-    });
-
-    test('returns failure on non-200', () async {
-      final creds = XCredentials(authToken: 'a', ct0: 'c');
-      final client = createMockClient(statusCode: 403, body: '{"errors":[]}');
-      service.httpClientOverride = client;
-
-      final result = await service.createTweet(creds, 'Hello from test');
-      expect(result.success, isFalse);
-      expect(result.statusCode, 403);
-      expect(result.apiRoute, 'GraphQL');
     });
   });
 

@@ -8,7 +8,7 @@ void main() {
     });
 
     test('X の homeUrl', () {
-      expect(SnsService.x.homeUrl, 'https://x.com/home');
+      expect(SnsService.x.homeUrl, 'https://x.com/i/flow/login');
     });
 
     test('X の domain', () {

@@ -18,114 +18,74 @@ void main() {
     container.dispose();
   });
 
-  group('NotificationBadgeProvider', () {
-    test('初期状態は空の Set', () {
+  group('NotificationBadgeProvider 初期状態', () {
+    test('初期状態は空の NotificationBadgeState', () {
       final state = container.read(notificationBadgeProvider);
-      expect(state, isEmpty);
-      expect(state, isA<Set<String>>());
+      expect(state, isA<NotificationBadgeState>());
+      expect(state.isEmpty, true);
+      expect(state.total, 0);
     });
 
-    test('hasUnread は初期状態で false', () {
+    test('hasUnread / hasUnreadFor / totalUnread は初期状態で空', () {
       final notifier = container.read(notificationBadgeProvider.notifier);
       expect(notifier.hasUnread, false);
+      expect(notifier.hasUnreadFor('unknown_acc'), false);
+      expect(notifier.unreadCountFor('unknown_acc'), 0);
+      expect(notifier.totalUnread, 0);
+    });
+  });
+
+  group('NotificationBadgeState', () {
+    test('未読件数の集計（total / contains / countFor）が正しい', () {
+      const state = NotificationBadgeState(
+        unreadAccountIds: {'a', 'b'},
+        unreadCounts: {'a': 2, 'b': 3},
+      );
+      expect(state.isNotEmpty, true);
+      expect(state.isEmpty, false);
+      expect(state.contains('a'), true);
+      expect(state.contains('z'), false);
+      expect(state.countFor('a'), 2);
+      expect(state.countFor('z'), 0);
+      expect(state.total, 5);
     });
 
-    test('hasUnreadFor は未知のアカウントで false', () {
-      final notifier = container.read(notificationBadgeProvider.notifier);
-      expect(notifier.hasUnreadFor('unknown_acc'), false);
+    test('空の state は isEmpty=true / total=0', () {
+      const state = NotificationBadgeState();
+      expect(state.isEmpty, true);
+      expect(state.total, 0);
     });
   });
 
   group('NotificationBadgeNotifier', () {
-    test('addUnread でアカウントIDが state に追加される', () {
+    test('clearBadgeImmediately で state が空になる', () async {
       final notifier = container.read(notificationBadgeProvider.notifier);
-
-      // NotificationBadgeNotifier には addUnread メソッドがないので、
-      // state を直接検証する代わりに、公開メソッドで確認
-      // markSeen で空になることを確認
-      notifier.markSeen();
+      await notifier.clearBadgeImmediately();
       final state = container.read(notificationBadgeProvider);
-      expect(state, isEmpty);
-    });
-
-    test('markSeen で state がクリアされる', () async {
-      final notifier = container.read(notificationBadgeProvider.notifier);
-
-      await notifier.markSeen();
-
-      final state = container.read(notificationBadgeProvider);
-      expect(state, isEmpty);
+      expect(state.isEmpty, true);
       expect(notifier.hasUnread, false);
     });
 
-    test('markSeen 後 hasUnread は false', () async {
+    test('refreshBadge は有効アカウントが無ければ空のまま', () {
       final notifier = container.read(notificationBadgeProvider.notifier);
-
-      await notifier.markSeen();
-
-      expect(notifier.hasUnread, false);
-    });
-
-    test('markSeen 後 hasUnreadFor は全て false', () async {
-      final notifier = container.read(notificationBadgeProvider.notifier);
-
-      await notifier.markSeen();
-
-      expect(notifier.hasUnreadFor('acc_1'), false);
-      expect(notifier.hasUnreadFor('acc_2'), false);
-    });
-  });
-
-  group('NotificationBadgeNotifier 状態管理', () {
-    test('複数回の状態変更が正しく反映される', () async {
-      final notifier = container.read(notificationBadgeProvider.notifier);
-
-      // 初期状態
-      expect(container.read(notificationBadgeProvider), isEmpty);
-
-      // markSeen
-      await notifier.markSeen();
-      expect(container.read(notificationBadgeProvider), isEmpty);
-      expect(notifier.hasUnread, false);
-    });
-
-    test('ProviderContainer のリスナーで状態変化を追跡', () async {
-      final states = <Set<String>>[];
-
-      container.listen<Set<String>>(
-        notificationBadgeProvider,
-        (prev, next) => states.add(Set.of(next)),
-        fireImmediately: true,
-      );
-
-      // 初期状態
-      expect(states.last, isEmpty);
-
-      // markSeen
-      final notifier = container.read(notificationBadgeProvider.notifier);
-      await notifier.markSeen();
-
-      // markSeen は空セットを設定するので、初期状態と同じだが
-      // StateNotifier は同じ値でも通知する可能性がある（== 比較）
-      // ここでは最終的に空であることだけ確認
-      expect(container.read(notificationBadgeProvider), isEmpty);
+      notifier.refreshBadge();
+      expect(container.read(notificationBadgeProvider).isEmpty, true);
     });
 
     test('onSchedulerCycle は _checkEveryNCycles 回に1回だけチェックする', () async {
       final notifier = container.read(notificationBadgeProvider.notifier);
 
-      // 5回未満のサイクルではフェッチが起きない
-      // （AccountStorageService が空なので実際のフェッチはスキップされるが、
-      //  ロジックの流れを確認）
+      // 5回未満のサイクルではチェック（フェッチ）が起きない。
+      // AccountStorageService が空なので実フェッチはスキップされ、
+      // state は空のまま維持される。
       for (int i = 0; i < 4; i++) {
         await notifier.onSchedulerCycle();
       }
-      // 4回目まではカウントアップのみ、フェッチなし
-      expect(container.read(notificationBadgeProvider), isEmpty);
+      expect(container.read(notificationBadgeProvider).isEmpty, true);
 
-      // 5回目でフェッチが走る（ただしアカウントが空なので何も変わらない）
+      // 5回目でチェックが走る（アカウントが空なので state は変わらない）。
       await notifier.onSchedulerCycle();
-      expect(container.read(notificationBadgeProvider), isEmpty);
+      expect(container.read(notificationBadgeProvider).isEmpty, true);
     });
   });
 }

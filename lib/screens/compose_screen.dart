@@ -187,8 +187,8 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
     });
   }
 
-  /// 選択中のアカウントの中に X が含まれていれば true。Phase 5a では X への画像投稿は
-  /// 未対応のため、画像を選択していて X が混ざっていると警告を出す。
+  /// 選択中のアカウントに X が含まれていれば true。
+  /// 画像のバイト上限判定（_strictestImageMaxBytes）と GIF サイズ超過警告に使う。
   bool get _hasXSelected =>
       _selectedAccounts.any((a) => a.service == SnsService.x);
 

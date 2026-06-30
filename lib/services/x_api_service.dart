@@ -431,10 +431,6 @@ class XApiService {
     return _parseMutationResult(response);
   }
 
-  /// リツイート
-  Future<bool> retweet(XCredentials creds, String tweetId) async =>
-      (await retweetWithDetail(creds, tweetId)).success;
-
   Future<XApiResult> retweetWithDetail(
       XCredentials creds, String tweetId) async {
     final queryId = _getMutationQueryId('CreateRetweet', creds);
@@ -455,10 +451,6 @@ class XApiService {
     _logResponse('CreateRetweet', 'POST', uri, hdrs, reqBody, response, sw);
     return _parseMutationResult(response);
   }
-
-  /// リツイート解除
-  Future<bool> unretweet(XCredentials creds, String tweetId) async =>
-      (await unretweetWithDetail(creds, tweetId)).success;
 
   Future<XApiResult> unretweetWithDetail(
       XCredentials creds, String tweetId) async {
@@ -744,106 +736,6 @@ class XApiService {
     sw.stop();
     _logResponse('unfollowUser', 'POST', uri, hdrs, 'user_id=$userId', response, sw);
     return response.statusCode == 200;
-  }
-
-  /// ツイートを投稿 (GraphQL CreateTweet)
-  /// 226 (bot detection) の場合はリトライせず即失敗を返す
-  Future<XApiResult> createTweet(XCredentials creds, String text) async {
-    final warmedCookies = await _warmCookies(creds);
-
-    // --- GraphQL CreateTweet ---
-    final queryId = _getMutationQueryId('CreateTweet', creds);
-    final gqlUri =
-        Uri.parse('${XEndpoints.graphqlBase}/$queryId/CreateTweet');
-    final headers = _buildHeaders(creds, cookieOverride: warmedCookies);
-
-    // リクエスト詳細を構築（デバッグビルドのみ Cookie 詳細を含む）
-    final reqLines = StringBuffer();
-    reqLines.writeln('POST $gqlUri');
-    reqLines.writeln('queryId=$queryId');
-    if (kDebugMode) {
-      reqLines.writeln('=== Headers ===');
-      for (final entry in headers.entries) {
-        if (entry.key == 'Cookie') {
-          reqLines.writeln('Cookie: (${entry.value.length} chars)');
-        } else {
-          reqLines.writeln('${entry.key}: ${entry.value}');
-        }
-      }
-    }
-    final reqInfo = reqLines.toString();
-
-    debugPrint('[XApi] createTweet POST: $gqlUri queryId=$queryId');
-    final gqlBody = json.encode({
-      'variables': {
-        'tweet_text': text,
-        'media': {'media_entities': [], 'possibly_sensitive': false},
-        'semantic_annotation_ids': <dynamic>[],
-        'disallowed_reply_options': null,
-      },
-      'features': XFeatures.forOperation('CreateTweet'),
-      'queryId': queryId,
-    });
-    final sw = Stopwatch()..start();
-    final gqlResponse = await _client.post(
-      gqlUri,
-      headers: headers,
-      body: gqlBody,
-    );
-    sw.stop();
-    _updateCt0FromResponse(creds, gqlResponse);
-    _logResponse('CreateTweet', 'POST', gqlUri, headers, gqlBody, gqlResponse, sw);
-    debugPrint('[XApi] createTweet(gql): ${gqlResponse.statusCode} body=${_snippet(gqlResponse.body)}');
-
-    // GraphQL の成功判定
-    bool gqlSuccess = gqlResponse.statusCode == 200;
-    bool has226 = false;
-    String? errorSummary;
-    if (gqlSuccess) {
-      try {
-        final body = json.decode(gqlResponse.body);
-        if (body is Map<String, dynamic> && body.containsKey('errors')) {
-          final errors = body['errors'] as List<dynamic>?;
-          if (errors != null && errors.isNotEmpty) {
-            // エラー概要を生成（アクティビティログ用）
-            final codes = errors
-                .whereType<Map>()
-                .map((e) => 'code=${e['code']} ${e['message'] ?? ''}')
-                .join('; ');
-            errorSummary = codes;
-            has226 = errors.any((e) => e is Map && e['code'] == 226);
-            gqlSuccess = false;
-            if (!has226) {
-              debugPrint('[XApi] createTweet(gql): errors: $codes');
-            }
-          }
-        }
-      } catch (_) {}
-    } else {
-      errorSummary = 'HTTP ${gqlResponse.statusCode}';
-    }
-
-    if (gqlSuccess) {
-      return XApiResult(
-        success: true,
-        statusCode: gqlResponse.statusCode,
-        bodySnippet: 'OK',
-        apiRoute: 'GraphQL',
-        requestInfo: reqInfo,
-      );
-    }
-
-    if (has226) {
-      debugPrint('[XApi] createTweet: GraphQL 226 (bot detection)');
-    }
-
-    return XApiResult(
-      success: false,
-      statusCode: has226 ? 226 : gqlResponse.statusCode,
-      bodySnippet: errorSummary ?? _snippet(gqlResponse.body),
-      apiRoute: 'GraphQL',
-      requestInfo: reqInfo,
-    );
   }
 
   /// メンション（リプライ）通知を取得 (REST v2 API)

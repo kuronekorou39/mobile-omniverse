@@ -8,8 +8,6 @@ import 'package:mobile_omniverse/providers/settings_provider.dart';
 import 'package:mobile_omniverse/services/account_storage_service.dart';
 import 'package:mobile_omniverse/services/timeline_fetch_scheduler.dart';
 
-import '../helpers/test_data.dart';
-
 /// SettingsNotifier that does not auto-start the scheduler
 class _TestSettingsNotifier extends SettingsNotifier {
   _TestSettingsNotifier() : super() {
@@ -48,6 +46,21 @@ void main() {
     await tester.pumpAndSettle();
   }
 
+  /// デバッグセクションは「バージョン」を5回タップする隠し機能で解除される。
+  /// 解除しないとデバッグ系の項目はウィジェットツリーに存在しない。
+  Future<void> unlockDebugSection(WidgetTester tester) async {
+    final scrollable = find.byType(Scrollable).first;
+    await tester.scrollUntilVisible(find.text('バージョン'), 200.0,
+        scrollable: scrollable);
+    await tester.ensureVisible(find.text('バージョン'));
+    await tester.pumpAndSettle();
+    for (var i = 0; i < 5; i++) {
+      await tester.tap(find.text('バージョン'));
+      await tester.pump();
+    }
+    await tester.pumpAndSettle();
+  }
+
   group('SettingsScreen - rendering', () {
     testWidgets('renders app bar with title "設定"', (tester) async {
       await pumpSettingsScreen(tester);
@@ -59,7 +72,7 @@ void main() {
       await pumpSettingsScreen(tester);
 
       expect(find.text('外観'), findsOneWidget);
-      expect(find.text('レイアウト'), findsOneWidget);
+      expect(find.text('投稿の表示'), findsOneWidget);
     });
 
     testWidgets('renders theme setting', (tester) async {
@@ -91,6 +104,7 @@ void main() {
 
     testWidgets('renders debug section', (tester) async {
       await pumpSettingsScreen(tester);
+      await unlockDebugSection(tester);
 
       final scrollable = find.byType(Scrollable).first;
       await tester.scrollUntilVisible(find.text('デバッグ'), 200.0,
@@ -124,6 +138,8 @@ void main() {
 
   group('SettingsScreen - debug section contents', () {
     Future<void> expandDebugSection(WidgetTester tester) async {
+      // デバッグセクションは隠し機能なので、まずバージョン5回タップで解除する
+      await unlockDebugSection(tester);
       final scrollable = find.byType(Scrollable).first;
       // Scroll to ensure the debug section is visible and tappable
       await tester.scrollUntilVisible(find.text('デバッグ'), 300.0,

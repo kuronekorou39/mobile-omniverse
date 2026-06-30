@@ -1,13 +1,24 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:mobile_omniverse/models/account.dart';
+import 'package:mobile_omniverse/providers/settings_provider.dart';
 import 'package:mobile_omniverse/screens/compose_screen.dart';
 import 'package:mobile_omniverse/services/account_storage_service.dart';
+import 'package:mobile_omniverse/services/timeline_fetch_scheduler.dart';
 import 'package:mobile_omniverse/widgets/sns_badge.dart';
 
 import '../helpers/test_data.dart';
+
+/// SettingsNotifier that does not auto-start the fetch scheduler so that
+/// widget tests do not leak pending timers.
+class _TestSettingsNotifier extends SettingsNotifier {
+  _TestSettingsNotifier() : super() {
+    stopFetching();
+  }
+}
 
 void main() {
   setUpAll(() {
@@ -20,9 +31,21 @@ void main() {
     AccountStorageService.instance.setAccountsForTest([]);
   });
 
+  tearDown(() {
+    TimelineFetchScheduler.instance.stop();
+  });
+
+  // ComposeScreen is a ConsumerStatefulWidget; it must be hosted inside a
+  // ProviderScope. The settings provider is overridden so the fetch scheduler
+  // does not start a real timer during the test.
   Widget buildComposeScreen() {
-    return const MaterialApp(
-      home: ComposeScreen(),
+    return ProviderScope(
+      overrides: [
+        settingsProvider.overrideWith((ref) => _TestSettingsNotifier()),
+      ],
+      child: const MaterialApp(
+        home: ComposeScreen(),
+      ),
     );
   }
 
@@ -47,9 +70,9 @@ void main() {
       await tester.pumpWidget(buildComposeScreen());
       await tester.pump();
 
-      // With no accounts, _maxLength defaults to 280 (X).
-      // The remaining counter should show "280" initially.
-      expect(find.text('280'), findsOneWidget);
+      // With no accounts selected, _maxLength defaults to 300.
+      // The remaining counter should show "300" initially.
+      expect(find.text('300'), findsOneWidget);
     });
 
     testWidgets('post button is disabled when text is empty', (tester) async {
@@ -83,16 +106,16 @@ void main() {
       await tester.enterText(find.byType(TextField), 'Hi');
       await tester.pump();
 
-      // 280 - 2 = 278
-      expect(find.text('278'), findsOneWidget);
+      // No account selected -> max 300. 300 - 2 = 298
+      expect(find.text('298'), findsOneWidget);
     });
 
     testWidgets('character counter turns red when over limit', (tester) async {
       await tester.pumpWidget(buildComposeScreen());
       await tester.pump();
 
-      // Enter text exceeding 280 characters.
-      final longText = 'A' * 285;
+      // No account selected -> max 300. Enter text exceeding 300 characters.
+      final longText = 'A' * 305;
       await tester.enterText(find.byType(TextField), longText);
       await tester.pump();
 
@@ -139,9 +162,9 @@ void main() {
       await tester.pumpWidget(buildComposeScreen());
       await tester.pump();
 
-      // Should show account info as a Row (not a dropdown since only 1)
+      // Single account renders one selectable chip with its SnsBadge and
+      // handle (the chip shows the handle, not the full display name).
       expect(find.byType(SnsBadge), findsOneWidget);
-      expect(find.textContaining('My X Account'), findsOneWidget);
       expect(find.textContaining('@myxaccount'), findsOneWidget);
     });
 
@@ -183,7 +206,8 @@ void main() {
       expect(textWidget.style?.color, Colors.orange);
     });
 
-    testWidgets('post button is disabled when remaining < 0', (tester) async {
+    testWidgets('over-limit text keeps button enabled but shows a warning',
+        (tester) async {
       final account = makeXAccount();
       AccountStorageService.instance.setAccountsForTest([account]);
 
@@ -194,13 +218,16 @@ void main() {
       await tester.enterText(find.byType(TextField), longText);
       await tester.pump();
 
+      // Over-limit posts are allowed; the violating account is treated as a
+      // failure at post time, so the button stays enabled and a warning shows.
       final button = tester.widget<FilledButton>(find.byType(FilledButton));
-      expect(button.onPressed, isNull);
+      expect(button.onPressed, isNotNull);
+      expect(find.textContaining('文字数オーバー'), findsOneWidget);
     });
   });
 
   group('ComposeScreen - multiple accounts', () {
-    testWidgets('shows account dropdown when multiple accounts exist',
+    testWidgets('shows a selectable chip per account when multiple exist',
         (tester) async {
       final xAccount = makeXAccount(
         id: 'x_1',
@@ -218,10 +245,11 @@ void main() {
       await tester.pumpWidget(buildComposeScreen());
       await tester.pump();
 
-      // Should show a DropdownButtonFormField for account selection
-      expect(find.byType(DropdownButtonFormField<Account>),
-          findsOneWidget);
-      expect(find.text('投稿アカウント'), findsOneWidget);
+      // Account selection is a horizontal row of chips (one badge + handle
+      // per account), not a dropdown.
+      expect(find.byType(SnsBadge), findsNWidgets(2));
+      expect(find.text('@xuser'), findsOneWidget);
+      expect(find.text('@bskyuser'), findsOneWidget);
     });
 
     testWidgets('disabled accounts are not shown in dropdown', (tester) async {
@@ -243,9 +271,9 @@ void main() {
       await tester.pumpWidget(buildComposeScreen());
       await tester.pump();
 
-      // Only one enabled account, so no dropdown, just account row
+      // Only the enabled account is shown, so a single chip with its handle.
       expect(find.byType(SnsBadge), findsOneWidget);
-      expect(find.textContaining('Enabled'), findsOneWidget);
+      expect(find.textContaining('@enabled'), findsOneWidget);
     });
 
     testWidgets('post button becomes enabled when text is entered with account',
@@ -333,8 +361,8 @@ void main() {
     });
   });
 
-  group('ComposeScreen - dropdown account switching', () {
-    testWidgets('switching account in dropdown changes character limit',
+  group('ComposeScreen - chip account switching', () {
+    testWidgets('selecting a Bluesky chip raises the character limit',
         (tester) async {
       final xAccount = makeXAccount(
         id: 'x_switch',
@@ -352,18 +380,14 @@ void main() {
       await tester.pumpWidget(buildComposeScreen());
       await tester.pump();
 
-      // Default first account is X, so 280 chars
+      // The first account (X) is selected by default, so the limit is 280.
       expect(find.text('280'), findsOneWidget);
 
-      // Open the dropdown
-      await tester.tap(find.byType(DropdownButtonFormField<Account>));
+      // Tap the Bluesky chip to add it to the selection. Once a Bluesky
+      // account is selected, the limit becomes the looser 300.
+      await tester.tap(find.text('@bskyaccount'));
       await tester.pumpAndSettle();
 
-      // Select the Bluesky account
-      await tester.tap(find.textContaining('Bsky Account').last);
-      await tester.pumpAndSettle();
-
-      // Now character limit should be 300 (Bluesky)
       expect(find.text('300'), findsOneWidget);
     });
   });

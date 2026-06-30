@@ -22,7 +22,7 @@ void main() {
                   currentVersion: '1.0.0',
                   latestVersion: '1.1.0',
                   releaseNotes: '',
-                  releaseUrl: 'https://github.com/test/releases',
+                  apkUrl: 'https://github.com/test/releases',
                 ),
               );
             });
@@ -46,7 +46,7 @@ void main() {
                   currentVersion: '1.0.0',
                   latestVersion: '2.0.0',
                   releaseNotes: '',
-                  releaseUrl: 'https://github.com/test/releases',
+                  apkUrl: 'https://github.com/test/releases',
                 ),
               );
             });
@@ -70,7 +70,7 @@ void main() {
                   currentVersion: '1.0.0',
                   latestVersion: '1.1.0',
                   releaseNotes: 'Bug fixes and performance improvements',
-                  releaseUrl: 'https://github.com/test/releases',
+                  apkUrl: 'https://github.com/test/releases',
                 ),
               );
             });
@@ -97,7 +97,7 @@ void main() {
                   currentVersion: '1.0.0',
                   latestVersion: '1.1.0',
                   releaseNotes: '',
-                  releaseUrl: 'https://github.com/test/releases',
+                  apkUrl: 'https://github.com/test/releases',
                 ),
               );
             });
@@ -121,7 +121,7 @@ void main() {
                   currentVersion: '1.0.0',
                   latestVersion: '1.1.0',
                   releaseNotes: '',
-                  releaseUrl: 'https://github.com/test/releases',
+                  apkUrl: 'https://github.com/test/releases',
                 ),
               );
             });
@@ -146,7 +146,7 @@ void main() {
                   currentVersion: '1.0.0',
                   latestVersion: '1.1.0',
                   releaseNotes: '',
-                  releaseUrl: 'https://github.com/test/releases',
+                  apkUrl: 'https://github.com/test/releases',
                 ),
               );
             });
@@ -178,7 +178,7 @@ void main() {
                   currentVersion: '1.0.0',
                   latestVersion: '1.1.0',
                   releaseNotes: 'Some notes',
-                  releaseUrl: 'https://github.com/test/releases',
+                  apkUrl: 'https://github.com/test/releases',
                 ),
               );
             });

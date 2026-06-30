@@ -19,7 +19,7 @@ void main() {
       await XQueryIdService.instance.init();
       await XFeaturesService.instance.init();
       await DebugLogService.instance.init();
-      await NotificationCacheService.instance.loadReadLines();
+      await NotificationCacheService.instance.loadSeenAt();
       app.main();
       await tester.pumpAndSettle(const Duration(seconds: 5));
       // App should display without crashing

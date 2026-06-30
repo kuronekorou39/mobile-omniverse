@@ -38,7 +38,9 @@ void main() {
   setUp(() {
     SharedPreferences.setMockInitialValues({});
     service = NotificationCacheService.instance;
-    // テスト間でキャッシュをクリア
+    // テスト間でキャッシュをクリア。
+    // 注: _seenAt はシングルトンで clearAll では消えないため、
+    //     isNew/markSeen 系のテストでは id を一意にして衝突を避ける。
     service.clearAll();
   });
 
@@ -78,7 +80,8 @@ void main() {
       });
 
       test('merge時にcursor付きで呼ぶと正しい値を返す', () {
-        service.merge('acc_1', [makeNotification(id: 'n1')], cursor: 'cursor_abc');
+        service
+            .merge('acc_1', [makeNotification(id: 'n1')], cursor: 'cursor_abc');
         expect(service.getCursor('acc_1'), 'cursor_abc');
       });
 
@@ -111,42 +114,46 @@ void main() {
           makeNotification(id: 'n1', accountId: 'acc_1'),
           makeNotification(id: 'n2', accountId: 'acc_1'),
         ];
-        final count = service.merge('acc_1', items);
+        final result = service.merge('acc_1', items);
 
-        expect(count, 2);
+        expect(result.newCount, 2);
+        expect(result.updatedCount, 0);
         expect(service.get('acc_1'), hasLength(2));
       });
 
-      test('重複する通知は追加しない', () {
+      test('重複する通知は追加も更新もしない', () {
         final items1 = [makeNotification(id: 'n1', accountId: 'acc_1')];
         final items2 = [makeNotification(id: 'n1', accountId: 'acc_1')];
 
         service.merge('acc_1', items1);
-        final count = service.merge('acc_1', items2);
+        final result = service.merge('acc_1', items2);
 
-        expect(count, 0);
+        expect(result.newCount, 0);
+        expect(result.updatedCount, 0);
+        expect(result.hasChanges, false);
         expect(service.get('acc_1'), hasLength(1));
       });
 
       test('重複と新規が混在する場合、新規のみ追加', () {
         service.merge('acc_1', [makeNotification(id: 'n1', accountId: 'acc_1')]);
-        final count = service.merge('acc_1', [
+        final result = service.merge('acc_1', [
           makeNotification(id: 'n1', accountId: 'acc_1'),
           makeNotification(id: 'n2', accountId: 'acc_1'),
         ]);
 
         // n2 は新規
-        expect(count, 1);
+        expect(result.newCount, 1);
         expect(service.get('acc_1'), hasLength(2));
       });
 
       test('新規件数を返す', () {
-        final count = service.merge('acc_1', [
+        final result = service.merge('acc_1', [
           makeNotification(id: 'n1'),
           makeNotification(id: 'n2'),
           makeNotification(id: 'n3'),
         ]);
-        expect(count, 3);
+        expect(result.newCount, 3);
+        expect(result.hasChanges, true);
       });
 
       test('accountId が異なる通知は accountId をスタンプする', () {
@@ -168,13 +175,14 @@ void main() {
             const NotificationActor(name: 'Extra', handle: '@extra'),
           ],
         );
-        final count = service.merge('acc_1', [updated]);
+        final result = service.merge('acc_1', [updated]);
 
-        // 更新されたのでカウントに含まれる
-        expect(count, 1);
-        final result = service.get('acc_1');
-        expect(result, hasLength(1));
-        expect(result.first.totalActorCount, 2);
+        // 新規ではなく更新としてカウントされる
+        expect(result.newCount, 0);
+        expect(result.updatedCount, 1);
+        final stored = service.get('acc_1');
+        expect(stored, hasLength(1));
+        expect(stored.first.totalActorCount, 2);
       });
 
       test('cursorが更新される', () {
@@ -186,110 +194,62 @@ void main() {
       });
     });
 
-    group('openTab', () {
-      test('初回呼び出しで DateTime.now() に近い値を返す（既読ラインなし）', () {
-        final before = DateTime.now();
-        final result = service.openTab('acc_1');
-        final after = DateTime.now();
-
-        // 初回は「全て既読扱い」なので DateTime.now() を返す
-        expect(result.isAfter(before.subtract(const Duration(seconds: 1))), true);
-        expect(result.isBefore(after.add(const Duration(seconds: 1))), true);
+    group('isNew / markSeen', () {
+      test('一度も見ていない通知は isNew=true', () {
+        final n = makeNotification(id: 'unseen_1');
+        expect(service.isNew(n), true);
       });
 
-      test('2回目の呼び出しで前回のタイムスタンプを返す', () async {
-        // 1回目: 既読ラインを設定
-        service.openTab('acc_1');
+      test('markSeen 後は同じ通知が isNew=false', () {
+        final n = makeNotification(
+            id: 'seen_1', timestamp: DateTime(2024, 6, 1, 12, 0, 0));
+        service.markSeen(n);
+        expect(service.isNew(n), false);
+      });
 
-        // 少し待って差を作る
-        await Future<void>.delayed(const Duration(milliseconds: 50));
-
-        // 2回目: 1回目の既読ラインを返すはず
-        final before2nd = DateTime.now();
-        final result = service.openTab('acc_1');
-
-        // 2回目の結果は、2回目の呼び出し時刻より前（1回目のタイムスタンプ）
-        expect(result.isBefore(before2nd), true);
+      test('markSeen 後でも timestamp が進んだ同一イベントは未読復活 (isNew=true)', () {
+        final old = makeNotification(
+            id: 'revive_1', timestamp: DateTime(2024, 6, 1, 12, 0, 0));
+        service.markSeen(old);
+        // 同一 eventKey（同 id・同 type）で、markSeen 時刻より新しい timestamp。
+        final newer =
+            makeNotification(id: 'revive_1', timestamp: DateTime(2099, 1, 1));
+        expect(service.isNew(newer), true);
       });
     });
 
-    group('openAllTab', () {
-      test('全アカウントの既読ラインを更新する', () async {
-        // 最初に各アカウントの既読ラインを設定
-        service.openTab('acc_1');
-        service.openTab('acc_2');
-
-        await Future<void>.delayed(const Duration(milliseconds: 50));
-
-        // openAllTab でリフレッシュ
-        final result = service.openAllTab(['acc_1', 'acc_2']);
-
-        // 最も古い旧既読ラインを返す
-        expect(result, isA<DateTime>());
-
-        // さらに openTab すると、openAllTab で設定した時刻が返る
-        await Future<void>.delayed(const Duration(milliseconds: 50));
-        final afterAll1 = service.openTab('acc_1');
-        final afterAll2 = service.openTab('acc_2');
-
-        // openAllTab で設定された既読ラインが返される（現在時刻より前）
-        expect(afterAll1.isBefore(DateTime.now()), true);
-        expect(afterAll2.isBefore(DateTime.now()), true);
+    group('hasUnseenFor / unseenCountFor', () {
+      test('merge した通知は未見としてカウントされる', () {
+        service.merge('acc_unseen', [
+          makeNotification(id: 'uc_1', accountId: 'acc_unseen'),
+          makeNotification(id: 'uc_2', accountId: 'acc_unseen'),
+        ]);
+        expect(service.hasUnseenFor('acc_unseen'), true);
+        expect(service.unseenCountFor('acc_unseen'), 2);
       });
 
-      test('初回の openAllTab は DateTime.now() に近い値を返す', () {
-        final before = DateTime.now();
-        final result = service.openAllTab(['acc_1', 'acc_2']);
-        final after = DateTime.now();
+      test('markSeen で未見件数が減り、全て見たら false', () {
+        final n1 = makeNotification(id: 'us_1', accountId: 'acc_seen');
+        final n2 = makeNotification(id: 'us_2', accountId: 'acc_seen');
+        service.merge('acc_seen', [n1, n2]);
 
-        expect(result.isAfter(before.subtract(const Duration(seconds: 1))), true);
-        expect(result.isBefore(after.add(const Duration(seconds: 1))), true);
+        service.markSeen(n1);
+        expect(service.unseenCountFor('acc_seen'), 1);
+
+        service.markSeen(n2);
+        expect(service.hasUnseenFor('acc_seen'), false);
       });
     });
 
-    group('isNew', () {
-      test('通知が既読ラインより新しい場合 true', () {
-        final readLine = DateTime(2024, 6, 1, 12, 0, 0);
-        final notifTime = DateTime(2024, 6, 1, 13, 0, 0);
-
-        expect(service.isNew('acc_1', readLine, notifTime), true);
-      });
-
-      test('通知が既読ラインより古い場合 false', () {
-        final readLine = DateTime(2024, 6, 1, 12, 0, 0);
-        final notifTime = DateTime(2024, 6, 1, 11, 0, 0);
-
-        expect(service.isNew('acc_1', readLine, notifTime), false);
-      });
-
-      test('通知が既読ラインと同じ時刻の場合 false', () {
-        final readLine = DateTime(2024, 6, 1, 12, 0, 0);
-        final notifTime = DateTime(2024, 6, 1, 12, 0, 0);
-
-        // isAfter は同時刻で false
-        expect(service.isNew('acc_1', readLine, notifTime), false);
-      });
-    });
-
-    group('loadReadLines', () {
-      test('SharedPreferences から既読ラインを読み込む', () async {
+    group('loadSeenAt', () {
+      test('保存済み seenAt を例外なく復元する', () async {
         final ms = DateTime(2024, 6, 1).millisecondsSinceEpoch;
         SharedPreferences.setMockInitialValues({
-          'notif_read_line_acc_1': ms,
+          'notif_seen_at': '{"like:persist_1":$ms}',
         });
-
-        // _loaded フラグをリセットするため新インスタンスは作れない（シングルトン）
-        // loadReadLines は _loaded フラグで1回だけ実行される
-        // テストでは直接 openTab の結果で検証
-        // 注: シングルトンのため、_loaded フラグが既に true の可能性がある
-        await service.loadReadLines();
-      });
-
-      test('キーが存在しない場合は既読ラインなし', () async {
-        SharedPreferences.setMockInitialValues({});
-        await service.loadReadLines();
-        // 既読ラインがない場合、openTab は DateTime.now() を返す
-        // （テスト実行順序によるが、初回扱いになる）
+        // シングルトンのため _loaded が既に true だと no-op になる。
+        // ここでは少なくとも例外を投げずに完了することを検証する。
+        await service.loadSeenAt();
       });
     });
 

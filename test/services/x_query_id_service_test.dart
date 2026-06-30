@@ -134,8 +134,9 @@ void main() {
       // Should not throw
       await service.init();
 
-      // Falls back to empty (no defaults)
-      expect(service.getQueryId('HomeLatestTimeline'), '');
+      // 破損 JSON は無視され、キャッシュが空のままになるため
+      // バンドルされた assets/x_defaults.json の既定 queryId にフォールバックする
+      expect(service.getQueryId('HomeLatestTimeline'), 'BKB7oi212Fi7kQtCBGE4zA');
     });
 
     test('init loads lastRefreshTime from prefs', () async {

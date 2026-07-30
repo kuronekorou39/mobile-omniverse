@@ -478,3 +478,9 @@ final settingsProvider =
     StateNotifierProvider<SettingsNotifier, SettingsState>(
   (ref) => SettingsNotifier(),
 );
+
+/// デバッグメニューの解錠状態。
+/// アプリ情報画面でバージョンを5回タップすると true になり、設定トップに
+/// デバッグ行が現れる。解錠する画面と表示先の画面が別なので、画面ローカルの
+/// state ではなくここで保持する。永続化しないためアプリ再起動で施錠に戻る。
+final debugUnlockedProvider = StateProvider<bool>((ref) => false);

@@ -2,7 +2,6 @@ import 'dart:ui';
 
 import 'package:flutter/material.dart';
 import 'package:cached_network_image/cached_network_image.dart';
-import 'package:url_launcher/url_launcher.dart';
 
 import '../models/post.dart';
 import '../screens/post_detail_screen.dart';
@@ -12,6 +11,14 @@ import '../providers/settings_provider.dart';
 import '../utils/image_headers.dart';
 import 'post_media.dart';
 import 'sns_badge.dart';
+
+/// エンゲージメント行の左インデント。アバター（直径40）+ 余白10 で、
+/// ボタンの開始位置を本文カラムの左端に揃える。
+const double _engagementRowIndent = 50;
+
+/// 取得元アカウントアイコン欄の幅。表示するアカウント数が投稿ごとに変わっても
+/// 返信/RT/いいねの位置が行ごとにずれないよう固定する。
+const double _sourceInfoWidth = 50;
 
 class PostCard extends StatelessWidget {
   const PostCard({
@@ -429,21 +436,22 @@ class PostCard extends StatelessWidget {
     );
   }
 
-  /// 取得元アバター（エンゲージメント行の左端、固定幅）
+  /// 取得元アバター（エンゲージメント行の右端、固定幅）
   Widget _buildSourceInfo() {
-    if (hideUserInfo) return const SizedBox(width: 50);
+    if (hideUserInfo) return const SizedBox(width: _sourceInfoWidth);
 
     final ids = post.fetchedByAccountIds.toList();
-    if (ids.isEmpty) return const SizedBox(width: 50);
+    if (ids.isEmpty) return const SizedBox(width: _sourceInfoWidth);
 
     return SizedBox(
-      width: 50,
+      width: _sourceInfoWidth,
       child: Row(
-        mainAxisSize: MainAxisSize.min,
+        // 右端に寄せる。余白は各アイコンの左に置き、右端に隙間を作らない
+        mainAxisAlignment: MainAxisAlignment.end,
         children: [
           if (ids.length <= 2)
             ...ids.map((id) => Padding(
-                  padding: const EdgeInsets.only(right: 2),
+                  padding: const EdgeInsets.only(left: 2),
                   child: _buildViaAvatar(id),
                 ))
           else ...[
@@ -511,8 +519,8 @@ class PostCard extends StatelessWidget {
 
     return Row(
       children: [
-        // SNSバッジ + 取得元アカウント（左端固定幅）
-        _buildSourceInfo(),
+        // ボタンの開始位置を本文カラムに揃えるインデント
+        const SizedBox(width: _engagementRowIndent),
         // Reply
         _EngagementButton(
           icon: Icons.chat_bubble_outline,
@@ -554,24 +562,8 @@ class PostCard extends StatelessWidget {
           activeColor: Colors.red,
         ),
         const Spacer(),
-        // Share
-        GestureDetector(
-          onTap: post.permalink != null
-              ? () async {
-                  final uri = Uri.tryParse(post.permalink!);
-                  if (uri != null) {
-                    await launchUrl(uri, mode: LaunchMode.externalApplication);
-                  }
-                }
-              : null,
-          child: Padding(
-            padding: EdgeInsets.symmetric(
-              horizontal: compact ? 4 : 8,
-              vertical: compact ? 2 : 4,
-            ),
-            child: Icon(Icons.open_in_new, size: iconSize, color: iconColor),
-          ),
-        ),
+        // 取得元アカウント（右端固定幅）。リンクを開く導線は投稿詳細の AppBar にある
+        _buildSourceInfo(),
       ],
     );
   }

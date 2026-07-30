@@ -335,19 +335,11 @@ void main() {
       expect(find.text('Z'), findsOneWidget);
     });
 
-    testWidgets('share icon is present when permalink exists', (tester) async {
+    testWidgets('リンクボタンは一覧に置かない（投稿詳細から開く）', (tester) async {
       final post = makePost(permalink: 'https://x.com/user/status/123');
       await tester.pumpWidget(buildPostCard(post: post));
 
-      expect(find.byIcon(Icons.open_in_new), findsOneWidget);
-    });
-
-    testWidgets('share icon is present when no permalink', (tester) async {
-      final post = makePost(permalink: null);
-      await tester.pumpWidget(buildPostCard(post: post));
-
-      // The open_in_new icon is always shown via GestureDetector
-      expect(find.byIcon(Icons.open_in_new), findsOneWidget);
+      expect(find.byIcon(Icons.open_in_new), findsNothing);
     });
 
     testWidgets('like button does not trigger when onLike is null', (tester) async {
@@ -515,25 +507,41 @@ void main() {
       expect(find.text('Quoted with avatar'), findsOneWidget);
     });
 
-    testWidgets('share button with permalink is tappable',
+    testWidgets('取得元アイコンは、いいねより右（旧リンクボタンの位置）に並ぶ',
         (tester) async {
-      final post =
-          makePost(permalink: 'https://x.com/user/status/123');
+      final post = makePost(fetchedByAccountIds: {'acc1'});
       await tester.pumpWidget(buildPostCard(post: post));
+      await tester.pump();
 
-      // The open_in_new icon should exist
-      final shareIcons = find.byIcon(Icons.open_in_new);
-      expect(shareIcons, findsOneWidget);
-
-      // Find the GestureDetector wrapping the share icon
-      final gestureDetector = tester.widget<GestureDetector>(
-        find.ancestor(
-          of: shareIcons,
-          matching: find.byType(GestureDetector),
-        ).first,
+      // 未登録アカウントの取得元アバターは radius 7 のグレー丸になる
+      final viaAvatar = find.byWidgetPredicate(
+        (w) => w is CircleAvatar && w.radius == 7,
       );
-      // When permalink is set, onTap should not be null
-      expect(gestureDetector.onTap, isNotNull);
+      expect(viaAvatar, findsOneWidget);
+
+      expect(
+        tester.getCenter(viaAvatar).dx,
+        greaterThan(tester.getCenter(find.byIcon(Icons.favorite_border)).dx),
+      );
+    });
+
+    testWidgets('匿名モードでは取得元アイコンを出さない', (tester) async {
+      final post = makePost(fetchedByAccountIds: {'acc1'});
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: SingleChildScrollView(
+              child: PostCard(post: post, hideUserInfo: true),
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+
+      expect(
+        find.byWidgetPredicate((w) => w is CircleAvatar && w.radius == 7),
+        findsNothing,
+      );
     });
   });
 }

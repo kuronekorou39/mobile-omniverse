@@ -14,8 +14,8 @@ class ButtonLayoutSettingsScreen extends ConsumerWidget {
     final settings = ref.watch(settingsProvider);
     final notifier = ref.read(settingsProvider.notifier);
 
-    return Scaffold(
-      appBar: AppBar(title: const Text('ボタン配置')),
+    return settingsScaffold(
+      title: 'ボタン配置',
       body: ListView(
         children: [
           const SettingsSectionHeader(

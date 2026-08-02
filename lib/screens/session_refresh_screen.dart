@@ -7,6 +7,7 @@ import '../utils/platform_ua.dart';
 import '../models/account.dart';
 import '../models/sns_service.dart';
 import '../utils/app_snackbar.dart';
+import '../services/follow_capture_job_service.dart';
 
 /// セッション更新の結果
 class SessionRefreshResult {
@@ -33,7 +34,15 @@ class _SessionRefreshScreenState extends State<SessionRefreshScreen> {
   @override
   void initState() {
     super.initState();
+    // 走査と x.com の Cookie を奪い合わないよう占有する
+    FollowCaptureJobService.instance.acquireWebView('セッション更新');
     _prepareCookies();
+  }
+
+  @override
+  void dispose() {
+    FollowCaptureJobService.instance.releaseWebView();
+    super.dispose();
   }
 
   /// 既存アカウントの Cookie を WebView に設定

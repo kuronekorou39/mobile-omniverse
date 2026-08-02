@@ -14,8 +14,8 @@ class TimelineSettingsScreen extends ConsumerWidget {
     final settings = ref.watch(settingsProvider);
     final notifier = ref.read(settingsProvider.notifier);
 
-    return Scaffold(
-      appBar: AppBar(title: const Text('タイムライン')),
+    return settingsScaffold(
+      title: 'タイムライン',
       body: ListView(
         children: [
           ListTile(

@@ -41,6 +41,8 @@ class XQueryIdService {
     'NotificationsTimeline',
     'Likes',
     'Bookmarks',
+    'Following',
+    'Followers',
   };
 
   /// グローバルキャッシュ (旧形式・マイグレーション用)

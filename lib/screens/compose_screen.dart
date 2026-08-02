@@ -1,9 +1,9 @@
 import 'dart:io';
 
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:image_cropper/image_cropper.dart';
 import 'package:image_picker/image_picker.dart';
 
 import '../models/account.dart';
@@ -13,12 +13,14 @@ import '../providers/compose_queue_provider.dart';
 import '../providers/draft_list_provider.dart';
 import '../providers/settings_provider.dart';
 import '../services/account_storage_service.dart';
+import '../services/compose_image_store.dart';
 import '../services/draft_service.dart';
 import '../services/image_resize_service.dart';
 import '../utils/app_snackbar.dart';
+import 'editor/photo_edit_core.dart';
+import 'editor/photo_editor_screen.dart';
 import '../utils/image_headers.dart';
 import '../widgets/draft_list_sheet.dart';
-import '../widgets/image_filter_screen.dart';
 import '../widgets/sns_badge.dart';
 import 'browser_post_debug_screen.dart';
 
@@ -77,6 +79,26 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
           if (_selectedAccountIds.contains(a.id)) a,
       ];
 
+  /// 下書きに紐づく画像を復元する。
+  /// 実体が消えている場合は黙って飛ばす（テキストだけでも編集を続けられる）
+  Future<void> _restoreDraftImages(Draft draft) async {
+    if (draft.imagePaths.isEmpty) return;
+    final restored = <_PickedImage>[];
+    var counter = 0;
+    for (final path in draft.imagePaths) {
+      final file = File(path);
+      if (!file.existsSync()) continue;
+      restored.add(_PickedImage(
+        id: 'img_draft_${draft.id}_${counter++}',
+        file: XFile(path),
+        sizeBytes: await file.length(),
+        isGif: path.toLowerCase().endsWith('.gif'),
+      ));
+    }
+    if (!mounted || restored.isEmpty) return;
+    setState(() => _images.addAll(restored));
+  }
+
   @override
   void initState() {
     super.initState();
@@ -85,6 +107,7 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
       _textController.text = draft.text;
       _currentDraftId = draft.id;
       _initialText = draft.text;
+      _restoreDraftImages(draft);
     }
     if (_accounts.isNotEmpty) {
       // 失敗バナーからの再投稿経路: 失敗したアカウント全部を事前選択
@@ -224,12 +247,14 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
       final base = DateTime.now().microsecondsSinceEpoch;
       var counter = 0;
       for (final xfile in picked.take(remaining)) {
-        final size = await File(xfile.path).length();
-        final isGif = (xfile.mimeType == 'image/gif') ||
-            xfile.path.toLowerCase().endsWith('.gif');
+        // 一時領域のままだと下書きや再送のときに消えている可能性がある
+        final stored = await ComposeImageStore.instance.adopt(xfile);
+        final size = await File(stored.path).length();
+        final isGif = (stored.mimeType == 'image/gif') ||
+            stored.path.toLowerCase().endsWith('.gif');
         added.add(_PickedImage(
           id: 'img_${base}_${counter++}',
-          file: xfile,
+          file: stored,
           sizeBytes: size,
           isGif: isGif,
         ));
@@ -242,12 +267,18 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
     }
   }
 
+  /// 焼き込み中の画像 ID。処理中はサムネにインジケータを出す
+  String? _editingImageId;
+
   void _removeImage(int index) {
     setState(() => _images.removeAt(index));
   }
 
-  /// サムネタップで編集メニュー（トリミング / フィルタ）を開く。
-  /// GIF はどちらもアニメーション/色を壊すため対象外。
+  /// サムネタップで画像エディタを開く。GIF はアニメーションを壊すため対象外。
+  ///
+  /// エディタは編集内容を [PhotoEditParams] として返すだけなので、
+  /// ここで焼き込んで新しいファイルに差し替える。
+  /// 焼き込みは重いので compute() で別 isolate に逃がす。
   Future<void> _editImage(int index) async {
     final picked = _images[index];
     if (picked.isGif) {
@@ -258,97 +289,51 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
       );
       return;
     }
-    final action = await showModalBottomSheet<String>(
-      context: context,
-      showDragHandle: true,
-      builder: (ctx) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            ListTile(
-              leading: const Icon(Icons.crop),
-              title: const Text('トリミング'),
-              onTap: () => Navigator.of(ctx).pop('crop'),
-            ),
-            ListTile(
-              leading: const Icon(Icons.color_lens_outlined),
-              title: const Text('フィルタ'),
-              onTap: () => Navigator.of(ctx).pop('filter'),
-            ),
-          ],
-        ),
+    final outcome = await Navigator.of(context).push<PhotoEditOutcome>(
+      MaterialPageRoute(
+        builder: (_) => PhotoEditorScreen(imagePath: picked.file.path),
       ),
     );
-    if (!mounted) return;
-    switch (action) {
-      case 'crop':
-        await _cropImage(index);
-        break;
-      case 'filter':
-        await _filterImage(index);
-        break;
-    }
-  }
+    if (outcome is! PhotoEditApplied || !mounted) return;
 
-  Future<void> _cropImage(int index) async {
-    final picked = _images[index];
+    // 編集していないなら差し替えない（無駄な再エンコードを避ける）
+    if (outcome.params.isIdentity) return;
+
+    setState(() => _editingImageId = picked.id);
     try {
-      final theme = Theme.of(context);
-      final cropped = await ImageCropper().cropImage(
-        sourcePath: picked.file.path,
-        compressFormat: ImageCompressFormat.jpg,
-        compressQuality: 95,
-        uiSettings: [
-          AndroidUiSettings(
-            toolbarTitle: 'トリミング',
-            toolbarColor: theme.colorScheme.primary,
-            toolbarWidgetColor: Colors.white,
-            initAspectRatio: CropAspectRatioPreset.original,
-            lockAspectRatio: false,
-            hideBottomControls: false,
-          ),
-          IOSUiSettings(
-            title: 'トリミング',
-            aspectRatioLockEnabled: false,
-            resetAspectRatioEnabled: true,
-          ),
-        ],
+      final outputPath = await ComposeImageStore.instance.newFilePath();
+      final result = await compute(
+        bakePhotoEdit,
+        PhotoEditBakeRequest(
+          inputPath: picked.file.path,
+          outputPath: outputPath,
+          params: outcome.params,
+        ),
       );
-      if (cropped == null) return;
-      final size = await File(cropped.path).length();
+      if (result == null) {
+        if (mounted) {
+          showAppSnackBar(context, '画像の書き出しに失敗しました',
+              type: SnackType.error);
+        }
+        return;
+      }
+      final size = await File(result).length();
       if (!mounted) return;
       setState(() {
         _images[index] = _PickedImage(
           id: 'img_${DateTime.now().microsecondsSinceEpoch}',
-          file: XFile(cropped.path),
+          file: XFile(result),
           sizeBytes: size,
           isGif: false,
         );
       });
     } catch (e) {
-      if (!mounted) return;
-      showAppSnackBar(context, 'トリミングエラー: $e', type: SnackType.error);
+      if (mounted) {
+        showAppSnackBar(context, '画像の編集に失敗しました: $e', type: SnackType.error);
+      }
+    } finally {
+      if (mounted) setState(() => _editingImageId = null);
     }
-  }
-
-  Future<void> _filterImage(int index) async {
-    final picked = _images[index];
-    final result = await Navigator.of(context).push<XFile?>(
-      MaterialPageRoute(
-        builder: (_) => ImageFilterScreen(file: picked.file),
-      ),
-    );
-    if (result == null || !mounted) return;
-    final size = await File(result.path).length();
-    if (!mounted) return;
-    setState(() {
-      _images[index] = _PickedImage(
-        id: 'img_${DateTime.now().microsecondsSinceEpoch}',
-        file: result,
-        sizeBytes: size,
-        isGif: false,
-      );
-    });
   }
 
   /// 戻る時の確認ダイアログ：「下書きに保存」「破棄」、枠外タップでキャンセル。
@@ -383,6 +368,7 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
         inReplyToPost: widget.inReplyToPost,
         quotedPost: widget.quotedPost,
         failedAccountIds: const [],
+        imagePaths: [for (final i in _images) i.file.path],
       );
       await ref.read(draftListProvider.notifier).upsert(draft);
       return true;
@@ -702,6 +688,7 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
                           picked: picked,
                           willResize: willResize,
                           overflowWarning: overflow,
+                          isProcessing: _editingImageId == picked.id,
                           onRemove: () => _removeImage(i),
                           onTap: () => _editImage(i),
                         ),
@@ -957,6 +944,7 @@ class _ImageThumb extends StatelessWidget {
     required this.picked,
     required this.willResize,
     required this.onRemove,
+    this.isProcessing = false,
     this.overflowWarning = false,
     this.onTap,
   });
@@ -964,6 +952,7 @@ class _ImageThumb extends StatelessWidget {
   final _PickedImage picked;
   final bool willResize;
   final bool overflowWarning;
+  final bool isProcessing;
   final VoidCallback onRemove;
   final VoidCallback? onTap;
 
@@ -976,7 +965,7 @@ class _ImageThumb extends StatelessWidget {
         clipBehavior: Clip.none,
         children: [
           GestureDetector(
-            onTap: onTap,
+            onTap: isProcessing ? null : onTap,
             child: ClipRRect(
               borderRadius: BorderRadius.circular(8),
               child: Image.file(
@@ -987,6 +976,23 @@ class _ImageThumb extends StatelessWidget {
               ),
             ),
           ),
+          // 焼き込み中はサムネを覆って進行中だと分かるようにする
+          if (isProcessing)
+            Positioned.fill(
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(8),
+                child: Container(
+                  color: Colors.black54,
+                  alignment: Alignment.center,
+                  child: const SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(
+                        strokeWidth: 2, color: Colors.white),
+                  ),
+                ),
+              ),
+            ),
           // 縮小予定マーク（左下、通常画像で再エンコード対象のとき）
           if (willResize)
             Positioned(

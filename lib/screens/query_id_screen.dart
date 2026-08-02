@@ -154,6 +154,8 @@ class _QueryIdScreenState extends State<QueryIdScreen> {
     );
   }
 
+  /// 本番経路のエンドツーエンド検証。
+  /// 他に x.com の WebView が生きていない状態で走らせるのが要点。
   DataCell _idCell(String value, {String? compareWith}) {
     final isEmpty = value.isEmpty;
     final isDifferent = compareWith != null && value.isNotEmpty && value != compareWith;
@@ -191,6 +193,7 @@ class _QueryIdScreenState extends State<QueryIdScreen> {
     }
   }
 }
+
 
 class _SectionHeader extends StatelessWidget {
   const _SectionHeader({required this.title});

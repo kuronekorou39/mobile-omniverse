@@ -93,6 +93,62 @@ class SettingsNavTile extends StatelessWidget {
   }
 }
 
+/// 設定画面の共通枠。
+///
+/// 戻るボタンと項目のインデントをここで一括して決める。
+/// 各画面が個別に padding を書くと、サブ画面で付け忘れて揃わなくなるため、
+/// 画面側は title と body だけを渡す。
+Widget settingsScaffold({
+  required String title,
+  required Widget body,
+  List<Widget>? actions,
+}) {
+  return Scaffold(
+    appBar: AppBar(
+      // 戻るボタンのアイコン左端を、項目のアイコン左端と揃える。
+      // IconButton は 48px 幅の中で 24px アイコンを中央に置くので、
+      // 左に (settingsIndent - 12) の余白を入れると左端が一致する。
+      leadingWidth: 48 + (settingsIndent - 12),
+      leading: const Padding(
+        padding: EdgeInsets.only(left: settingsIndent - 12),
+        child: BackButton(),
+      ),
+      titleSpacing: 4,
+      title: Text(title),
+      actions: actions,
+      // ヘッダーと中身の境目を出す。インデントを揃えたぶん、
+      // ここで区切らないと続きものに見えてしまう。
+      bottom: const PreferredSize(
+        preferredSize: Size.fromHeight(1),
+        child: Divider(height: 1, thickness: 1),
+      ),
+    ),
+    // Builder を挟んで Theme を引く（settingsScaffold は context を取らない）
+    body: Builder(
+      builder: (context) {
+        final scheme = Theme.of(context).colorScheme;
+        return ListTileTheme(
+          data: ListTileThemeData(
+            contentPadding: settingsItemPadding,
+            // 説明文は補助情報なので落とす。主役は項目名
+            subtitleTextStyle: TextStyle(
+              fontSize: 12,
+              color: scheme.onSurfaceVariant.withValues(alpha: 0.6),
+            ),
+          ),
+          child: body,
+        );
+      },
+    ),
+  );
+}
+
+/// 設定画面の左インデント。戻るボタンも項目も見出しもこれに合わせる
+const settingsIndent = 24.0;
+
+/// 設定項目の左右余白
+const settingsItemPadding = EdgeInsets.only(left: settingsIndent, right: 20);
+
 /// 設定セクションの見出し
 class SettingsSectionHeader extends StatelessWidget {
   const SettingsSectionHeader({super.key, required this.title, this.subtitle});
@@ -104,7 +160,7 @@ class SettingsSectionHeader extends StatelessWidget {
   Widget build(BuildContext context) {
     final color = Theme.of(context).colorScheme.primary;
     return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 20, 16, 8),
+      padding: const EdgeInsets.fromLTRB(settingsIndent, 20, 20, 8),
       child: Row(
         children: [
           Container(

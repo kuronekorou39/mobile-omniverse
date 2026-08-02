@@ -46,8 +46,8 @@ class _AboutSettingsScreenState extends ConsumerState<AboutSettingsScreen> {
   Widget build(BuildContext context) {
     final version = ref.watch(packageVersionProvider).asData?.value ?? '...';
 
-    return Scaffold(
-      appBar: AppBar(title: const Text('アプリ情報')),
+    return settingsScaffold(
+      title: 'アプリ情報',
       body: ListView(
         children: [
           ListTile(

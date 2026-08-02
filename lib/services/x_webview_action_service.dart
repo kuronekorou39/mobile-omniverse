@@ -495,6 +495,7 @@ class XWebViewActionService {
   /// 入力直後に input.files をクリアしてしまい複数枚分が拾われないため、
   /// 「1 枚ずつ setter call + change 発火 + delay」に分岐する。
   Future<bool> _attachImageFiles(List<XFile> files) async {
+    debugPrint('[XWebView] 添付開始 (${files.length}枚)');
     DebugLogService.instance.log(
         'XWebView', '_attachImageFiles START (${files.length} files)');
     try {
@@ -608,6 +609,7 @@ class XWebViewActionService {
         if (Platform.isIOS) {
           final waited = await _waitForAttachmentCount(i + 1,
               timeoutSeconds: 20);
+          debugPrint('[XWebView] 添付#$i プレビュー到達: $waited');
           DebugLogService.instance.log('XWebView',
               '_attachImageFiles #$i previewCount reached: $waited');
         }
@@ -678,7 +680,10 @@ class XWebViewActionService {
             + '[data-testid="tweetPhoto"],'
             + '[data-testid="gifPlayer"]'
           );
-          var progressBars = document.querySelectorAll('[role="progressbar"]');
+          // 文字数カウンターのリングを拾わないよう、添付エリア内だけ数える
+          var progressBars = document.querySelectorAll(
+            '[data-testid="attachments"] [role="progressbar"]'
+          );
           return JSON.stringify({ count: nodes.length, progress: progressBars.length });
         })()
       ''');
@@ -724,7 +729,13 @@ class XWebViewActionService {
           + '[data-testid="tweetPhoto"],'
           + '[data-testid="gifPlayer"]'
         );
-        var progressBars = document.querySelectorAll('[role="progressbar"]');
+        // 進捗バーは添付エリア内だけを数える。
+        // ページ全体を見ると、文字数カウンターの円形リングも
+        // role="progressbar" を持っているため常に 1 以上になり、
+        // アップロードが終わっても完了と判定できなくなる。
+        var progressBars = document.querySelectorAll(
+          '[data-testid="attachments"] [role="progressbar"]'
+        );
         var btnEnabled = document.querySelector('[data-testid="tweetButton"]:not([disabled])') !== null
           || document.querySelector('[data-testid="tweetButtonInline"]:not([disabled])') !== null;
         return JSON.stringify({
@@ -741,7 +752,13 @@ class XWebViewActionService {
     final count = (parsed?['count'] as int?) ?? 0;
     final progress = (parsed?['progress'] as int?) ?? 0;
     final btn = (parsed?['btn'] as bool?) ?? false;
-    return count >= expected && progress == 0 && btn;
+    final ok = count >= expected && progress == 0 && btn;
+    if (!ok) {
+      // 何が足りなくて待たされているのかを残す
+      debugPrint('[XWebView] アップロード待ち: '
+          'プレビュー $count/$expected ・ 進行中バー $progress ・ ボタン有効 $btn');
+    }
+    return ok;
   }
 
   /// 指定セレクタの要素が出現するまでポーリング

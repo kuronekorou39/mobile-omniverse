@@ -425,18 +425,13 @@ class _NotifAccountChip extends ConsumerWidget {
   final int unreadCount;
   final VoidCallback onTap;
 
-  static Color _healthColor(AccountHealth health) {
-    switch (health) {
-      case AccountHealth.good:
-        return Colors.green;
-      case AccountHealth.warning:
-        return Colors.orange;
-      case AccountHealth.error:
-        return Colors.red;
-      case AccountHealth.unknown:
-        return Colors.grey;
-    }
-  }
+  /// 異常時だけ色を返す。正常・不明はドットを出さない
+  /// （常に緑が点いていると、それが普通になって異常に気づきにくい）
+  static Color? _healthColor(AccountHealth health) => switch (health) {
+        AccountHealth.warning => Colors.orange,
+        AccountHealth.error => Colors.red,
+        AccountHealth.good || AccountHealth.unknown => null,
+      };
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -490,22 +485,24 @@ class _NotifAccountChip extends ConsumerWidget {
                     bottom: -2,
                     child: SnsBadge(service: account.service, size: 7),
                   ),
-                  Positioned(
-                    left: -2,
-                    bottom: -2,
-                    child: Container(
-                      width: 10,
-                      height: 10,
-                      decoration: BoxDecoration(
-                        color: _healthColor(health),
-                        shape: BoxShape.circle,
-                        border: Border.all(
-                          color: Theme.of(context).scaffoldBackgroundColor,
-                          width: 1.5,
+                  // 正常なときは出さない。異常だけが目に入るようにする
+                  if (_healthColor(health) != null)
+                    Positioned(
+                      left: -2,
+                      bottom: -2,
+                      child: Container(
+                        width: 10,
+                        height: 10,
+                        decoration: BoxDecoration(
+                          color: _healthColor(health),
+                          shape: BoxShape.circle,
+                          border: Border.all(
+                            color: Theme.of(context).scaffoldBackgroundColor,
+                            width: 1.5,
+                          ),
                         ),
                       ),
                     ),
-                  ),
                   if (unreadCount > 0)
                     Positioned(
                       left: -10,

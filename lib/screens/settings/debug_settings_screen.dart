@@ -129,8 +129,8 @@ class _DebugSettingsScreenState extends ConsumerState<DebugSettingsScreen> {
     final settings = ref.watch(settingsProvider);
     final notifier = ref.read(settingsProvider.notifier);
 
-    return Scaffold(
-      appBar: AppBar(title: const Text('デバッグ')),
+    return settingsScaffold(
+      title: 'デバッグ',
       body: ListView(
         children: [
           ListTile(

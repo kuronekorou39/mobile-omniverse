@@ -1,0 +1,135 @@
+/// フォロー/フォロワー一覧に現れる 1 ユーザー
+///
+/// X の GraphQL は同じ項目を `core` (新) と `legacy` (旧) の両方に
+/// 置くことがあり、A/B テストでどちらかが欠けるため両方から読む。
+class FollowUser {
+  const FollowUser({
+    required this.restId,
+    required this.screenName,
+    required this.name,
+    this.followersCount = 0,
+    this.friendsCount = 0,
+    this.statusesCount,
+    this.avatarUrl = '',
+    this.description = '',
+    this.verified = false,
+    this.isProtected = false,
+    this.location = '',
+    this.createdAt = '',
+  });
+
+  final String restId;
+  final String screenName;
+  final String name;
+  final int followersCount;
+  final int friendsCount;
+  final int? statusesCount;
+  final String avatarUrl;
+  final String description;
+  final bool verified;
+  final bool isProtected;
+  final String location;
+
+  /// X が返す生文字列 (例: "Thu Apr 06 15:24:15 +0000 2023")
+  final String createdAt;
+
+  /// フォロワー数 / フォロー数。フォロー 0 は比が定義できないので null
+  double? get followRatio =>
+      friendsCount > 0 ? followersCount / friendsCount : null;
+
+  /// GraphQL の user_results.result を 1 件パースする
+  /// 必須項目 (restId / screenName) が欠けていたら null
+  /// X はユーザーの項目を `legacy` から `core` / `avatar` / `privacy` /
+  /// `profile_bio` / `location` / `verification` / `relationship_counts` へ
+  /// 段階的に移している。どちらに入っていても拾えるよう両方見る。
+  static FollowUser? fromUserResult(Map<String, dynamic>? result) {
+    if (result == null) return null;
+
+    final legacy = _asMap(result['legacy']);
+    final core = _asMap(result['core']);
+    final privacy = _asMap(result['privacy']);
+    final avatar = _asMap(result['avatar']);
+    final profileBio = _asMap(result['profile_bio']);
+    final verification = _asMap(result['verification']);
+    final counts = _asMap(result['relationship_counts']);
+    final locationObj = _asMap(result['location']);
+
+    final restId = _str(result['rest_id']);
+    final screenName = _str(core['screen_name']) ?? _str(legacy['screen_name']);
+    if (restId == null || restId.isEmpty) return null;
+    if (screenName == null || screenName.isEmpty) return null;
+
+    return FollowUser(
+      restId: restId,
+      screenName: screenName,
+      name: _str(core['name']) ?? _str(legacy['name']) ?? '',
+      followersCount: _asInt(legacy['followers_count']) ??
+          _asInt(counts['followers']) ??
+          0,
+      friendsCount:
+          _asInt(legacy['friends_count']) ?? _asInt(counts['following']) ?? 0,
+      statusesCount: _asInt(legacy['statuses_count']),
+      avatarUrl: _str(avatar['image_url']) ??
+          _str(legacy['profile_image_url_https']) ??
+          '',
+      description:
+          _str(legacy['description']) ?? _str(profileBio['description']) ?? '',
+      verified: (legacy['verified'] as bool?) ??
+          (verification['verified'] as bool?) ??
+          (result['is_blue_verified'] as bool?) ??
+          false,
+      isProtected: (privacy['protected'] as bool?) ??
+          (legacy['protected'] as bool?) ??
+          false,
+      location: _str(legacy['location']) ?? _str(locationObj['location']) ?? '',
+      createdAt: _str(legacy['created_at']) ?? _str(core['created_at']) ?? '',
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+        'restId': restId,
+        'screenName': screenName,
+        'name': name,
+        'followersCount': followersCount,
+        'friendsCount': friendsCount,
+        'statusesCount': statusesCount,
+        'avatarUrl': avatarUrl,
+        'description': description,
+        'verified': verified,
+        'isProtected': isProtected,
+        'location': location,
+        'createdAt': createdAt,
+      };
+
+  factory FollowUser.fromJson(Map<String, dynamic> map) => FollowUser(
+        restId: map['restId'] as String,
+        screenName: map['screenName'] as String,
+        name: (map['name'] as String?) ?? '',
+        followersCount: _asInt(map['followersCount']) ?? 0,
+        friendsCount: _asInt(map['friendsCount']) ?? 0,
+        statusesCount: _asInt(map['statusesCount']),
+        avatarUrl: (map['avatarUrl'] as String?) ?? '',
+        description: (map['description'] as String?) ?? '',
+        verified: (map['verified'] as bool?) ?? false,
+        isProtected: (map['isProtected'] as bool?) ?? false,
+        location: (map['location'] as String?) ?? '',
+        createdAt: (map['createdAt'] as String?) ?? '',
+      );
+
+  @override
+  String toString() => 'FollowUser(@$screenName, $restId)';
+}
+
+/// 期待した型でないときに落ちないようにする (location が文字列だったり
+/// オブジェクトだったりと、X 側の移行途中で型が揺れるため)
+String? _str(Object? value) => value is String ? value : null;
+
+Map<String, dynamic> _asMap(Object? value) =>
+    value is Map<String, dynamic> ? value : const {};
+
+int? _asInt(Object? value) {
+  if (value is int) return value;
+  if (value is num) return value.toInt();
+  if (value is String) return int.tryParse(value);
+  return null;
+}

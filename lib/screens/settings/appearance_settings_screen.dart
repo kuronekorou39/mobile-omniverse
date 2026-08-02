@@ -19,8 +19,8 @@ class AppearanceSettingsScreen extends ConsumerWidget {
     final settings = ref.watch(settingsProvider);
     final notifier = ref.read(settingsProvider.notifier);
 
-    return Scaffold(
-      appBar: AppBar(title: const Text('外観')),
+    return settingsScaffold(
+      title: '外観',
       body: ListView(
         children: [
           ListTile(

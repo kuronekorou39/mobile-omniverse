@@ -15,6 +15,7 @@ import '../utils/platform_ua.dart';
 import '../services/x_bearer_token_service.dart';
 import '../services/x_features_service.dart';
 import '../services/x_query_id_service.dart';
+import '../services/follow_capture_job_service.dart';
 
 /// ログイン完了時に返す認証情報
 class LoginResult {
@@ -210,11 +211,14 @@ class _LoginWebViewScreenState extends State<LoginWebViewScreen> {
   @override
   void initState() {
     super.initState();
+    // 走査と Cookie を奪い合わないよう占有する
+    FollowCaptureJobService.instance.acquireWebView('ログイン');
     _clearCookiesBeforeLogin();
   }
 
   @override
   void dispose() {
+    FollowCaptureJobService.instance.releaseWebView();
     _controller = null;
     super.dispose();
   }

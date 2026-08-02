@@ -1,9 +1,13 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../providers/notification_badge_provider.dart';
+import '../models/sns_service.dart';
 import '../services/account_storage_service.dart';
+import '../services/follow_capture_job_service.dart';
 import '../widgets/compose_queue_banner.dart';
 import 'accounts_screen.dart';
 import 'notifications_screen.dart';
@@ -30,6 +34,14 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     GlobalKey<NavigatorState>(),
   ];
 
+  Timer? _followCaptureTimer;
+
+  @override
+  void dispose() {
+    _followCaptureTimer?.cancel();
+    super.dispose();
+  }
+
   @override
   void initState() {
     super.initState();
@@ -39,6 +51,25 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         ref.read(notificationTabActiveProvider.notifier).state = true;
       });
     }
+    _scheduleFollowCapture();
+  }
+
+  /// 期日が来ているフォロー/フォロワー取得を、起動時に 1 回だけ走らせる。
+  /// 起動直後はタイムライン取得と重なるので少し待ってから始める。
+  /// 画面が消えたら止められるよう Timer で持つ（投げっぱなしにしない）。
+  void _scheduleFollowCapture() {
+    _followCaptureTimer = Timer(const Duration(seconds: 10), () async {
+      if (!mounted) return;
+      final accounts = AccountStorageService.instance.accounts
+          .where((a) => a.service == SnsService.x)
+          .toList();
+      if (accounts.isEmpty) return;
+      try {
+        await FollowCaptureJobService.instance.runDueWork(accounts: accounts);
+      } catch (e) {
+        debugPrint('[HomeScreen] 自動取得に失敗: $e');
+      }
+    });
   }
 
   @override

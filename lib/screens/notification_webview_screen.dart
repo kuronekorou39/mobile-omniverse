@@ -10,6 +10,7 @@ import '../services/debug_log_service.dart';
 import '../services/x_features_service.dart';
 import '../services/x_query_id_service.dart';
 import '../utils/app_snackbar.dart';
+import '../services/follow_capture_job_service.dart';
 
 /// X の通知ページを WebView で開き、GraphQL の queryId を自動取得する
 class NotificationWebViewScreen extends StatefulWidget {
@@ -52,7 +53,15 @@ class _NotificationWebViewScreenState extends State<NotificationWebViewScreen> {
   @override
   void initState() {
     super.initState();
+    // 走査と x.com の Cookie を奪い合わないよう占有する
+    FollowCaptureJobService.instance.acquireWebView('通知 queryId 取得');
     _setupCookies();
+  }
+
+  @override
+  void dispose() {
+    FollowCaptureJobService.instance.releaseWebView();
+    super.dispose();
   }
 
   /// WebView のCookieを正しいアカウントに設定してからページを開く

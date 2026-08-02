@@ -1,9 +1,13 @@
 import 'dart:ui';
 
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../models/sns_service.dart';
 import '../../providers/settings_provider.dart';
+import '../../services/account_storage_service.dart';
+import '../../utils/image_headers.dart';
 import 'settings_common.dart';
 
 /// 投稿の表示設定。プレビューを上部に固定し、変更結果がその場で見えるようにする。
@@ -15,8 +19,8 @@ class PostDisplaySettingsScreen extends ConsumerWidget {
     final settings = ref.watch(settingsProvider);
     final notifier = ref.read(settingsProvider.notifier);
 
-    return Scaffold(
-      appBar: AppBar(title: const Text('投稿の表示')),
+    return settingsScaffold(
+      title: '投稿の表示',
       body: Column(
         children: [
           Container(
@@ -27,11 +31,24 @@ class PostDisplaySettingsScreen extends ConsumerWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 const SettingsSectionHeader(title: 'プレビュー'),
+                // 1 件だけだとカード/セパレートの境目や間隔が分からないので 2 件並べる
                 _PostStylePreview(
                   postCardStyle: settings.postCardStyle,
                   hideUserInfo: settings.hideUserInfo,
                   sensitiveMode: settings.sensitiveMode,
                   imagePreviewSize: settings.imagePreviewSize,
+                ),
+                _PostStylePreview(
+                  postCardStyle: settings.postCardStyle,
+                  hideUserInfo: settings.hideUserInfo,
+                  sensitiveMode: settings.sensitiveMode,
+                  imagePreviewSize: settings.imagePreviewSize,
+                  useAccountAvatar: true,
+                  userName: 'ろう',
+                  handle: '@kuronekorou39',
+                  body: '2件目のプレビューです。カードの境目や余白の見え方を確認できます。',
+                  timeLabel: '12m',
+                  withImage: false,
                 ),
               ],
             ),
@@ -131,12 +148,37 @@ class _PostStylePreview extends StatelessWidget {
     required this.hideUserInfo,
     required this.sensitiveMode,
     required this.imagePreviewSize,
+    this.useAccountAvatar = false,
+    this.userName = 'ユーザー名',
+    this.handle = '@handle',
+    this.body = 'これはプレビュー用の投稿です。設定の変更がリアルタイムに反映されます。',
+    this.timeLabel = '3m',
+    this.withImage = true,
   });
 
   final PostCardStyle postCardStyle;
   final bool hideUserInfo;
   final SensitiveMode sensitiveMode;
   final ImagePreviewSize imagePreviewSize;
+
+  /// ログイン済みアカウントのアイコンを使う（2件目用）
+  final bool useAccountAvatar;
+  final String userName;
+  final String handle;
+  final String body;
+  final String timeLabel;
+  final bool withImage;
+
+  /// ログイン中の X アカウントのアイコン URL。無ければ null
+  String? get _accountAvatarUrl {
+    if (!useAccountAvatar) return null;
+    for (final a in AccountStorageService.instance.accounts) {
+      if (a.service == SnsService.x && (a.avatarUrl?.isNotEmpty ?? false)) {
+        return a.avatarUrl;
+      }
+    }
+    return null;
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -157,10 +199,25 @@ class _PostStylePreview extends StatelessWidget {
       children: [
         if (!hideUserInfo) ...[
           // 通常モード: アバター
-          const CircleAvatar(
-            radius: 16,
-            backgroundImage: AssetImage('assets/icon.png'),
-          ),
+          if (_accountAvatarUrl != null)
+            ClipOval(
+              child: CachedNetworkImage(
+                imageUrl: _accountAvatarUrl!,
+                httpHeaders: kImageHeaders,
+                width: 32,
+                height: 32,
+                fit: BoxFit.cover,
+                memCacheWidth: 64,
+                errorWidget: (_, __, ___) => const CircleAvatar(
+                    radius: 16,
+                    backgroundImage: AssetImage('assets/icon.png')),
+              ),
+            )
+          else
+            const CircleAvatar(
+              radius: 16,
+              backgroundImage: AssetImage('assets/icon.png'),
+            ),
           const SizedBox(width: 10),
         ] else ...[
           // 匿名モード: 小さなアイコン
@@ -181,28 +238,29 @@ class _PostStylePreview extends StatelessWidget {
               if (!hideUserInfo) ...[
                 Row(
                   children: [
-                    const Text('ユーザー名',
-                        style:
-                            TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                    Text(userName,
+                        style: const TextStyle(
+                            fontWeight: FontWeight.bold, fontSize: 13)),
                     const SizedBox(width: 4),
-                    Text('@handle',
+                    Text(handle,
                         style: TextStyle(color: Colors.grey[600], fontSize: 12)),
                     const Spacer(),
-                    Text('3m',
+                    Text(timeLabel,
                         style: TextStyle(color: Colors.grey[500], fontSize: 12)),
                   ],
                 ),
                 const SizedBox(height: 4),
               ],
               // 本文
-              const Text(
-                'これはプレビュー用の投稿です。設定の変更がリアルタイムに反映されます。',
-                style: TextStyle(fontSize: 14, height: 1.4),
+              Text(
+                body,
+                style: const TextStyle(fontSize: 14, height: 1.4),
                 maxLines: 2,
                 overflow: TextOverflow.ellipsis,
               ),
-              const SizedBox(height: 8),
+              if (withImage) const SizedBox(height: 8),
               // 画像エリア（ロゴ画像 + センシティブオーバーレイ）
+              if (withImage)
               ClipRRect(
                 borderRadius: BorderRadius.circular(8),
                 child: AnimatedContainer(
@@ -242,7 +300,7 @@ class _PostStylePreview extends StatelessWidget {
         if (hideUserInfo)
           Padding(
             padding: const EdgeInsets.only(top: 2, left: 8),
-            child: Text('3m',
+            child: Text(timeLabel,
                 style: TextStyle(color: Colors.grey[500], fontSize: 12)),
           ),
       ],

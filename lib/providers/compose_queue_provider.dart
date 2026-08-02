@@ -10,6 +10,7 @@ import '../models/post.dart';
 import '../models/sns_service.dart';
 import '../services/bluesky_api_service.dart';
 import '../services/draft_service.dart';
+import '../services/follow_capture_job_service.dart';
 import '../services/image_resize_service.dart';
 import '../services/x_webview_action_service.dart';
 import 'account_provider.dart';
@@ -129,6 +130,12 @@ class ComposeQueueNotifier extends StateNotifier<ComposeQueueState> {
     if (_running) return;
     _running = true;
 
+    // 投稿 (WebView の DOM 操作) とフォロー走査は x.com の Cookie ジャーを
+    // 共有している。投稿側はアカウント切替のたびに Cookie を全消しするので、
+    // 走査が動いていると互いのセッションを壊して画像アップロードが失敗する。
+    // 走査には道を譲ってもらう（cursor は保存されるので後で再開できる）。
+    await FollowCaptureJobService.instance.acquireWebView('投稿');
+
     try {
       while (true) {
         PostJob? job;
@@ -186,6 +193,7 @@ class ComposeQueueNotifier extends StateNotifier<ComposeQueueState> {
       }
       await _finalize();
     } finally {
+      FollowCaptureJobService.instance.releaseWebView();
       _running = false;
     }
   }
@@ -231,6 +239,8 @@ class ComposeQueueNotifier extends StateNotifier<ComposeQueueState> {
         inReplyToPost: base.inReplyToPost,
         quotedPost: base.quotedPost,
         failedAccountIds: failedIds,
+        // 画像も残さないと、再送しようとしたときに添付が消えている
+        imagePaths: [for (final f in base.images) f.path],
       );
       await _ref.read(draftListProvider.notifier).upsert(draft);
     } else if (_sourceDraftId != null) {

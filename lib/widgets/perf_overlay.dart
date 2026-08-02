@@ -136,8 +136,10 @@ class _PerfOverlayState extends ConsumerState<PerfOverlay> {
             : Colors.greenAccent;
 
     return Positioned(
-      top: MediaQuery.of(context).padding.top + 48,
-      right: 8,
+      // 右上はヘッダーのボタンと重なるので左下に置く。
+      // アプリ自身のボトムバー (52px + SafeArea) にも被らないよう持ち上げる。
+      bottom: MediaQuery.of(context).padding.bottom + 60,
+      left: 8,
       child: IgnorePointer(
         child: Container(
           constraints: const BoxConstraints(minWidth: 190),

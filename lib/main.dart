@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:ui';
 
+import 'package:flutter/cupertino.dart' show CupertinoPageTransitionsBuilder;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -10,12 +11,16 @@ import 'screens/overlay_timeline_screen.dart';
 import 'widgets/perf_overlay.dart';
 import 'screens/splash_screen.dart';
 import 'services/account_storage_service.dart';
+import 'services/compose_image_store.dart';
 import 'services/debug_log_service.dart';
+import 'services/draft_service.dart';
 import 'services/memory_guard_service.dart';
 import 'services/notification_cache_service.dart';
 import 'services/x_bearer_token_service.dart';
 import 'services/x_features_service.dart';
+import 'services/follow_capture_job_service.dart';
 import 'services/x_query_id_service.dart';
+import 'widgets/follow_capture_webview_host.dart';
 
 @pragma("vm:entry-point")
 void overlayMain() {
@@ -36,6 +41,11 @@ void main() async {
     await DebugLogService.instance.init();
     await NotificationCacheService.instance.loadSeenAt();
     MemoryGuardService.instance.start();
+
+    // 下書きから参照されていない投稿用画像を片付ける。
+    // 下書きと投稿失敗時の再送で使うので、参照が残っているものは消さない。
+    unawaited(DraftService.instance.referencedImagePaths().then(
+        ComposeImageStore.instance.cleanup));
 
     // 未処理例外をクラッシュログとして記録（enabled 非依存）
     FlutterError.onError = (details) {
@@ -69,6 +79,15 @@ class OmniVerseApp extends ConsumerWidget {
       surfaceTintColor: Colors.transparent,
       elevation: 0,
     );
+
+    // 画面遷移の演出を全体で揃える。既定 (Android) は ZoomPageTransitions で、
+    // タイムラインが独自に使っている横スライドと印象が食い違うため、
+    // MaterialPageRoute 側も横スライドに寄せる。
+    const pageTransitions = PageTransitionsTheme(builders: {
+      TargetPlatform.android: CupertinoPageTransitionsBuilder(),
+      TargetPlatform.iOS: CupertinoPageTransitionsBuilder(),
+    });
+
     final lightScheme = ColorScheme.fromSeed(
       seedColor: const Color(0xFF6750A4),
       brightness: Brightness.light,
@@ -81,11 +100,13 @@ class OmniVerseApp extends ConsumerWidget {
       colorScheme: lightScheme,
       useMaterial3: true,
       appBarTheme: appBarTheme,
+      pageTransitionsTheme: pageTransitions,
     );
     final baseDark = ThemeData(
       colorScheme: darkScheme,
       useMaterial3: true,
       appBarTheme: appBarTheme,
+      pageTransitionsTheme: pageTransitions,
     );
 
     final fontFamily = settings.fontFamily;
@@ -116,6 +137,20 @@ class OmniVerseApp extends ConsumerWidget {
             children: [
               child!,
               if (settings.showPerfOverlay) const PerfOverlay(),
+              // 走査中だけルートに WebView を置く。
+              // ここに置くことで、取得画面を離れてタイムラインを見ていても
+              // 走査が続く（アプリ自体を裏に回すと止まる）。
+              Positioned(
+                left: FollowCaptureWebViewHost.offscreenX,
+                top: 0,
+                child: ValueListenableBuilder<bool>(
+                  valueListenable:
+                      FollowCaptureJobService.instance.hostNeeded,
+                  builder: (_, needed, __) => needed
+                      ? const FollowCaptureWebViewHost()
+                      : const SizedBox.shrink(),
+                ),
+              ),
             ],
           ),
         );

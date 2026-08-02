@@ -18,6 +18,7 @@ class Draft {
     this.inReplyToPost,
     this.quotedPost,
     this.failedAccountIds = const [],
+    this.imagePaths = const [],
   });
 
   final String id;
@@ -27,12 +28,17 @@ class Draft {
   final Post? quotedPost;
   final List<String> failedAccountIds;
 
+  /// 添付画像の保存先パス。ComposeImageStore が持つファイルを指す。
+  /// 実体が消えている場合があるので、復元時は存在チェックしてから使う。
+  final List<String> imagePaths;
+
   bool get isFailureDraft => failedAccountIds.isNotEmpty;
 
   Draft copyWith({
     String? text,
     DateTime? updatedAt,
     List<String>? failedAccountIds,
+    List<String>? imagePaths,
   }) {
     return Draft(
       id: id,
@@ -41,6 +47,7 @@ class Draft {
       inReplyToPost: inReplyToPost,
       quotedPost: quotedPost,
       failedAccountIds: failedAccountIds ?? this.failedAccountIds,
+      imagePaths: imagePaths ?? this.imagePaths,
     );
   }
 
@@ -51,6 +58,7 @@ class Draft {
         if (inReplyToPost != null) 'inReplyToPost': inReplyToPost!.toJson(),
         if (quotedPost != null) 'quotedPost': quotedPost!.toJson(),
         'failedAccountIds': failedAccountIds,
+        if (imagePaths.isNotEmpty) 'imagePaths': imagePaths,
       };
 
   static Draft? fromJson(Map<String, dynamic> json) {
@@ -73,6 +81,11 @@ class Draft {
             ?.map((e) => e as String)
             .toList() ??
         const <String>[];
+    // imagePaths は後から追加した項目。古い下書きには無いので空で読む
+    final images = (json['imagePaths'] as List?)
+            ?.map((e) => e as String)
+            .toList() ??
+        const <String>[];
     return Draft(
       id: id,
       updatedAt: updatedAt,
@@ -80,6 +93,7 @@ class Draft {
       inReplyToPost: reply,
       quotedPost: quote,
       failedAccountIds: ids,
+      imagePaths: images,
     );
   }
 
@@ -98,6 +112,13 @@ class DraftService {
   static const _key = 'compose_drafts_v2';
   static const _legacyKey = 'compose_draft_v1';
   static const _maxDrafts = 100;
+
+  /// すべての下書きが参照している画像パス。
+  /// ComposeImageStore の掃除で「まだ必要なもの」を判定するのに使う。
+  Future<Set<String>> referencedImagePaths() async {
+    final drafts = await loadAll();
+    return {for (final d in drafts) ...d.imagePaths};
+  }
 
   Future<List<Draft>> loadAll() async {
     try {

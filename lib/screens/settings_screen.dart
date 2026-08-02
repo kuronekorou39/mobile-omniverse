@@ -30,8 +30,8 @@ class SettingsScreen extends ConsumerWidget {
     final dripInterval = dripIntervalOptions[settings.dripIntervalMs] ??
         '${settings.dripIntervalMs}ms';
 
-    return Scaffold(
-      appBar: AppBar(title: const Text('設定')),
+    return settingsScaffold(
+      title: '設定',
       body: ListView(
         children: [
           SettingsNavTile(

@@ -10,6 +10,8 @@ import '../services/timeline_fetch_scheduler.dart';
 import '../utils/app_snackbar.dart';
 import '../widgets/empty_state.dart';
 import '../widgets/sns_badge.dart';
+import 'follow_capture_screen.dart';
+import 'follow_target_screen.dart';
 import 'likes_bookmarks_screen.dart';
 import 'login_webview_screen.dart';
 import 'session_refresh_screen.dart';
@@ -49,6 +51,16 @@ class _AccountsScreenState extends ConsumerState<AccountsScreen> {
                   Row(
                     children: [
                       const Spacer(),
+                      IconButton(
+                        icon: const Icon(Icons.groups_outlined, size: 20),
+                        tooltip: 'フォロー / フォロワー',
+                        onPressed: () => Navigator.of(context).push(
+                          MaterialPageRoute(
+                              builder: (_) => const FollowCaptureScreen()),
+                        ),
+                        constraints: const BoxConstraints(minWidth: 40, minHeight: 40),
+                        padding: EdgeInsets.zero,
+                      ),
                       IconButton(
                         icon: const Icon(Icons.settings_outlined, size: 20),
                         tooltip: '設定',
@@ -229,18 +241,13 @@ class _AccountTile extends ConsumerWidget {
   final Account account;
   final int index;
 
-  static Color _healthColor(AccountHealth health) {
-    switch (health) {
-      case AccountHealth.good:
-        return Colors.green;
-      case AccountHealth.warning:
-        return Colors.orange;
-      case AccountHealth.error:
-        return Colors.red;
-      case AccountHealth.unknown:
-        return Colors.grey;
-    }
-  }
+  /// 異常時だけ色を返す。正常・不明はドットを出さない
+  /// （常に緑が点いていると、それが普通になって異常に気づきにくい）
+  static Color? _healthColor(AccountHealth health) => switch (health) {
+        AccountHealth.warning => Colors.orange,
+        AccountHealth.error => Colors.red,
+        AccountHealth.good || AccountHealth.unknown => null,
+      };
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -273,22 +280,30 @@ class _AccountTile extends ConsumerWidget {
                   )
                 : null,
           ),
+          // タイムラインのカードと同じく、サービスのバッジは左上に置く
           Positioned(
-            left: -2,
-            bottom: -2,
-            child: Container(
-              width: 12,
-              height: 12,
-              decoration: BoxDecoration(
-                color: _healthColor(health),
-                shape: BoxShape.circle,
-                border: Border.all(
-                  color: Theme.of(context).scaffoldBackgroundColor,
-                  width: 2,
+            top: -4,
+            left: -6,
+            child: SnsBadge(service: account.service, size: 12),
+          ),
+          // 正常なときは出さない。異常だけが目に入るようにする
+          if (_healthColor(health) != null)
+            Positioned(
+              left: -2,
+              bottom: -2,
+              child: Container(
+                width: 12,
+                height: 12,
+                decoration: BoxDecoration(
+                  color: _healthColor(health),
+                  shape: BoxShape.circle,
+                  border: Border.all(
+                    color: Theme.of(context).scaffoldBackgroundColor,
+                    width: 2,
+                  ),
                 ),
               ),
             ),
-          ),
         ],
       ),
         ],
@@ -305,11 +320,12 @@ class _AccountTile extends ConsumerWidget {
             const SizedBox(width: 3),
             Icon(Icons.lock, size: 13, color: Colors.grey[500]),
           ],
-          const SizedBox(width: 8),
-          SnsBadge(service: account.service),
         ],
       ),
-      subtitle: Text(account.handle),
+      subtitle: Opacity(
+        opacity: 0.6,
+        child: Text(account.handle),
+      ),
       trailing: Switch(
         value: account.isEnabled,
         onChanged: (_) {
@@ -443,6 +459,20 @@ class _AccountDetailScreen extends ConsumerWidget {
               ),
             ),
           ),
+          if (account.service == SnsService.x)
+            ListTile(
+              leading: const Icon(Icons.groups_outlined),
+              title: const Text('フォロー / フォロワー'),
+              subtitle: const Text('一覧の取得・相互の判定・差分',
+                  style: TextStyle(fontSize: 11)),
+              trailing: const Icon(Icons.chevron_right, size: 20),
+              onTap: () => Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (_) => FollowTargetScreen(
+                      handle: account.handle.replaceFirst('@', '').toLowerCase()),
+                ),
+              ),
+            ),
           ListTile(
             leading: const Icon(Icons.bookmark_border),
             title: const Text('ブックマーク'),

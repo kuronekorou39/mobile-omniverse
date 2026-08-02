@@ -174,17 +174,29 @@ jobs:
 
           # flutter build ipa requires a Development cert (which we don't have),
           # so call xcodebuild directly with manual signing using the Distribution cert.
+          #
+          # 署名設定は xcodebuild の引数では渡さない。引数で渡した build setting は
+          # ワークスペース内の全ターゲットに効いてしまい、Swift Package Manager 由来の
+          # リソースバンドル (SDWebImage_SDWebImage 等) が
+          # "does not support provisioning profiles" で archive を失敗させる。
+          # Runner ターゲットの xcconfig に書けば Runner だけに適用される
+          # （SPM のパッケージは別プロジェクト扱いなので影響しない）。
+          cat >> ios/Flutter/Release.xcconfig <<'EOF'
+
+          CODE_SIGN_STYLE = Manual
+          CODE_SIGN_IDENTITY = Apple Distribution
+          CODE_SIGN_IDENTITY[sdk=iphoneos*] = Apple Distribution
+          DEVELOPMENT_TEAM = M5D5CQRGX8
+          PROVISIONING_PROFILE_SPECIFIER = OmniVerse AppStore
+          EOF
+
           ARCHIVE_PATH=$RUNNER_TEMP/Runner.xcarchive
           xcodebuild -workspace ios/Runner.xcworkspace \
             -scheme Runner \
             -configuration Release \
             -archivePath "$ARCHIVE_PATH" \
             -destination "generic/platform=iOS" \
-            archive \
-            CODE_SIGN_STYLE=Manual \
-            CODE_SIGN_IDENTITY="Apple Distribution" \
-            DEVELOPMENT_TEAM=M5D5CQRGX8 \
-            PROVISIONING_PROFILE_SPECIFIER="OmniVerse AppStore"
+            archive
 
           xcodebuild -exportArchive \
             -archivePath "$ARCHIVE_PATH" \

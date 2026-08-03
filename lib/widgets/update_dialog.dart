@@ -15,10 +15,7 @@ Future<void> showUpdateDialog(BuildContext context, AppUpdateInfo info) {
         children: [
           Text(
             'v${info.currentVersion} → v${info.latestVersion}',
-            style: const TextStyle(
-              fontWeight: FontWeight.bold,
-              fontSize: 16,
-            ),
+            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
           ),
           if (info.releaseNotes.isNotEmpty) ...[
             const SizedBox(height: 12),
@@ -52,7 +49,7 @@ Future<void> showUpdateDialog(BuildContext context, AppUpdateInfo info) {
               await launchUrl(url, mode: LaunchMode.externalApplication);
             }
           },
-          child: const Text('アップデート'),
+          child: Text(info.isAppStore ? 'App Store を開く' : 'アップデート'),
         ),
       ],
     ),

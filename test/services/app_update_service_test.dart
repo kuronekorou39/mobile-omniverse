@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mobile_omniverse/services/app_update_service.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 
 import '../helpers/mock_http_client.dart';
 
@@ -10,10 +11,18 @@ void main() {
 
   setUpAll(() {
     registerHttpFallbacks();
+    PackageInfo.setMockInitialValues(
+      appName: 'OmniVerse',
+      packageName: 'com.rou39.omniverse',
+      version: '1.14.0',
+      buildNumber: '350',
+      buildSignature: '',
+    );
   });
 
   tearDown(() {
     service.httpClientOverride = null;
+    service.isIOSOverride = null;
   });
 
   group('isNewer', () {
@@ -98,7 +107,10 @@ void main() {
         releaseNotes: 'New features',
         apkUrl: 'https://rou39.com/omniverse/OmniVerse-v1.1.0.apk',
       );
-      expect(info.downloadUrl, 'https://rou39.com/omniverse/OmniVerse-v1.1.0.apk');
+      expect(
+        info.downloadUrl,
+        'https://rou39.com/omniverse/OmniVerse-v1.1.0.apk',
+      );
     });
 
     test('downloadUrl falls back to site URL when apkUrl is null', () {
@@ -153,7 +165,10 @@ void main() {
     });
 
     test('ネットワークエラーで null を返す', () async {
-      final mockClient = createMockClient(statusCode: 200, body: 'invalid json');
+      final mockClient = createMockClient(
+        statusCode: 200,
+        body: 'invalid json',
+      );
       service.httpClientOverride = mockClient;
 
       final result = await service.checkForUpdate();
@@ -211,23 +226,122 @@ void main() {
     });
 
     test('version が null の場合にデフォルト値', () {
-      final data = <String, dynamic>{
-        'version': null,
-        'release_notes': 'notes',
-      };
+      final data = <String, dynamic>{'version': null, 'release_notes': 'notes'};
 
       final version = data['version'] as String? ?? '';
       expect(version, isEmpty);
     });
 
     test('release_notes が null の場合にデフォルト値', () {
-      final data = <String, dynamic>{
-        'version': '1.0.0',
-        'release_notes': null,
-      };
+      final data = <String, dynamic>{'version': '1.0.0', 'release_notes': null};
 
       final notes = data['release_notes'] as String? ?? '';
       expect(notes, isEmpty);
+    });
+  });
+
+  group('checkForUpdate - iOS (App Store 照会)', () {
+    // charset を明示しないと http.Response が Latin-1 として読み、
+    // 日本語のリリースノートで落ちる
+    MockHttpClient jsonClient(String body) => createMockClient(
+      body: body,
+      headers: const {'content-type': 'application/json; charset=utf-8'},
+    );
+
+    String lookupBody({
+      required String version,
+      String notes = '',
+      String url = 'https://apps.apple.com/jp/app/omniverse/id6763051731?uo=4',
+    }) => json.encode({
+      'resultCount': 1,
+      'results': [
+        {'version': version, 'releaseNotes': notes, 'trackViewUrl': url},
+      ],
+    });
+
+    test('ストアが新しければ storeUrl 付きで返す', () async {
+      service.isIOSOverride = true;
+      service.httpClientOverride = jsonClient(
+        lookupBody(version: '1.15.0', notes: '不具合を修正しました'),
+      );
+
+      final result = await service.checkForUpdate();
+
+      expect(result, isNotNull);
+      expect(result!.latestVersion, '1.15.0');
+      expect(result.currentVersion, '1.14.0');
+      expect(result.releaseNotes, '不具合を修正しました');
+      expect(result.isAppStore, true);
+      expect(
+        result.downloadUrl,
+        'https://apps.apple.com/jp/app/omniverse/id6763051731?uo=4',
+      );
+      // APK の導線は iOS では出てはいけない
+      expect(result.apkUrl, isNull);
+    });
+
+    test('ストアが同じバージョンなら null', () async {
+      service.isIOSOverride = true;
+      service.httpClientOverride = jsonClient(lookupBody(version: '1.14.0'));
+
+      expect(await service.checkForUpdate(), isNull);
+    });
+
+    test('ストアのほうが古ければ null', () async {
+      service.isIOSOverride = true;
+      service.httpClientOverride = jsonClient(lookupBody(version: '1.13.10'));
+
+      expect(await service.checkForUpdate(), isNull);
+    });
+
+    // 公開直後は Apple の索引が追いつかず 0 件が返る。
+    // ここで通知を出してしまうと、ストアに無いものを案内することになる。
+    test('results が空なら更新なし扱い', () async {
+      service.isIOSOverride = true;
+      service.httpClientOverride = jsonClient(
+        json.encode({'resultCount': 0, 'results': []}),
+      );
+
+      expect(await service.checkForUpdate(), isNull);
+    });
+
+    test('trackViewUrl が無ければ自前サイトに落ちる', () async {
+      service.isIOSOverride = true;
+      service.httpClientOverride = jsonClient(
+        json.encode({
+          'resultCount': 1,
+          'results': [
+            {'version': '1.15.0'},
+          ],
+        }),
+      );
+
+      final result = await service.checkForUpdate();
+
+      expect(result, isNotNull);
+      expect(result!.isAppStore, false);
+      expect(result.downloadUrl, 'https://rou39.com/omniverse/');
+    });
+
+    test('Android 経路では storeUrl は付かない', () async {
+      service.isIOSOverride = false;
+      service.httpClientOverride = jsonClient(
+        json.encode({
+          'version': '1.15.0',
+          'release_notes': 'バグ修正',
+          'apk_url': 'https://rou39.com/omniverse/OmniVerse-v1.15.0.apk',
+        }),
+      );
+
+      final result = await service.checkForUpdate();
+
+      expect(result, isNotNull);
+      expect(result!.isAppStore, false);
+      expect(result.storeUrl, isNull);
+      expect(
+        result.downloadUrl,
+        'https://rou39.com/omniverse/OmniVerse-v1.15.0.apk',
+      );
     });
   });
 }

@@ -58,8 +58,12 @@ void main() {
 
       expect(service.getQueryId('HomeLatestTimeline', creds: creds), 'cachedId123');
       expect(service.getQueryId('TweetDetail', creds: creds), 'cachedId456');
-      // Without creds, should return empty (no defaults)
-      expect(service.getQueryId('HomeLatestTimeline'), '');
+      // creds なしではアカウント別キャッシュを引かない。
+      // グローバル側は assets/x_defaults.json の seed で埋まるので空にはならず、
+      // アカウント別に持っている値とも別物になる。
+      final global = service.getQueryId('HomeLatestTimeline');
+      expect(global, isNot('cachedId123'));
+      expect(global, isNotEmpty);
     });
 
     test('clearCache resets to empty', () async {

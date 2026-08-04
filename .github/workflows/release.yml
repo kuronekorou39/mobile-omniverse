@@ -57,13 +57,16 @@ jobs:
         run: |
           cp build/app/outputs/flutter-apk/app-release.apk "OmniVerse-v${{ steps.version.outputs.version }}.apk"
 
-      - name: Upload Android artifacts
-        uses: actions/upload-artifact@v5
+      # アーティファクトを経由せず直接リリースに添付する。
+      # 中継のためだけに 98MB を往復させると保管枠をすぐ使い切り、
+      # 上限に当たると Upload が失敗してリリース自体が作られなくなる。
+      # 枠の再計算に 6〜12 時間かかるので、古いものを消しても即座には復旧しない。
+      - name: Attach APK to release
+        uses: softprops/action-gh-release@v2
         with:
-          name: android-apk
-          retention-days: 1
-          path: |
-            OmniVerse-v${{ steps.version.outputs.version }}.apk
+          files: OmniVerse-v${{ steps.version.outputs.version }}.apk
+          generate_release_notes: true
+          fail_on_unmatched_files: true
 
   # ── iOS IPA ──
   build-ios:
@@ -234,53 +237,16 @@ jobs:
             --apiKey "$APPSTORE_API_KEY_ID" \
             --apiIssuer "$APPSTORE_API_ISSUER_ID"
 
-      - name: Upload IPA artifact
+      # Android 側と同じリリースに追記される。
+      # 先に走ったほうがリリースを作り、あとから来たほうがファイルを足す。
+      - name: Attach IPA to release
         if: env.IOS_APPSTORE_PROVISIONING_PROFILE_BASE64 != ''
         env:
           IOS_APPSTORE_PROVISIONING_PROFILE_BASE64: ${{ secrets.IOS_APPSTORE_PROVISIONING_PROFILE_BASE64 }}
-        uses: actions/upload-artifact@v5
-        with:
-          name: ios-ipa
-          retention-days: 1
-          path: "OmniVerse-v*-AppStore.ipa"
-
-  # ── Release作成 ──
-  release:
-    needs: [build-android, build-ios]
-    if: always() && needs.build-android.result == 'success'
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-
-    steps:
-      - uses: actions/checkout@v5
-
-      - name: Extract version
-        id: version
-        run: |
-          VERSION=$(grep '^version:' pubspec.yaml | sed 's/version: //' | cut -d+ -f1)
-          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
-
-      # name と path を明示してダウンロード先を固定する。
-      # name 未指定だと artifact 数によって展開先パスが変わり glob が外れる。
-      - name: Download Android artifacts
-        uses: actions/download-artifact@v5
-        with:
-          name: android-apk
-          path: artifacts/android-apk
-
-      - name: Download iOS artifacts
-        if: needs.build-ios.result == 'success'
-        uses: actions/download-artifact@v5
-        with:
-          name: ios-ipa
-          path: artifacts/ios-ipa
-
-      - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
-          files: |
-            artifacts/android-apk/*.apk
-            artifacts/ios-ipa/*.ipa
+          files: "OmniVerse-v*-AppStore.ipa"
           generate_release_notes: true
-          fail_on_unmatched_files: false
+          fail_on_unmatched_files: true
+
+  # ── Release作成 ──

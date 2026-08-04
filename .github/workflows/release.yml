@@ -47,9 +47,6 @@ jobs:
       - name: Build release APK
         run: flutter build apk --release
 
-      - name: Build release AAB (Play Store用)
-        run: flutter build appbundle --release
-
       - name: Extract version
         id: version
         run: |
@@ -59,7 +56,6 @@ jobs:
       - name: Rename artifacts
         run: |
           cp build/app/outputs/flutter-apk/app-release.apk "OmniVerse-v${{ steps.version.outputs.version }}.apk"
-          cp build/app/outputs/bundle/release/app-release.aab "OmniVerse-v${{ steps.version.outputs.version }}.aab"
 
       - name: Upload Android artifacts
         uses: actions/upload-artifact@v5
@@ -67,7 +63,6 @@ jobs:
           name: android-apk
           path: |
             OmniVerse-v${{ steps.version.outputs.version }}.apk
-            OmniVerse-v${{ steps.version.outputs.version }}.aab
 
   # ── iOS IPA ──
   build-ios:
@@ -127,29 +122,17 @@ jobs:
           mkdir -p ~/Library/MobileDevice/Provisioning\ Profiles
           cp "$PP_PATH" ~/Library/MobileDevice/Provisioning\ Profiles/
 
+      # プロファイルが無い環境ではビルドが通ることだけ確認する。
+      # 配布する成果物は下の Build App Store IPA が作るので、ここでは何も残さない。
+      #
+      # if で参照する変数は、そのステップの env に置かないと未定義になり
+      # 条件が常に false になる。以前それで「署名済みビルド」が毎回スキップされ、
+      # 無署名の Runner.app を zip しただけの .ipa がリリースに載っていた。
       - name: Build iOS (no codesign)
-        if: env.IOS_CERTIFICATE_BASE64 == ''
+        if: env.IOS_APPSTORE_PROVISIONING_PROFILE_BASE64 == ''
+        env:
+          IOS_APPSTORE_PROVISIONING_PROFILE_BASE64: ${{ secrets.IOS_APPSTORE_PROVISIONING_PROFILE_BASE64 }}
         run: flutter build ios --release --no-codesign
-
-      - name: Build iOS (signed)
-        if: env.IOS_CERTIFICATE_BASE64 != ''
-        env:
-          IOS_TEAM_ID: ${{ secrets.IOS_TEAM_ID }}
-        run: |
-          flutter build ios --release \
-            --export-options-plist=ios/ExportOptions.plist
-
-      - name: Create IPA
-        if: env.IOS_CERTIFICATE_BASE64 != ''
-        env:
-          IOS_CERTIFICATE_BASE64: ${{ secrets.IOS_CERTIFICATE_BASE64 }}
-        run: |
-          VERSION=$(grep '^version:' pubspec.yaml | sed 's/version: //' | cut -d+ -f1)
-          mkdir -p Payload
-          cp -r build/ios/iphoneos/Runner.app Payload/
-          zip -r "OmniVerse-v${VERSION}.ipa" Payload
-          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
-        id: ipa
 
       - name: Install App Store provisioning profile
         if: env.IOS_APPSTORE_PROVISIONING_PROFILE_BASE64 != ''
@@ -255,13 +238,13 @@ jobs:
             --apiIssuer "$APPSTORE_API_ISSUER_ID"
 
       - name: Upload IPA artifact
-        if: env.IOS_CERTIFICATE_BASE64 != ''
+        if: env.IOS_APPSTORE_PROVISIONING_PROFILE_BASE64 != ''
         env:
-          IOS_CERTIFICATE_BASE64: ${{ secrets.IOS_CERTIFICATE_BASE64 }}
+          IOS_APPSTORE_PROVISIONING_PROFILE_BASE64: ${{ secrets.IOS_APPSTORE_PROVISIONING_PROFILE_BASE64 }}
         uses: actions/upload-artifact@v5
         with:
           name: ios-ipa
-          path: "OmniVerse-v*.ipa"
+          path: "OmniVerse-v*-AppStore.ipa"
 
   # ── Release作成 ──
   release:
@@ -300,7 +283,6 @@ jobs:
         with:
           files: |
             artifacts/android-apk/*.apk
-            artifacts/android-apk/*.aab
             artifacts/ios-ipa/*.ipa
           generate_release_notes: true
           fail_on_unmatched_files: false

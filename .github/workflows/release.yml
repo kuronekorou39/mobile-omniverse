@@ -61,6 +61,7 @@ jobs:
         uses: actions/upload-artifact@v5
         with:
           name: android-apk
+          retention-days: 1
           path: |
             OmniVerse-v${{ steps.version.outputs.version }}.apk
 
@@ -122,16 +123,12 @@ jobs:
           mkdir -p ~/Library/MobileDevice/Provisioning\ Profiles
           cp "$PP_PATH" ~/Library/MobileDevice/Provisioning\ Profiles/
 
-      # プロファイルが無い環境ではビルドが通ることだけ確認する。
-      # 配布する成果物は下の Build App Store IPA が作るので、ここでは何も残さない。
-      #
-      # if で参照する変数は、そのステップの env に置かないと未定義になり
-      # 条件が常に false になる。以前それで「署名済みビルド」が毎回スキップされ、
-      # 無署名の Runner.app を zip しただけの .ipa がリリースに載っていた。
+      # archive の前段として必須。条件付きにしてはいけない。
+      # このステップが ios/Flutter/ephemeral 配下のパッケージ解決とプラグイン統合を
+      # 行っており、飛ばすと GeneratedPluginRegistrant.m が参照するモジュール
+      # (file_picker 等) が見つからず archive が失敗する。
+      # 配布する成果物はここでは作らず、下の Build App Store IPA が署名して作る。
       - name: Build iOS (no codesign)
-        if: env.IOS_APPSTORE_PROVISIONING_PROFILE_BASE64 == ''
-        env:
-          IOS_APPSTORE_PROVISIONING_PROFILE_BASE64: ${{ secrets.IOS_APPSTORE_PROVISIONING_PROFILE_BASE64 }}
         run: flutter build ios --release --no-codesign
 
       - name: Install App Store provisioning profile
@@ -244,6 +241,7 @@ jobs:
         uses: actions/upload-artifact@v5
         with:
           name: ios-ipa
+          retention-days: 1
           path: "OmniVerse-v*-AppStore.ipa"
 
   # ── Release作成 ──

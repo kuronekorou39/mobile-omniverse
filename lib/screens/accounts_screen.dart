@@ -50,17 +50,20 @@ class _AccountsScreenState extends ConsumerState<AccountsScreen> {
                   ),
                   Row(
                     children: [
-                      const Spacer(),
-                      IconButton(
-                        icon: const Icon(Icons.groups_outlined, size: 20),
-                        tooltip: 'フォロー / フォロワー',
-                        onPressed: () => Navigator.of(context).push(
-                          MaterialPageRoute(
-                              builder: (_) => const FollowCaptureScreen()),
+                      // アカウントが無いうちは走査対象も無いので出さない
+                      if (accounts.isNotEmpty)
+                        IconButton(
+                          icon: const Icon(Icons.groups_outlined, size: 20),
+                          tooltip: 'フォロー / フォロワー',
+                          onPressed: () => Navigator.of(context).push(
+                            MaterialPageRoute(
+                                builder: (_) => const FollowCaptureScreen()),
+                          ),
+                          constraints:
+                              const BoxConstraints(minWidth: 40, minHeight: 40),
+                          padding: EdgeInsets.zero,
                         ),
-                        constraints: const BoxConstraints(minWidth: 40, minHeight: 40),
-                        padding: EdgeInsets.zero,
-                      ),
+                      const Spacer(),
                       IconButton(
                         icon: const Icon(Icons.settings_outlined, size: 20),
                         tooltip: '設定',

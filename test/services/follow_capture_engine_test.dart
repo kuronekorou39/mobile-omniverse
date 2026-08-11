@@ -48,6 +48,7 @@ void main() {
         required String targetHandle,
         required FollowListKind kind,
         String? cursor,
+        CaptureCancelToken? cancelToken,
       }) {
         requestedCursors.add(cursor);
         return handler(calls++, cursor);
@@ -379,6 +380,34 @@ void main() {
       expect(result.reason, FollowCaptureReason.aborted);
       expect(result.cursor, '2|next');
       expect(result.totalUsers, 2);
+    });
+
+    test('取得口が中断で抜けてきたら、通信エラーの再試行に載せない', () async {
+      final token = CaptureCancelToken();
+      handler = (call, _) async {
+        if (call == 0) return _ok('1', '1|a');
+        token.cancel();
+        throw const CaptureCancelledException();
+      };
+
+      final result = await run(cancelToken: token);
+
+      expect(result.reason, FollowCaptureReason.aborted);
+      expect(result.cursor, '1|a');
+      // 再試行待ちに入っていたら中断ボタンが数十秒効かなくなる
+      expect(sleeps, isEmpty);
+      expect(requestedCursors, [null, '1|a']);
+    });
+
+    test('待機中にキャンセルされたら残りを待たずに返る', () async {
+      final token = CaptureCancelToken();
+      final sw = Stopwatch()..start();
+
+      final future = CaptureCancelToken.sleep(const Duration(seconds: 60), token);
+      token.cancel();
+      await future;
+
+      expect(sw.elapsed, lessThan(const Duration(seconds: 1)));
     });
   });
 }

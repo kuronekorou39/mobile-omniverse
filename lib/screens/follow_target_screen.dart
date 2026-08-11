@@ -8,6 +8,7 @@ import '../services/follow_capture_engine.dart';
 import '../services/follow_capture_job_service.dart';
 import '../services/follow_db.dart';
 import '../utils/app_snackbar.dart';
+import '../utils/confirm_dialog.dart';
 import '../utils/image_headers.dart';
 import 'follow_relation_screen.dart';
 import 'follow_snapshot_screen.dart';
@@ -159,7 +160,7 @@ class _FollowTargetScreenState extends State<FollowTargetScreen> {
             ListTile(
               leading: const Icon(Icons.swap_horiz),
               title: Text(_relation == null
-                  ? '相互 — 両方の取得が必要です'
+                  ? '相互 — 両方の取得が必要'
                   : '相互 ${_relation!.mutual}'),
               subtitle: _relation == null
                   ? null
@@ -176,7 +177,6 @@ class _FollowTargetScreenState extends State<FollowTargetScreen> {
             ListTile(
               leading: const Icon(Icons.play_circle_outline),
               title: const Text('今すぐ取得'),
-              subtitle: const Text('種別を選んで開始', style: TextStyle(fontSize: 11)),
               enabled: !_job.isRunning,
               onTap: _pickKind,
             ),
@@ -207,9 +207,12 @@ class _FollowTargetScreenState extends State<FollowTargetScreen> {
         subtitle: s == null
             ? null
             : Text(
-                '${dateLabel(s.startedAt)} 取得'
-                '${durationLabel(s) == null ? '' : ' ・ 所要${durationLabel(s)}'}',
-                style: const TextStyle(fontSize: 11)),
+                '${dateLabel(s.startedAt)}'
+                '${durationLabel(s) == null ? '' : ' ・ 所要${durationLabel(s)}'}'
+                '${looksIncomplete(s) ? ' ・ 取りこぼしの可能性' : ''}',
+                style: TextStyle(
+                    fontSize: 11,
+                    color: looksIncomplete(s) ? Colors.orange : null)),
         trailing: s == null ? null : const Icon(Icons.chevron_right),
         onTap: s == null ? null : () => _openSnapshot(s),
       );
@@ -243,7 +246,7 @@ class _FollowTargetScreenState extends State<FollowTargetScreen> {
             subtitle: Text(
               '${s.kind == 'followers' ? 'フォロワー' : 'フォロー'}'
               '${durationLabel(s) == null ? '' : ' ・ 所要${durationLabel(s)}'}'
-              '${s.isCompleted ? '' : ' ・ ${s.status}'}',
+              '${s.isCompleted ? '' : ' ・ ${statusLabel(s)}'}',
               style: const TextStyle(fontSize: 11),
             ),
             trailing: const Icon(Icons.chevron_right),
@@ -262,7 +265,7 @@ class _FollowTargetScreenState extends State<FollowTargetScreen> {
           const Padding(
             padding: EdgeInsets.symmetric(horizontal: 16),
             child: Text(
-              '鍵アカウントの一覧は、その相手とつながっているアカウントでないと取得できません。',
+              '鍵アカウントは、つながっているアカウントでないと取得できません',
               style: TextStyle(fontSize: 11, color: Colors.grey),
             ),
           ),
@@ -282,12 +285,11 @@ class _FollowTargetScreenState extends State<FollowTargetScreen> {
             ),
           ),
           const Divider(),
-          _header('スケジュール'),
+          _header('定期取得'),
           const Padding(
             padding: EdgeInsets.symmetric(horizontal: 16),
             child: Text(
-              '前回「完了」してから指定日数が経っていれば、次回アプリ起動時に1回だけ実行します。'
-              '起動しない日が続いても、まとめて連続実行されることはありません。',
+              '前回の完了から指定日数が過ぎていれば、次の起動時に1回だけ実行します',
               style: TextStyle(fontSize: 11, color: Colors.grey),
             ),
           ),
@@ -332,7 +334,7 @@ class _FollowTargetScreenState extends State<FollowTargetScreen> {
   String _nextDueLabel(String kind) {
     final due = _nextDue[kind];
     if (due == null) return '次回: 未定';
-    if (!due.isAfter(DateTime.now())) return '次回: 期日を過ぎています（次の起動時に実行）';
+    if (!due.isAfter(DateTime.now())) return '次回: 次の起動時';
     return '次回: ${dateLabel(due)}';
   }
 
@@ -347,9 +349,7 @@ class _FollowTargetScreenState extends State<FollowTargetScreen> {
           LinearProgressIndicator(value: ratio, minHeight: 6),
           const SizedBox(height: 4),
           Text(
-            'この対象 ${formatBytes(_sizeBytes)}'
-            '（全体上限 ${formatBytes(limit)} の ${(ratio * 100).toStringAsFixed(1)}%）'
-            '　※行数からの概算',
+            '${formatBytes(_sizeBytes)} / 全体上限 ${formatBytes(limit)}（概算）',
             style: const TextStyle(fontSize: 10, color: Colors.grey),
           ),
         ],
@@ -392,10 +392,14 @@ class _FollowTargetScreenState extends State<FollowTargetScreen> {
               const SizedBox(width: 10),
               Expanded(
                 child: Text(
-                    '${p.kind == FollowListKind.followers ? 'フォロワー' : 'フォロー'}を取得中',
+                    '${p.kind == FollowListKind.followers ? 'フォロワー' : 'フォロー'}'
+                    '${p.cancelling ? 'の取得を中断しています…' : 'を取得中'}',
                     style: const TextStyle(fontWeight: FontWeight.bold)),
               ),
-              TextButton(onPressed: _job.cancel, child: const Text('中断')),
+              TextButton(
+                onPressed: p.cancelling ? null : _job.cancel,
+                child: const Text('中断'),
+              ),
             ]),
             Text('${p.collected} 件 / ${p.round} ページ',
                 style: const TextStyle(fontSize: 20)),
@@ -459,13 +463,19 @@ class _FollowTargetScreenState extends State<FollowTargetScreen> {
       return;
     }
     try {
-      await _job.run(
+      final result = await _job.run(
         account: account,
         targetHandle: widget.handle,
         kind: kind,
         resume: resume,
       );
-      if (mounted) showAppSnackBar(context, '取得が終了しました');
+      if (mounted) {
+        showAppSnackBar(
+            context,
+            result?.isCompleted == false
+                ? '中断しました（続きから再開できます）'
+                : '取得が終了しました');
+      }
     } catch (e) {
       if (mounted) showAppSnackBar(context, '$e', type: SnackType.error);
     }
@@ -517,23 +527,22 @@ class _FollowTargetScreenState extends State<FollowTargetScreen> {
   }
 
   Future<void> _confirmDelete() async {
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (_) => AlertDialog(
-        title: Text('@${widget.handle} を削除'),
-        content: const Text('この対象の履歴とデータをすべて削除します。元に戻せません。'),
-        actions: [
-          TextButton(
-              onPressed: () => Navigator.pop(context, false),
-              child: const Text('キャンセル')),
-          TextButton(
-              onPressed: () => Navigator.pop(context, true),
-              child: const Text('削除')),
-        ],
-      ),
+    final ok = await confirmDialog(
+      context,
+      title: '@${widget.handle} を削除',
+      message: 'この対象の履歴とデータをすべて削除します。元に戻せません。',
+      confirmLabel: '削除',
+      destructive: true,
     );
-    if (ok != true) return;
-    await FollowDb.instance.deleteTarget(widget.handle);
+    if (!ok) return;
+    try {
+      await FollowDb.instance.deleteTarget(widget.handle);
+    } catch (e) {
+      if (mounted) {
+        showAppSnackBar(context, '削除に失敗しました: $e', type: SnackType.error);
+      }
+      return;
+    }
     if (mounted) Navigator.of(context).pop();
   }
 }

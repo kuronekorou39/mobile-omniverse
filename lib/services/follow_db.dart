@@ -211,6 +211,12 @@ class FollowDb {
       await txn.delete('targets', where: 'handle = ?', whereArgs: [h]);
     });
     await pruneOrphanUsers();
+    // VACUUM しないとファイルサイズが縮まず、削除しても使用量が減らないように見える
+    try {
+      await db.execute('VACUUM');
+    } catch (e) {
+      debugPrint('[FollowDb] VACUUM に失敗: $e');
+    }
   }
 
   static String _norm(String handle) =>
@@ -571,11 +577,19 @@ class FollowDb {
     return rows.map(_userFromSnapshotRow).toList();
   }
 
-  /// 両方に居るユーザーの件数の変化 (ツイート数・フォロワー数の推移)
+  /// 両方に居るユーザーの件数の変化 (ツイート数・フォロワー数の推移)。
+  ///
+  /// 3 万人規模の対象では変化した人だけでも数万件になる。
+  /// 上限で打ち切ると「見えていない分がある」ことに気づけないので、
+  /// 件数は [countChangesTotal] で別に数え、中身はページングで読む。
+  ///
+  /// 並びは ABS(ツイート増減) の降順。offset でページを進めても順序が
+  /// 崩れないよう restId を第 2 キーに入れてある。
   Future<List<FollowCountChange>> countChanges({
     required int oldSnapshotId,
     required int newSnapshotId,
-    int limit = 200,
+    int limit = 100,
+    int offset = 0,
   }) async {
     final db = await _database;
     final rows = await db.rawQuery(
@@ -585,12 +599,11 @@ class FollowDb {
       'FROM snapshot_members n '
       'JOIN snapshot_members o ON o.restId = n.restId AND o.snapshotId = ? '
       'JOIN users u ON u.restId = n.restId '
-      'WHERE n.snapshotId = ? '
-      'AND (COALESCE(n.statusesCount,0) <> COALESCE(o.statusesCount,0) '
-      '  OR COALESCE(n.followersCount,0) <> COALESCE(o.followersCount,0)) '
-      'ORDER BY ABS(COALESCE(n.statusesCount,0) - COALESCE(o.statusesCount,0)) DESC '
-      'LIMIT ?',
-      [oldSnapshotId, newSnapshotId, limit],
+      'WHERE n.snapshotId = ? AND $_countChangedClause '
+      'ORDER BY ABS(COALESCE(n.statusesCount,0) - COALESCE(o.statusesCount,0)) DESC, '
+      'n.restId '
+      'LIMIT ? OFFSET ?',
+      [oldSnapshotId, newSnapshotId, limit, offset],
     );
     return rows
         .map((r) => FollowCountChange(
@@ -602,6 +615,27 @@ class FollowDb {
             ))
         .toList();
   }
+
+  /// 件数が変化したユーザーの総数
+  Future<int> countChangesTotal({
+    required int oldSnapshotId,
+    required int newSnapshotId,
+  }) async {
+    final db = await _database;
+    return Sqflite.firstIntValue(await db.rawQuery(
+          'SELECT COUNT(*) FROM snapshot_members n '
+          'JOIN snapshot_members o ON o.restId = n.restId AND o.snapshotId = ? '
+          'WHERE n.snapshotId = ? AND $_countChangedClause',
+          [oldSnapshotId, newSnapshotId],
+        )) ??
+        0;
+  }
+
+  /// 「ツイート数かフォロワー数のどちらかが動いた」条件。
+  /// 一覧と件数で条件がずれないよう 1 箇所にまとめる
+  static const _countChangedClause =
+      '(COALESCE(n.statusesCount,0) <> COALESCE(o.statusesCount,0) '
+      ' OR COALESCE(n.followersCount,0) <> COALESCE(o.followersCount,0))';
 
   /// members / runMembers 用。走査時点の件数で上書きした FollowUser を返す
   static FollowUser _userFromSnapshotRow(Map<String, Object?> r) {
@@ -622,29 +656,47 @@ class FollowDb {
     );
   }
 
-  /// 2 つのスナップショットの差分。
+  /// 2 つのスナップショットの差分の件数。
   /// added = new にだけ居る / removed = old にだけ居る
-  Future<({List<FollowUser> added, List<FollowUser> removed})> diff({
+  Future<({int added, int removed})> diffCounts({
     required int oldSnapshotId,
     required int newSnapshotId,
   }) async {
     final db = await _database;
-
-    Future<List<FollowUser>> onlyIn(int a, int b) async {
-      final rows = await db.rawQuery(
-        'SELECT u.* FROM snapshot_members m JOIN users u ON u.restId = m.restId '
-        'WHERE m.snapshotId = ? AND m.restId NOT IN '
-        '(SELECT restId FROM snapshot_members WHERE snapshotId = ?) '
-        'ORDER BY u.followersCount DESC',
-        [a, b],
-      );
-      return rows.map(_userFromRow).toList();
-    }
-
+    Future<int> onlyIn(int a, int b) async =>
+        Sqflite.firstIntValue(await db.rawQuery(
+          'SELECT COUNT(*) FROM snapshot_members WHERE snapshotId = ? '
+          'AND restId NOT IN (SELECT restId FROM snapshot_members WHERE snapshotId = ?)',
+          [a, b],
+        )) ??
+        0;
     return (
       added: await onlyIn(newSnapshotId, oldSnapshotId),
       removed: await onlyIn(oldSnapshotId, newSnapshotId),
     );
+  }
+
+  /// 片側にだけ居るユーザー。[added] が true なら new 側だけ、false なら old 側だけ。
+  /// 全取得と入れ替わりの大きい比較では数万件になるのでページングして読むこと。
+  Future<List<FollowUser>> diffMembers({
+    required int oldSnapshotId,
+    required int newSnapshotId,
+    required bool added,
+    int limit = 100,
+    int offset = 0,
+  }) async {
+    final db = await _database;
+    final (base, other) = added
+        ? (newSnapshotId, oldSnapshotId)
+        : (oldSnapshotId, newSnapshotId);
+    final rows = await db.rawQuery(
+      'SELECT u.* FROM snapshot_members m JOIN users u ON u.restId = m.restId '
+      'WHERE m.snapshotId = ? AND m.restId NOT IN '
+      '(SELECT restId FROM snapshot_members WHERE snapshotId = ?) '
+      'ORDER BY u.followersCount DESC, u.restId LIMIT ? OFFSET ?',
+      [base, other, limit, offset],
+    );
+    return rows.map(_userFromRow).toList();
   }
 
   /// 古い世代を捨てる。対象 × 種別ごとに直近 [keep] 世代だけ残す

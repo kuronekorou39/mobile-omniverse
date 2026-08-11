@@ -433,6 +433,7 @@ class FollowCaptureWebViewService {
     required String targetHandle,
     required FollowListKind kind,
     bool force = false,
+    CaptureCancelToken? cancelToken,
   }) async {
     final creds = account.xCredentials;
     final key = _key(creds.authToken, targetHandle, kind);
@@ -462,7 +463,8 @@ class FollowCaptureWebViewService {
     );
 
     try {
-      await _captureCompleter!.future.timeout(_captureTimeout);
+      await CaptureCancelToken.race(
+          _captureCompleter!.future.timeout(_captureTimeout), cancelToken);
     } on TimeoutException {
       DebugLogService.instance.log(
           'FollowCaptureWebView', '@$handle/$path の捕獲がタイムアウト');
@@ -472,26 +474,31 @@ class FollowCaptureWebViewService {
     // 捕獲は「最初の XHR が飛んだ時点」で完了する。X のクライアントはその後も
     // 初期化を続けており、直後に再送すると 404 になることがある。
     // ページが落ち着くまで待ってから使えるようにする。
-    await Future.delayed(_settleDelay);
+    await CaptureCancelToken.sleep(_settleDelay, cancelToken);
+    cancelToken?.throwIfCancelled();
 
     await _saveCookies(creds.authToken);
     _capturedKey = key;
 
     // txId を追加で集める。1 個を使い回すと 404 になるため、
     // 拡張機能と同じくリロードして複数確保しローテーションする。
-    await _harvestTokens();
+    await _harvestTokens(cancelToken);
 
     return hasCapture;
   }
 
   /// ページをリロードして txId を追加で捕獲する
-  Future<void> _harvestTokens() async {
+  Future<void> _harvestTokens([CaptureCancelToken? cancelToken]) async {
     while (_txIds.length < txPoolSize) {
+      cancelToken?.throwIfCancelled();
       final before = _txIds.length;
       _captureCompleter = Completer<void>();
       try {
         await _controller!.reload();
-        await _captureCompleter!.future.timeout(_harvestTimeout);
+        await CaptureCancelToken.race(
+            _captureCompleter!.future.timeout(_harvestTimeout), cancelToken);
+      } on CaptureCancelledException {
+        rethrow;
       } on TimeoutException {
         debugPrint('[FollowCaptureWebView] txId 補充がタイムアウト');
         break;
@@ -511,10 +518,14 @@ class FollowCaptureWebViewService {
   /// 指定 endpoint でクールダウン明けの txId を返す。全部冷却中なら明けるまで待つ。
   /// 冷却は endpoint ごとなので、Followers が全部冷えていても
   /// Following では同じトークンがすぐ使える。
-  Future<String?> _pickTxId(FollowListKind kind) async {
+  Future<String?> _pickTxId(FollowListKind kind,
+      [CaptureCancelToken? cancelToken]) async {
     if (_txIds.isEmpty) return null;
     final cooldown = txCooldownOf(kind);
     while (true) {
+      // Followers の冷却は 60 秒ある。ここでキャンセルを見ないと
+      // 中断ボタンを押してから最大 1 分止まらない
+      cancelToken?.throwIfCancelled();
       final now = DateTime.now();
       String? best;
       DateTime? bestUsed;
@@ -534,7 +545,7 @@ class FollowCaptureWebViewService {
         }
       }
       if (best != null) return best;
-      await Future.delayed(minWait);
+      await CaptureCancelToken.sleep(minWait, cancelToken);
     }
   }
 
@@ -548,10 +559,16 @@ class FollowCaptureWebViewService {
     required String targetHandle,
     required FollowListKind kind,
     String? cursor,
+    CaptureCancelToken? cancelToken,
   }) async {
+    cancelToken?.throwIfCancelled();
+
     if (!hasCapture) {
       final ok = await prepare(
-          account: account, targetHandle: targetHandle, kind: kind);
+          account: account,
+          targetHandle: targetHandle,
+          kind: kind,
+          cancelToken: cancelToken);
       if (!ok) {
         throw StateError('Followers リクエストを捕獲できませんでした');
       }
@@ -564,9 +581,10 @@ class FollowCaptureWebViewService {
       return page;
     }
 
-    var page = await _runPageFetch(cursor, kind);
+    var page = await _runPageFetch(cursor, kind, cancelToken);
 
     if (page.statusCode == 404) {
+      cancelToken?.throwIfCancelled();
       debugPrint('[FollowCaptureWebView] 404 → txId 失効とみて捕り直す');
       DebugLogService.instance
           .log('FollowCaptureWebView', '404 → 再捕獲を試みる');
@@ -574,11 +592,12 @@ class FollowCaptureWebViewService {
           account: account,
           targetHandle: targetHandle,
           kind: kind,
-          force: true);
+          force: true,
+          cancelToken: cancelToken);
       if (ok) {
         // 捕り直した直後の 1 ページ目は使わずに、目的の cursor を取りに行く
         _pendingInitialPage = null;
-        page = await _runPageFetch(cursor, kind);
+        page = await _runPageFetch(cursor, kind, cancelToken);
       }
     }
     return page;
@@ -616,15 +635,16 @@ class FollowCaptureWebViewService {
     return headers;
   }
 
-  Future<XFollowListPage> _runPageFetch(String? cursor, FollowListKind kind) async {
+  Future<XFollowListPage> _runPageFetch(String? cursor, FollowListKind kind,
+      [CaptureCancelToken? cancelToken]) async {
     final url = cursor == null
         ? _capturedUrl!
         : FollowListParser.replaceCursorInUrl(_capturedUrl!, cursor);
-    final txId = await _pickTxId(kind);
+    final txId = await _pickTxId(kind, cancelToken);
     final headers = await _headersWithFreshCt0(txId);
     if (txId != null) _txUsedAt[_txKey(kind, txId)] = DateTime.now();
 
-    final map = await _rawFetch(url, headers);
+    final map = await _rawFetch(url, headers, cancelToken);
     final status = map['status'] as int;
     if (status == -1) {
       throw StateError('ページ内 fetch が失敗: ${map['error']}');
@@ -671,7 +691,8 @@ class FollowCaptureWebViewService {
 
   /// ページ内で 1 回 fetch して、status・レート制限ヘッダー・本文を返す
   Future<Map<String, dynamic>> _rawFetch(
-      String url, Map<String, String> headers) async {
+      String url, Map<String, String> headers,
+      [CaptureCancelToken? cancelToken]) async {
     _fetchCompleter = Completer<String>();
     final source = '''
 (async function(){
@@ -703,7 +724,8 @@ class FollowCaptureWebViewService {
 
     final String raw;
     try {
-      raw = await _fetchCompleter!.future.timeout(_fetchTimeout);
+      raw = await CaptureCancelToken.race(
+          _fetchCompleter!.future.timeout(_fetchTimeout), cancelToken);
     } on TimeoutException {
       // エンジン側のネットワークエラー扱いに載せる
       throw TimeoutException('ページ内 fetch がタイムアウト', _fetchTimeout);

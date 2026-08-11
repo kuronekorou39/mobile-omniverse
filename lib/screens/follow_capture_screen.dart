@@ -9,6 +9,7 @@ import '../services/follow_db.dart';
 import '../services/x_api_service.dart';
 import '../utils/app_snackbar.dart';
 import '../utils/image_headers.dart';
+import 'follow_snapshot_screen.dart' show dateLabel;
 import 'follow_target_screen.dart';
 
 /// フォロー/フォロワー取得のハブ。走査対象の一覧と全体設定を置く。
@@ -85,7 +86,11 @@ class _FollowCaptureScreenState extends State<FollowCaptureScreen> {
 
   /// ログイン済みの自分のアカウントは、対象として自動登録しておく。
   ///
-  /// 既にある対象でも、表示名やアイコンが欠けていれば補完する。
+  /// 登録するのは **アカウントにつき一度だけ**。毎回入れ直すと、
+  /// ユーザーが対象を削除しても次にこの画面を開いた瞬間に復活してしまい、
+  /// 「削除しても消えない」ように見える。消したい人は消せるようにする。
+  ///
+  /// 既にある対象は、表示名やアイコンが欠けていれば補完する。
   /// v3 マイグレーションで既存スナップショットから復元した行には
   /// handle しか入っていないため。
   Future<void> _ensureOwnAccountsRegistered() async {
@@ -94,6 +99,7 @@ class _FollowCaptureScreenState extends State<FollowCaptureScreen> {
       final handle = a.handle.replaceFirst('@', '').toLowerCase();
       final existing = await db.getTarget(handle);
       if (existing == null) {
+        if (_job.isAutoRegistered(a.id)) continue; // 削除済み → 復活させない
         await db.upsertTarget(FollowTarget(
           handle: handle,
           displayName: a.displayName,
@@ -108,6 +114,7 @@ class _FollowCaptureScreenState extends State<FollowCaptureScreen> {
           sessionAccountId: existing.sessionAccountId ?? a.id,
         ));
       }
+      await _job.markAutoRegistered(a.id);
     }
   }
 
@@ -146,16 +153,14 @@ class _FollowCaptureScreenState extends State<FollowCaptureScreen> {
                   const Padding(
                     padding: EdgeInsets.fromLTRB(16, 8, 16, 8),
                     child: Text(
-                      '走査中はアプリ内の他の画面に移動しても継続します。'
-                      '中断しても取得済みのデータは残り、続きから再開できます。',
+                      '他の画面に移っても取得は続きます。中断しても続きから再開できます。',
                       style: TextStyle(fontSize: 11, color: Colors.grey),
                     ),
                   ),
                   ListTile(
                     leading: const Icon(Icons.schedule),
-                    title: const Text('期日の取得を今すぐ実行'),
-                    subtitle: const Text(
-                        '未完了の再開と、期日が来たスケジュールを順に実行します',
+                    title: const Text('予定分を今すぐ実行'),
+                    subtitle: const Text('中断分の再開と、期限が来た定期取得',
                         style: TextStyle(fontSize: 11)),
                     enabled: !_job.isRunning,
                     onTap: _runDueNow,
@@ -187,8 +192,7 @@ class _FollowCaptureScreenState extends State<FollowCaptureScreen> {
           LinearProgressIndicator(value: ratio, minHeight: 8),
           const SizedBox(height: 4),
           Text(
-            '全体 ${formatBytes(_totalBytes)} / ${formatBytes(limit)}'
-            '（${(ratio * 100).toStringAsFixed(1)}%）',
+            '${formatBytes(_totalBytes)} / ${formatBytes(limit)}',
             style: const TextStyle(fontSize: 11, color: Colors.grey),
           ),
         ],
@@ -203,11 +207,15 @@ class _FollowCaptureScreenState extends State<FollowCaptureScreen> {
               width: 20,
               height: 20,
               child: CircularProgressIndicator(strokeWidth: 2)),
-          title: Text('@${p.targetHandle} を取得中'),
+          title: Text(p.cancelling
+              ? '@${p.targetHandle} を中断しています…'
+              : '@${p.targetHandle} を取得中'),
           subtitle: Text('${p.collected}件 / ${p.round}ページ',
               style: const TextStyle(fontSize: 11)),
           trailing: TextButton(
-              onPressed: _job.cancel, child: const Text('中断')),
+            onPressed: p.cancelling ? null : _job.cancel,
+            child: const Text('中断'),
+          ),
           onTap: () => _openTarget(p.targetHandle),
         ),
       );
@@ -250,7 +258,6 @@ class _FollowCaptureScreenState extends State<FollowCaptureScreen> {
             (schedule.isEmpty ? '' : ' ・ $schedule'),
         style: const TextStyle(fontSize: 11),
       ),
-      isThreeLine: true,
       trailing: isRunning
           ? const SizedBox(
               width: 18,
@@ -311,7 +318,7 @@ class _FollowCaptureScreenState extends State<FollowCaptureScreen> {
               ),
               const SizedBox(height: 8),
               const Text(
-                '鍵アカウントを取得するには、その相手とつながっているアカウントを選んでください',
+                '鍵アカウントは、つながっているアカウントを選んでください',
                 style: TextStyle(fontSize: 11, color: Colors.grey),
               ),
             ],
@@ -375,8 +382,7 @@ class _FollowCaptureScreenState extends State<FollowCaptureScreen> {
               ),
               SwitchListTile(
                 title: const Text('起動時に自動実行'),
-                subtitle: const Text(
-                    '中断した取得の再開と、期日が来たスケジュールを1件だけ実行します',
+                subtitle: const Text('中断分の再開と、期限が来た定期取得を1件だけ',
                     style: TextStyle(fontSize: 11)),
                 value: _job.autoRunOnLaunch,
                 onChanged: (v) async {
@@ -387,7 +393,7 @@ class _FollowCaptureScreenState extends State<FollowCaptureScreen> {
               ),
               ListTile(
                 title: const Text('保持サイズの上限'),
-                subtitle: const Text('超えたら古い世代から削除します（各対象2世代は残す）',
+                subtitle: const Text('超えたら古い履歴から削除（各対象2件は残す）',
                     style: TextStyle(fontSize: 11)),
                 trailing: DropdownButton<int>(
                   value: _job.sizeLimitBytes,
@@ -432,10 +438,6 @@ class _TargetSummary {
         .whereType<DateTime>()
         .toList()
       ..sort();
-    if (dates.isEmpty) return null;
-    final d = dates.last;
-    return '${d.month}/${d.day} '
-        '${d.hour.toString().padLeft(2, '0')}:'
-        '${d.minute.toString().padLeft(2, '0')}';
+    return dates.isEmpty ? null : dateLabel(dates.last);
   }
 }

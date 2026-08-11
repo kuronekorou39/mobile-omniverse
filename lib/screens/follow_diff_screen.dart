@@ -4,8 +4,11 @@ import '../models/follow_user.dart';
 import '../services/follow_db.dart';
 import 'follow_snapshot_screen.dart';
 
-/// 2 つの走査結果の差分。
+/// 2 回分の取得結果の差分。
 /// フォロワーなら「増えた = 新規フォロワー」「減った = フォロー解除」になる。
+///
+/// 件数だけ先に数えてタブに出し、中身は 3 つとも [PagedFollowList] で
+/// 順に読む。対象が数万人だと差分も数万件になりうるため、上限は設けない。
 class FollowDiffScreen extends StatefulWidget {
   const FollowDiffScreen({super.key, required this.older, required this.newer});
 
@@ -17,85 +20,70 @@ class FollowDiffScreen extends StatefulWidget {
 }
 
 class _FollowDiffScreenState extends State<FollowDiffScreen> {
-  List<FollowUser> _added = [];
-  List<FollowUser> _removed = [];
-  List<FollowCountChange> _changes = [];
-  bool _loading = true;
-
-  bool get _isFollowers => widget.newer.kind == 'followers';
+  int? _added;
+  int? _removed;
+  int? _changed;
 
   @override
   void initState() {
     super.initState();
-    _load();
+    _loadCounts();
   }
 
-  Future<void> _load() async {
-    final d = await FollowDb.instance.diff(
-      oldSnapshotId: widget.older.id,
-      newSnapshotId: widget.newer.id,
-    );
-    final changes = await FollowDb.instance.countChanges(
-      oldSnapshotId: widget.older.id,
-      newSnapshotId: widget.newer.id,
-    );
+  Future<void> _loadCounts() async {
+    final db = FollowDb.instance;
+    final oldId = widget.older.id, newId = widget.newer.id;
+    final diff =
+        await db.diffCounts(oldSnapshotId: oldId, newSnapshotId: newId);
+    final changed =
+        await db.countChangesTotal(oldSnapshotId: oldId, newSnapshotId: newId);
     if (!mounted) return;
     setState(() {
-      _added = d.added;
-      _removed = d.removed;
-      _changes = changes;
-      _loading = false;
+      _added = diff.added;
+      _removed = diff.removed;
+      _changed = changed;
     });
   }
 
+  String _tab(String label, int? count) =>
+      count == null ? label : '$label ($count)';
+
   @override
   Widget build(BuildContext context) {
-    final addedLabel = _isFollowers ? '増えた（新規フォロワー）' : '増えた（フォローした）';
-    final removedLabel = _isFollowers ? '減った（フォロー解除）' : '減った（フォロー外した）';
+    final o = widget.older, n = widget.newer;
+    final incomplete = !o.isCompleted || !n.isCompleted;
 
     return DefaultTabController(
       length: 3,
       child: Scaffold(
         appBar: AppBar(
-          title: Text('@${widget.newer.targetHandle} の差分'),
-          bottom: TabBar(
-            isScrollable: true,
-            tabs: [
-              Tab(text: '$addedLabel ${_loading ? '' : '(${_added.length})'}'),
-              Tab(text: '$removedLabel ${_loading ? '' : '(${_removed.length})'}'),
-              Tab(text: '件数の変化 ${_loading ? '' : '(${_changes.length})'}'),
-            ],
-          ),
+          title: Text('@${n.targetHandle} の差分'),
+          bottom: TabBar(tabs: [
+            Tab(text: _tab('増えた', _added)),
+            Tab(text: _tab('減った', _removed)),
+            Tab(text: _tab('変化', _changed)),
+          ]),
         ),
         body: Column(
           children: [
             Padding(
-              padding: const EdgeInsets.all(12),
+              padding: const EdgeInsets.all(10),
               child: Text(
-                '${_dateLabel(widget.older.startedAt)}（${widget.older.collectedCount}件）'
-                ' → ${_dateLabel(widget.newer.startedAt)}（${widget.newer.collectedCount}件）',
-                style: const TextStyle(fontSize: 11, color: Colors.grey),
+                '${dateLabel(o.startedAt)}（${o.collectedCount}件）'
+                ' → ${dateLabel(n.startedAt)}（${n.collectedCount}件）'
+                '${incomplete ? '\n⚠ 中断した取得を含むため、差分は不正確です' : ''}',
+                style: TextStyle(
+                    fontSize: 11,
+                    color: incomplete ? Colors.orange : Colors.grey),
                 textAlign: TextAlign.center,
               ),
             ),
-            if (!widget.older.isCompleted || !widget.newer.isCompleted)
-              const Padding(
-                padding: EdgeInsets.symmetric(horizontal: 12),
-                child: Text(
-                  '⚠ 途中で終わった走査が含まれています。差分は不正確です。',
-                  style: TextStyle(fontSize: 11, color: Colors.orange),
-                ),
-              ),
             Expanded(
-              child: _loading
-                  ? const Center(child: CircularProgressIndicator())
-                  : TabBarView(
-                      children: [
-                        _list(_added, Icons.add_circle, Colors.green),
-                        _list(_removed, Icons.remove_circle, Colors.red),
-                        _changeList(),
-                      ],
-                    ),
+              child: TabBarView(children: [
+                _memberList(added: true),
+                _memberList(added: false),
+                _changeList(),
+              ]),
             ),
           ],
         ),
@@ -103,19 +91,32 @@ class _FollowDiffScreenState extends State<FollowDiffScreen> {
     );
   }
 
+  Widget _memberList({required bool added}) => PagedFollowList<FollowUser>(
+        fetch: (offset, limit) => FollowDb.instance.diffMembers(
+          oldSnapshotId: widget.older.id,
+          newSnapshotId: widget.newer.id,
+          added: added,
+          limit: limit,
+          offset: offset,
+        ),
+        itemBuilder: (u) => FollowUserTile(
+          user: u,
+          leadingIcon: Icon(added ? Icons.add_circle : Icons.remove_circle,
+              color: added ? Colors.green : Colors.red),
+          accountId: widget.newer.sessionAccountId,
+        ),
+        emptyLabel: added ? '増えた人はいません' : '減った人はいません',
+      );
+
   /// 両方に居る人の、ツイート数とフォロワー数の増減
-  Widget _changeList() {
-    if (_changes.isEmpty) {
-      return const Center(
-          child: Text('件数の変化はありません\n（v1 のデータには記録がありません）',
-              textAlign: TextAlign.center,
-              style: TextStyle(color: Colors.grey)));
-    }
-    return ListView.builder(
-      itemCount: _changes.length,
-      itemBuilder: (_, i) {
-        final c = _changes[i];
-        return FollowUserTile(
+  Widget _changeList() => PagedFollowList<FollowCountChange>(
+        fetch: (offset, limit) => FollowDb.instance.countChanges(
+          oldSnapshotId: widget.older.id,
+          newSnapshotId: widget.newer.id,
+          limit: limit,
+          offset: offset,
+        ),
+        itemBuilder: (c) => FollowUserTile(
           user: c.user,
           accountId: widget.newer.sessionAccountId,
           trailing: Column(
@@ -126,10 +127,9 @@ class _FollowDiffScreenState extends State<FollowDiffScreen> {
               _delta('フォロワー', c.followersDelta),
             ],
           ),
-        );
-      },
-    );
-  }
+        ),
+        emptyLabel: '件数の変化はありません',
+      );
 
   Widget _delta(String label, int? value) {
     if (value == null || value == 0) {
@@ -146,23 +146,4 @@ class _FollowDiffScreenState extends State<FollowDiffScreen> {
       ),
     );
   }
-
-  Widget _list(List<FollowUser> users, IconData icon, Color color) {
-    if (users.isEmpty) {
-      return const Center(
-          child: Text('変化なし', style: TextStyle(color: Colors.grey)));
-    }
-    return ListView.builder(
-      itemCount: users.length,
-      itemBuilder: (_, i) => FollowUserTile(
-        user: users[i],
-        leadingIcon: Icon(icon, color: color),
-        accountId: widget.newer.sessionAccountId,
-      ),
-    );
-  }
-
-  static String _dateLabel(DateTime dt) =>
-      '${dt.month}/${dt.day} ${dt.hour.toString().padLeft(2, '0')}:'
-      '${dt.minute.toString().padLeft(2, '0')}';
 }

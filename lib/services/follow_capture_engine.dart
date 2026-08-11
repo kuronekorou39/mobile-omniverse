@@ -20,6 +20,7 @@ typedef FollowPageFetcher = Future<XFollowListPage> Function({
   required String targetHandle,
   required FollowListKind kind,
   String? cursor,
+  CaptureCancelToken? cancelToken,
 });
 
 /// 取得する一覧の種別
@@ -112,6 +113,15 @@ class FollowCaptureWaiting {
   final DateTime startedAt;
 }
 
+/// キャンセルされた待機から抜けるための例外。
+/// エンジンは「通信エラー」ではなく中断として扱う。
+class CaptureCancelledException implements Exception {
+  const CaptureCancelledException();
+
+  @override
+  String toString() => '走査が中断されました';
+}
+
 /// 走査のキャンセル用トークン
 class CaptureCancelToken {
   final _completer = Completer<void>();
@@ -121,6 +131,38 @@ class CaptureCancelToken {
 
   void cancel() {
     if (!_completer.isCompleted) _completer.complete();
+  }
+
+  void throwIfCancelled() {
+    if (isCancelled) throw const CaptureCancelledException();
+  }
+
+  /// [duration] 待つ。待っている間にキャンセルされたら残りを待たずに返る。
+  ///
+  /// 中断ボタンの効きは「一番長い待機がキャンセルを見ているか」で決まる。
+  /// 待つ処理は必ずこれを通すこと。
+  static Future<void> sleep(Duration duration, [CaptureCancelToken? token]) {
+    if (duration <= Duration.zero) return Future.value();
+    if (token == null) return Future.delayed(duration);
+    if (token.isCancelled) return Future.value();
+    return Future.any([Future.delayed(duration), token.whenCancelled]);
+  }
+
+  /// [future] の完了を待つ。待っている間にキャンセルされたら
+  /// [CaptureCancelledException] で抜ける。
+  ///
+  /// 元の future は放置される。WebView 内の fetch はページを畳めば止まるので、
+  /// 待ち続けるより先に抜けたほうが中断が速い。
+  static Future<T> race<T>(Future<T> future, [CaptureCancelToken? token]) {
+    if (token == null) return future;
+    if (token.isCancelled) {
+      return Future.error(const CaptureCancelledException());
+    }
+    return Future.any([
+      future,
+      token.whenCancelled
+          .then<T>((_) => throw const CaptureCancelledException()),
+    ]);
   }
 }
 
@@ -267,9 +309,15 @@ class FollowCaptureEngine {
           targetHandle: targetHandle,
           kind: kind,
           cursor: cursor,
+          cancelToken: cancelToken,
         );
         lastFetchAt = DateTime.now();
       } catch (e) {
+        // 取得口の中の待機から抜けてきた場合も含めて、まず中断を見る。
+        // 再試行に載せてしまうと中断ボタンが数十秒効かなくなる。
+        if (cancelled()) {
+          return finish(FollowCaptureReason.aborted, completed: false);
+        }
         consecutiveNetworkErrors++;
         _log(kind,
             'network error at round $round ($consecutiveNetworkErrors): $e');
@@ -384,8 +432,7 @@ class FollowCaptureEngine {
   Future<void> _sleep(Duration duration, CaptureCancelToken? token) {
     final override = sleepOverride;
     if (override != null) return override(duration);
-    if (token == null) return Future.delayed(duration);
-    return Future.any([Future.delayed(duration), token.whenCancelled]);
+    return CaptureCancelToken.sleep(duration, token);
   }
 
   static void _log(FollowListKind kind, String message) {

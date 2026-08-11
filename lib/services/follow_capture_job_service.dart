@@ -21,6 +21,7 @@ class FollowJobProgress {
     this.rateLimit,
     this.waitingReason,
     this.waitingUntil,
+    this.cancelling = false,
   });
 
   final int snapshotId;
@@ -35,6 +36,10 @@ class FollowJobProgress {
   final String? waitingReason;
   final DateTime? waitingUntil;
 
+  /// 中断を要求済み。実際に止まるまでの間 UI にそう見せるためのフラグ。
+  /// 通信中のページが 1 枚残っていることがあるので、押した瞬間 = 停止ではない
+  final bool cancelling;
+
   FollowJobProgress copyWith({
     int? collected,
     int? round,
@@ -42,6 +47,7 @@ class FollowJobProgress {
     String? waitingReason,
     DateTime? waitingUntil,
     bool clearWaiting = false,
+    bool? cancelling,
   }) =>
       FollowJobProgress(
         snapshotId: snapshotId,
@@ -53,6 +59,7 @@ class FollowJobProgress {
         rateLimit: rateLimit ?? this.rateLimit,
         waitingReason: clearWaiting ? null : (waitingReason ?? this.waitingReason),
         waitingUntil: clearWaiting ? null : (waitingUntil ?? this.waitingUntil),
+        cancelling: cancelling ?? this.cancelling,
       );
 }
 
@@ -70,6 +77,7 @@ class FollowCaptureJobService {
 
   static const _prefAutoRun = 'follow_capture_auto_run';
   static const _prefSizeLimit = 'follow_capture_size_limit';
+  static const _prefAutoRegistered = 'follow_capture_auto_registered';
 
   /// 保持サイズの上限。超えたら古い世代から間引く
   static const sizeLimitChoices = <int>[
@@ -85,11 +93,30 @@ class FollowCaptureJobService {
   /// 保持サイズの上限（既定 200MB）
   int sizeLimitBytes = 200 * 1024 * 1024;
 
+  /// 走査対象として自動登録済みの自分のアカウント ID。
+  ///
+  /// 自分のアカウントは対象一覧に自動で並ぶが、「一度でも並べたか」を
+  /// 覚えておかないと、ユーザーが削除しても次に画面を開いた瞬間に
+  /// 復活してしまい、削除できないように見える。
+  final Set<String> _autoRegistered = {};
+
+  bool isAutoRegistered(String accountId) =>
+      _autoRegistered.contains(accountId);
+
+  Future<void> markAutoRegistered(String accountId) async {
+    if (!_autoRegistered.add(accountId)) return;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setStringList(_prefAutoRegistered, _autoRegistered.toList());
+  }
+
   Future<void> loadSettings() async {
     final prefs = await SharedPreferences.getInstance();
     autoRunOnLaunch = prefs.getBool(_prefAutoRun) ?? true;
     sizeLimitBytes =
         prefs.getInt(_prefSizeLimit) ?? 200 * 1024 * 1024;
+    _autoRegistered
+      ..clear()
+      ..addAll(prefs.getStringList(_prefAutoRegistered) ?? const []);
   }
 
   Future<void> setAutoRunOnLaunch(bool value) async {
@@ -115,8 +142,9 @@ class FollowCaptureJobService {
 
   CaptureCancelToken? _cancelToken;
 
-  /// 自動実行の連鎖を止めるフラグ。中断したら残りも走らせない
-  bool _autoRunAborted = false;
+  /// 連続実行 (runBoth / runDueWork) を止めるフラグ。
+  /// 中断したら「次の種別」「次の対象」も走らせない
+  bool _chainAborted = false;
 
   /// 他の処理が x.com の WebView / Cookie を占有している間は true。
   ///
@@ -148,8 +176,11 @@ class FollowCaptureJobService {
   }
 
   void cancel() {
-    _autoRunAborted = true;
+    _chainAborted = true;
     _cancelToken?.cancel();
+    // 実際に止まるまで数秒かかることがある。押した瞬間に見た目を変えて
+    // 「効いていない」と思われないようにする
+    progress.value = progress.value?.copyWith(cancelling: true);
   }
 
   /// [targetHandle] の一覧を終端まで取得して DB に保存する。
@@ -164,7 +195,10 @@ class FollowCaptureJobService {
     required String targetHandle,
   }) async {
     final handle = targetHandle.replaceFirst('@', '');
+    _chainAborted = false;
     for (final kind in FollowListKind.values) {
+      // 中断したのに次の種別が始まると、止めたつもりが止まっていないように見える
+      if (_chainAborted) break;
       await run(account: account, targetHandle: handle, kind: kind);
     }
     hostNeeded.value = false;
@@ -189,7 +223,7 @@ class FollowCaptureJobService {
     if (!force && !autoRunOnLaunch) return;
     if (accounts.isEmpty) return;
 
-    _autoRunAborted = false;
+    _chainAborted = false;
     final db = FollowDb.instance;
     final targets = await db.listTargets();
 
@@ -201,7 +235,7 @@ class FollowCaptureJobService {
 
     // ① 未完了の再開を最優先。完了させないまま新しく始めない
     for (final t in targets) {
-      if (_autoRunAborted || isWebViewBusy) return;
+      if (_chainAborted || isWebViewBusy) return;
       for (final s in await db.resumableFor(t.handle)) {
         final account = accountFor(t);
         if (account == null) continue;
@@ -212,7 +246,7 @@ class FollowCaptureJobService {
           kind: _kindOf(s.kind),
           resume: s,
         );
-        if (_autoRunAborted) return;
+        if (_chainAborted) return;
       }
     }
 
@@ -229,7 +263,7 @@ class FollowCaptureJobService {
     due.sort((a, b) => a.dueAt.compareTo(b.dueAt));
 
     for (final item in due) {
-      if (_autoRunAborted || isWebViewBusy) return;
+      if (_chainAborted || isWebViewBusy) return;
       final account = accountFor(item.target);
       if (account == null) continue;
       debugPrint('[FollowJob] スケジュール実行: '

@@ -22,79 +22,21 @@ class FollowSnapshotScreen extends StatefulWidget {
 }
 
 class _FollowSnapshotScreenState extends State<FollowSnapshotScreen> {
-  static const _pageSize = 100;
-
-  final _scroll = ScrollController();
-  final _users = <FollowUser>[];
   Timer? _searchDebounce;
   String _search = '';
   FollowSortOrder _sort = FollowSortOrder.followersDesc;
-  bool _loading = true;
-  bool _loadingMore = false;
-  bool _reachedEnd = false;
-
-  @override
-  void initState() {
-    super.initState();
-    _scroll.addListener(_onScroll);
-    _loadFirstPage();
-  }
 
   @override
   void dispose() {
     _searchDebounce?.cancel();
-    _scroll.dispose();
     super.dispose();
   }
 
-  void _onScroll() {
-    if (_loadingMore || _reachedEnd) return;
-    if (_scroll.position.pixels >
-        _scroll.position.maxScrollExtent - 600) {
-      _loadMore();
-    }
-  }
-
-  Future<void> _loadFirstPage() async {
-    setState(() {
-      _loading = true;
-      _reachedEnd = false;
-    });
-    final page = await FollowDb.instance
-        .members(widget.snapshot.id,
-            search: _search, sort: _sort, limit: _pageSize);
-    if (!mounted) return;
-    setState(() {
-      _users
-        ..clear()
-        ..addAll(page);
-      _loading = false;
-      _reachedEnd = page.length < _pageSize;
-    });
-  }
-
-  Future<void> _loadMore() async {
-    setState(() => _loadingMore = true);
-    final page = await FollowDb.instance.members(
-      widget.snapshot.id,
-      search: _search,
-      sort: _sort,
-      limit: _pageSize,
-      offset: _users.length,
-    );
-    if (!mounted) return;
-    setState(() {
-      _users.addAll(page);
-      _loadingMore = false;
-      _reachedEnd = page.length < _pageSize;
-    });
-  }
-
   void _onSearchChanged(String value) {
-    _search = value;
     _searchDebounce?.cancel();
-    _searchDebounce =
-        Timer(const Duration(milliseconds: 350), _loadFirstPage);
+    _searchDebounce = Timer(const Duration(milliseconds: 350), () {
+      if (mounted) setState(() => _search = value);
+    });
   }
 
   /// 比較相手を選んで差分画面へ
@@ -110,7 +52,7 @@ class _FollowSnapshotScreenState extends State<FollowSnapshotScreen> {
     if (!mounted) return;
     if (candidates.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('比較できる過去の走査がありません')),
+        const SnackBar(content: Text('比較できる履歴がありません')),
       );
       return;
     }
@@ -123,13 +65,13 @@ class _FollowSnapshotScreenState extends State<FollowSnapshotScreen> {
           children: [
             const Padding(
               padding: EdgeInsets.all(16),
-              child: Text('比較する走査を選択',
+              child: Text('比較する履歴を選ぶ',
                   style: TextStyle(fontWeight: FontWeight.bold)),
             ),
             for (final c in candidates)
               ListTile(
                 title: Text(dateLabel(c.startedAt)),
-                subtitle: Text('${c.collectedCount}件 ・ ${c.status}',
+                subtitle: Text('${c.collectedCount}件 ・ ${statusLabel(c)}',
                     style: const TextStyle(fontSize: 11)),
                 onTap: () => Navigator.pop(context, c),
               ),
@@ -159,10 +101,7 @@ class _FollowSnapshotScreenState extends State<FollowSnapshotScreen> {
             icon: const Icon(Icons.sort),
             tooltip: '並び順',
             initialValue: _sort,
-            onSelected: (v) {
-              setState(() => _sort = v);
-              _loadFirstPage();
-            },
+            onSelected: (v) => setState(() => _sort = v),
             itemBuilder: (_) => [
               for (final o in FollowSortOrder.values)
                 PopupMenuItem(value: o, child: Text(o.label)),
@@ -180,51 +119,43 @@ class _FollowSnapshotScreenState extends State<FollowSnapshotScreen> {
           Padding(
             padding: const EdgeInsets.fromLTRB(12, 4, 12, 0),
             child: Text(
-              '${dateLabel(s.startedAt)} ・ ${s.collectedCount}件 ・ ${s.status}'
-              '${durationLabel(s) == null ? '' : ' ・ 所要 ${durationLabel(s)}'}',
+              '${dateLabel(s.startedAt)} ・ ${s.collectedCount}件 ・ ${statusLabel(s)}'
+              '${durationLabel(s) == null ? '' : ' ・ 所要${durationLabel(s)}'}',
               style: const TextStyle(fontSize: 11, color: Colors.grey),
             ),
           ),
+          if (shortfallLabel(s) != null)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(12, 4, 12, 0),
+              child: Text('取りこぼしの可能性 ・ ${shortfallLabel(s)}',
+                  style: const TextStyle(fontSize: 11, color: Colors.orange)),
+            ),
           Padding(
             padding: const EdgeInsets.fromLTRB(12, 8, 12, 4),
             child: TextField(
               decoration: const InputDecoration(
                 isDense: true,
                 prefixIcon: Icon(Icons.search, size: 20),
-                hintText: '@ID または名前で絞り込み',
+                hintText: '@ID・名前で絞り込み',
                 border: OutlineInputBorder(),
               ),
               onChanged: _onSearchChanged,
             ),
           ),
           Expanded(
-            child: _loading
-                ? const Center(child: CircularProgressIndicator())
-                : _users.isEmpty
-                    ? const Center(
-                        child: Text('該当なし',
-                            style: TextStyle(color: Colors.grey)))
-                    : ListView.builder(
-                        controller: _scroll,
-                        itemCount: _users.length + (_reachedEnd ? 0 : 1),
-                        itemBuilder: (_, i) {
-                          if (i >= _users.length) {
-                            return const Padding(
-                              padding: EdgeInsets.all(16),
-                              child: Center(
-                                  child: SizedBox(
-                                      width: 20,
-                                      height: 20,
-                                      child: CircularProgressIndicator(
-                                          strokeWidth: 2))),
-                            );
-                          }
-                          return FollowUserTile(
-                            user: _users[i],
-                            accountId: widget.snapshot.sessionAccountId,
-                          );
-                        },
-                      ),
+            child: PagedFollowList<FollowUser>(
+              reloadKey: (_search, _sort),
+              fetch: (offset, limit) => FollowDb.instance.members(
+                widget.snapshot.id,
+                search: _search,
+                sort: _sort,
+                limit: limit,
+                offset: offset,
+              ),
+              itemBuilder: (u) => FollowUserTile(
+                  user: u, accountId: widget.snapshot.sessionAccountId),
+              emptyLabel: '該当なし',
+            ),
           ),
         ],
       ),
@@ -232,26 +163,35 @@ class _FollowSnapshotScreenState extends State<FollowSnapshotScreen> {
   }
 }
 
-String dateLabel(DateTime dt) =>
-    '${dt.year}/${dt.month.toString().padLeft(2, '0')}/'
-    '${dt.day.toString().padLeft(2, '0')} '
-    '${dt.hour.toString().padLeft(2, '0')}:'
-    '${dt.minute.toString().padLeft(2, '0')}';
-
-/// 想定件数に対する取得率のラベル。想定が不明なら null
-String? completenessLabel(FollowSnapshot s) {
-  final c = s.completeness;
-  if (c == null) return null;
-  return '想定 ${s.totalExpected} の ${(c * 100).toStringAsFixed(1)}%';
+/// 日時ラベル。今年なら年を省く（履歴は縦に並ぶので 1 行を短くしたい）
+String dateLabel(DateTime dt) {
+  final md = '${dt.month}/${dt.day} '
+      '${dt.hour.toString().padLeft(2, '0')}:'
+      '${dt.minute.toString().padLeft(2, '0')}';
+  return dt.year == DateTime.now().year ? md : '${dt.year}/$md';
 }
 
-/// 取りこぼしの疑いがあるか（想定より 2% 以上少ない）
+/// 保存されている status は running / completed / interrupted。
+/// そのまま出すと英語が画面に漏れるので、必ずこれを通す
+String statusLabel(FollowSnapshot s) => switch (s.status) {
+      'completed' => '完了',
+      'running' => '取得中',
+      _ => '中断',
+    };
+
+/// 取りこぼしの疑いがあるか（プロフィール上の件数より 2% 以上少ない）
 bool looksIncomplete(FollowSnapshot s) {
   final c = s.completeness;
   return c != null && c < 0.98;
 }
 
-/// 走査にかかった時間。完了していなければ null
+/// 取りこぼしの警告。疑いが無ければ null
+String? shortfallLabel(FollowSnapshot s) {
+  if (!looksIncomplete(s)) return null;
+  return '想定 ${s.totalExpected}件 に対し ${s.collectedCount}件';
+}
+
+/// 取得にかかった時間。完了していなければ null
 String? durationLabel(FollowSnapshot s) {
   final end = s.completedAt;
   if (end == null) return null;
@@ -262,6 +202,123 @@ String elapsedLabel(Duration d) {
   if (d.inHours > 0) return '${d.inHours}時間${d.inMinutes % 60}分';
   if (d.inMinutes > 0) return '${d.inMinutes}分${d.inSeconds % 60}秒';
   return '${d.inSeconds}秒';
+}
+
+/// ページングしながらユーザーを並べるリスト。
+///
+/// 対象が数万人だと差分も数万件になりうるので、全件をメモリに載せず
+/// [pageSize] 件ずつ足していく。一覧・関係・差分で共通に使う。
+class PagedFollowList<T> extends StatefulWidget {
+  const PagedFollowList({
+    super.key,
+    required this.fetch,
+    required this.itemBuilder,
+    required this.emptyLabel,
+    this.pageSize = 100,
+    this.reloadKey,
+  });
+
+  /// offset から limit 件を読む
+  final Future<List<T>> Function(int offset, int limit) fetch;
+  final Widget Function(T item) itemBuilder;
+  final String emptyLabel;
+  final int pageSize;
+
+  /// 変わったら先頭から読み直す（並び順の変更など）
+  final Object? reloadKey;
+
+  @override
+  State<PagedFollowList<T>> createState() => _PagedFollowListState<T>();
+}
+
+class _PagedFollowListState<T> extends State<PagedFollowList<T>>
+    with AutomaticKeepAliveClientMixin {
+  final _scroll = ScrollController();
+  final _items = <T>[];
+  bool _loading = true;
+  bool _loadingMore = false;
+  bool _reachedEnd = false;
+
+  @override
+  bool get wantKeepAlive => true;
+
+  @override
+  void initState() {
+    super.initState();
+    _scroll.addListener(_onScroll);
+    _loadFirst();
+  }
+
+  @override
+  void didUpdateWidget(covariant PagedFollowList<T> old) {
+    super.didUpdateWidget(old);
+    if (old.reloadKey != widget.reloadKey) _loadFirst();
+  }
+
+  @override
+  void dispose() {
+    _scroll.dispose();
+    super.dispose();
+  }
+
+  void _onScroll() {
+    if (_loadingMore || _reachedEnd) return;
+    if (_scroll.position.pixels > _scroll.position.maxScrollExtent - 600) {
+      _loadMore();
+    }
+  }
+
+  Future<void> _loadFirst() async {
+    setState(() {
+      _loading = true;
+      _reachedEnd = false;
+    });
+    final page = await widget.fetch(0, widget.pageSize);
+    if (!mounted) return;
+    setState(() {
+      _items
+        ..clear()
+        ..addAll(page);
+      _loading = false;
+      _reachedEnd = page.length < widget.pageSize;
+    });
+  }
+
+  Future<void> _loadMore() async {
+    setState(() => _loadingMore = true);
+    final page = await widget.fetch(_items.length, widget.pageSize);
+    if (!mounted) return;
+    setState(() {
+      _items.addAll(page);
+      _loadingMore = false;
+      _reachedEnd = page.length < widget.pageSize;
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    super.build(context);
+    if (_loading) return const Center(child: CircularProgressIndicator());
+    if (_items.isEmpty) {
+      return Center(
+          child: Text(widget.emptyLabel,
+              style: const TextStyle(color: Colors.grey)));
+    }
+    return ListView.builder(
+      controller: _scroll,
+      itemCount: _items.length + (_reachedEnd ? 0 : 1),
+      itemBuilder: (_, i) => i >= _items.length
+          ? const Padding(
+              padding: EdgeInsets.all(16),
+              child: Center(
+                  child: SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(strokeWidth: 2))),
+            )
+          : widget.itemBuilder(_items[i]),
+    );
+  }
 }
 
 /// 一覧・差分の両方で使うユーザー行

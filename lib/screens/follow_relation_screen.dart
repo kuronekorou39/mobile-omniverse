@@ -67,10 +67,9 @@ class _FollowRelationScreenState extends State<FollowRelationScreen> {
           child: Padding(
             padding: const EdgeInsets.all(24),
             child: Text(
-              '相互を出すには、フォロワーとフォローの両方を'
-              '最後まで取得しておく必要があります。\n\n'
-              'フォロワー: ${f == null ? "未取得" : "取得済み"}\n'
-              'フォロー: ${g == null ? "未取得" : "取得済み"}',
+              '相互を出すには、フォロワーとフォローの両方が必要です。\n\n'
+              'フォロワー ${f == null ? "未取得" : "取得済み"}'
+              ' ／ フォロー ${g == null ? "未取得" : "取得済み"}',
               textAlign: TextAlign.center,
               style: const TextStyle(color: Colors.grey),
             ),
@@ -118,27 +117,9 @@ class _FollowRelationScreenState extends State<FollowRelationScreen> {
             Expanded(
               child: TabBarView(
                 children: [
-                  _RelationList(
-                      followersId: f.id,
-                      followingId: g.id,
-                      onlyIn: null,
-                      sort: _sort,
-                      accountId: f.sessionAccountId,
-                      emptyLabel: '相互フォローはいません'),
-                  _RelationList(
-                      followersId: f.id,
-                      followingId: g.id,
-                      onlyIn: 'followers',
-                      sort: _sort,
-                      accountId: f.sessionAccountId,
-                      emptyLabel: '片思われはいません'),
-                  _RelationList(
-                      followersId: f.id,
-                      followingId: g.id,
-                      onlyIn: 'following',
-                      sort: _sort,
-                      accountId: f.sessionAccountId,
-                      emptyLabel: '片思いはいません'),
+                  _list(f, g, null, '相互フォローはいません'),
+                  _list(f, g, 'followers', '片思われはいません'),
+                  _list(f, g, 'following', '片思いはいません'),
                 ],
               ),
             ),
@@ -147,130 +128,21 @@ class _FollowRelationScreenState extends State<FollowRelationScreen> {
       ),
     );
   }
-}
 
-class _RelationList extends StatefulWidget {
-  const _RelationList({
-    required this.followersId,
-    required this.followingId,
-    required this.onlyIn,
-    required this.sort,
-    required this.emptyLabel,
-    this.accountId,
-  });
-
-  final int followersId;
-  final int followingId;
-  final String? onlyIn;
-  final FollowSortOrder sort;
-  final String emptyLabel;
-  final String? accountId;
-
-  @override
-  State<_RelationList> createState() => _RelationListState();
-}
-
-class _RelationListState extends State<_RelationList>
-    with AutomaticKeepAliveClientMixin {
-  static const _pageSize = 100;
-
-  final _scroll = ScrollController();
-  final _users = <FollowUser>[];
-  bool _loading = true;
-  bool _loadingMore = false;
-  bool _reachedEnd = false;
-
-  @override
-  bool get wantKeepAlive => true;
-
-  @override
-  void initState() {
-    super.initState();
-    _scroll.addListener(_onScroll);
-    _loadFirst();
-  }
-
-  @override
-  void didUpdateWidget(covariant _RelationList old) {
-    super.didUpdateWidget(old);
-    if (old.sort != widget.sort) _loadFirst();
-  }
-
-  @override
-  void dispose() {
-    _scroll.dispose();
-    super.dispose();
-  }
-
-  void _onScroll() {
-    if (_loadingMore || _reachedEnd) return;
-    if (_scroll.position.pixels > _scroll.position.maxScrollExtent - 600) {
-      _loadMore();
-    }
-  }
-
-  Future<List<FollowUser>> _fetch(int offset) =>
-      FollowDb.instance.relationMembers(
-        followersSnapshotId: widget.followersId,
-        followingSnapshotId: widget.followingId,
-        onlyIn: widget.onlyIn,
-        sort: widget.sort,
-        limit: _pageSize,
-        offset: offset,
+  Widget _list(
+          FollowSnapshot f, FollowSnapshot g, String? onlyIn, String empty) =>
+      PagedFollowList<FollowUser>(
+        reloadKey: (onlyIn, _sort),
+        fetch: (offset, limit) => FollowDb.instance.relationMembers(
+          followersSnapshotId: f.id,
+          followingSnapshotId: g.id,
+          onlyIn: onlyIn,
+          sort: _sort,
+          limit: limit,
+          offset: offset,
+        ),
+        itemBuilder: (u) =>
+            FollowUserTile(user: u, accountId: f.sessionAccountId),
+        emptyLabel: empty,
       );
-
-  Future<void> _loadFirst() async {
-    setState(() {
-      _loading = true;
-      _reachedEnd = false;
-    });
-    final page = await _fetch(0);
-    if (!mounted) return;
-    setState(() {
-      _users
-        ..clear()
-        ..addAll(page);
-      _loading = false;
-      _reachedEnd = page.length < _pageSize;
-    });
-  }
-
-  Future<void> _loadMore() async {
-    setState(() => _loadingMore = true);
-    final page = await _fetch(_users.length);
-    if (!mounted) return;
-    setState(() {
-      _users.addAll(page);
-      _loadingMore = false;
-      _reachedEnd = page.length < _pageSize;
-    });
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    super.build(context);
-    if (_loading) return const Center(child: CircularProgressIndicator());
-    if (_users.isEmpty) {
-      return Center(
-          child: Text(widget.emptyLabel,
-              style: const TextStyle(color: Colors.grey)));
-    }
-    return ListView.builder(
-      controller: _scroll,
-      itemCount: _users.length + (_reachedEnd ? 0 : 1),
-      itemBuilder: (_, i) {
-        if (i >= _users.length) {
-          return const Padding(
-            padding: EdgeInsets.all(16),
-            child: Center(
-                child: SizedBox(
-                    width: 20,
-                    height: 20,
-                    child: CircularProgressIndicator(strokeWidth: 2))),
-          );
-        }
-        return FollowUserTile(user: _users[i], accountId: widget.accountId);
-      },
-    );
-  }
 }

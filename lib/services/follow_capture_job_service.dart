@@ -469,7 +469,8 @@ class FollowCaptureJobService {
       );
       debugPrint('[FollowJob] 完了: ${result.reason.name} '
           '${result.totalUsers}件 completed=${result.completed}');
-      return db.getSnapshot(snapshotId);
+      // await しないと、ここで落ちたときに下の catch が拾えない
+      return await db.getSnapshot(snapshotId);
     } catch (e, st) {
       debugPrint('[FollowJob] 例外: $e\n$st');
       await db.finishSnapshot(

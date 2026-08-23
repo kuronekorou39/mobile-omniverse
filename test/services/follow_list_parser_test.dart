@@ -53,6 +53,24 @@ const _userLegacyOnly = '''
 }}}}}
 ''';
 
+/// legacy が空で、件数が新しい入れ物にしか無い形。
+/// 実機で観測した X の現行レスポンス
+const _userNewLayout = '''
+{"entryId":"user-333","content":{"itemContent":{"user_results":{"result":{
+  "rest_id":"333",
+  "core":{"screen_name":"carol","name":"Carol",
+          "created_at":"Thu Apr 06 15:24:15 +0000 2023"},
+  "avatar":{"image_url":"https://pbs.twimg.com/carol.jpg"},
+  "privacy":{"protected":true},
+  "verification":{"verified":true},
+  "profile_bio":{"description":"new layout"},
+  "location":{"location":"Osaka"},
+  "relationship_counts":{"followers":88,"following":99},
+  "tweet_counts":{"tweets":777,"media_tweets":12},
+  "legacy":{}
+}}}}}
+''';
+
 const _bottomCursor =
     '{"entryId":"cursor-bottom-1","content":{"cursorType":"Bottom","value":"1234|5678"}}';
 
@@ -97,6 +115,36 @@ void main() {
       expect(alice.verified, isTrue);
       // avatar.image_url が legacy より優先される
       expect(alice.avatarUrl, 'https://pbs.twimg.com/alice.jpg');
+    });
+
+    test('legacy が空でも新しい入れ物から件数を読む', () {
+      final result =
+          FollowListParser.parse(_decode(_envelope([_userNewLayout])));
+
+      final carol = result.users.single;
+      expect(carol.screenName, 'carol');
+      expect(carol.followersCount, 88);
+      expect(carol.friendsCount, 99);
+      // legacy.statuses_count しか見ていなかったため投稿数が丸ごと欠けていた
+      expect(carol.statusesCount, 777);
+      expect(carol.description, 'new layout');
+      expect(carol.location, 'Osaka');
+      expect(carol.isProtected, isTrue);
+      expect(carol.verified, isTrue);
+      expect(carol.avatarUrl, 'https://pbs.twimg.com/carol.jpg');
+    });
+
+    test('legacy がある相手は legacy を優先する', () {
+      final result =
+          FollowListParser.parse(_decode(_envelope([_userWithCore])));
+      // 両方ある場合に取り違えない
+      expect(result.users.single.statusesCount, 42);
+    });
+
+    test('どちらにも投稿数が無ければ null', () {
+      final result =
+          FollowListParser.parse(_decode(_envelope([_userLegacyOnly])));
+      expect(result.users.single.statusesCount, isNull);
     });
 
     test('core が無い旧形式でも legacy から読める', () {

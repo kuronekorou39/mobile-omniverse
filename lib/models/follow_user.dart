@@ -52,6 +52,7 @@ class FollowUser {
     final profileBio = _asMap(result['profile_bio']);
     final verification = _asMap(result['verification']);
     final counts = _asMap(result['relationship_counts']);
+    final tweetCounts = _asMap(result['tweet_counts']);
     final locationObj = _asMap(result['location']);
 
     final restId = _str(result['rest_id']);
@@ -68,7 +69,11 @@ class FollowUser {
           0,
       friendsCount:
           _asInt(legacy['friends_count']) ?? _asInt(counts['following']) ?? 0,
-      statusesCount: _asInt(legacy['statuses_count']),
+      // legacy が空の相手が実際に居る (X が新形式へ移し終えたアカウント)。
+      // ここを legacy だけで読んでいたため投稿数が丸ごと欠けていた
+      statusesCount: _asInt(legacy['statuses_count']) ??
+          _asInt(tweetCounts['tweets']) ??
+          _asInt(tweetCounts['tweet_count']),
       avatarUrl: _str(avatar['image_url']) ??
           _str(legacy['profile_image_url_https']) ??
           '',

@@ -61,10 +61,14 @@ class FollowListParser {
             _asMap(_asMap(content['itemContent'])['user_results'])['result'];
         if (result is! Map<String, dynamic>) continue;
         final legacy = _asMap(result['legacy']);
+        final parsed = FollowUser.fromUserResult(result);
+        // legacy が空でも件数が取れているかを、この 1 行で切り分ける
         return 'top=[${result.keys.join(",")}] '
             'legacy=[${legacy.keys.take(20).join(",")}] '
-            'followers=${legacy['followers_count']} '
-            'friends=${legacy['friends_count']}';
+            'relationship_counts=${_asMap(result['relationship_counts'])} '
+            'tweet_counts=${_asMap(result['tweet_counts'])} '
+            'parsed=(followers=${parsed?.followersCount} '
+            'friends=${parsed?.friendsCount} statuses=${parsed?.statusesCount})';
       }
     }
     return '(ユーザーが見つからない)';

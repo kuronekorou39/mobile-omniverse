@@ -58,7 +58,8 @@ class _FollowTargetScreenState extends State<FollowTargetScreen> {
 
   Future<void> _load() async {
     final db = FollowDb.instance;
-    final target = await db.getTarget(widget.service, widget.handle);
+    final target = await db.getTarget(widget.service, widget.handle) ??
+        await _registerOwnAccount();
     final f =
         await db.latestCompleted(widget.service, widget.handle, 'followers');
     final g =
@@ -94,6 +95,32 @@ class _FollowTargetScreenState extends State<FollowTargetScreen> {
     });
   }
 
+  /// この画面はアカウント一覧からも開ける。まだ対象として登録していない
+  /// 自分のアカウントなら、ここで登録してしまう。
+  ///
+  /// 登録せずに null のままにすると、読み込み中の表示から先に進めない。
+  /// 対象にできるのは自分のアカウントだけ (他人の @ID はハブ画面から追加する)。
+  Future<FollowTarget?> _registerOwnAccount() async {
+    final account = AccountStorageService.instance.accounts
+        .where((a) =>
+            a.service == widget.service &&
+            a.handle.replaceFirst('@', '').toLowerCase() == widget.handle)
+        .firstOrNull;
+    if (account == null) return null;
+
+    final target = FollowTarget(
+      service: account.service,
+      handle: widget.handle,
+      displayName: account.displayName,
+      avatarUrl: account.avatarUrl ?? '',
+      sessionAccountId: account.id,
+      addedAt: DateTime.now(),
+    );
+    await FollowDb.instance.upsertTarget(target);
+    await _job.markAutoRegistered(account.id);
+    return target;
+  }
+
   /// 実行アカウントの候補。対象と同じ SNS のものしか使えない
   List<Account> get _usableAccounts => AccountStorageService.instance.accounts
       .where((a) => a.service == widget.service)
@@ -112,12 +139,26 @@ class _FollowTargetScreenState extends State<FollowTargetScreen> {
     if (_loading || t == null) {
       return Scaffold(
         appBar: AppBar(title: Text('@${widget.handle}')),
-        body: const Center(child: CircularProgressIndicator()),
+        body: Center(
+          child: _loading
+              ? const CircularProgressIndicator()
+              // 回り続けるスピナーで止まらないよう、理由を出して抜けられるようにする
+              : const Padding(
+                  padding: EdgeInsets.all(24),
+                  child: Text(
+                    'この対象はまだ登録されていません。\n'
+                    'フォロー / フォロワー取得の画面から追加してください。',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(color: Colors.grey),
+                  ),
+                ),
+        ),
       );
     }
 
     final running = _job.progress.value;
-    final isMine = running?.targetHandle == widget.handle;
+    final isMine = running?.targetHandle == widget.handle &&
+        running?.service == widget.service;
 
     return DefaultTabController(
       length: 3,

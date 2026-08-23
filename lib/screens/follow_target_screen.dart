@@ -10,13 +10,17 @@ import '../services/follow_db.dart';
 import '../utils/app_snackbar.dart';
 import '../utils/confirm_dialog.dart';
 import '../utils/image_headers.dart';
+import 'follow_history_screen.dart';
 import 'follow_relation_screen.dart';
 import 'follow_snapshot_screen.dart';
 
 /// 走査対象 1 件の詳細。情報量が多いので 概要 / 履歴 / 設定 の 3 タブに分ける。
 class FollowTargetScreen extends StatefulWidget {
-  const FollowTargetScreen(
-      {super.key, required this.service, required this.handle});
+  const FollowTargetScreen({
+    super.key,
+    required this.service,
+    required this.handle,
+  });
 
   final SnsService service;
   final String handle;
@@ -58,18 +62,29 @@ class _FollowTargetScreenState extends State<FollowTargetScreen> {
 
   Future<void> _load() async {
     final db = FollowDb.instance;
-    final target = await db.getTarget(widget.service, widget.handle) ??
+    final target =
+        await db.getTarget(widget.service, widget.handle) ??
         await _registerOwnAccount();
-    final f =
-        await db.latestCompleted(widget.service, widget.handle, 'followers');
-    final g =
-        await db.latestCompleted(widget.service, widget.handle, 'following');
+    final f = await db.latestCompleted(
+      widget.service,
+      widget.handle,
+      'followers',
+    );
+    final g = await db.latestCompleted(
+      widget.service,
+      widget.handle,
+      'following',
+    );
     final relation = (f == null || g == null)
         ? null
         : await db.relationCounts(
-            followersSnapshotId: f.id, followingSnapshotId: g.id);
+            followersSnapshotId: f.id,
+            followingSnapshotId: g.id,
+          );
     final history = await db.listSnapshots(
-        service: widget.service, targetHandle: widget.handle);
+      service: widget.service,
+      targetHandle: widget.handle,
+    );
 
     final total = await db.databaseSizeBytes();
     final rows = await db.memberRowsByTarget();
@@ -78,8 +93,7 @@ class _FollowTargetScreenState extends State<FollowTargetScreen> {
 
     if (target != null) {
       for (final kind in const ['followers', 'following']) {
-        _nextDue[kind] =
-            await FollowCaptureJobService.nextDueAt(target, kind);
+        _nextDue[kind] = await FollowCaptureJobService.nextDueAt(target, kind);
       }
     }
 
@@ -102,9 +116,11 @@ class _FollowTargetScreenState extends State<FollowTargetScreen> {
   /// 対象にできるのは自分のアカウントだけ (他人の @ID はハブ画面から追加する)。
   Future<FollowTarget?> _registerOwnAccount() async {
     final account = AccountStorageService.instance.accounts
-        .where((a) =>
-            a.service == widget.service &&
-            a.handle.replaceFirst('@', '').toLowerCase() == widget.handle)
+        .where(
+          (a) =>
+              a.service == widget.service &&
+              a.handle.replaceFirst('@', '').toLowerCase() == widget.handle,
+        )
         .firstOrNull;
     if (account == null) return null;
 
@@ -157,227 +173,347 @@ class _FollowTargetScreenState extends State<FollowTargetScreen> {
     }
 
     final running = _job.progress.value;
-    final isMine = running?.targetHandle == widget.handle &&
+    final isMine =
+        running?.targetHandle == widget.handle &&
         running?.service == widget.service;
 
-    return DefaultTabController(
-      length: 3,
-      child: Scaffold(
-        appBar: AppBar(
-          title: Row(children: [
+    return Scaffold(
+      appBar: AppBar(
+        title: Row(
+          children: [
             _avatar(t),
             const SizedBox(width: 8),
             Expanded(
-              child: Text('@${t.handle}',
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(fontSize: 18)),
-            ),
-          ]),
-          bottom: const TabBar(tabs: [
-            Tab(text: '概要'),
-            Tab(text: '履歴'),
-            Tab(text: '設定'),
-          ]),
-        ),
-        body: Column(
-          children: [
-            if (isMine) _runningCard(running!),
-            Expanded(
-              child: TabBarView(children: [
-                _overviewTab(),
-                _historyTab(),
-                _settingsTab(t),
-              ]),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  // ─── 概要 ───
-
-  Widget _overviewTab() => RefreshIndicator(
-        onRefresh: _load,
-        child: ListView(
-          children: [
-            _summaryRow('フォロワー', _latestFollowers),
-            _summaryRow('フォロー', _latestFollowing),
-            const Divider(),
-            ListTile(
-              leading: const Icon(Icons.swap_horiz),
-              title: Text(_relation == null
-                  ? '相互 — 両方の取得が必要'
-                  : '相互 ${_relation!.mutual}'),
-              subtitle: _relation == null
-                  ? null
-                  : Text(
-                      '片思われ ${_relation!.onlyFollowers} ・ '
-                      '片思い ${_relation!.onlyFollowing}',
-                      style: const TextStyle(fontSize: 11)),
-              trailing: const Icon(Icons.chevron_right),
-              onTap: () => Navigator.of(context).push(MaterialPageRoute(
-                builder: (_) => FollowRelationScreen(
-                    service: widget.service, handle: widget.handle),
-              )),
-            ),
-            const Divider(),
-            ListTile(
-              leading: const Icon(Icons.play_circle_outline),
-              title: const Text('今すぐ取得'),
-              enabled: !_job.isRunning,
-              onTap: _pickKind,
-            ),
-            for (final s in _history.where((s) => s.isResumable))
-              ListTile(
-                leading: const Icon(Icons.play_arrow, color: Colors.orange),
-                title: Text(
-                    '${s.kind == 'followers' ? 'フォロワー' : 'フォロー'}の続きから再開'),
-                subtitle: Text('${s.collectedCount}件まで取得済み',
-                    style: const TextStyle(fontSize: 11)),
-                enabled: !_job.isRunning,
-                onTap: () => _start(
-                    s.kind == 'followers'
-                        ? FollowListKind.followers
-                        : FollowListKind.following,
-                    resume: s),
+              child: Text(
+                '@${t.handle}',
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(fontSize: 18),
               ),
-            const SizedBox(height: 32),
+            ),
           ],
         ),
-      );
-
-  Widget _summaryRow(String label, FollowSnapshot? s) => ListTile(
-        leading: Icon(label == 'フォロワー'
-            ? Icons.group_outlined
-            : Icons.person_add_alt_outlined),
-        title: Text(s == null ? '$label — 未取得' : '$label ${s.collectedCount}件'),
-        subtitle: s == null
-            ? null
-            : Text(
-                '${dateLabel(s.startedAt)}'
-                '${durationLabel(s) == null ? '' : ' ・ 所要${durationLabel(s)}'}'
-                '${looksIncomplete(s) ? ' ・ 取りこぼしの可能性' : ''}',
-                style: TextStyle(
-                    fontSize: 11,
-                    color: looksIncomplete(s) ? Colors.orange : null)),
-        trailing: s == null ? null : const Icon(Icons.chevron_right),
-        onTap: s == null ? null : () => _openSnapshot(s),
-      );
-
-  // ─── 履歴 ───
-
-  Widget _historyTab() {
-    if (_history.isEmpty) {
-      return const Center(
-          child: Text('まだ取得していません', style: TextStyle(color: Colors.grey)));
-    }
-    return RefreshIndicator(
-      onRefresh: _load,
-      child: ListView.builder(
-        itemCount: _history.length,
-        itemBuilder: (_, i) {
-          final s = _history[i];
-          return ListTile(
-            dense: true,
-            leading: Icon(
-              s.kind == 'followers'
-                  ? Icons.group_outlined
-                  : Icons.person_add_alt_outlined,
-              color: s.isCompleted
-                  ? Colors.green
-                  : (s.isResumable ? Colors.orange : Colors.red),
-              size: 20,
+      ),
+      body: Column(
+        children: [
+          // 走査中の表示だけはスクロールの外に置く。
+          // 流れて見えなくなると中断ボタンにたどり着けない
+          if (isMine) _runningCard(running!),
+          Expanded(
+            child: RefreshIndicator(
+              onRefresh: _load,
+              child: ListView(
+                children: [
+                  _dashboard(),
+                  _actionSection(t),
+                  const Divider(height: 32),
+                  _scheduleSection(t),
+                  const Divider(height: 32),
+                  _historySection(),
+                  const Divider(height: 32),
+                  _storageSection(),
+                  const SizedBox(height: 32),
+                ],
+              ),
             ),
-            title: Text('${dateLabel(s.startedAt)}  ${s.collectedCount}件',
-                style: const TextStyle(fontSize: 13)),
-            subtitle: Text(
-              '${s.kind == 'followers' ? 'フォロワー' : 'フォロー'}'
-              '${durationLabel(s) == null ? '' : ' ・ 所要${durationLabel(s)}'}'
-              '${s.isCompleted ? '' : ' ・ ${statusLabel(s)}'}',
-              style: const TextStyle(fontSize: 11),
-            ),
-            trailing: const Icon(Icons.chevron_right),
-            onTap: () => _openSnapshot(s),
-          );
-        },
+          ),
+        ],
       ),
     );
   }
 
-  // ─── 設定 ───
+  // ─── ダッシュボード ───
 
-  Widget _settingsTab(FollowTarget t) => ListView(
+  /// フォロワー / フォロー / 相互 を横に並べる。
+  ///
+  /// 相互だけ取得日時を出さないのは、2 本のスナップショットの突き合わせで
+  /// 出しているため「いつ取ったか」が 1 つに定まらないから。実際
+  /// フォロワーとフォローの取得日は数日ずれることがある。
+  Widget _dashboard() => Padding(
+    padding: const EdgeInsets.fromLTRB(12, 12, 12, 4),
+    // ListView の中は高さが無制限なので、stretch だけでは
+    // カードが無限の高さになる。IntrinsicHeight で 3 枚のうち
+    // 一番高いものに合わせて確定させる
+    child: IntrinsicHeight(
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          _header('実行アカウント'),
-          const Padding(
-            padding: EdgeInsets.symmetric(horizontal: 16),
-            child: Text(
+          Expanded(child: _snapshotCard('フォロワー', _latestFollowers)),
+          const SizedBox(width: 8),
+          Expanded(child: _snapshotCard('フォロー', _latestFollowing)),
+          const SizedBox(width: 8),
+          Expanded(child: _mutualCard()),
+        ],
+      ),
+    ),
+  );
+
+  Widget _snapshotCard(String label, FollowSnapshot? s) {
+    final warn = s != null && looksIncomplete(s);
+    return _statCard(
+      label: label,
+      value: s == null ? '—' : _compact(s.collectedCount),
+      sub: s == null ? '未取得' : (warn ? '取りこぼしの可能性' : dateLabel(s.startedAt)),
+      warn: warn,
+      onTap: s == null ? null : () => _openSnapshot(s),
+    );
+  }
+
+  Widget _mutualCard() => _statCard(
+    label: '相互',
+    value: _relation == null ? '—' : _compact(_relation!.mutual),
+    // 未取得でも押させる。遷移先が「何が足りないか」を出す
+    sub: _relation == null ? '両方が必要' : '内訳を見る',
+    onTap: () async {
+      await Navigator.of(context).push(
+        MaterialPageRoute(
+          builder: (_) => FollowRelationScreen(
+            service: widget.service,
+            handle: widget.handle,
+          ),
+        ),
+      );
+      await _load();
+    },
+  );
+
+  Widget _statCard({
+    required String label,
+    required String value,
+    required String sub,
+    bool warn = false,
+    VoidCallback? onTap,
+  }) => Card(
+    margin: EdgeInsets.zero,
+    child: InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(12),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 6),
+        child: Column(
+          children: [
+            Text(
+              label,
+              style: const TextStyle(fontSize: 11, color: Colors.grey),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              value,
+              maxLines: 1,
+              style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 2),
+            Text(
+              sub,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontSize: 10,
+                color: warn ? Colors.orange : Colors.grey,
+              ),
+            ),
+          ],
+        ),
+      ),
+    ),
+  );
+
+  /// 3 等分の幅に収める。4 桁までは素の数字のほうが読みやすい
+  static String _compact(int v) =>
+      v >= 10000 ? '${(v / 10000).toStringAsFixed(1)}万' : '$v';
+
+  // ─── 取得 ───
+
+  Widget _actionSection(FollowTarget t) {
+    final resumable = _history.where((s) => s.isResumable).toList();
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          FilledButton.icon(
+            icon: const Icon(Icons.play_arrow),
+            label: const Text('今すぐ取得'),
+            style: FilledButton.styleFrom(
+              padding: const EdgeInsets.symmetric(vertical: 14),
+            ),
+            onPressed: _job.isRunning ? null : _startWithConfirm,
+          ),
+          // 実行アカウントは取得ボタンのすぐ下に置く。鍵アカウント相手だと
+          // ここを変えないと取れないので、離れていると
+          // 「取得 → 失敗 → 設定を探す」の往復になる
+          Row(
+            children: [
+              const Icon(Icons.account_circle_outlined, size: 18),
+              const SizedBox(width: 8),
+              const Text('実行アカウント', style: TextStyle(fontSize: 12)),
+              const Spacer(),
+              if (_usableAccounts.isEmpty)
+                const Text(
+                  'なし',
+                  style: TextStyle(fontSize: 12, color: Colors.grey),
+                )
+              else
+                DropdownButton<String>(
+                  value: _sessionAccount?.id,
+                  underline: const SizedBox.shrink(),
+                  style: TextStyle(
+                    fontSize: 13,
+                    color: Theme.of(context).colorScheme.onSurface,
+                  ),
+                  items: [
+                    for (final a in _usableAccounts)
+                      DropdownMenuItem(value: a.id, child: Text(a.handle)),
+                  ],
+                  onChanged: _job.isRunning
+                      ? null
+                      : (v) => _updateTarget(t.copyWith(sessionAccountId: v)),
+                ),
+            ],
+          ),
+          if (widget.service == SnsService.x)
+            const Text(
               'X の鍵アカウントは、つながっているアカウントでないと取得できません',
               style: TextStyle(fontSize: 11, color: Colors.grey),
             ),
-          ),
-          ListTile(
-            leading: const Icon(Icons.account_circle_outlined),
-            title: Text(_sessionAccount?.handle ?? 'なし'),
-            trailing: DropdownButton<String>(
-              value: _sessionAccount?.id,
-              underline: const SizedBox.shrink(),
-              items: [
-                for (final a in _usableAccounts)
-                  DropdownMenuItem(value: a.id, child: Text(a.handle)),
-              ],
-              onChanged: _job.isRunning
-                  ? null
-                  : (v) => _updateTarget(t.copyWith(sessionAccountId: v)),
+          for (final s in resumable)
+            Padding(
+              padding: const EdgeInsets.only(top: 6),
+              child: OutlinedButton.icon(
+                icon: const Icon(
+                  Icons.play_arrow,
+                  size: 18,
+                  color: Colors.orange,
+                ),
+                label: Text(
+                  '${s.kind == 'followers' ? 'フォロワー' : 'フォロー'}を'
+                  '${s.collectedCount}件目から再開',
+                  style: const TextStyle(fontSize: 12),
+                ),
+                onPressed: _job.isRunning
+                    ? null
+                    : () => _start(
+                        s.kind == 'followers'
+                            ? FollowListKind.followers
+                            : FollowListKind.following,
+                        resume: s,
+                      ),
+              ),
             ),
-          ),
-          const Divider(),
-          _header('定期取得'),
+        ],
+      ),
+    );
+  }
+
+  // ─── 定期取得 ───
+
+  Widget _scheduleSection(FollowTarget t) => Column(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      _header('定期取得'),
+      const Padding(
+        padding: EdgeInsets.symmetric(horizontal: 16),
+        child: Text(
+          '前回の完了から指定日数が過ぎていれば、次の起動時に1回だけ実行します',
+          style: TextStyle(fontSize: 11, color: Colors.grey),
+        ),
+      ),
+      _intervalPicker(
+        'フォロワー',
+        'followers',
+        t.followersIntervalDays,
+        (v) => _updateTarget(t.copyWith(followersIntervalDays: v)),
+      ),
+      _intervalPicker(
+        'フォロー',
+        'following',
+        t.followingIntervalDays,
+        (v) => _updateTarget(t.copyWith(followingIntervalDays: v)),
+      ),
+    ],
+  );
+
+  // ─── 履歴 ───
+
+  /// 対象の画面に出す件数。溜まると 40 件近くになるので直近だけ出す
+  static const _historyPreview = 3;
+
+  Widget _historySection() {
+    if (_history.isEmpty) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _header('履歴'),
           const Padding(
-            padding: EdgeInsets.symmetric(horizontal: 16),
+            padding: EdgeInsets.fromLTRB(16, 0, 16, 8),
             child: Text(
-              '前回の完了から指定日数が過ぎていれば、次の起動時に1回だけ実行します',
-              style: TextStyle(fontSize: 11, color: Colors.grey),
+              'まだ取得していません',
+              style: TextStyle(fontSize: 12, color: Colors.grey),
             ),
           ),
-          _intervalPicker('フォロワー', 'followers', t.followersIntervalDays,
-              (v) => _updateTarget(t.copyWith(followersIntervalDays: v))),
-          _intervalPicker('フォロー', 'following', t.followingIntervalDays,
-              (v) => _updateTarget(t.copyWith(followingIntervalDays: v))),
-          const Divider(),
-          _header('保存容量'),
-          _sizeBar(),
-          const Divider(),
-          ListTile(
-            leading: const Icon(Icons.delete_outline, color: Colors.red),
-            title: const Text('この対象と履歴を削除',
-                style: TextStyle(color: Colors.red)),
-            onTap: _confirmDelete,
-          ),
-          const SizedBox(height: 32),
         ],
       );
+    }
+    final shown = _history.take(_historyPreview).toList();
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Expanded(child: _header('履歴 (${_history.length})')),
+            if (_history.length > shown.length)
+              TextButton(
+                onPressed: _openHistory,
+                child: const Text('すべて', style: TextStyle(fontSize: 12)),
+              ),
+            const SizedBox(width: 8),
+          ],
+        ),
+        for (final s in shown)
+          followHistoryTile(s, onTap: () => _openSnapshot(s)),
+      ],
+    );
+  }
+
+  // ─── 保存容量と削除 ───
+
+  Widget _storageSection() => Column(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      _header('保存容量'),
+      _sizeBar(),
+      ListTile(
+        leading: const Icon(Icons.delete_outline, color: Colors.red),
+        title: const Text('この対象と履歴を削除', style: TextStyle(color: Colors.red)),
+        onTap: _confirmDelete,
+      ),
+    ],
+  );
 
   Widget _intervalPicker(
-          String label, String kind, int value, ValueChanged<int> onChanged) =>
-      ListTile(
-        dense: true,
-        title: Text(label),
-        subtitle: value <= 0
-            ? null
-            : Text(_nextDueLabel(kind),
-                style: const TextStyle(fontSize: 11, color: Colors.grey)),
-        trailing: DropdownButton<int>(
-          value: _intervalChoices.contains(value) ? value : 0,
-          underline: const SizedBox.shrink(),
-          items: [
-            for (final d in _intervalChoices)
-              DropdownMenuItem(value: d, child: Text(d == 0 ? 'なし' : '$d日おき')),
-          ],
-          onChanged: (v) => v == null ? null : onChanged(v),
-        ),
-      );
+    String label,
+    String kind,
+    int value,
+    ValueChanged<int> onChanged,
+  ) => ListTile(
+    dense: true,
+    title: Text(label),
+    subtitle: value <= 0
+        ? null
+        : Text(
+            _nextDueLabel(kind),
+            style: const TextStyle(fontSize: 11, color: Colors.grey),
+          ),
+    trailing: DropdownButton<int>(
+      value: _intervalChoices.contains(value) ? value : 0,
+      underline: const SizedBox.shrink(),
+      items: [
+        for (final d in _intervalChoices)
+          DropdownMenuItem(value: d, child: Text(d == 0 ? 'なし' : '$d日おき')),
+      ],
+      onChanged: (v) => v == null ? null : onChanged(v),
+    ),
+  );
 
   String _nextDueLabel(String kind) {
     final due = _nextDue[kind];
@@ -408,19 +544,22 @@ class _FollowTargetScreenState extends State<FollowTargetScreen> {
   // ─── 共通パーツ ───
 
   Widget _avatar(FollowTarget t) => ClipOval(
-        child: t.avatarUrl.isEmpty
-            ? const SizedBox(width: 28, height: 28, child: Icon(Icons.person))
-            : CachedNetworkImage(
-                imageUrl: t.avatarUrl,
-                httpHeaders: kImageHeaders,
-                width: 28,
-                height: 28,
-                fit: BoxFit.cover,
-                memCacheWidth: 56,
-                errorWidget: (_, __, ___) => const SizedBox(
-                    width: 28, height: 28, child: Icon(Icons.person)),
-              ),
-      );
+    child: t.avatarUrl.isEmpty
+        ? const SizedBox(width: 28, height: 28, child: Icon(Icons.person))
+        : CachedNetworkImage(
+            imageUrl: t.avatarUrl,
+            httpHeaders: kImageHeaders,
+            width: 28,
+            height: 28,
+            fit: BoxFit.cover,
+            memCacheWidth: 56,
+            errorWidget: (_, __, ___) => const SizedBox(
+              width: 28,
+              height: 28,
+              child: Icon(Icons.person),
+            ),
+          ),
+  );
 
   Widget _runningCard(FollowJobProgress p) {
     final rate = p.rateLimit;
@@ -432,25 +571,31 @@ class _FollowTargetScreenState extends State<FollowTargetScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Row(children: [
-              const SizedBox(
+            Row(
+              children: [
+                const SizedBox(
                   width: 16,
                   height: 16,
-                  child: CircularProgressIndicator(strokeWidth: 2)),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Text(
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
                     '${p.kind == FollowListKind.followers ? 'フォロワー' : 'フォロー'}'
                     '${p.cancelling ? 'の取得を中断しています…' : 'を取得中'}',
-                    style: const TextStyle(fontWeight: FontWeight.bold)),
-              ),
-              TextButton(
-                onPressed: p.cancelling ? null : _job.cancel,
-                child: const Text('中断'),
-              ),
-            ]),
-            Text('${p.collected} 件 / ${p.round} ページ',
-                style: const TextStyle(fontSize: 20)),
+                    style: const TextStyle(fontWeight: FontWeight.bold),
+                  ),
+                ),
+                TextButton(
+                  onPressed: p.cancelling ? null : _job.cancel,
+                  child: const Text('中断'),
+                ),
+              ],
+            ),
+            Text(
+              '${p.collected} 件 / ${p.round} ページ',
+              style: const TextStyle(fontSize: 20),
+            ),
             Text(
               [
                 if (rate?.remaining != null)
@@ -470,8 +615,10 @@ class _FollowTargetScreenState extends State<FollowTargetScreen> {
                       '${waitLeft == null || waitLeft.isNegative ? '' : '（あと${waitLeft.inSeconds}秒）'}',
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style:
-                          const TextStyle(fontSize: 11, color: Colors.orange),
+                      style: const TextStyle(
+                        fontSize: 11,
+                        color: Colors.orange,
+                      ),
                     ),
             ),
           ],
@@ -481,21 +628,23 @@ class _FollowTargetScreenState extends State<FollowTargetScreen> {
   }
 
   Widget _header(String title) => Padding(
-        padding: const EdgeInsets.fromLTRB(16, 16, 16, 4),
-        child: Text(title,
-            style: TextStyle(
-              fontSize: 13,
-              fontWeight: FontWeight.bold,
-              color: Theme.of(context).colorScheme.primary,
-            )),
-      );
+    padding: const EdgeInsets.fromLTRB(16, 16, 16, 4),
+    child: Text(
+      title,
+      style: TextStyle(
+        fontSize: 13,
+        fontWeight: FontWeight.bold,
+        color: Theme.of(context).colorScheme.primary,
+      ),
+    ),
+  );
 
   // ─── 操作 ───
 
   Future<void> _openSnapshot(FollowSnapshot s) async {
-    await Navigator.of(context).push(MaterialPageRoute(
-      builder: (_) => FollowSnapshotScreen(snapshot: s),
-    ));
+    await Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => FollowSnapshotScreen(snapshot: s)),
+    );
     await _load();
   }
 
@@ -519,10 +668,9 @@ class _FollowTargetScreenState extends State<FollowTargetScreen> {
       );
       if (mounted) {
         showAppSnackBar(
-            context,
-            result?.isCompleted == false
-                ? '中断しました（続きから再開できます）'
-                : '取得が終了しました');
+          context,
+          result?.isCompleted == false ? '中断しました（続きから再開できます）' : '取得が終了しました',
+        );
       }
     } catch (e) {
       if (mounted) showAppSnackBar(context, '$e', type: SnackType.error);
@@ -542,37 +690,135 @@ class _FollowTargetScreenState extends State<FollowTargetScreen> {
     await _load();
   }
 
-  Future<void> _pickKind() async {
-    final choice = await showModalBottomSheet<String>(
-      context: context,
-      builder: (_) => SafeArea(
-        child: Column(mainAxisSize: MainAxisSize.min, children: [
-          ListTile(
-            leading: const Icon(Icons.group_outlined),
-            title: const Text('フォロワーを取得'),
-            onTap: () => Navigator.pop(context, 'followers'),
-          ),
-          ListTile(
-            leading: const Icon(Icons.person_add_alt_outlined),
-            title: const Text('フォローを取得'),
-            onTap: () => Navigator.pop(context, 'following'),
-          ),
-          const Divider(),
-          ListTile(
-            leading: const Icon(Icons.swap_horiz),
-            title: const Text('両方を続けて取得'),
-            subtitle: const Text('相互を出すにはこちら'),
-            onTap: () => Navigator.pop(context, 'both'),
-          ),
-        ]),
+  Future<void> _openHistory() async {
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) =>
+            FollowHistoryScreen(service: widget.service, handle: widget.handle),
       ),
     );
-    if (choice == null) return;
-    if (choice == 'both') return _startBoth();
-    await _start(choice == 'followers'
-        ? FollowListKind.followers
-        : FollowListKind.following);
+    await _load();
   }
+
+  /// 種別の選択と確認を 1 つのシートにまとめる。
+  ///
+  /// 選択と確認を分けると、始めるのにタップが 3 回要る。最長で数十時間
+  /// 走る操作なので確認は要るが、そのぶん「何を・どのアカウントで・
+  /// どれくらいかかりそうか」を 1 画面で見せて 1 回で決めさせる。
+  /// 所要は前回の実績をそのまま出す（想定件数は走らせるまで分からない）。
+  Future<void> _startWithConfirm() async {
+    final account = _sessionAccount;
+    if (account == null) {
+      showAppSnackBar(context, '実行アカウントがありません', type: SnackType.error);
+      return;
+    }
+
+    var choice = 'both';
+    final decided = await showModalBottomSheet<String>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setLocal) => SafeArea(
+          child: ListView(
+            shrinkWrap: true,
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 16, 16, 2),
+                child: Text(
+                  '@${widget.handle} を取得',
+                  style: const TextStyle(fontWeight: FontWeight.bold),
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+                child: Text(
+                  '実行アカウント ${account.handle}',
+                  style: const TextStyle(fontSize: 11, color: Colors.grey),
+                ),
+              ),
+              const Divider(height: 1),
+              _kindChoice(
+                choice,
+                'followers',
+                'フォロワー',
+                _latestFollowers,
+                (v) => setLocal(() => choice = v),
+              ),
+              _kindChoice(
+                choice,
+                'following',
+                'フォロー',
+                _latestFollowing,
+                (v) => setLocal(() => choice = v),
+              ),
+              _kindChoice(
+                choice,
+                'both',
+                '両方を続けて取得',
+                null,
+                (v) => setLocal(() => choice = v),
+                note: '相互を出すにはこちら',
+              ),
+              Padding(
+                padding: const EdgeInsets.all(12),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: OutlinedButton(
+                        onPressed: () => Navigator.pop(ctx),
+                        child: const Text('キャンセル'),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: FilledButton(
+                        onPressed: () => Navigator.pop(ctx, choice),
+                        child: const Text('取得を開始'),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+
+    if (decided == null || !mounted) return;
+    if (decided == 'both') return _startBoth();
+    await _start(
+      decided == 'followers'
+          ? FollowListKind.followers
+          : FollowListKind.following,
+    );
+  }
+
+  Widget _kindChoice(
+    String current,
+    String value,
+    String label,
+    FollowSnapshot? last,
+    ValueChanged<String> onPick, {
+    String? note,
+  }) => ListTile(
+    dense: true,
+    leading: Icon(
+      current == value
+          ? Icons.radio_button_checked
+          : Icons.radio_button_unchecked,
+      size: 20,
+    ),
+    title: Text(label),
+    subtitle: Text(
+      note ??
+          (last == null
+              ? 'まだ取得していません'
+              : '前回 ${last.collectedCount}件'
+                    '${durationLabel(last) == null ? '' : ' ・ 所要${durationLabel(last)}'}'),
+      style: const TextStyle(fontSize: 11),
+    ),
+    onTap: () => onPick(value),
+  );
 
   Future<void> _confirmDelete() async {
     final ok = await confirmDialog(

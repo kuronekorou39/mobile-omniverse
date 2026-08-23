@@ -33,6 +33,8 @@ void main() {
     int followers = 0,
     int friends = 0,
     int? statuses,
+    bool protected = false,
+    bool verified = false,
   }) =>
       FollowUser(
         restId: id,
@@ -41,6 +43,8 @@ void main() {
         followersCount: followers,
         friendsCount: friends,
         statusesCount: statuses,
+        isProtected: protected,
+        verified: verified,
       );
 
   /// 完了済みスナップショットを 1 本作って members を入れる。
@@ -613,6 +617,133 @@ void main() {
     });
   });
 
+  // ───────────────────── 世代をまたいだ相互の差分 ─────────────────────
+
+  group('相互の差分', () {
+    late int oldFollowers, oldFollowing, newFollowers, newFollowing;
+
+    setUp(() async {
+      // 旧: 相互 {1,2} / 片思われ {3} / 片思い {4}
+      oldFollowers = await completedSnapshot(
+          'alice', 'followers', [user('1'), user('2'), user('3')],
+          startedAt: 1000);
+      oldFollowing = await completedSnapshot(
+          'alice', 'following', [user('1'), user('2'), user('4')],
+          startedAt: 1000);
+      // 新: 相互 {1,5} / 片思われ {3,7} / 片思い {6}
+      newFollowers = await completedSnapshot('alice', 'followers',
+          [user('1'), user('3'), user('5'), user('7')],
+          startedAt: 2000);
+      newFollowing = await completedSnapshot(
+          'alice', 'following', [user('1'), user('5'), user('6')],
+          startedAt: 2000);
+    });
+
+    Future<({int added, int removed})> counts(String? onlyIn) =>
+        db.relationDiffCounts(
+          oldFollowersId: oldFollowers,
+          oldFollowingId: oldFollowing,
+          newFollowersId: newFollowers,
+          newFollowingId: newFollowing,
+          onlyIn: onlyIn,
+        );
+
+    Future<List<String>> members(String? onlyIn, bool added) async =>
+        (await db.relationDiffMembers(
+          oldFollowersId: oldFollowers,
+          oldFollowingId: oldFollowing,
+          newFollowersId: newFollowers,
+          newFollowingId: newFollowing,
+          onlyIn: onlyIn,
+          added: added,
+        ))
+            .map((u) => u.restId)
+            .toList()
+          ..sort();
+
+    test('相互の増減', () async {
+      final c = await counts(null);
+      expect(c.added, 1); // 5
+      expect(c.removed, 1); // 2
+      expect(await members(null, true), ['5']);
+      expect(await members(null, false), ['2']);
+    });
+
+    test('片思われの増減', () async {
+      final c = await counts('followers');
+      expect(c.added, 1); // 7
+      expect(c.removed, 0);
+      expect(await members('followers', true), ['7']);
+      // 3 は両方の世代に居るので差分に出さない
+      expect(await members('followers', false), isEmpty);
+    });
+
+    test('片思いの増減', () async {
+      final c = await counts('following');
+      expect(c.added, 1); // 6
+      expect(c.removed, 1); // 4
+      expect(await members('following', true), ['6']);
+      expect(await members('following', false), ['4']);
+    });
+
+    test('件数と中身が一致する', () async {
+      for (final onlyIn in [null, 'followers', 'following']) {
+        final c = await counts(onlyIn);
+        expect((await members(onlyIn, true)).length, c.added, reason: '$onlyIn');
+        expect((await members(onlyIn, false)).length, c.removed,
+            reason: '$onlyIn');
+      }
+    });
+
+    test('同じ世代どうしなら差分は出ない', () async {
+      final c = await db.relationDiffCounts(
+        oldFollowersId: newFollowers,
+        oldFollowingId: newFollowing,
+        newFollowersId: newFollowers,
+        newFollowingId: newFollowing,
+      );
+      expect(c.added, 0);
+      expect(c.removed, 0);
+    });
+
+    test('差分にも絞り込みと並び替えが効く', () async {
+      // 相互から抜けた人を増やして並びを見る
+      final older = await completedSnapshot('bob', 'followers',
+          [user('1', followers: 10), user('2', followers: 30, protected: true)],
+          startedAt: 1000);
+      // users は最新値で上書きされる。鍵の絞り込みは users を見るので、
+      // 後から入る側でも鍵のままにしておく
+      final olderG = await completedSnapshot(
+          'bob', 'following', [user('1'), user('2', protected: true)],
+          startedAt: 1000);
+      final newer =
+          await completedSnapshot('bob', 'followers', [], startedAt: 2000);
+      final newerG =
+          await completedSnapshot('bob', 'following', [], startedAt: 2000);
+
+      Future<List<String>> removed({FollowFilter? filter, FollowSort? sort}) async =>
+          (await db.relationDiffMembers(
+            oldFollowersId: older,
+            oldFollowingId: olderG,
+            newFollowersId: newer,
+            newFollowingId: newerG,
+            added: false,
+            filter: filter ?? FollowFilter.none,
+            sort: sort ?? FollowSort.initial,
+          ))
+              .map((u) => u.restId)
+              .toList();
+
+      expect(await removed(), ['2', '1']);
+      expect(
+          await removed(
+              sort: const FollowSort(FollowSortKey.followers,
+                  descending: false)),
+          ['1', '2']);
+      expect(await removed(filter: const FollowFilter(protected: true)), ['2']);
+    });
+  });
+
   // ───────────────────────── 一覧の読み出し ─────────────────────────
 
   group('一覧の読み出し', () {
@@ -631,24 +762,66 @@ void main() {
           ['1', '3', '2']);
     });
 
-    test('@ID 順', () async {
-      final rows =
-          await db.members(snapshotId, sort: FollowSortOrder.screenName);
-      expect(rows.map((u) => u.screenName), ['apple', 'mango', 'zebra']);
+    test('@ID 順は昇順と降順で反転する', () async {
+      Future<List<String>> ids(bool desc) async => (await db.members(snapshotId,
+              sort: FollowSort(FollowSortKey.screenName, descending: desc)))
+          .map((u) => u.screenName)
+          .toList();
+
+      expect(await ids(false), ['apple', 'mango', 'zebra']);
+      expect(await ids(true), ['zebra', 'mango', 'apple']);
     });
 
-    test('F比の降順', () async {
+    test('F比', () async {
       // 3.0 / 2.0 / 0.5
-      final rows = await db.members(snapshotId, sort: FollowSortOrder.ratioDesc);
-      expect(rows.map((u) => u.restId), ['1', '2', '3']);
+      expect(
+          (await db.members(snapshotId,
+                  sort: const FollowSort(FollowSortKey.ratio)))
+              .map((u) => u.restId),
+          ['1', '2', '3']);
+      expect(
+          (await db.members(snapshotId,
+                  sort: const FollowSort(FollowSortKey.ratio,
+                      descending: false)))
+              .map((u) => u.restId),
+          ['3', '2', '1']);
+    });
+
+    test('フォロワー数は向きだけが変わる', () async {
+      expect(
+          (await db.members(snapshotId,
+                  sort: const FollowSort(FollowSortKey.followers,
+                      descending: false)))
+              .map((u) => u.restId),
+          ['2', '3', '1']);
     });
 
     test('検索は @ID と表示名の両方に当たる', () async {
-      expect((await db.members(snapshotId, search: 'ang')).map((u) => u.restId),
-          ['3']);
-      expect((await db.members(snapshotId, search: 'Ann')).map((u) => u.restId),
-          ['2']);
-      expect(await db.members(snapshotId, search: 'いない'), isEmpty);
+      Future<List<String>> ids(String q) async =>
+          (await db.members(snapshotId, filter: FollowFilter(search: q)))
+              .map((u) => u.restId)
+              .toList();
+
+      expect(await ids('ang'), ['3']);
+      expect(await ids('Ann'), ['2']);
+      expect(await ids('いない'), isEmpty);
+    });
+
+    test('取れていない投稿数は向きにかかわらず末尾に置く', () async {
+      final id = await completedSnapshot('carol', 'followers', [
+        user('1', statuses: 10),
+        user('2'), // 投稿数が取れていない
+        user('3', statuses: 5),
+      ]);
+
+      Future<List<String>> ids(bool desc) async => (await db.members(id,
+              sort: FollowSort(FollowSortKey.statuses, descending: desc)))
+          .map((u) => u.restId)
+          .toList();
+
+      // 昇順で NULL が先頭に来ると「投稿 0 件」と見分けが付かない
+      expect(await ids(true), ['1', '3', '2']);
+      expect(await ids(false), ['3', '1', '2']);
     });
 
     test('ページングが安定している', () async {
@@ -660,6 +833,61 @@ void main() {
             .restId);
       }
       expect(paged, all.map((u) => u.restId).toList());
+    });
+
+    test('鍵アカウントで絞れる', () async {
+      final id = await completedSnapshot('carol', 'followers', [
+        user('1', protected: true),
+        user('2'),
+        user('3', protected: true),
+      ]);
+
+      Future<List<String>> ids(bool? protectedOnly) async => (await db.members(
+              id, filter: FollowFilter(protected: protectedOnly)))
+          .map((u) => u.restId)
+          .toList()
+        ..sort();
+
+      expect(await ids(true), ['1', '3']);
+      expect(await ids(false), ['2']);
+      // 指定なしは素通し
+      expect(await ids(null), ['1', '2', '3']);
+    });
+
+    test('認証済みで絞れる', () async {
+      final id = await completedSnapshot('carol', 'followers', [
+        user('1', verified: true),
+        user('2'),
+      ]);
+
+      expect(
+          (await db.members(id, filter: const FollowFilter(verified: true)))
+              .map((u) => u.restId),
+          ['1']);
+      expect(
+          (await db.members(id, filter: const FollowFilter(verified: false)))
+              .map((u) => u.restId),
+          ['2']);
+    });
+
+    test('絞り込みは重ねられる', () async {
+      final id = await completedSnapshot('carol', 'followers', [
+        user('1', screenName: 'alpha', protected: true, verified: true),
+        user('2', screenName: 'alpine', protected: true),
+        user('3', screenName: 'beta', verified: true),
+      ]);
+
+      final rows = await db.members(id,
+          filter: const FollowFilter(
+              search: 'alp', protected: true, verified: true));
+      expect(rows.map((u) => u.restId), ['1']);
+    });
+
+    test('絞り込みが空なら何も落とさない', () {
+      expect(const FollowFilter().isEmpty, isTrue);
+      expect(const FollowFilter().clause.sql, '');
+      expect(const FollowFilter(protected: false).isEmpty, isFalse);
+      expect(const FollowFilter(protected: true, verified: true).activeCount, 2);
     });
 
     test('listSnapshots は種別で絞れる', () async {

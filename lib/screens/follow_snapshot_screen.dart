@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import '../models/follow_user.dart';
 import '../models/sns_service.dart';
 import '../services/follow_db.dart';
+import '../widgets/follow_list_controls.dart';
 import '../utils/image_headers.dart';
 import 'follow_diff_screen.dart';
 import 'user_profile_screen.dart';
@@ -22,22 +23,8 @@ class FollowSnapshotScreen extends StatefulWidget {
 }
 
 class _FollowSnapshotScreenState extends State<FollowSnapshotScreen> {
-  Timer? _searchDebounce;
-  String _search = '';
-  FollowSortOrder _sort = FollowSortOrder.followersDesc;
-
-  @override
-  void dispose() {
-    _searchDebounce?.cancel();
-    super.dispose();
-  }
-
-  void _onSearchChanged(String value) {
-    _searchDebounce?.cancel();
-    _searchDebounce = Timer(const Duration(milliseconds: 350), () {
-      if (mounted) setState(() => _search = value);
-    });
-  }
+  FollowFilter _filter = FollowFilter.none;
+  FollowSort _sort = FollowSort.initial;
 
   /// 比較相手を選んで差分画面へ
   Future<void> _openDiff() async {
@@ -97,19 +84,9 @@ class _FollowSnapshotScreenState extends State<FollowSnapshotScreen> {
       appBar: AppBar(
         title: Text('@${s.targetHandle} の$kindLabel'),
         actions: [
-          PopupMenuButton<FollowSortOrder>(
-            icon: const Icon(Icons.sort),
-            tooltip: '並び順',
-            initialValue: _sort,
-            onSelected: (v) => setState(() => _sort = v),
-            itemBuilder: (_) => [
-              for (final o in FollowSortOrder.values)
-                PopupMenuItem(value: o, child: Text(o.label)),
-            ],
-          ),
           IconButton(
             icon: const Icon(Icons.compare_arrows),
-            tooltip: '差分を見る',
+            tooltip: '比較する',
             onPressed: _openDiff,
           ),
         ],
@@ -130,24 +107,19 @@ class _FollowSnapshotScreenState extends State<FollowSnapshotScreen> {
               child: Text('取りこぼしの可能性 ・ ${shortfallLabel(s)}',
                   style: const TextStyle(fontSize: 11, color: Colors.orange)),
             ),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(12, 8, 12, 4),
-            child: TextField(
-              decoration: const InputDecoration(
-                isDense: true,
-                prefixIcon: Icon(Icons.search, size: 20),
-                hintText: '@ID・名前で絞り込み',
-                border: OutlineInputBorder(),
-              ),
-              onChanged: _onSearchChanged,
-            ),
+          FollowListControls(
+            filter: _filter,
+            sort: _sort,
+            showProtected: s.service == SnsService.x,
+            onChanged: (filter, sort) =>
+                setState(() => (_filter = filter, _sort = sort)),
           ),
           Expanded(
             child: PagedFollowList<FollowUser>(
-              reloadKey: (_search, _sort),
+              reloadKey: (_filter, _sort),
               fetch: (offset, limit) => FollowDb.instance.members(
                 widget.snapshot.id,
-                search: _search,
+                filter: _filter,
                 sort: _sort,
                 limit: limit,
                 offset: offset,

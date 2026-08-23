@@ -580,33 +580,29 @@ class FollowDb {
   /// 数千件になるので必ずページングして読むこと。
   Future<List<FollowUser>> members(
     int snapshotId, {
-    String? search,
-    FollowSortOrder sort = FollowSortOrder.followersDesc,
+    FollowFilter filter = FollowFilter.none,
+    FollowSort sort = FollowSort.initial,
     int limit = 100,
     int offset = 0,
   }) async {
     final db = await _database;
-    final filtering = search != null && search.isNotEmpty;
-    // 件数は「走査時点の値」を優先し、無ければ users の最新値で代用する
+    final f = filter.clause;
     final rows = await db.rawQuery(
-      'SELECT u.*, '
-      'COALESCE(m.followersCount, u.followersCount) AS snapFollowers, '
-      'COALESCE(m.friendsCount, u.friendsCount) AS snapFriends, '
-      'COALESCE(m.statusesCount, u.statusesCount) AS snapStatuses '
+      'SELECT $_snapshotColumns '
       'FROM snapshot_members m JOIN users u ON u.restId = m.restId '
-      'WHERE m.snapshotId = ?'
-      '${filtering ? ' AND (u.screenName LIKE ? OR u.name LIKE ?)' : ''} '
+      'WHERE m.snapshotId = ?${f.sql} '
       'ORDER BY ${sort.sql}, u.restId '
       'LIMIT ? OFFSET ?',
-      [
-        snapshotId,
-        if (filtering) ...['%$search%', '%$search%'],
-        limit,
-        offset,
-      ],
+      [snapshotId, ...f.args, limit, offset],
     );
     return rows.map(_userFromSnapshotRow).toList();
   }
+
+  /// 一覧に必要な列。件数は走査時点の値を優先し、無ければ最新値で代用する
+  static const _snapshotColumns = 'u.*, '
+      'COALESCE(m.followersCount, u.followersCount) AS snapFollowers, '
+      'COALESCE(m.friendsCount, u.friendsCount) AS snapFriends, '
+      'COALESCE(m.statusesCount, u.statusesCount) AS snapStatuses';
 
   /// 相互 (followers ∩ following)。[onlyIn] を指定すると片側だけを返す
   ///   null      → 相互
@@ -616,31 +612,50 @@ class FollowDb {
     required int followersSnapshotId,
     required int followingSnapshotId,
     String? onlyIn,
-    FollowSortOrder sort = FollowSortOrder.followersDesc,
+    FollowFilter filter = FollowFilter.none,
+    FollowSort sort = FollowSort.initial,
     int limit = 100,
     int offset = 0,
   }) async {
-    final f = followersSnapshotId, g = followingSnapshotId;
     final db = await _database;
-    final (base, other) = switch (onlyIn) {
-      'following' => (g, f),
-      _ => (f, g),
-    };
-    final clause = onlyIn == null
-        ? 'm.restId IN (SELECT restId FROM snapshot_members WHERE snapshotId = ?)'
-        : 'm.restId NOT IN (SELECT restId FROM snapshot_members WHERE snapshotId = ?)';
+    final parts =
+        _relationParts(followersSnapshotId, followingSnapshotId, onlyIn);
+    final f = filter.clause;
 
     final rows = await db.rawQuery(
-      'SELECT u.*, '
-      'COALESCE(m.followersCount, u.followersCount) AS snapFollowers, '
-      'COALESCE(m.friendsCount, u.friendsCount) AS snapFriends, '
-      'COALESCE(m.statusesCount, u.statusesCount) AS snapStatuses '
+      'SELECT $_snapshotColumns '
       'FROM snapshot_members m JOIN users u ON u.restId = m.restId '
-      'WHERE m.snapshotId = ? AND $clause '
+      'WHERE m.snapshotId = ? AND ${parts.secondaryClause}${f.sql} '
       'ORDER BY ${sort.sql}, u.restId LIMIT ? OFFSET ?',
-      [base, other, limit, offset],
+      [parts.primary, parts.secondary, ...f.args, limit, offset],
     );
     return rows.map(_userFromSnapshotRow).toList();
+  }
+
+  /// 相互 / 片思われ / 片思い を「主にする側」と「突き合わせる側」に分解する。
+  ///
+  ///   相互      … フォロワーに居て、かつフォローにも居る
+  ///   片思われ  … フォロワーに居て、フォローには居ない
+  ///   片思い    … フォローに居て、フォロワーには居ない
+  ///
+  /// どれも「[primary] のメンバーであること」+「[secondary] に居る / 居ない」で
+  /// 表せるので、1 か所にまとめて差分側と共有する。
+  static ({int primary, int secondary, String secondaryClause}) _relationParts(
+    int followersId,
+    int followingId,
+    String? onlyIn,
+  ) {
+    const inOther =
+        'm.restId IN (SELECT restId FROM snapshot_members WHERE snapshotId = ?)';
+    const notInOther =
+        'm.restId NOT IN (SELECT restId FROM snapshot_members WHERE snapshotId = ?)';
+    return switch (onlyIn) {
+      'following' =>
+        (primary: followingId, secondary: followersId, secondaryClause: notInOther),
+      'followers' =>
+        (primary: followersId, secondary: followingId, secondaryClause: notInOther),
+      _ => (primary: followersId, secondary: followingId, secondaryClause: inOther),
+    };
   }
 
   /// 両方に居るユーザーの件数の変化 (投稿数・フォロワー数の推移)。
@@ -654,10 +669,12 @@ class FollowDb {
   Future<List<FollowCountChange>> countChanges({
     required int oldSnapshotId,
     required int newSnapshotId,
+    FollowFilter filter = FollowFilter.none,
     int limit = 100,
     int offset = 0,
   }) async {
     final db = await _database;
+    final f = filter.clause;
     final rows = await db.rawQuery(
       'SELECT u.*, '
       'n.followersCount AS newFollowers, o.followersCount AS oldFollowers, '
@@ -665,11 +682,12 @@ class FollowDb {
       'FROM snapshot_members n '
       'JOIN snapshot_members o ON o.restId = n.restId AND o.snapshotId = ? '
       'JOIN users u ON u.restId = n.restId '
-      'WHERE n.snapshotId = ? AND $_countChangedClause '
+      'WHERE n.snapshotId = ? AND $_countChangedClause${f.sql} '
+      // この画面の主役は「どれだけ動いたか」なので、並びは固定でよい
       'ORDER BY ABS(COALESCE(n.statusesCount,0) - COALESCE(o.statusesCount,0)) DESC, '
       'n.restId '
       'LIMIT ? OFFSET ?',
-      [oldSnapshotId, newSnapshotId, limit, offset],
+      [oldSnapshotId, newSnapshotId, ...f.args, limit, offset],
     );
     return rows
         .map((r) => FollowCountChange(
@@ -686,13 +704,16 @@ class FollowDb {
   Future<int> countChangesTotal({
     required int oldSnapshotId,
     required int newSnapshotId,
+    FollowFilter filter = FollowFilter.none,
   }) async {
     final db = await _database;
+    final f = filter.clause;
     return Sqflite.firstIntValue(await db.rawQuery(
           'SELECT COUNT(*) FROM snapshot_members n '
           'JOIN snapshot_members o ON o.restId = n.restId AND o.snapshotId = ? '
-          'WHERE n.snapshotId = ? AND $_countChangedClause',
-          [oldSnapshotId, newSnapshotId],
+          'JOIN users u ON u.restId = n.restId '
+          'WHERE n.snapshotId = ? AND $_countChangedClause${f.sql}',
+          [oldSnapshotId, newSnapshotId, ...f.args],
         )) ??
         0;
   }
@@ -748,6 +769,8 @@ class FollowDb {
     required int oldSnapshotId,
     required int newSnapshotId,
     required bool added,
+    FollowFilter filter = FollowFilter.none,
+    FollowSort sort = FollowSort.initial,
     int limit = 100,
     int offset = 0,
   }) async {
@@ -755,14 +778,107 @@ class FollowDb {
     final (base, other) = added
         ? (newSnapshotId, oldSnapshotId)
         : (oldSnapshotId, newSnapshotId);
+    final f = filter.clause;
     final rows = await db.rawQuery(
-      'SELECT u.* FROM snapshot_members m JOIN users u ON u.restId = m.restId '
+      'SELECT $_snapshotColumns '
+      'FROM snapshot_members m JOIN users u ON u.restId = m.restId '
       'WHERE m.snapshotId = ? AND m.restId NOT IN '
-      '(SELECT restId FROM snapshot_members WHERE snapshotId = ?) '
-      'ORDER BY u.followersCount DESC, u.restId LIMIT ? OFFSET ?',
-      [base, other, limit, offset],
+      '(SELECT restId FROM snapshot_members WHERE snapshotId = ?)${f.sql} '
+      'ORDER BY ${sort.sql}, u.restId LIMIT ? OFFSET ?',
+      [base, other, ...f.args, limit, offset],
     );
-    return rows.map(_userFromRow).toList();
+    return rows.map(_userFromSnapshotRow).toList();
+  }
+
+  // ─── 世代をまたいだ相互の差分 ───
+  //
+  // 相互はスナップショットとして保存していない (その都度 2 本を突き合わせて
+  // 出している) ので、比べるには (フォロワー, フォロー) の組を 2 世代ぶん
+  // 受け取って、その場で両方の集合を作って差を取る。
+
+  /// 相互 / 片思われ / 片思い が、世代をまたいで何人増えて何人減ったか
+  Future<({int added, int removed})> relationDiffCounts({
+    required int oldFollowersId,
+    required int oldFollowingId,
+    required int newFollowersId,
+    required int newFollowingId,
+    String? onlyIn,
+  }) async {
+    final db = await _database;
+
+    Future<int> count(bool added) async {
+      final w = _relationDiffWhere(
+        oldFollowersId: oldFollowersId,
+        oldFollowingId: oldFollowingId,
+        newFollowersId: newFollowersId,
+        newFollowingId: newFollowingId,
+        onlyIn: onlyIn,
+        added: added,
+      );
+      return Sqflite.firstIntValue(await db.rawQuery(
+            'SELECT COUNT(*) FROM snapshot_members m WHERE ${w.where}',
+            w.args,
+          )) ??
+          0;
+    }
+
+    return (added: await count(true), removed: await count(false));
+  }
+
+  /// 相互 / 片思われ / 片思い の差分の中身
+  Future<List<FollowUser>> relationDiffMembers({
+    required int oldFollowersId,
+    required int oldFollowingId,
+    required int newFollowersId,
+    required int newFollowingId,
+    required bool added,
+    String? onlyIn,
+    FollowFilter filter = FollowFilter.none,
+    FollowSort sort = FollowSort.initial,
+    int limit = 100,
+    int offset = 0,
+  }) async {
+    final db = await _database;
+    final w = _relationDiffWhere(
+      oldFollowersId: oldFollowersId,
+      oldFollowingId: oldFollowingId,
+      newFollowersId: newFollowersId,
+      newFollowingId: newFollowingId,
+      onlyIn: onlyIn,
+      added: added,
+    );
+    final f = filter.clause;
+    final rows = await db.rawQuery(
+      'SELECT $_snapshotColumns '
+      'FROM snapshot_members m JOIN users u ON u.restId = m.restId '
+      'WHERE ${w.where}${f.sql} '
+      'ORDER BY ${sort.sql}, u.restId LIMIT ? OFFSET ?',
+      [...w.args, ...f.args, limit, offset],
+    );
+    return rows.map(_userFromSnapshotRow).toList();
+  }
+
+  /// 「新しい世代の集合に居て、古い世代の集合には居ない」を組み立てる。
+  /// [added] が false なら新旧を入れ替えるだけ。
+  static ({String where, List<Object?> args}) _relationDiffWhere({
+    required int oldFollowersId,
+    required int oldFollowingId,
+    required int newFollowersId,
+    required int newFollowingId,
+    required String? onlyIn,
+    required bool added,
+  }) {
+    final newer = _relationParts(newFollowersId, newFollowingId, onlyIn);
+    final older = _relationParts(oldFollowersId, oldFollowingId, onlyIn);
+    final (base, other) = added ? (newer, older) : (older, newer);
+
+    return (
+      where: 'm.snapshotId = ? AND ${base.secondaryClause} '
+          'AND NOT (m.restId IN '
+          '(SELECT restId FROM snapshot_members WHERE snapshotId = ?) '
+          'AND ${other.secondaryClause})',
+      args: [base.primary, base.secondary, other.primary, other.secondary],
+    );
   }
 
   /// 参照されなくなった users を掃除する
@@ -881,28 +997,134 @@ class FollowTarget {
       );
 }
 
-/// 一覧の並び順。件数は走査時点の値を優先する
-enum FollowSortOrder {
-  followersDesc('フォロワー数が多い順',
-      'COALESCE(m.followersCount, u.followersCount) DESC'),
-  followersAsc('フォロワー数が少ない順',
-      'COALESCE(m.followersCount, u.followersCount) ASC'),
-  friendsDesc('フォロー数が多い順',
-      'COALESCE(m.friendsCount, u.friendsCount) DESC'),
-  statusesDesc('投稿数が多い順',
-      'COALESCE(m.statusesCount, u.statusesCount) DESC'),
-  statusesAsc('投稿数が少ない順',
-      'COALESCE(m.statusesCount, u.statusesCount) ASC'),
-  ratioDesc(
-      'F比が高い順',
+/// 並び替えの基準。向きは [FollowSort] が別に持つ。
+///
+/// 件数は「走査時点の値」を優先し、無ければ users の最新値で代用する。
+enum FollowSortKey {
+  followers('フォロワー数', 'COALESCE(m.followersCount, u.followersCount)',
+      ascLabel: '少ない順', descLabel: '多い順'),
+  friends('フォロー数', 'COALESCE(m.friendsCount, u.friendsCount)',
+      ascLabel: '少ない順', descLabel: '多い順'),
+  statuses('投稿数', 'COALESCE(m.statusesCount, u.statusesCount)',
+      ascLabel: '少ない順', descLabel: '多い順'),
+  ratio(
+      'F比',
       'CAST(COALESCE(m.followersCount, u.followersCount) AS REAL) / '
-          'NULLIF(COALESCE(m.friendsCount, u.friendsCount), 0) DESC'),
-  screenName('@ID 順', 'u.screenName COLLATE NOCASE ASC'),
-  captured('取得順', 'm.rowid ASC');
+          'NULLIF(COALESCE(m.friendsCount, u.friendsCount), 0)',
+      ascLabel: '低い順',
+      descLabel: '高い順'),
+  screenName('@ID', 'u.screenName COLLATE NOCASE',
+      ascLabel: 'A → Z', descLabel: 'Z → A'),
+  captured('取得順', 'm.rowid', ascLabel: '古い順', descLabel: '新しい順');
 
-  const FollowSortOrder(this.label, this.sql);
+  const FollowSortKey(this.label, this.expression,
+      {required this.ascLabel, required this.descLabel});
+
   final String label;
-  final String sql;
+
+  /// 並び替えに使う SQL 式 (向きは含まない)
+  final String expression;
+  final String ascLabel;
+  final String descLabel;
+
+  String directionLabel(bool descending) => descending ? descLabel : ascLabel;
+}
+
+/// 一覧の並び替え。基準と向きを別々に持つ
+class FollowSort {
+  const FollowSort(this.key, {this.descending = true});
+
+  final FollowSortKey key;
+  final bool descending;
+
+  static const initial = FollowSort(FollowSortKey.followers);
+
+  FollowSort withKey(FollowSortKey key) =>
+      FollowSort(key, descending: descending);
+  FollowSort withDirection(bool descending) =>
+      FollowSort(key, descending: descending);
+
+  String get label => '${key.label}（${key.directionLabel(descending)}）';
+
+  /// 投稿数は取れていない相手が居る (X の旧レスポンス由来)。
+  /// 昇順のときに NULL が先頭に来ると「投稿 0 件」と見分けが付かないので、
+  /// 向きにかかわらず末尾へ送る。
+  String get sql => '(${key.expression}) IS NULL, '
+      '${key.expression} ${descending ? 'DESC' : 'ASC'}';
+
+  @override
+  bool operator ==(Object other) =>
+      other is FollowSort &&
+      other.key == key &&
+      other.descending == descending;
+
+  @override
+  int get hashCode => Object.hash(key, descending);
+}
+
+/// 一覧の絞り込み。
+///
+/// [protected] / [verified] は 3 状態。null は「指定なし」で、
+/// true なら該当する相手だけ、false なら該当する相手を除く。
+class FollowFilter {
+  const FollowFilter({this.search = '', this.protected, this.verified});
+
+  final String search;
+  final bool? protected;
+  final bool? verified;
+
+  static const none = FollowFilter();
+
+  bool get isEmpty => search.isEmpty && protected == null && verified == null;
+
+  /// 検索以外の絞り込みが何個かかっているか (バッジ表示用)
+  int get activeCount =>
+      (protected == null ? 0 : 1) + (verified == null ? 0 : 1);
+
+  FollowFilter copyWith({
+    String? search,
+    bool? protected,
+    bool? verified,
+    bool clearProtected = false,
+    bool clearVerified = false,
+  }) =>
+      FollowFilter(
+        search: search ?? this.search,
+        protected: clearProtected ? null : (protected ?? this.protected),
+        verified: clearVerified ? null : (verified ?? this.verified),
+      );
+
+  /// WHERE に足す条件と引数。何も無ければ空文字
+  ({String sql, List<Object?> args}) get clause {
+    final parts = <String>[];
+    final args = <Object?>[];
+    if (search.isNotEmpty) {
+      parts.add('(u.screenName LIKE ? OR u.name LIKE ?)');
+      args..add('%$search%')..add('%$search%');
+    }
+    if (protected != null) {
+      parts.add('u.isProtected = ?');
+      args.add(protected! ? 1 : 0);
+    }
+    if (verified != null) {
+      parts.add('u.verified = ?');
+      args.add(verified! ? 1 : 0);
+    }
+    return (
+      sql: parts.isEmpty ? '' : ' AND ${parts.join(' AND ')}',
+      args: args,
+    );
+  }
+
+  @override
+  bool operator ==(Object other) =>
+      other is FollowFilter &&
+      other.search == search &&
+      other.protected == protected &&
+      other.verified == verified;
+
+  @override
+  int get hashCode => Object.hash(search, protected, verified);
 }
 
 /// 2 世代間での件数の変化

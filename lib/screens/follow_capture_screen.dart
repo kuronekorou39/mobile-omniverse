@@ -232,27 +232,31 @@ class _FollowCaptureScreenState extends State<FollowCaptureScreen> {
     ].join(' / ');
 
     return ListTile(
-      leading: ClipOval(
-        child: t.avatarUrl.isEmpty
-            ? const SizedBox(width: 40, height: 40, child: Icon(Icons.person))
-            : CachedNetworkImage(
-                imageUrl: t.avatarUrl,
-                httpHeaders: kImageHeaders,
-                width: 40,
-                height: 40,
-                fit: BoxFit.cover,
-                memCacheWidth: 80,
-                errorWidget: (_, __, ___) => const SizedBox(
-                    width: 40, height: 40, child: Icon(Icons.person)),
-              ),
-      ),
-      title: Row(
+      // SNS はアイコンの左に置く。@ID の右だと ID の長さで位置が動いて
+      // 縦に並べたときに揃わない
+      leading: Row(
+        mainAxisSize: MainAxisSize.min,
         children: [
-          Flexible(child: Text('@${t.handle}', overflow: TextOverflow.ellipsis)),
-          const SizedBox(width: 6),
           SnsBadge(service: t.service, size: 9),
+          const SizedBox(width: 8),
+          ClipOval(
+            child: t.avatarUrl.isEmpty
+                ? const SizedBox(
+                    width: 40, height: 40, child: Icon(Icons.person))
+                : CachedNetworkImage(
+                    imageUrl: t.avatarUrl,
+                    httpHeaders: kImageHeaders,
+                    width: 40,
+                    height: 40,
+                    fit: BoxFit.cover,
+                    memCacheWidth: 80,
+                    errorWidget: (_, __, ___) => const SizedBox(
+                        width: 40, height: 40, child: Icon(Icons.person)),
+                  ),
+          ),
         ],
       ),
+      title: Text('@${t.handle}', overflow: TextOverflow.ellipsis),
       subtitle: Text(
         [
           s?.followers == null

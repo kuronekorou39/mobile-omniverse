@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 
 import '../models/follow_user.dart';
+import '../models/sns_service.dart';
 import '../services/follow_db.dart';
+import '../widgets/follow_list_controls.dart';
 import 'follow_snapshot_screen.dart';
 
 /// 2 回分の取得結果の差分。
@@ -19,15 +21,30 @@ class FollowDiffScreen extends StatefulWidget {
   State<FollowDiffScreen> createState() => _FollowDiffScreenState();
 }
 
-class _FollowDiffScreenState extends State<FollowDiffScreen> {
+class _FollowDiffScreenState extends State<FollowDiffScreen>
+    with SingleTickerProviderStateMixin {
   int? _added;
   int? _removed;
   int? _changed;
+  FollowFilter _filter = FollowFilter.none;
+  FollowSort _sort = FollowSort.initial;
+
+  /// 「変化」タブは増減の大きい順に固定なので、そのときは並び替えを隠す
+  late final TabController _tab = TabController(length: 3, vsync: this)
+    ..addListener(() {
+      if (mounted) setState(() {});
+    });
 
   @override
   void initState() {
     super.initState();
     _loadCounts();
+  }
+
+  @override
+  void dispose() {
+    _tab.dispose();
+    super.dispose();
   }
 
   Future<void> _loadCounts() async {
@@ -45,7 +62,7 @@ class _FollowDiffScreenState extends State<FollowDiffScreen> {
     });
   }
 
-  String _tab(String label, int? count) =>
+  String _tabLabel(String label, int? count) =>
       count == null ? label : '$label ($count)';
 
   @override
@@ -53,49 +70,57 @@ class _FollowDiffScreenState extends State<FollowDiffScreen> {
     final o = widget.older, n = widget.newer;
     final incomplete = !o.isCompleted || !n.isCompleted;
 
-    return DefaultTabController(
-      length: 3,
-      child: Scaffold(
-        appBar: AppBar(
-          title: Text('@${n.targetHandle} の差分'),
-          bottom: TabBar(tabs: [
-            Tab(text: _tab('増えた', _added)),
-            Tab(text: _tab('減った', _removed)),
-            Tab(text: _tab('変化', _changed)),
-          ]),
-        ),
-        body: Column(
-          children: [
-            Padding(
-              padding: const EdgeInsets.all(10),
-              child: Text(
-                '${dateLabel(o.startedAt)}（${o.collectedCount}件）'
-                ' → ${dateLabel(n.startedAt)}（${n.collectedCount}件）'
-                '${incomplete ? '\n⚠ 中断した取得を含むため、差分は不正確です' : ''}',
-                style: TextStyle(
-                    fontSize: 11,
-                    color: incomplete ? Colors.orange : Colors.grey),
-                textAlign: TextAlign.center,
-              ),
+    return Scaffold(
+      appBar: AppBar(
+        title: Text('@${n.targetHandle} の差分'),
+        bottom: TabBar(controller: _tab, tabs: [
+          Tab(text: _tabLabel('増えた', _added)),
+          Tab(text: _tabLabel('減った', _removed)),
+          Tab(text: _tabLabel('変化', _changed)),
+        ]),
+      ),
+      body: Column(
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(10, 10, 10, 0),
+            child: Text(
+              '${dateLabel(o.startedAt)}（${o.collectedCount}件）'
+              ' → ${dateLabel(n.startedAt)}（${n.collectedCount}件）'
+              '${incomplete ? '\n⚠ 中断した取得を含むため、差分は不正確です' : ''}',
+              style: TextStyle(
+                  fontSize: 11,
+                  color: incomplete ? Colors.orange : Colors.grey),
+              textAlign: TextAlign.center,
             ),
-            Expanded(
-              child: TabBarView(children: [
-                _memberList(added: true),
-                _memberList(added: false),
-                _changeList(),
-              ]),
-            ),
-          ],
-        ),
+          ),
+          FollowListControls(
+            filter: _filter,
+            sort: _sort,
+            showSort: _tab.index != 2,
+            showProtected: n.service == SnsService.x,
+            onChanged: (filter, sort) =>
+                setState(() => (_filter = filter, _sort = sort)),
+          ),
+          Expanded(
+            child: TabBarView(controller: _tab, children: [
+              _memberList(added: true),
+              _memberList(added: false),
+              _changeList(),
+            ]),
+          ),
+        ],
       ),
     );
   }
 
   Widget _memberList({required bool added}) => PagedFollowList<FollowUser>(
+        reloadKey: (added, _filter, _sort),
         fetch: (offset, limit) => FollowDb.instance.diffMembers(
           oldSnapshotId: widget.older.id,
           newSnapshotId: widget.newer.id,
           added: added,
+          filter: _filter,
+          sort: _sort,
           limit: limit,
           offset: offset,
         ),
@@ -111,9 +136,11 @@ class _FollowDiffScreenState extends State<FollowDiffScreen> {
 
   /// 両方に居る人の、投稿数とフォロワー数の増減
   Widget _changeList() => PagedFollowList<FollowCountChange>(
+        reloadKey: _filter,
         fetch: (offset, limit) => FollowDb.instance.countChanges(
           oldSnapshotId: widget.older.id,
           newSnapshotId: widget.newer.id,
+          filter: _filter,
           limit: limit,
           offset: offset,
         ),

@@ -14,7 +14,10 @@ import '../utils/platform_ua.dart';
 /// 画面には出したくないので、実サイズのまま画面外に配置する。
 /// サイズを潰すと X にビューポート不整合と見なされる恐れがあるため、
 /// 1px にはせず実機相当のまま逃がしている。
-class FollowCaptureWebViewHost extends StatelessWidget {
+///
+/// 畳まれるときに [FollowCaptureWebViewService] へ手放したことを伝える。
+/// 伝えないと破棄済みの controller が残り、次の走査がそれを掴んでしまう。
+class FollowCaptureWebViewHost extends StatefulWidget {
   const FollowCaptureWebViewHost({super.key});
 
   /// 画面外に逃がす距離。Stack の直接の子として使う [Positioned] は
@@ -24,10 +27,27 @@ class FollowCaptureWebViewHost extends StatelessWidget {
   static const size = Size(412, 915);
 
   @override
+  State<FollowCaptureWebViewHost> createState() =>
+      _FollowCaptureWebViewHostState();
+}
+
+class _FollowCaptureWebViewHostState extends State<FollowCaptureWebViewHost> {
+  InAppWebViewController? _controller;
+
+  @override
+  void dispose() {
+    final controller = _controller;
+    if (controller != null) {
+      FollowCaptureWebViewService.instance.detachHost(controller);
+    }
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     return SizedBox(
-      width: size.width,
-      height: size.height,
+      width: FollowCaptureWebViewHost.size.width,
+      height: FollowCaptureWebViewHost.size.height,
       child: InAppWebView(
         initialUrlRequest: URLRequest(url: WebUri('about:blank')),
         initialUserScripts: UnmodifiableListView([
@@ -42,7 +62,10 @@ class FollowCaptureWebViewHost extends StatelessWidget {
           domStorageEnabled: true,
           thirdPartyCookiesEnabled: true,
         ),
-        onWebViewCreated: FollowCaptureWebViewService.instance.attach,
+        onWebViewCreated: (controller) {
+          _controller = controller;
+          FollowCaptureWebViewService.instance.attach(controller);
+        },
         onLoadStop: (controller, url) {
           controller.evaluateJavascript(
               source: FollowCaptureWebViewService.interceptorScript);

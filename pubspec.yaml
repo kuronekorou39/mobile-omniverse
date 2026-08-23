@@ -67,6 +67,10 @@ dev_dependencies:
   # rules and activating additional ones.
   flutter_lints: ^6.0.0
   mocktail: ^1.0.0
+  # follow_db のテスト用。sqflite は端末側の実装なので、
+  # テスト VM では FFI 版に差し替えてインメモリの SQLite を使う。
+  # FFI なのでプラグイン登録は無く、アプリのビルドには入らない。
+  sqflite_common_ffi: ^2.3.4
   # integration_test は release ビルドに誤って埋め込まれ App Store 審査で
   # リジェクトされるため、通常はコメントアウトしておく。
   # integration テスト実行時のみ一時的に有効化して `flutter test integration_test/` で実行する。

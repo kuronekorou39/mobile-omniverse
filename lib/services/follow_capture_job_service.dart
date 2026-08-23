@@ -146,6 +146,11 @@ class FollowCaptureJobService {
   /// 中断したら「次の種別」「次の対象」も走らせない
   bool _chainAborted = false;
 
+  /// 連続実行の最中は true。1 本終わるたびにホストを畳むと、
+  /// 次の 1 本が始まった直後に「もう居ない WebView」を掴んでしまう。
+  /// 畳むのは連続実行そのものが終わってから。
+  bool _keepHost = false;
+
   /// 他の処理が x.com の WebView / Cookie を占有している間は true。
   ///
   /// 投稿・ログイン・セッション更新・通知 queryId 取得はいずれも
@@ -196,12 +201,17 @@ class FollowCaptureJobService {
   }) async {
     final handle = targetHandle.replaceFirst('@', '');
     _chainAborted = false;
-    for (final kind in FollowListKind.values) {
-      // 中断したのに次の種別が始まると、止めたつもりが止まっていないように見える
-      if (_chainAborted) break;
-      await run(account: account, targetHandle: handle, kind: kind);
+    _keepHost = true;
+    try {
+      for (final kind in FollowListKind.values) {
+        // 中断したのに次の種別が始まると、止めたつもりが止まっていないように見える
+        if (_chainAborted) break;
+        await run(account: account, targetHandle: handle, kind: kind);
+      }
+    } finally {
+      _keepHost = false;
+      hostNeeded.value = false;
     }
-    hostNeeded.value = false;
   }
 
   /// 期日が来た取得を実行する。アプリ起動時に 1 回呼ぶ。
@@ -224,6 +234,17 @@ class FollowCaptureJobService {
     if (accounts.isEmpty) return;
 
     _chainAborted = false;
+    _keepHost = true;
+    try {
+      await _runDueWork(accounts);
+    } finally {
+      _keepHost = false;
+      hostNeeded.value = false;
+    }
+    await FollowDb.instance.pruneToSizeLimit(sizeLimitBytes);
+  }
+
+  Future<void> _runDueWork(List<Account> accounts) async {
     final db = FollowDb.instance;
     final targets = await db.listTargets();
 
@@ -274,8 +295,6 @@ class FollowCaptureJobService {
         kind: _kindOf(item.kind),
       );
     }
-
-    await FollowDb.instance.pruneToSizeLimit(sizeLimitBytes);
   }
 
   /// 期日どうしの間隔が詰まりすぎないための下限。
@@ -329,7 +348,6 @@ class FollowCaptureJobService {
     required String targetHandle,
     required FollowListKind kind,
     FollowSnapshot? resume,
-    int? runId,
   }) async {
     if (isRunning) throw StateError('別の走査が実行中です');
     if (isWebViewBusy) throw StateError('他の処理が WebView を使用中です');
@@ -341,7 +359,6 @@ class FollowCaptureJobService {
           targetHandle: handle,
           kind: kind.name,
           sessionAccountId: account.id,
-          runId: runId,
         );
 
     // プロフィール上の件数を「想定件数」として控える。
@@ -350,27 +367,29 @@ class FollowCaptureJobService {
       await _recordExpectedTotal(account, handle, kind, snapshotId);
     }
 
-    // ルートにホストを立ててから走らせる（画面を移動しても継続させるため）
-    hostNeeded.value = true;
-    await FollowCaptureWebViewService.instance.waitForHost();
-
-    _cancelToken = CaptureCancelToken();
-    progress.value = FollowJobProgress(
-      snapshotId: snapshotId,
-      targetHandle: handle,
-      kind: kind,
-      collected: resume?.collectedCount ?? 0,
-      round: 0,
-      startedAt: resume?.startedAt ?? DateTime.now(),
-    );
-
     final service = FollowCaptureWebViewService.instance;
-    final pool = AccountPool([account.id], cooldown: _accountCooldown);
-    final engine = FollowCaptureEngine(fetchPage: service.fetchPage);
-
     var lastCursor = resume?.cursor;
 
+    // ホストが立たない場合もここで受ける。try の外に出すと
+    // snapshot が running のまま残り、WebView も畳まれずに居座る。
     try {
+      // ルートにホストを立ててから走らせる（画面を移動しても継続させるため）
+      hostNeeded.value = true;
+      await service.waitForHost();
+
+      _cancelToken = CaptureCancelToken();
+      progress.value = FollowJobProgress(
+        snapshotId: snapshotId,
+        targetHandle: handle,
+        kind: kind,
+        collected: resume?.collectedCount ?? 0,
+        round: 0,
+        startedAt: resume?.startedAt ?? DateTime.now(),
+      );
+
+      final pool = AccountPool([account.id], cooldown: _accountCooldown);
+      final engine = FollowCaptureEngine(fetchPage: service.fetchPage);
+
       final result = await engine.capture(
         targetHandle: handle,
         kind: kind,
@@ -423,8 +442,8 @@ class FollowCaptureJobService {
       _cancelToken = null;
       progress.value = null;
       await service.reset();
-      // runBoth の途中では畳まない（次の種別で再利用する）
-      if (runId == null) hostNeeded.value = false;
+      // 連続実行の途中では畳まない（次の 1 本で使い回す）
+      if (!_keepHost) hostNeeded.value = false;
     }
   }
 }

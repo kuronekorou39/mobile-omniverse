@@ -28,33 +28,60 @@ class FollowDb {
   ///     実行アカウントとスケジュールを対象ごとに持つ
   /// v4: 想定件数 (プロフィール上のフォロワー数/フォロー数) を記録し、
   ///     取りこぼしに気づけるようにした
-  static const _version = 4;
+  /// v5: handle の大文字小文字をならす。引くときは小文字化していたのに
+  ///     書くときは素通しだったため、大文字で入った行が
+  ///     スケジュール判定から漏れて毎回取り直しになっていた
+  static const _version = 5;
 
   Database? _db;
 
+  /// テストから SQLite の実装を差し替えるための口。
+  ///
+  /// sqflite は端末側のプラグインなのでテスト VM では動かない。
+  /// FFI 版の factory をここに挿すと、本番と同じ [_createSchema] /
+  /// マイグレーションを通したまま実際の SQLite を叩ける。
   @visibleForTesting
-  Database? dbOverride;
+  DatabaseFactory? factoryOverride;
+
+  /// 保存先の差し替え。テストはインメモリか一時ファイルを指す
+  @visibleForTesting
+  String? pathOverride;
+
+  Future<String> _path() async =>
+      pathOverride ?? p.join(await getDatabasesPath(), _fileName);
+
+  /// 開いた DB を閉じる。テストのケース間で状態を持ち越さないために使う
+  @visibleForTesting
+  Future<void> close() async {
+    await _db?.close();
+    _db = null;
+  }
+
+  /// 開いている接続そのもの。インメモリの DB は接続ごとに別物になるため、
+  /// テストから中身を直接覗くにはこの接続を借りる必要がある
+  @visibleForTesting
+  Future<Database> debugDatabase() => _database;
 
   Future<Database> get _database async {
-    if (dbOverride != null) return dbOverride!;
     if (_db != null) return _db!;
-    final dir = await getDatabasesPath();
-    _db = await openDatabase(
-      p.join(dir, _fileName),
-      version: _version,
-      onCreate: (db, _) async {
-        await _createSchema(db);
-        await _upgradeToV2(db);
-        await _upgradeToV3(db);
-        await _upgradeToV4(db);
-      },
-      onUpgrade: (db, from, to) async {
-        if (from < 2) await _upgradeToV2(db);
-        if (from < 3) await _upgradeToV3(db);
-        if (from < 4) await _upgradeToV4(db);
-      },
-      onConfigure: (db) async =>
-          db.execute('PRAGMA foreign_keys = ON'),
+    _db = await (factoryOverride ?? databaseFactory).openDatabase(
+      await _path(),
+      options: OpenDatabaseOptions(
+        version: _version,
+        onCreate: (db, _) async {
+          await _createSchema(db);
+          await _upgradeToV2(db);
+          await _upgradeToV3(db);
+          await _upgradeToV4(db);
+        },
+        onUpgrade: (db, from, to) async {
+          if (from < 2) await _upgradeToV2(db);
+          if (from < 3) await _upgradeToV3(db);
+          if (from < 4) await _upgradeToV4(db);
+          if (from < 5) await _upgradeToV5(db);
+        },
+        onConfigure: (db) async => db.execute('PRAGMA foreign_keys = ON'),
+      ),
     );
     return _db!;
   }
@@ -157,8 +184,8 @@ class FollowDb {
     // 既存のスナップショットから対象を復元しておく
     await db.execute('''
       INSERT OR IGNORE INTO targets (handle, sessionAccountId, addedAt)
-      SELECT targetHandle, MAX(sessionAccountId), MIN(startedAt)
-      FROM snapshots GROUP BY targetHandle
+      SELECT LOWER(targetHandle), MAX(sessionAccountId), MIN(startedAt)
+      FROM snapshots GROUP BY LOWER(targetHandle)
     ''');
   }
 
@@ -169,6 +196,20 @@ class FollowDb {
     } catch (_) {
       // 既にある場合は無視
     }
+  }
+
+  /// 既に入っている handle を小文字にそろえる。
+  ///
+  /// 読み出しは [_norm] を通していたが書き込みは素通しだったので、
+  /// 大文字混じりで入った行は latestCompleted から見えず、
+  /// 「毎回スケジュールの期日が来ている」状態になっていた。
+  static Future<void> _upgradeToV5(Database db) async {
+    await db.execute('UPDATE snapshots SET targetHandle = LOWER(targetHandle) '
+        'WHERE targetHandle <> LOWER(targetHandle)');
+    // handle は主キー。小文字の行が既にあるとぶつかるので、その場合は捨てる
+    await db.execute('UPDATE OR IGNORE targets SET handle = LOWER(handle) '
+        'WHERE handle <> LOWER(handle)');
+    await db.execute('DELETE FROM targets WHERE handle <> LOWER(handle)');
   }
 
   Future<void> setTotalExpected(int snapshotId, int? total) async {
@@ -195,7 +236,9 @@ class FollowDb {
 
   Future<void> upsertTarget(FollowTarget target) async {
     final db = await _database;
-    await db.insert('targets', target.toRow(),
+    // 引くときは小文字化するので、入れるときもそろえる
+    final row = target.toRow()..['handle'] = _norm(target.handle);
+    await db.insert('targets', row,
         conflictAlgorithm: ConflictAlgorithm.replace);
   }
 
@@ -228,7 +271,8 @@ class FollowDb {
     final rows = await db.query('snapshots',
         where: "targetHandle = ? AND kind = ? AND status = 'completed'",
         whereArgs: [_norm(handle), kind],
-        orderBy: 'startedAt DESC',
+        // 同じミリ秒に 2 本並んでも順序が決まるように id を第 2 キーに置く
+        orderBy: 'startedAt DESC, id DESC',
         limit: 1);
     return rows.isEmpty ? null : FollowSnapshot.fromRow(rows.first);
   }
@@ -239,16 +283,17 @@ class FollowDb {
     final rows = await db.query('snapshots',
         where: "targetHandle = ? AND status <> 'completed' AND cursor IS NOT NULL",
         whereArgs: [_norm(handle)],
-        orderBy: 'startedAt DESC');
+        orderBy: 'startedAt DESC, id DESC');
     return rows.map(FollowSnapshot.fromRow).toList();
   }
 
   // ─── ストレージ使用量 ───
 
-  /// DB ファイルの実サイズ
+  /// DB ファイルの実サイズ。インメモリで開いている場合は 0
   Future<int> databaseSizeBytes() async {
-    if (dbOverride != null) return 0;
-    final file = File(p.join(await getDatabasesPath(), _fileName));
+    final path = await _path();
+    if (path == inMemoryDatabasePath) return 0;
+    final file = File(path);
     return file.existsSync() ? file.lengthSync() : 0;
   }
 
@@ -274,7 +319,7 @@ class FollowDb {
     final victims = await db.rawQuery('''
       SELECT id FROM (
         SELECT id, startedAt, ROW_NUMBER() OVER (
-          PARTITION BY targetHandle, kind ORDER BY startedAt DESC
+          PARTITION BY targetHandle, kind ORDER BY startedAt DESC, id DESC
         ) AS rn FROM snapshots WHERE status = 'completed'
       ) WHERE rn > ? ORDER BY startedAt ASC
     ''', [keepPerKind]);
@@ -299,36 +344,12 @@ class FollowDb {
     return deleted;
   }
 
-  // ─── 走査セット (followers + following) ───
-
-  Future<int> startRun(String targetHandle) async {
-    final db = await _database;
-    return db.insert('runs', {
-      'targetHandle': targetHandle,
-      'startedAt': DateTime.now().millisecondsSinceEpoch,
-      'status': 'running',
-    });
-  }
-
-  Future<void> finishRun(int runId, {required bool completed}) async {
-    final db = await _database;
-    await db.update(
-      'runs',
-      {
-        'status': completed ? 'completed' : 'interrupted',
-        'completedAt': DateTime.now().millisecondsSinceEpoch,
-      },
-      where: 'id = ?',
-      whereArgs: [runId],
-    );
-  }
-
-  Future<List<FollowRun>> listRuns({int limit = 50}) async {
-    final db = await _database;
-    final rows = await db.query('runs',
-        orderBy: 'startedAt DESC', limit: limit);
-    return rows.map(FollowRun.fromRow).toList();
-  }
+  // ─── 相互判定 ───
+  //
+  // followers と following を 1 つの run にまとめて記録していた時期があるが、
+  // 「対象 × 種別の最新の完了済み」同士を突き合わせれば足りるので廃止した。
+  // runs テーブルと snapshots.runId 列は、消すためだけに
+  // マイグレーションを増やす価値が無いので残してある (書き込みはしない)。
 
   /// 相互・片思われ・片思いの件数
   Future<({int mutual, int onlyFollowers, int onlyFollowing})> relationCounts({
@@ -354,19 +375,6 @@ class FollowDb {
     );
   }
 
-  /// run に含まれる 2 本のスナップショット ID を返す
-  Future<({int? followers, int? following})> runSnapshotIds(int runId) async {
-    final db = await _database;
-    final rows = await db.query('snapshots',
-        columns: ['id', 'kind'], where: 'runId = ?', whereArgs: [runId]);
-    int? f, g;
-    for (final r in rows) {
-      if (r['kind'] == 'followers') f = r['id'] as int;
-      if (r['kind'] == 'following') g = r['id'] as int;
-    }
-    return (followers: f, following: g);
-  }
-
   // ─── スナップショット ───
 
   /// 走査を開始して snapshot 行を作る
@@ -374,14 +382,12 @@ class FollowDb {
     required String targetHandle,
     required String kind,
     String? sessionAccountId,
-    int? runId,
   }) async {
     final db = await _database;
     return db.insert('snapshots', {
-      'targetHandle': targetHandle,
+      'targetHandle': _norm(targetHandle),
       'kind': kind,
       'sessionAccountId': sessionAccountId,
-      'runId': runId,
       'startedAt': DateTime.now().millisecondsSinceEpoch,
       'status': 'running',
       'collectedCount': 0,
@@ -466,15 +472,6 @@ class FollowDb {
     );
   }
 
-  /// 中断したまま残っている走査 (再開候補)
-  Future<List<FollowSnapshot>> resumableSnapshots() async {
-    final db = await _database;
-    final rows = await db.query('snapshots',
-        where: "status IN ('running', 'interrupted') AND cursor IS NOT NULL",
-        orderBy: 'startedAt DESC');
-    return rows.map(FollowSnapshot.fromRow).toList();
-  }
-
   Future<List<FollowSnapshot>> listSnapshots({
     String? targetHandle,
     String? kind,
@@ -485,7 +482,7 @@ class FollowDb {
     final args = <Object?>[];
     if (targetHandle != null) {
       where.add('targetHandle = ?');
-      args.add(targetHandle);
+      args.add(_norm(targetHandle));
     }
     if (kind != null) {
       where.add('kind = ?');
@@ -495,7 +492,7 @@ class FollowDb {
       'snapshots',
       where: where.isEmpty ? null : where.join(' AND '),
       whereArgs: args.isEmpty ? null : args,
-      orderBy: 'startedAt DESC',
+      orderBy: 'startedAt DESC, id DESC',
       limit: limit,
     );
     return rows.map(FollowSnapshot.fromRow).toList();
@@ -699,20 +696,6 @@ class FollowDb {
     return rows.map(_userFromRow).toList();
   }
 
-  /// 古い世代を捨てる。対象 × 種別ごとに直近 [keep] 世代だけ残す
-  Future<int> pruneOldSnapshots({int keep = 12}) async {
-    final db = await _database;
-    return db.rawDelete('''
-      DELETE FROM snapshots WHERE id IN (
-        SELECT id FROM (
-          SELECT id, ROW_NUMBER() OVER (
-            PARTITION BY targetHandle, kind ORDER BY startedAt DESC
-          ) AS rn FROM snapshots WHERE status = 'completed'
-        ) WHERE rn > ?
-      )
-    ''', [keep]);
-  }
-
   /// 参照されなくなった users を掃除する
   Future<int> pruneOrphanUsers() async {
     final db = await _database;
@@ -808,35 +791,6 @@ class FollowTarget {
         followingIntervalDays: (r['followingIntervalDays'] as int?) ?? 0,
         addedAt:
             DateTime.fromMillisecondsSinceEpoch((r['addedAt'] as int?) ?? 0),
-      );
-}
-
-/// followers + following を 1 セットで取った走査
-class FollowRun {
-  const FollowRun({
-    required this.id,
-    required this.targetHandle,
-    required this.startedAt,
-    required this.status,
-    this.completedAt,
-  });
-
-  final int id;
-  final String targetHandle;
-  final DateTime startedAt;
-  final DateTime? completedAt;
-  final String status;
-
-  bool get isCompleted => status == 'completed';
-
-  factory FollowRun.fromRow(Map<String, Object?> r) => FollowRun(
-        id: r['id'] as int,
-        targetHandle: r['targetHandle'] as String,
-        startedAt: DateTime.fromMillisecondsSinceEpoch(r['startedAt'] as int),
-        completedAt: r['completedAt'] == null
-            ? null
-            : DateTime.fromMillisecondsSinceEpoch(r['completedAt'] as int),
-        status: r['status'] as String,
       );
 }
 

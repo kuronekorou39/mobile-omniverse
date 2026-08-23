@@ -231,6 +231,20 @@ class FollowCaptureWebViewService {
     _pendingInitialPage = null;
   }
 
+  /// ホストが畳まれたときに呼ぶ。
+  ///
+  /// これを呼ばないと、破棄済みの controller を掴んだままになる。
+  /// [waitForHost] は controller が非 null なら即座に返すので、
+  /// 次の走査が「もう居ない WebView」に fetch を投げて失敗する。
+  ///
+  /// [controller] を照合するのは、入れ替わりで新しいホストが先に
+  /// attach していた場合に、生きているほうを消さないため。
+  void detachHost(InAppWebViewController controller) {
+    if (!identical(_controller, controller)) return;
+    debugPrint('[FollowCaptureWebView] ホストの WebView を手放しました');
+    detach();
+  }
+
   Future<void> _ensureWebView() async {
     if (_controller != null) return;
     try {

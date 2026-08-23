@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:mobile_omniverse/models/sns_service.dart';
 import 'package:mobile_omniverse/services/follow_capture_engine.dart';
 import 'package:mobile_omniverse/services/follow_capture_job_service.dart';
 import 'package:mobile_omniverse/services/follow_db.dart';
@@ -38,7 +39,8 @@ void main() {
 
   /// 完了済みスナップショットを、完了時刻を指定して 1 本作る
   Future<void> completedAt(String handle, String kind, DateTime at) async {
-    final id = await db.startSnapshot(targetHandle: handle, kind: kind);
+    final id = await db.startSnapshot(
+        service: SnsService.x, targetHandle: handle, kind: kind);
     await db.finishSnapshot(
         snapshotId: id, completed: true, reason: 'terminal');
     final raw = await db.debugDatabase();
@@ -59,6 +61,7 @@ void main() {
     int following = 0,
   }) =>
       FollowTarget(
+        service: SnsService.x,
         handle: handle,
         addedAt: DateTime(2026),
         followersIntervalDays: followers,
@@ -169,7 +172,8 @@ void main() {
     });
 
     test('中断した走査は完了として数えない', () async {
-      final id = await db.startSnapshot(targetHandle: 'alice', kind: 'followers');
+      final id = await db.startSnapshot(
+          service: SnsService.x, targetHandle: 'alice', kind: 'followers');
       await db.finishSnapshot(
           snapshotId: id, completed: false, reason: 'aborted', cursor: 'c');
 
@@ -262,8 +266,10 @@ void main() {
   // ───────────────────────── 進捗と中断 ─────────────────────────
 
   group('進捗と中断', () {
-    FollowJobProgress progress() => FollowJobProgress(
+    FollowJobProgress progress({SnsService service = SnsService.x}) =>
+        FollowJobProgress(
           snapshotId: 1,
+          service: service,
           targetHandle: 'alice',
           kind: FollowListKind.followers,
           collected: 10,
@@ -279,6 +285,27 @@ void main() {
       // 実際に止まるまで数秒かかる。押した瞬間に見た目を変えないと
       // 「効いていない」と思われる
       expect(job.progress.value!.cancelling, isTrue);
+      expect(job.isRunning, isTrue);
+    });
+
+    test('X の走査は WebView を取られると中断される', () async {
+      job.progress.value = progress();
+
+      final acquiring = job.acquireWebView('投稿');
+      // 中断の要求は同期的に立つ。実際に止まるのを待つのはそのあと
+      expect(job.progress.value!.cancelling, isTrue);
+
+      job.progress.value = null; // 走査が止まったことにする
+      await acquiring;
+    });
+
+    test('Bluesky の走査は WebView を取られても続く', () async {
+      job.progress.value = progress(service: SnsService.bluesky);
+
+      // Bluesky は WebView も x.com の Cookie も触らないので譲る理由が無い
+      await job.acquireWebView('投稿');
+
+      expect(job.progress.value!.cancelling, isFalse);
       expect(job.isRunning, isTrue);
     });
 

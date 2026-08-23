@@ -12,7 +12,6 @@ import '../utils/platform_ua.dart';
 import 'debug_log_service.dart';
 import 'follow_capture_engine.dart';
 import 'follow_list_parser.dart';
-import 'x_api_service.dart';
 
 /// フォロー/フォロワー一覧を「X 自身のページの中から」取得するサービス。
 ///
@@ -85,7 +84,7 @@ class FollowCaptureWebViewService {
 
   /// 捕獲時のレスポンスを 1 回だけ返すための控え。
   /// これを使わないと 1 ページ目を無駄に 2 回叩くことになる。
-  XFollowListPage? _pendingInitialPage;
+  FollowListPage? _pendingInitialPage;
 
   Completer<void>? _captureCompleter;
   Completer<String>? _fetchCompleter;
@@ -344,7 +343,7 @@ class FollowCaptureWebViewService {
               '${FollowListParser.describeFirstUser(decoded)}');
         }
         final parsed = FollowListParser.parse(decoded);
-        _pendingInitialPage = XFollowListPage(
+        _pendingInitialPage = FollowListPage(
           statusCode: 200,
           users: parsed.users,
           cursor: parsed.cursor,
@@ -568,7 +567,7 @@ class FollowCaptureWebViewService {
   /// 捕獲したリクエストの cursor だけ差し替えてページ内で再送する。
   ///
   /// 404 は txId 失効の可能性が高いので、一度だけ捕り直して再試行する。
-  Future<XFollowListPage> fetchPage({
+  Future<FollowListPage> fetchPage({
     required Account account,
     required String targetHandle,
     required FollowListKind kind,
@@ -649,7 +648,7 @@ class FollowCaptureWebViewService {
     return headers;
   }
 
-  Future<XFollowListPage> _runPageFetch(String? cursor, FollowListKind kind,
+  Future<FollowListPage> _runPageFetch(String? cursor, FollowListKind kind,
       [CaptureCancelToken? cancelToken]) async {
     final url = cursor == null
         ? _capturedUrl!
@@ -673,7 +672,7 @@ class FollowCaptureWebViewService {
 
     final rateLimit = _rateLimitOf(map);
     if (status != 200) {
-      return XFollowListPage(statusCode: status, rateLimit: rateLimit);
+      return FollowListPage(statusCode: status, rateLimit: rateLimit);
     }
 
     try {
@@ -683,15 +682,15 @@ class FollowCaptureWebViewService {
         debugPrint('[FollowCaptureWebView] ⚠ 解析できないユーザー '
             '${parsed.skipped}件 (取りこぼし)');
       }
-      return XFollowListPage(
+      return FollowListPage(
         statusCode: 200,
         users: parsed.users,
         cursor: parsed.cursor,
         rateLimit: rateLimit,
       );
     } on FormatException {
-      return XFollowListPage(
-          statusCode: XApiService.followListBadJson, rateLimit: rateLimit);
+      return FollowListPage(
+          statusCode: FollowListPage.badJson, rateLimit: rateLimit);
     }
   }
 

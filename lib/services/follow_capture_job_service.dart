@@ -2,8 +2,11 @@ import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/account.dart';
+import '../models/sns_service.dart';
 import '../models/x_rate_limit.dart';
 import 'account_pool.dart';
+import 'bluesky_api_service.dart';
+import 'follow_capture_bluesky_service.dart';
 import 'follow_capture_engine.dart';
 import 'follow_capture_webview_service.dart';
 import 'follow_db.dart';
@@ -13,6 +16,7 @@ import 'x_api_service.dart';
 class FollowJobProgress {
   const FollowJobProgress({
     required this.snapshotId,
+    required this.service,
     required this.targetHandle,
     required this.kind,
     required this.collected,
@@ -25,6 +29,7 @@ class FollowJobProgress {
   });
 
   final int snapshotId;
+  final SnsService service;
   final String targetHandle;
   final FollowListKind kind;
   final int collected;
@@ -51,6 +56,7 @@ class FollowJobProgress {
   }) =>
       FollowJobProgress(
         snapshotId: snapshotId,
+        service: service,
         targetHandle: targetHandle,
         kind: kind,
         collected: collected ?? this.collected,
@@ -167,7 +173,9 @@ class FollowCaptureJobService {
   /// 使い終わったら必ず [releaseWebView] を呼ぶこと。
   Future<void> acquireWebView(String reason) async {
     _webViewHolders++;
-    if (!isRunning) return;
+    // Bluesky の走査は WebView も x.com の Cookie も触らないので、
+    // 巻き込んで止める必要が無い
+    if (!isRunning || progress.value?.service != SnsService.x) return;
     debugPrint('[FollowJob] $reason のため走査を中断します');
     cancel();
     final deadline = DateTime.now().add(const Duration(seconds: 30));
@@ -248,16 +256,19 @@ class FollowCaptureJobService {
     final db = FollowDb.instance;
     final targets = await db.listTargets();
 
+    // 実行アカウントは対象と同じ SNS でなければならない。
+    // X の対象を Bluesky のアカウントで取りには行けない
     Account? accountFor(FollowTarget t) {
-      if (accounts.isEmpty) return null;
-      return accounts.firstWhere((a) => a.id == t.sessionAccountId,
-          orElse: () => accounts.first);
+      final usable = accounts.where((a) => a.service == t.service).toList();
+      if (usable.isEmpty) return null;
+      return usable.firstWhere((a) => a.id == t.sessionAccountId,
+          orElse: () => usable.first);
     }
 
     // ① 未完了の再開を最優先。完了させないまま新しく始めない
     for (final t in targets) {
       if (_chainAborted || isWebViewBusy) return;
-      for (final s in await db.resumableFor(t.handle)) {
+      for (final s in await db.resumableFor(t.service, t.handle)) {
         final account = accountFor(t);
         if (account == null) continue;
         debugPrint('[FollowJob] 再開: @${t.handle} / ${s.kind}');
@@ -310,7 +321,8 @@ class FollowCaptureJobService {
   static Future<DateTime?> nextDueAt(FollowTarget target, String kind) async {
     final interval = target.intervalFor(kind);
     if (interval <= 0) return null;
-    final last = await FollowDb.instance.latestCompleted(target.handle, kind);
+    final last = await FollowDb.instance
+        .latestCompleted(target.service, target.handle, kind);
     if (last == null) return DateTime.now();
 
     final base = last.completedAt ?? last.startedAt;
@@ -327,20 +339,36 @@ class FollowCaptureJobService {
   Future<void> _recordExpectedTotal(
       Account account, String handle, FollowListKind kind, int snapshotId) async {
     try {
-      final profile = await XApiService.instance
-          .getUserProfile(account.xCredentials, handle);
-      final legacy = profile?['legacy'] as Map<String, dynamic>?;
-      final key = kind == FollowListKind.followers
-          ? 'followers_count'
-          : 'friends_count';
-      final expected = legacy == null ? null : legacy[key];
-      if (expected is int) {
-        await FollowDb.instance.setTotalExpected(snapshotId, expected);
-        debugPrint('[FollowJob] 想定件数 $expected (@$handle / ${kind.name})');
-      }
+      final expected = account.service == SnsService.bluesky
+          ? await _blueskyExpectedTotal(account, handle, kind)
+          : await _xExpectedTotal(account, handle, kind);
+      if (expected == null) return;
+      await FollowDb.instance.setTotalExpected(snapshotId, expected);
+      debugPrint('[FollowJob] 想定件数 $expected (@$handle / ${kind.name})');
     } catch (e) {
       debugPrint('[FollowJob] 想定件数の取得に失敗: $e');
     }
+  }
+
+  Future<int?> _xExpectedTotal(
+      Account account, String handle, FollowListKind kind) async {
+    final profile = await XApiService.instance
+        .getUserProfile(account.xCredentials, handle);
+    final legacy = profile?['legacy'] as Map<String, dynamic>?;
+    final key =
+        kind == FollowListKind.followers ? 'followers_count' : 'friends_count';
+    final value = legacy == null ? null : legacy[key];
+    return value is int ? value : null;
+  }
+
+  Future<int?> _blueskyExpectedTotal(
+      Account account, String handle, FollowListKind kind) async {
+    final profile = await BlueskyApiService.instance
+        .getProfile(account.blueskyCredentials, handle);
+    final key =
+        kind == FollowListKind.followers ? 'followersCount' : 'followsCount';
+    final value = profile?[key];
+    return value is int ? value : null;
   }
 
   Future<FollowSnapshot?> run({
@@ -349,13 +377,18 @@ class FollowCaptureJobService {
     required FollowListKind kind,
     FollowSnapshot? resume,
   }) async {
+    // 対象の SNS は実行アカウントの SNS と同じ。別々には選べない
+    final service = account.service;
     if (isRunning) throw StateError('別の走査が実行中です');
-    if (isWebViewBusy) throw StateError('他の処理が WebView を使用中です');
+    if (service == SnsService.x && isWebViewBusy) {
+      throw StateError('他の処理が WebView を使用中です');
+    }
 
     final db = FollowDb.instance;
     final handle = targetHandle.replaceFirst('@', '');
     final snapshotId = resume?.id ??
         await db.startSnapshot(
+          service: service,
           targetHandle: handle,
           kind: kind.name,
           sessionAccountId: account.id,
@@ -367,19 +400,25 @@ class FollowCaptureJobService {
       await _recordExpectedTotal(account, handle, kind, snapshotId);
     }
 
-    final service = FollowCaptureWebViewService.instance;
+    // Bluesky は素の HTTP で取れるので WebView は要らない
+    final webView = FollowCaptureWebViewService.instance;
+    final bluesky = FollowCaptureBlueskyService.instance;
+    final needsHost = service == SnsService.x;
     var lastCursor = resume?.cursor;
 
     // ホストが立たない場合もここで受ける。try の外に出すと
     // snapshot が running のまま残り、WebView も畳まれずに居座る。
     try {
-      // ルートにホストを立ててから走らせる（画面を移動しても継続させるため）
-      hostNeeded.value = true;
-      await service.waitForHost();
+      if (needsHost) {
+        // ルートにホストを立ててから走らせる（画面を移動しても継続させるため）
+        hostNeeded.value = true;
+        await webView.waitForHost();
+      }
 
       _cancelToken = CaptureCancelToken();
       progress.value = FollowJobProgress(
         snapshotId: snapshotId,
+        service: service,
         targetHandle: handle,
         kind: kind,
         collected: resume?.collectedCount ?? 0,
@@ -388,7 +427,8 @@ class FollowCaptureJobService {
       );
 
       final pool = AccountPool([account.id], cooldown: _accountCooldown);
-      final engine = FollowCaptureEngine(fetchPage: service.fetchPage);
+      final engine = FollowCaptureEngine(
+          fetchPage: needsHost ? webView.fetchPage : bluesky.fetchPage);
 
       final result = await engine.capture(
         targetHandle: handle,
@@ -396,6 +436,7 @@ class FollowCaptureJobService {
         pool: pool,
         accountOf: (_) => account,
         startCursor: resume?.cursor,
+        terminalCursorMarker: service == SnsService.x,
         cancelToken: _cancelToken,
         onBatch: (users, cursor) async {
           lastCursor = cursor;
@@ -441,9 +482,13 @@ class FollowCaptureJobService {
     } finally {
       _cancelToken = null;
       progress.value = null;
-      await service.reset();
-      // 連続実行の途中では畳まない（次の 1 本で使い回す）
-      if (!_keepHost) hostNeeded.value = false;
+      if (needsHost) {
+        await webView.reset();
+        // 連続実行の途中では畳まない（次の 1 本で使い回す）
+        if (!_keepHost) hostNeeded.value = false;
+      } else {
+        bluesky.reset();
+      }
     }
   }
 }

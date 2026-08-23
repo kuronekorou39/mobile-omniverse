@@ -8,20 +8,45 @@ import '../models/x_rate_limit.dart';
 import 'account_pool.dart';
 import 'debug_log_service.dart';
 import 'follow_list_parser.dart';
-import 'x_api_service.dart';
 
 /// 1 ページ分を取得する処理。
 ///
 /// X は `x-client-transaction-id` を検証するため、Dart の http から直接叩くと
 /// 404 になる (実測済み)。本番では [FollowCaptureWebViewService] が
 /// WebView のページコンテキストで実行する。エンジンはこの口しか知らない。
-typedef FollowPageFetcher = Future<XFollowListPage> Function({
+typedef FollowPageFetcher = Future<FollowListPage> Function({
   required Account account,
   required String targetHandle,
   required FollowListKind kind,
   String? cursor,
   CaptureCancelToken? cancelToken,
 });
+
+/// 1 ページ分の取得結果。
+///
+/// X は WebView 越し、Bluesky は素の HTTP と取得口は違うが、
+/// エンジンから見える形はどちらも同じ。
+class FollowListPage {
+  const FollowListPage({
+    required this.statusCode,
+    this.users = const [],
+    this.cursor,
+    this.rateLimit,
+  });
+
+  /// 200 だが JSON として解釈できなかったことを表す擬似ステータス。
+  /// (HTML のエラーページ等。cursor を進めてはいけないので成功と区別する)
+  static const badJson = -1;
+
+  final int statusCode;
+  final List<FollowUser> users;
+
+  /// 次ページの cursor (X は末尾に達すると "0|..." が返る)
+  final String? cursor;
+  final XRateLimit? rateLimit;
+
+  bool get isSuccess => statusCode == 200;
+}
 
 /// 取得する一覧の種別
 enum FollowListKind {
@@ -217,6 +242,11 @@ class FollowCaptureEngine {
     required Account? Function(String accountId) accountOf,
     String? startCursor,
     int maxRounds = defaultMaxRounds,
+
+    /// 末尾を "0|..." という cursor で知らせるのは X の作法。
+    /// Bluesky は cursor が返らなくなることで終端を知らせるので、
+    /// たまたま "0|" で始まる cursor を終端と誤認しないよう切っておく。
+    bool terminalCursorMarker = true,
     CaptureCancelToken? cancelToken,
     Future<void> Function(List<FollowUser> users, String? cursor)? onBatch,
     void Function(FollowCaptureProgress progress)? onProgress,
@@ -257,8 +287,11 @@ class FollowCaptureEngine {
       onWaiting?.call(null);
     }
 
+    bool isTerminal(String? c) =>
+        terminalCursorMarker && FollowListParser.isTerminalCursor(c);
+
     // 再開 cursor がすでに末尾なら何もしない
-    if (FollowListParser.isTerminalCursor(cursor)) {
+    if (isTerminal(cursor)) {
       return finish(FollowCaptureReason.terminal, completed: true);
     }
 
@@ -302,7 +335,7 @@ class FollowCaptureEngine {
       }
 
       // --- 3. fetch ---
-      final XFollowListPage page;
+      final FollowListPage page;
       try {
         page = await fetchPage(
           account: account,
@@ -371,7 +404,7 @@ class FollowCaptureEngine {
         continue;
       }
 
-      if (page.statusCode == XApiService.followListBadJson) {
+      if (page.statusCode == FollowListPage.badJson) {
         pool.markUsed(accountId);
         _log(kind, 'JSON として解釈できない応答 → $accountId をプールから除外');
         pool.markFailed(accountId);
@@ -423,7 +456,7 @@ class FollowCaptureEngine {
       if (cursor == null) {
         return finish(FollowCaptureReason.noCursor, completed: true);
       }
-      if (FollowListParser.isTerminalCursor(cursor)) {
+      if (isTerminal(cursor)) {
         return finish(FollowCaptureReason.terminal, completed: true);
       }
     }

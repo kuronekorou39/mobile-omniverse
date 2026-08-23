@@ -101,6 +101,7 @@ class _FollowDiffScreenState extends State<FollowDiffScreen> {
         ),
         itemBuilder: (u) => FollowUserTile(
           user: u,
+          service: widget.newer.service,
           leadingIcon: Icon(added ? Icons.add_circle : Icons.remove_circle,
               color: added ? Colors.green : Colors.red),
           accountId: widget.newer.sessionAccountId,
@@ -108,7 +109,7 @@ class _FollowDiffScreenState extends State<FollowDiffScreen> {
         emptyLabel: added ? '増えた人はいません' : '減った人はいません',
       );
 
-  /// 両方に居る人の、ツイート数とフォロワー数の増減
+  /// 両方に居る人の、投稿数とフォロワー数の増減
   Widget _changeList() => PagedFollowList<FollowCountChange>(
         fetch: (offset, limit) => FollowDb.instance.countChanges(
           oldSnapshotId: widget.older.id,
@@ -118,12 +119,13 @@ class _FollowDiffScreenState extends State<FollowDiffScreen> {
         ),
         itemBuilder: (c) => FollowUserTile(
           user: c.user,
+          service: widget.newer.service,
           accountId: widget.newer.sessionAccountId,
           trailing: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             crossAxisAlignment: CrossAxisAlignment.end,
             children: [
-              _delta('ツイート', c.statusesDelta),
+              _delta('投稿', c.statusesDelta),
               _delta('フォロワー', c.followersDelta),
             ],
           ),

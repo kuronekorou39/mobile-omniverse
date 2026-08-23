@@ -7,10 +7,12 @@ import 'package:flutter/widgets.dart' show visibleForTesting;
 import 'package:http/http.dart' as http;
 
 import '../models/account.dart';
+import '../models/follow_user.dart';
 import '../models/notification_item.dart';
 import '../models/post.dart';
 import '../models/sns_service.dart';
 import 'debug_log_service.dart';
+import 'follow_capture_engine.dart';
 
 class BlueskyApiService {
   BlueskyApiService._();
@@ -628,6 +630,133 @@ class BlueskyApiService {
     sw.stop();
     _logResponse('unfollow', 'POST', uri, hdrs, reqBody, response, sw);
     return response.statusCode == 200;
+  }
+
+  // ─── フォロー/フォロワー一覧 ───
+
+  /// 一覧の 1 ページあたりの上限 (AT Protocol の lexicon 上の最大値)
+  static const followListPageSize = 100;
+
+  /// getProfiles でまとめて引ける人数の上限 (同上)
+  static const profilesBatchSize = 25;
+
+  /// フォロー (`follows`) / フォロワー (`followers`) 一覧を 1 ページ取得する。
+  ///
+  /// X と違い素の HTTP で取れるので WebView は要らない。
+  /// 呼び出し側でステータスを見て分岐できるよう、例外にせず返す。
+  Future<({int statusCode, List<FollowUser> users, String? cursor})>
+      getFollowList(
+    BlueskyCredentials creds,
+    String actor, {
+    required bool followers,
+    String? cursor,
+    int limit = followListPageSize,
+  }) async {
+    final method =
+        followers ? 'app.bsky.graph.getFollowers' : 'app.bsky.graph.getFollows';
+    var url = '${creds.pdsUrl}/xrpc/$method'
+        '?actor=${Uri.encodeComponent(actor)}&limit=$limit';
+    if (cursor != null) url += '&cursor=${Uri.encodeComponent(cursor)}';
+
+    final uri = Uri.parse(url);
+    final hdrs = {
+      'Authorization': 'Bearer ${creds.accessJwt}',
+      'Accept': 'application/json',
+    };
+    final sw = Stopwatch()..start();
+    final response = await _client.get(uri, headers: hdrs);
+    sw.stop();
+    _logResponse(method, 'GET', uri, hdrs, null, response, sw);
+
+    if (response.statusCode != 200) {
+      return (
+        statusCode: _followListStatus(response),
+        users: const <FollowUser>[],
+        cursor: null,
+      );
+    }
+
+    final Map<String, dynamic> body;
+    try {
+      body = json.decode(response.body) as Map<String, dynamic>;
+    } catch (_) {
+      // 200 でも JSON でないことがある。cursor を進めてはいけない
+      return (
+        statusCode: FollowListPage.badJson,
+        users: const <FollowUser>[],
+        cursor: null,
+      );
+    }
+
+    final list = body[followers ? 'followers' : 'follows'];
+    final users = <FollowUser>[];
+    if (list is List) {
+      for (final item in list) {
+        final user =
+            FollowUser.fromBlueskyProfile(item is Map<String, dynamic> ? item : null);
+        if (user != null) users.add(user);
+      }
+    }
+    return (
+      statusCode: 200,
+      users: users,
+      cursor: body['cursor'] as String?,
+    );
+  }
+
+  /// 期限切れは 400 + ExpiredToken で返ってくることがある。
+  /// 呼び出し側が「認証の問題」と分かるよう 401 にそろえる。
+  static int _followListStatus(http.Response response) {
+    if (response.statusCode != 400) return response.statusCode;
+    try {
+      final err = json.decode(response.body) as Map<String, dynamic>;
+      final name = err['error'] as String?;
+      if (name == 'ExpiredToken' || name == 'InvalidToken') return 401;
+    } catch (_) {}
+    return response.statusCode;
+  }
+
+  /// 詳細プロフィールをまとめて取る (最大 [profilesBatchSize] 件)。
+  ///
+  /// 一覧の API が返す profileView には件数が入っていないので、これで補う。
+  /// 戻り値は did をキーにした map。取れなかった相手は入らない。
+  Future<Map<String, FollowUser>> getProfiles(
+    BlueskyCredentials creds,
+    List<String> actors,
+  ) async {
+    if (actors.isEmpty) return const {};
+    final query =
+        actors.map((a) => 'actors=${Uri.encodeComponent(a)}').join('&');
+    final uri =
+        Uri.parse('${creds.pdsUrl}/xrpc/app.bsky.actor.getProfiles?$query');
+    final hdrs = {
+      'Authorization': 'Bearer ${creds.accessJwt}',
+      'Accept': 'application/json',
+    };
+    final sw = Stopwatch()..start();
+    final response = await _client.get(uri, headers: hdrs);
+    sw.stop();
+    _logResponse('getProfiles', 'GET', uri, hdrs, null, response, sw);
+
+    if (_followListStatus(response) == 401) {
+      throw BlueskyAuthException('Token expired');
+    }
+    if (response.statusCode != 200) return const {};
+
+    try {
+      final body = json.decode(response.body) as Map<String, dynamic>;
+      final list = body['profiles'];
+      if (list is! List) return const {};
+      final result = <String, FollowUser>{};
+      for (final item in list) {
+        final user = FollowUser.fromBlueskyProfile(
+            item is Map<String, dynamic> ? item : null);
+        if (user != null) result[user.restId] = user;
+      }
+      return result;
+    } catch (_) {
+      return const {};
+    }
   }
 
   @visibleForTesting

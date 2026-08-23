@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mobile_omniverse/models/follow_user.dart';
+import 'package:mobile_omniverse/models/sns_service.dart';
 import 'package:mobile_omniverse/services/follow_db.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
@@ -52,8 +53,10 @@ void main() {
     String kind,
     List<FollowUser> users, {
     int? startedAt,
+    SnsService service = SnsService.x,
   }) async {
-    final id = await db.startSnapshot(targetHandle: handle, kind: kind);
+    final id = await db.startSnapshot(
+        service: service, targetHandle: handle, kind: kind);
     if (startedAt != null) {
       final raw = await db.debugDatabase();
       await raw.update('snapshots', {'startedAt': startedAt},
@@ -170,6 +173,18 @@ void main() {
       expect(targets.map((t) => t.handle), ['alice']);
       expect(targets.single.sessionAccountId, 'acc-1');
       expect(await columns('snapshots'), contains('totalExpected'));
+      expect(await columns('snapshots'), contains('service'));
+    });
+
+    test('v6 より前の対象はすべて X とみなす', () async {
+      db.pathOverride = await createLegacyV1('follow_db_v6', 'alice');
+
+      // 当時は X しか扱えなかった
+      expect((await db.listTargets()).single.service, SnsService.x);
+      expect(
+          (await db.latestCompleted(SnsService.x, 'alice', 'followers')), isNotNull);
+      expect((await db.latestCompleted(SnsService.bluesky, 'alice', 'followers')),
+          isNull);
     });
 
     test('大文字で入っていた handle は小文字にならされる', () async {
@@ -178,7 +193,7 @@ void main() {
       // 引くときだけ小文字化していたため、大文字で入った行は
       // latestCompleted から見えず毎回取り直しになっていた
       expect((await db.listTargets()).map((t) => t.handle), ['alice']);
-      expect(await db.latestCompleted('alice', 'followers'), isNotNull);
+      expect(await db.latestCompleted(SnsService.x, 'alice', 'followers'), isNotNull);
       expect(await db.memberRowsByTarget(), isEmpty);
     });
   });
@@ -188,54 +203,111 @@ void main() {
   group('走査対象', () {
     test('登録・取得・上書きができる', () async {
       await db.upsertTarget(FollowTarget(
+        service: SnsService.x,
         handle: 'alice',
         addedAt: DateTime.fromMillisecondsSinceEpoch(1000),
         displayName: 'Alice',
         sessionAccountId: 'acc-1',
       ));
-      final t = await db.getTarget('alice');
+      final t = await db.getTarget(SnsService.x, 'alice');
       expect(t!.displayName, 'Alice');
       expect(t.followersIntervalDays, 0);
 
       await db.upsertTarget(t.copyWith(followersIntervalDays: 3));
-      expect((await db.getTarget('alice'))!.followersIntervalDays, 3);
+      expect((await db.getTarget(SnsService.x, 'alice'))!.followersIntervalDays, 3);
       expect((await db.listTargets()).length, 1);
     });
 
     test('@ と大文字を落として引ける', () async {
       await db.upsertTarget(
-          FollowTarget(handle: 'alice', addedAt: DateTime(2026)));
-      expect(await db.getTarget('@Alice'), isNotNull);
-      expect(await db.getTarget('ALICE'), isNotNull);
+          FollowTarget(
+              service: SnsService.x,
+              handle: 'alice',
+              addedAt: DateTime(2026)));
+      expect(await db.getTarget(SnsService.x, '@Alice'), isNotNull);
+      expect(await db.getTarget(SnsService.x, 'ALICE'), isNotNull);
     });
 
     test('大文字で登録しても小文字にそろえて入る', () async {
       await db.upsertTarget(
-          FollowTarget(handle: '@Alice', addedAt: DateTime(2026)));
+          FollowTarget(
+              service: SnsService.x,
+              handle: '@Alice',
+              addedAt: DateTime(2026)));
       expect((await db.listTargets()).map((t) => t.handle), ['alice']);
-      expect(await db.getTarget('alice'), isNotNull);
+      expect(await db.getTarget(SnsService.x, 'alice'), isNotNull);
     });
 
     test('削除すると紐づくスナップショットと members も消える', () async {
       await db.upsertTarget(
-          FollowTarget(handle: 'alice', addedAt: DateTime(2026)));
+          FollowTarget(
+              service: SnsService.x,
+              handle: 'alice',
+              addedAt: DateTime(2026)));
       await completedSnapshot('alice', 'followers', [user('1'), user('2')]);
-      await db.upsertTarget(FollowTarget(handle: 'bob', addedAt: DateTime(2026)));
+      await db.upsertTarget(FollowTarget(
+          service: SnsService.x, handle: 'bob', addedAt: DateTime(2026)));
       await completedSnapshot('bob', 'followers', [user('3')]);
 
-      await db.deleteTarget('@Alice');
+      await db.deleteTarget(SnsService.x, '@Alice');
 
       expect((await db.listTargets()).map((t) => t.handle), ['bob']);
       expect(await db.listSnapshots(targetHandle: 'alice'), isEmpty);
-      expect(await db.memberRowsByTarget(), {'bob': 1});
+      expect(await db.memberRowsByTarget(),
+          {(service: SnsService.x, handle: 'bob'): 1});
       // 参照が無くなった users も掃除される
       expect(await countRows('users'), 1);
+    });
+
+    test('同じ handle でも SNS が違えば別の対象になる', () async {
+      for (final service in SnsService.values) {
+        await db.upsertTarget(FollowTarget(
+            service: service, handle: 'alice', addedAt: DateTime(2026)));
+      }
+
+      expect((await db.listTargets()).length, 2);
+      expect((await db.getTarget(SnsService.bluesky, 'alice'))!.service,
+          SnsService.bluesky);
+    });
+
+    test('片方の SNS を消してももう片方は残る', () async {
+      for (final service in SnsService.values) {
+        await db.upsertTarget(FollowTarget(
+            service: service, handle: 'alice', addedAt: DateTime(2026)));
+        await completedSnapshot('alice', 'followers', [user('1')],
+            service: service);
+      }
+
+      await db.deleteTarget(SnsService.x, 'alice');
+
+      expect((await db.listTargets()).single.service, SnsService.bluesky);
+      expect(await db.latestCompleted(SnsService.x, 'alice', 'followers'),
+          isNull);
+      expect(await db.latestCompleted(SnsService.bluesky, 'alice', 'followers'),
+          isNotNull);
+    });
+
+    test('走査も SNS ごとに分かれる', () async {
+      await completedSnapshot('alice', 'followers', [user('1')],
+          service: SnsService.x);
+      await completedSnapshot('alice', 'followers', [user('2')],
+          service: SnsService.bluesky);
+
+      expect(
+          (await db.listSnapshots(
+                  service: SnsService.x, targetHandle: 'alice'))
+              .length,
+          1);
+      expect(await db.memberRowsByTarget(), {
+        (service: SnsService.x, handle: 'alice'): 1,
+        (service: SnsService.bluesky, handle: 'alice'): 1,
+      });
     });
 
     test('他の対象から参照されているユーザーは残す', () async {
       await completedSnapshot('alice', 'followers', [user('1')]);
       await completedSnapshot('bob', 'followers', [user('1')]);
-      await db.deleteTarget('alice');
+      await db.deleteTarget(SnsService.x, 'alice');
       expect(await countRows('users'), 1);
     });
   });
@@ -244,7 +316,8 @@ void main() {
 
   group('走査の記録', () {
     test('addBatch は cursor を進め、件数を数え直す', () async {
-      final id = await db.startSnapshot(targetHandle: 'alice', kind: 'followers');
+      final id = await db.startSnapshot(
+          service: SnsService.x, targetHandle: 'alice', kind: 'followers');
       await db
           .addBatch(snapshotId: id, users: [user('1'), user('2')], cursor: 'c1');
 
@@ -260,7 +333,8 @@ void main() {
     });
 
     test('同じユーザーが再び現れても二重に数えない', () async {
-      final id = await db.startSnapshot(targetHandle: 'alice', kind: 'followers');
+      final id = await db.startSnapshot(
+          service: SnsService.x, targetHandle: 'alice', kind: 'followers');
       await db
           .addBatch(snapshotId: id, users: [user('1'), user('2')], cursor: 'c1');
       await db
@@ -282,13 +356,15 @@ void main() {
     });
 
     test('空バッチでも cursor だけは進む', () async {
-      final id = await db.startSnapshot(targetHandle: 'alice', kind: 'followers');
+      final id = await db.startSnapshot(
+          service: SnsService.x, targetHandle: 'alice', kind: 'followers');
       await db.addBatch(snapshotId: id, users: [], cursor: 'c1');
       expect((await db.getSnapshot(id))!.cursor, 'c1');
     });
 
     test('users も cursor も無ければ何もしない', () async {
-      final id = await db.startSnapshot(targetHandle: 'alice', kind: 'followers');
+      final id = await db.startSnapshot(
+          service: SnsService.x, targetHandle: 'alice', kind: 'followers');
       await db.addBatch(snapshotId: id, users: [user('1')], cursor: 'c1');
       await db.addBatch(snapshotId: id, users: [], cursor: null);
       // 直前の cursor が null で潰されない
@@ -296,7 +372,8 @@ void main() {
     });
 
     test('完了すると status と completedAt が入る', () async {
-      final id = await db.startSnapshot(targetHandle: 'alice', kind: 'followers');
+      final id = await db.startSnapshot(
+          service: SnsService.x, targetHandle: 'alice', kind: 'followers');
       await db.addBatch(snapshotId: id, users: [user('1')], cursor: 'c1');
       await db.finishSnapshot(
           snapshotId: id, completed: true, reason: 'terminal', cursor: null);
@@ -310,7 +387,8 @@ void main() {
     });
 
     test('中断すると cursor が残り再開候補になる', () async {
-      final id = await db.startSnapshot(targetHandle: 'alice', kind: 'followers');
+      final id = await db.startSnapshot(
+          service: SnsService.x, targetHandle: 'alice', kind: 'followers');
       await db.addBatch(snapshotId: id, users: [user('1')], cursor: 'c1');
       await db.finishSnapshot(
           snapshotId: id, completed: false, reason: 'aborted', cursor: 'c1');
@@ -318,21 +396,23 @@ void main() {
       final s = (await db.getSnapshot(id))!;
       expect(s.status, 'interrupted');
       expect(s.isResumable, isTrue);
-      expect((await db.resumableFor('alice')).map((e) => e.id), [id]);
+      expect((await db.resumableFor(SnsService.x, 'alice')).map((e) => e.id), [id]);
     });
 
     test('cursor の無い中断は再開候補に出さない', () async {
-      final id = await db.startSnapshot(targetHandle: 'alice', kind: 'followers');
+      final id = await db.startSnapshot(
+          service: SnsService.x, targetHandle: 'alice', kind: 'followers');
       await db.finishSnapshot(
           snapshotId: id, completed: false, reason: 'poolEmpty', cursor: null);
-      expect(await db.resumableFor('alice'), isEmpty);
+      expect(await db.resumableFor(SnsService.x, 'alice'), isEmpty);
     });
 
     test('latestCompleted は完了済みの最新だけを返す', () async {
       final first = await completedSnapshot('alice', 'followers', [user('1')],
           startedAt: 1000);
       final interrupted =
-          await db.startSnapshot(targetHandle: 'alice', kind: 'followers');
+          await db.startSnapshot(
+          service: SnsService.x, targetHandle: 'alice', kind: 'followers');
       await db
           .addBatch(snapshotId: interrupted, users: [user('2')], cursor: 'c');
       await db.finishSnapshot(
@@ -341,16 +421,16 @@ void main() {
           reason: 'aborted',
           cursor: 'c');
 
-      expect((await db.latestCompleted('alice', 'followers'))!.id, first);
-      expect(await db.latestCompleted('alice', 'following'), isNull);
-      expect(await db.latestCompleted('bob', 'followers'), isNull);
+      expect((await db.latestCompleted(SnsService.x, 'alice', 'followers'))!.id, first);
+      expect(await db.latestCompleted(SnsService.x, 'alice', 'following'), isNull);
+      expect(await db.latestCompleted(SnsService.x, 'bob', 'followers'), isNull);
     });
 
     test('latestCompleted は世代が増えても最新を返す', () async {
       await completedSnapshot('alice', 'followers', [user('1')], startedAt: 1000);
       final newer = await completedSnapshot('alice', 'followers', [user('2')],
           startedAt: 2000);
-      expect((await db.latestCompleted('alice', 'followers'))!.id, newer);
+      expect((await db.latestCompleted(SnsService.x, 'alice', 'followers'))!.id, newer);
     });
 
     test('大文字の対象で始めた走査も同じ対象として引ける', () async {
@@ -358,10 +438,11 @@ void main() {
 
       // 引くときは小文字にするので、書くときもそろえないと
       // 「一度も完了していない」ことになりスケジュールが毎回発火する
-      expect((await db.latestCompleted('alice', 'followers'))!.id, id);
+      expect((await db.latestCompleted(SnsService.x, 'alice', 'followers'))!.id, id);
       expect((await db.listSnapshots(targetHandle: 'ALICE')).map((s) => s.id),
           [id]);
-      expect(await db.memberRowsByTarget(), {'alice': 1});
+      expect(await db.memberRowsByTarget(),
+          {(service: SnsService.x, handle: 'alice'): 1});
     });
 
     test('同じ時刻に並んでも新しい方を最新とみなす', () async {
@@ -370,7 +451,7 @@ void main() {
       final newer = await completedSnapshot('alice', 'followers', [user('2')],
           startedAt: 1000);
 
-      expect((await db.latestCompleted('alice', 'followers'))!.id, newer);
+      expect((await db.latestCompleted(SnsService.x, 'alice', 'followers'))!.id, newer);
       expect((await db.listSnapshots(targetHandle: 'alice')).map((s) => s.id),
           [newer, older]);
     });
@@ -635,7 +716,8 @@ void main() {
             startedAt: 1000 + i);
       }
       final running =
-          await db.startSnapshot(targetHandle: 'alice', kind: 'followers');
+          await db.startSnapshot(
+          service: SnsService.x, targetHandle: 'alice', kind: 'followers');
       await db.addBatch(snapshotId: running, users: [user('9')], cursor: 'c');
 
       // 途中で消されると再開できなくなる
@@ -680,7 +762,10 @@ void main() {
       await completedSnapshot('alice', 'followers', [user('1'), user('2')]);
       await completedSnapshot('alice', 'following', [user('1')]);
       await completedSnapshot('bob', 'followers', [user('3')]);
-      expect(await db.memberRowsByTarget(), {'alice': 3, 'bob': 1});
+      expect(await db.memberRowsByTarget(), {
+        (service: SnsService.x, handle: 'alice'): 3,
+        (service: SnsService.x, handle: 'bob'): 1,
+      });
     });
 
     test('インメモリではファイルが無いので 0', () async {

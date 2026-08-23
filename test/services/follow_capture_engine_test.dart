@@ -6,7 +6,6 @@ import 'package:mobile_omniverse/models/sns_service.dart';
 import 'package:mobile_omniverse/models/x_rate_limit.dart';
 import 'package:mobile_omniverse/services/account_pool.dart';
 import 'package:mobile_omniverse/services/follow_capture_engine.dart';
-import 'package:mobile_omniverse/services/x_api_service.dart';
 
 Account _account(String id) => Account(
       id: id,
@@ -20,8 +19,8 @@ Account _account(String id) => Account(
 FollowUser _user(String id) =>
     FollowUser(restId: id, screenName: 'u$id', name: 'U$id');
 
-XFollowListPage _ok(String userId, String? cursor, {XRateLimit? rateLimit}) =>
-    XFollowListPage(
+FollowListPage _ok(String userId, String? cursor, {XRateLimit? rateLimit}) =>
+    FollowListPage(
       statusCode: 200,
       users: [_user(userId)],
       cursor: cursor,
@@ -34,12 +33,12 @@ void main() {
   late List<Duration> sleeps;
 
   /// 呼び出し回数 (0 始まり) と cursor を受け取って 1 ページ返す差し替え口
-  late Future<XFollowListPage> Function(int call, String? cursor) handler;
+  late Future<FollowListPage> Function(int call, String? cursor) handler;
 
   setUp(() {
     requestedCursors = [];
     sleeps = [];
-    handler = (_, __) async => const XFollowListPage(statusCode: 200);
+    handler = (_, __) async => const FollowListPage(statusCode: 200);
 
     var calls = 0;
     engine = FollowCaptureEngine(
@@ -57,7 +56,7 @@ void main() {
   });
 
   /// 呼ばれるたびに [pages] を順に返す (足りなくなったら最後を繰り返す)
-  void stubPages(List<XFollowListPage> pages) {
+  void stubPages(List<FollowListPage> pages) {
     handler =
         (call, _) async => pages[call < pages.length ? call : pages.length - 1];
   }
@@ -65,6 +64,7 @@ void main() {
   Future<FollowCaptureResult> run({
     AccountPool? pool,
     String? startCursor,
+    bool terminalCursorMarker = true,
     CaptureCancelToken? cancelToken,
     Account? Function(String accountId)? accountOf,
     Future<void> Function(List<FollowUser> users, String? cursor)? onBatch,
@@ -76,11 +76,42 @@ void main() {
       pool: pool ?? AccountPool(['acc1'], cooldown: Duration.zero),
       accountOf: accountOf ?? _account,
       startCursor: startCursor,
+      terminalCursorMarker: terminalCursorMarker,
       cancelToken: cancelToken,
       onBatch: onBatch,
       onProgress: onProgress,
     );
   }
+
+  group('終端の知らせ方', () {
+    test('X は "0|" で始まる cursor を終端とみなす', () async {
+      stubPages([_ok('1', '0|end')]);
+
+      final result = await run();
+      expect(result.reason, FollowCaptureReason.terminal);
+      expect(result.completed, isTrue);
+    });
+
+    test('Bluesky では "0|" を終端扱いしない', () async {
+      // Bluesky の cursor は不透明な文字列。たまたま "0|" で始まっても
+      // まだ続きがあるので、ここで打ち切ると取りこぼす
+      stubPages([_ok('1', '0|looks-terminal'), _ok('2', null)]);
+
+      final result = await run(terminalCursorMarker: false);
+      expect(result.reason, FollowCaptureReason.noCursor);
+      expect(result.totalUsers, 2);
+      expect(requestedCursors, [null, '0|looks-terminal']);
+    });
+
+    test('Bluesky の再開でも "0|" で止まらない', () async {
+      stubPages([_ok('1', null)]);
+
+      final result =
+          await run(startCursor: '0|resume', terminalCursorMarker: false);
+      expect(result.totalUsers, 1);
+      expect(requestedCursors, ['0|resume']);
+    });
+  });
 
   group('正常系', () {
     test('終端カーソルに到達するまでページングする', () async {
@@ -106,7 +137,7 @@ void main() {
     });
 
     test('空バッチで cursor も動かなければ停滞として完了', () async {
-      stubPages([const XFollowListPage(statusCode: 200)]);
+      stubPages([const FollowListPage(statusCode: 200)]);
 
       final result = await run();
 
@@ -159,7 +190,7 @@ void main() {
     });
 
     test('中断しても再開位置の cursor を返す', () async {
-      stubPages([_ok('1', '1|a'), const XFollowListPage(statusCode: 401)]);
+      stubPages([_ok('1', '1|a'), const FollowListPage(statusCode: 401)]);
 
       final result = await run();
 
@@ -174,7 +205,7 @@ void main() {
     test('429 の後も同じ cursor で再送する', () async {
       stubPages([
         _ok('1', '1|a'),
-        XFollowListPage(
+        FollowListPage(
           statusCode: 429,
           rateLimit: XRateLimit(
               limit: 50,
@@ -195,7 +226,7 @@ void main() {
     test('5xx の後も同じ cursor で再送する', () async {
       stubPages([
         _ok('1', '1|a'),
-        const XFollowListPage(statusCode: 503),
+        const FollowListPage(statusCode: 503),
         _ok('2', '0|end'),
       ]);
 
@@ -210,7 +241,7 @@ void main() {
     test('429 は reset までの時間 + マージン待つ', () async {
       final resetAt = DateTime.now().add(const Duration(seconds: 120));
       stubPages([
-        XFollowListPage(
+        FollowListPage(
             statusCode: 429,
             rateLimit: XRateLimit(limit: 50, remaining: 0, resetAt: resetAt)),
         _ok('1', '0|end'),
@@ -225,7 +256,7 @@ void main() {
 
     test('reset 時刻が読めない 429 は既定の待ち時間', () async {
       stubPages([
-        const XFollowListPage(statusCode: 429),
+        const FollowListPage(statusCode: 429),
         _ok('1', '0|end'),
       ]);
 
@@ -252,7 +283,7 @@ void main() {
 
   group('アカウントの失効', () {
     test('401 でアカウントをプールから外し、空になったら終了', () async {
-      stubPages([const XFollowListPage(statusCode: 401)]);
+      stubPages([const FollowListPage(statusCode: 401)]);
 
       final result = await run();
 
@@ -261,20 +292,20 @@ void main() {
     });
 
     test('403 でも同様にプールから外す', () async {
-      stubPages([const XFollowListPage(statusCode: 403)]);
+      stubPages([const FollowListPage(statusCode: 403)]);
 
       expect((await run()).reason, FollowCaptureReason.poolEmpty);
     });
 
     test('再捕獲後も 404 ならプールから外す', () async {
-      stubPages([const XFollowListPage(statusCode: 404)]);
+      stubPages([const FollowListPage(statusCode: 404)]);
 
       expect((await run()).reason, FollowCaptureReason.poolEmpty);
     });
 
     test('JSON として読めない応答もプールから外す', () async {
       stubPages([
-        const XFollowListPage(statusCode: XApiService.followListBadJson),
+        const FollowListPage(statusCode: FollowListPage.badJson),
       ]);
 
       expect((await run()).reason, FollowCaptureReason.poolEmpty);
@@ -282,7 +313,7 @@ void main() {
 
     test('生きているアカウントがあれば続行する', () async {
       stubPages([
-        const XFollowListPage(statusCode: 401),
+        const FollowListPage(statusCode: 401),
         _ok('1', '0|end'),
       ]);
 
@@ -306,7 +337,7 @@ void main() {
     });
 
     test('連続失敗の上限を指定すれば circuit break する', () async {
-      stubPages([const XFollowListPage(statusCode: 401)]);
+      stubPages([const FollowListPage(statusCode: 401)]);
 
       final result = await run(
         pool: AccountPool(
@@ -346,7 +377,7 @@ void main() {
     });
 
     test('5xx が続いたら httpError で終了する', () async {
-      stubPages([const XFollowListPage(statusCode: 500)]);
+      stubPages([const FollowListPage(statusCode: 500)]);
 
       final result = await run();
 

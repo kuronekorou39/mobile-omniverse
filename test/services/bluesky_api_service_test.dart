@@ -5,6 +5,7 @@ import 'package:mobile_omniverse/models/account.dart';
 import 'package:mobile_omniverse/models/post.dart';
 import 'package:mobile_omniverse/models/sns_service.dart';
 import 'package:mobile_omniverse/services/bluesky_api_service.dart';
+import 'package:mobile_omniverse/services/follow_capture_engine.dart';
 
 import '../helpers/mock_http_client.dart';
 import '../helpers/test_data.dart';
@@ -1055,6 +1056,194 @@ void main() {
         'at://did:plc:test/app.bsky.graph.follow/followkey',
       );
       expect(result, isFalse);
+    });
+  });
+
+  // ───────────── フォロー/フォロワー一覧 ─────────────
+
+  Map<String, dynamic> makeProfileView(
+    String name, {
+    int? followers,
+    int? follows,
+    int? posts,
+  }) =>
+      {
+        'did': 'did:plc:$name',
+        'handle': '$name.bsky.social',
+        'displayName': 'User $name',
+        'avatar': 'https://cdn/$name.jpg',
+        'description': 'bio $name',
+        if (followers != null) 'followersCount': followers,
+        if (follows != null) 'followsCount': follows,
+        if (posts != null) 'postsCount': posts,
+      };
+
+  group('getFollowList (HTTP)', () {
+    test('フォロワーを取ると getFollowers を叩く', () async {
+      Uri? seen;
+      service.httpClientOverride = createUriAwareClient((uri) {
+        seen = uri;
+        return (200, jsonEncode({'followers': [makeProfileView('a')]}));
+      });
+
+      final page = await service.getFollowList(makeBskyCreds(), 'alice.bsky.social',
+          followers: true);
+
+      expect(seen!.path, contains('app.bsky.graph.getFollowers'));
+      expect(seen!.queryParameters['actor'], 'alice.bsky.social');
+      expect(page.statusCode, 200);
+      expect(page.users.single.restId, 'did:plc:a');
+      expect(page.users.single.screenName, 'a.bsky.social');
+    });
+
+    test('フォローを取ると getFollows を叩く', () async {
+      Uri? seen;
+      service.httpClientOverride = createUriAwareClient((uri) {
+        seen = uri;
+        return (200, jsonEncode({'follows': [makeProfileView('b')]}));
+      });
+
+      final page = await service.getFollowList(makeBskyCreds(), 'alice.bsky.social',
+          followers: false);
+
+      expect(seen!.path, contains('app.bsky.graph.getFollows'));
+      expect(page.users.single.restId, 'did:plc:b');
+    });
+
+    test('cursor を引き継ぐ', () async {
+      Uri? seen;
+      service.httpClientOverride = createUriAwareClient((uri) {
+        seen = uri;
+        return (200, jsonEncode({'followers': [], 'cursor': 'next'}));
+      });
+
+      final page = await service.getFollowList(makeBskyCreds(), 'alice.bsky.social',
+          followers: true, cursor: 'c1');
+
+      expect(seen!.queryParameters['cursor'], 'c1');
+      expect(page.cursor, 'next');
+    });
+
+    test('末尾では cursor が返らない', () async {
+      service.httpClientOverride = createUriAwareClient(
+          (_) => (200, jsonEncode({'followers': [makeProfileView('a')]})));
+
+      // cursor が無い = 全件取りきった、とエンジンが判断する
+      expect((await service.getFollowList(makeBskyCreds(), 'a', followers: true))
+          .cursor,
+          isNull);
+    });
+
+    test('壊れたエントリは飛ばす', () async {
+      service.httpClientOverride = createUriAwareClient((_) => (
+            200,
+            jsonEncode({
+              'followers': [
+                makeProfileView('a'),
+                {'handle': 'no-did.bsky.social'},
+                'ゴミ',
+              ]
+            })
+          ));
+
+      final page =
+          await service.getFollowList(makeBskyCreds(), 'a', followers: true);
+      expect(page.users.map((u) => u.restId), ['did:plc:a']);
+    });
+
+    test('401 はそのまま返す', () async {
+      service.httpClientOverride =
+          createUriAwareClient((_) => (401, '{}'));
+      expect(
+          (await service.getFollowList(makeBskyCreds(), 'a', followers: true))
+              .statusCode,
+          401);
+    });
+
+    test('期限切れの 400 は 401 にそろえる', () async {
+      service.httpClientOverride = createUriAwareClient(
+          (_) => (400, jsonEncode({'error': 'ExpiredToken'})));
+
+      // 呼び出し側が「認証の問題」と分かるようにしておく
+      expect(
+          (await service.getFollowList(makeBskyCreds(), 'a', followers: true))
+              .statusCode,
+          401);
+    });
+
+    test('期限切れでない 400 はそのまま', () async {
+      service.httpClientOverride = createUriAwareClient(
+          (_) => (400, jsonEncode({'error': 'InvalidRequest'})));
+
+      expect(
+          (await service.getFollowList(makeBskyCreds(), 'a', followers: true))
+              .statusCode,
+          400);
+    });
+
+    test('200 でも JSON でなければ成功と区別する', () async {
+      service.httpClientOverride =
+          createUriAwareClient((_) => (200, '<html>error</html>'));
+
+      // ここで成功にすると cursor が進んで取りこぼす
+      expect(
+          (await service.getFollowList(makeBskyCreds(), 'a', followers: true))
+              .statusCode,
+          FollowListPage.badJson);
+    });
+  });
+
+  group('getProfiles (HTTP)', () {
+    test('did をキーにした map で返す', () async {
+      service.httpClientOverride = createUriAwareClient((_) => (
+            200,
+            jsonEncode({
+              'profiles': [
+                makeProfileView('a', followers: 10, follows: 20, posts: 30),
+              ]
+            })
+          ));
+
+      final result =
+          await service.getProfiles(makeBskyCreds(), ['did:plc:a']);
+      expect(result.keys, ['did:plc:a']);
+      expect(result['did:plc:a']!.followersCount, 10);
+      expect(result['did:plc:a']!.friendsCount, 20);
+      expect(result['did:plc:a']!.statusesCount, 30);
+    });
+
+    test('actors を人数ぶん並べる', () async {
+      Uri? seen;
+      service.httpClientOverride = createUriAwareClient((uri) {
+        seen = uri;
+        return (200, jsonEncode({'profiles': []}));
+      });
+
+      await service.getProfiles(makeBskyCreds(), ['did:plc:a', 'did:plc:b']);
+      expect(seen!.queryParametersAll['actors'], ['did:plc:a', 'did:plc:b']);
+    });
+
+    test('空なら叩かない', () async {
+      var called = false;
+      service.httpClientOverride = createUriAwareClient((_) {
+        called = true;
+        return (200, '{}');
+      });
+
+      expect(await service.getProfiles(makeBskyCreds(), []), isEmpty);
+      expect(called, isFalse);
+    });
+
+    test('401 は例外にする', () async {
+      service.httpClientOverride = createUriAwareClient((_) => (401, '{}'));
+      // 呼び出し側でトークンを更新して引き直せるようにする
+      expect(() => service.getProfiles(makeBskyCreds(), ['did:plc:a']),
+          throwsA(isA<BlueskyAuthException>()));
+    });
+
+    test('その他の失敗は空で返す', () async {
+      service.httpClientOverride = createUriAwareClient((_) => (500, '{}'));
+      expect(await service.getProfiles(makeBskyCreds(), ['did:plc:a']), isEmpty);
     });
   });
 

@@ -5,10 +5,12 @@ import '../models/account.dart';
 import '../models/sns_service.dart';
 import '../services/account_storage_service.dart';
 import '../services/follow_capture_job_service.dart';
+import '../services/bluesky_api_service.dart';
 import '../services/follow_db.dart';
 import '../services/x_api_service.dart';
 import '../utils/app_snackbar.dart';
 import '../utils/image_headers.dart';
+import '../widgets/sns_badge.dart';
 import 'follow_snapshot_screen.dart' show dateLabel;
 import 'follow_target_screen.dart';
 
@@ -24,7 +26,7 @@ class _FollowCaptureScreenState extends State<FollowCaptureScreen> {
   final _job = FollowCaptureJobService.instance;
 
   List<FollowTarget> _targets = [];
-  final Map<String, _TargetSummary> _summaries = {};
+  final Map<FollowTargetKey, _TargetSummary> _summaries = {};
   int _totalBytes = 0;
   bool _loading = true;
 
@@ -55,21 +57,20 @@ class _FollowCaptureScreenState extends State<FollowCaptureScreen> {
     final rows = await db.memberRowsByTarget();
     final allRows = rows.values.fold<int>(0, (a, b) => a + b);
 
-    final summaries = <String, _TargetSummary>{};
+    final summaries = <FollowTargetKey, _TargetSummary>{};
     for (final t in targets) {
-      final f = await db.latestCompleted(t.handle, 'followers');
-      final g = await db.latestCompleted(t.handle, 'following');
+      final f = await db.latestCompleted(t.service, t.handle, 'followers');
+      final g = await db.latestCompleted(t.service, t.handle, 'following');
       final relation = (f == null || g == null)
           ? null
           : await db.relationCounts(
               followersSnapshotId: f.id, followingSnapshotId: g.id);
-      summaries[t.handle] = _TargetSummary(
+      summaries[t.key] = _TargetSummary(
         followers: f,
         following: g,
         mutual: relation?.mutual,
-        bytes: allRows == 0
-            ? 0
-            : (total * (rows[t.handle] ?? 0) / allRows).round(),
+        bytes:
+            allRows == 0 ? 0 : (total * (rows[t.key] ?? 0) / allRows).round(),
       );
     }
 
@@ -95,12 +96,13 @@ class _FollowCaptureScreenState extends State<FollowCaptureScreen> {
   /// handle しか入っていないため。
   Future<void> _ensureOwnAccountsRegistered() async {
     final db = FollowDb.instance;
-    for (final a in _xAccounts) {
+    for (final a in _accounts) {
       final handle = a.handle.replaceFirst('@', '').toLowerCase();
-      final existing = await db.getTarget(handle);
+      final existing = await db.getTarget(a.service, handle);
       if (existing == null) {
         if (_job.isAutoRegistered(a.id)) continue; // 削除済み → 復活させない
         await db.upsertTarget(FollowTarget(
+          service: a.service,
           handle: handle,
           displayName: a.displayName,
           avatarUrl: a.avatarUrl ?? '',
@@ -118,9 +120,9 @@ class _FollowCaptureScreenState extends State<FollowCaptureScreen> {
     }
   }
 
-  List<Account> get _xAccounts => AccountStorageService.instance.accounts
-      .where((a) => a.service == SnsService.x)
-      .toList();
+  /// 対象にできるのはログイン済みのアカウントがある SNS だけ。
+  /// X も Bluesky も同じ一覧に並べる
+  List<Account> get _accounts => AccountStorageService.instance.accounts;
 
   @override
   Widget build(BuildContext context) {
@@ -139,7 +141,7 @@ class _FollowCaptureScreenState extends State<FollowCaptureScreen> {
       ),
       floatingActionButton: FloatingActionButton(
         tooltip: '対象を追加',
-        onPressed: _xAccounts.isEmpty ? null : _addTarget,
+        onPressed: _accounts.isEmpty ? null : _addTarget,
         child: const Icon(Icons.add),
       ),
       body: RefreshIndicator(
@@ -216,13 +218,14 @@ class _FollowCaptureScreenState extends State<FollowCaptureScreen> {
             onPressed: p.cancelling ? null : _job.cancel,
             child: const Text('中断'),
           ),
-          onTap: () => _openTarget(p.targetHandle),
+          onTap: () => _openTarget(p.service, p.targetHandle),
         ),
       );
 
   Widget _targetTile(FollowTarget t, FollowJobProgress? running) {
-    final s = _summaries[t.handle];
-    final isRunning = running?.targetHandle == t.handle;
+    final s = _summaries[t.key];
+    final isRunning = running?.targetHandle == t.handle &&
+        running?.service == t.service;
     final schedule = [
       if (t.followersIntervalDays > 0) 'フォロワー${t.followersIntervalDays}日',
       if (t.followingIntervalDays > 0) 'フォロー${t.followingIntervalDays}日',
@@ -243,7 +246,13 @@ class _FollowCaptureScreenState extends State<FollowCaptureScreen> {
                     width: 40, height: 40, child: Icon(Icons.person)),
               ),
       ),
-      title: Text('@${t.handle}'),
+      title: Row(
+        children: [
+          Flexible(child: Text('@${t.handle}', overflow: TextOverflow.ellipsis)),
+          const SizedBox(width: 6),
+          SnsBadge(service: t.service, size: 9),
+        ],
+      ),
       subtitle: Text(
         [
           s?.followers == null
@@ -264,13 +273,13 @@ class _FollowCaptureScreenState extends State<FollowCaptureScreen> {
               height: 18,
               child: CircularProgressIndicator(strokeWidth: 2))
           : const Icon(Icons.chevron_right),
-      onTap: () => _openTarget(t.handle),
+      onTap: () => _openTarget(t.service, t.handle),
     );
   }
 
   Future<void> _runDueNow() async {
     try {
-      await _job.runDueWork(accounts: _xAccounts, force: true);
+      await _job.runDueWork(accounts: _accounts, force: true);
       if (mounted) showAppSnackBar(context, '期日の取得が終わりました');
     } catch (e) {
       if (mounted) showAppSnackBar(context, '\$e', type: SnackType.error);
@@ -278,9 +287,9 @@ class _FollowCaptureScreenState extends State<FollowCaptureScreen> {
     await _load();
   }
 
-  Future<void> _openTarget(String handle) async {
+  Future<void> _openTarget(SnsService service, String handle) async {
     await Navigator.of(context).push(MaterialPageRoute(
-      builder: (_) => FollowTargetScreen(handle: handle),
+      builder: (_) => FollowTargetScreen(service: service, handle: handle),
     ));
     await _load();
   }
@@ -288,7 +297,7 @@ class _FollowCaptureScreenState extends State<FollowCaptureScreen> {
   /// 任意の @ID を対象に追加する。実在確認を兼ねてプロフィールを引く
   Future<void> _addTarget() async {
     final controller = TextEditingController();
-    var accountId = _xAccounts.first.id;
+    var accountId = _accounts.first.id;
 
     final handle = await showDialog<String>(
       context: context,
@@ -311,14 +320,25 @@ class _FollowCaptureScreenState extends State<FollowCaptureScreen> {
                 initialValue: accountId,
                 decoration: const InputDecoration(labelText: '実行アカウント'),
                 items: [
-                  for (final a in _xAccounts)
-                    DropdownMenuItem(value: a.id, child: Text(a.handle)),
+                  for (final a in _accounts)
+                    DropdownMenuItem(
+                      value: a.id,
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          SnsBadge(service: a.service, size: 9),
+                          const SizedBox(width: 6),
+                          Text(a.handle),
+                        ],
+                      ),
+                    ),
                 ],
                 onChanged: (v) => setLocal(() => accountId = v ?? accountId),
               ),
               const SizedBox(height: 8),
               const Text(
-                '鍵アカウントは、つながっているアカウントを選んでください',
+                '選んだアカウントと同じ SNS の対象になります。\n'
+                'X の鍵アカウントは、つながっているアカウントを選んでください',
                 style: TextStyle(fontSize: 11, color: Colors.grey),
               ),
             ],
@@ -337,34 +357,66 @@ class _FollowCaptureScreenState extends State<FollowCaptureScreen> {
 
     if (handle == null || handle.isEmpty) return;
     final normalized = handle.replaceFirst('@', '').toLowerCase();
-    final account = _xAccounts.firstWhere((a) => a.id == accountId);
+    final account = _accounts.firstWhere((a) => a.id == accountId);
 
     showAppSnackBar(context, '@$normalized を確認しています…');
-    Map<String, dynamic>? profile;
-    try {
-      profile = await XApiService.instance
-          .getUserProfile(account.xCredentials, normalized);
-    } catch (_) {}
+    final target = account.service == SnsService.bluesky
+        ? await _lookupBlueskyTarget(account, normalized)
+        : await _lookupXTarget(account, normalized);
 
     if (!mounted) return;
-    if (profile == null) {
+    if (target == null) {
       showAppSnackBar(context, '@$normalized が見つかりませんでした',
           type: SnackType.error);
       return;
     }
 
+    await FollowDb.instance.upsertTarget(target);
+    await _load();
+    if (mounted) showAppSnackBar(context, '@${target.handle} を追加しました');
+  }
+
+  /// 実在確認を兼ねてプロフィールを引き、表示名とアイコンを控える
+  Future<FollowTarget?> _lookupXTarget(Account account, String handle) async {
+    Map<String, dynamic>? profile;
+    try {
+      profile = await XApiService.instance
+          .getUserProfile(account.xCredentials, handle);
+    } catch (_) {}
+    if (profile == null) return null;
+
     final legacy = profile['legacy'] as Map<String, dynamic>? ?? const {};
     final core = profile['core'] as Map<String, dynamic>? ?? const {};
-    await FollowDb.instance.upsertTarget(FollowTarget(
-      handle: normalized,
+    return FollowTarget(
+      service: SnsService.x,
+      handle: handle,
       displayName: (core['name'] ?? legacy['name'] ?? '') as String,
       avatarUrl: (legacy['profile_image_url_https'] ?? '') as String,
       restId: profile['rest_id'] as String?,
-      sessionAccountId: accountId,
+      sessionAccountId: account.id,
       addedAt: DateTime.now(),
-    ));
-    await _load();
-    if (mounted) showAppSnackBar(context, '@$normalized を追加しました');
+    );
+  }
+
+  Future<FollowTarget?> _lookupBlueskyTarget(
+      Account account, String handle) async {
+    Map<String, dynamic>? profile;
+    try {
+      profile = await BlueskyApiService.instance
+          .getProfile(account.blueskyCredentials, handle);
+    } catch (_) {}
+    if (profile == null) return null;
+
+    return FollowTarget(
+      service: SnsService.bluesky,
+      // 入力が DID でも handle でも引けるので、返ってきた handle を採る
+      handle: (profile['handle'] as String?)?.toLowerCase() ?? handle,
+      displayName: (profile['displayName'] as String?) ?? '',
+      avatarUrl: (profile['avatar'] as String?) ?? '',
+      restId: profile['did'] as String?,
+      sessionAccountId: account.id,
+      addedAt: DateTime.now(),
+    );
   }
 
   Future<void> _openSettings() async {

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../models/follow_user.dart';
+import '../models/sns_service.dart';
 import '../services/follow_db.dart';
 import 'follow_snapshot_screen.dart';
 
@@ -10,8 +11,10 @@ import 'follow_snapshot_screen.dart';
 /// **最新の完了済みフォロワー一覧と最新の完了済みフォロー一覧**を突き合わせる。
 /// 取得日時がずれている場合があるので、両方の日時を画面に出す。
 class FollowRelationScreen extends StatefulWidget {
-  const FollowRelationScreen({super.key, required this.handle});
+  const FollowRelationScreen(
+      {super.key, required this.service, required this.handle});
 
+  final SnsService service;
   final String handle;
 
   @override
@@ -33,8 +36,8 @@ class _FollowRelationScreenState extends State<FollowRelationScreen> {
 
   Future<void> _load() async {
     final db = FollowDb.instance;
-    final f = await db.latestCompleted(widget.handle, 'followers');
-    final g = await db.latestCompleted(widget.handle, 'following');
+    final f = await db.latestCompleted(widget.service, widget.handle, 'followers');
+    final g = await db.latestCompleted(widget.service, widget.handle, 'following');
     final counts = (f == null || g == null)
         ? null
         : await db.relationCounts(
@@ -142,7 +145,10 @@ class _FollowRelationScreenState extends State<FollowRelationScreen> {
           offset: offset,
         ),
         itemBuilder: (u) =>
-            FollowUserTile(user: u, accountId: f.sessionAccountId),
+            FollowUserTile(
+                user: u,
+                service: f.service,
+                accountId: f.sessionAccountId),
         emptyLabel: empty,
       );
 }

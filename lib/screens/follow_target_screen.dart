@@ -15,8 +15,10 @@ import 'follow_snapshot_screen.dart';
 
 /// 走査対象 1 件の詳細。情報量が多いので 概要 / 履歴 / 設定 の 3 タブに分ける。
 class FollowTargetScreen extends StatefulWidget {
-  const FollowTargetScreen({super.key, required this.handle});
+  const FollowTargetScreen(
+      {super.key, required this.service, required this.handle});
 
+  final SnsService service;
   final String handle;
 
   @override
@@ -56,19 +58,22 @@ class _FollowTargetScreenState extends State<FollowTargetScreen> {
 
   Future<void> _load() async {
     final db = FollowDb.instance;
-    final target = await db.getTarget(widget.handle);
-    final f = await db.latestCompleted(widget.handle, 'followers');
-    final g = await db.latestCompleted(widget.handle, 'following');
+    final target = await db.getTarget(widget.service, widget.handle);
+    final f =
+        await db.latestCompleted(widget.service, widget.handle, 'followers');
+    final g =
+        await db.latestCompleted(widget.service, widget.handle, 'following');
     final relation = (f == null || g == null)
         ? null
         : await db.relationCounts(
             followersSnapshotId: f.id, followingSnapshotId: g.id);
-    final history = await db.listSnapshots(targetHandle: widget.handle);
+    final history = await db.listSnapshots(
+        service: widget.service, targetHandle: widget.handle);
 
     final total = await db.databaseSizeBytes();
     final rows = await db.memberRowsByTarget();
     final all = rows.values.fold<int>(0, (a, b) => a + b);
-    final mine = rows[widget.handle] ?? 0;
+    final mine = rows[(service: widget.service, handle: widget.handle)] ?? 0;
 
     if (target != null) {
       for (final kind in const ['followers', 'following']) {
@@ -89,13 +94,14 @@ class _FollowTargetScreenState extends State<FollowTargetScreen> {
     });
   }
 
-  List<Account> get _xAccounts => AccountStorageService.instance.accounts
-      .where((a) => a.service == SnsService.x)
+  /// 実行アカウントの候補。対象と同じ SNS のものしか使えない
+  List<Account> get _usableAccounts => AccountStorageService.instance.accounts
+      .where((a) => a.service == widget.service)
       .toList();
 
   Account? get _sessionAccount {
     final id = _target?.sessionAccountId;
-    final accounts = _xAccounts;
+    final accounts = _usableAccounts;
     if (accounts.isEmpty) return null;
     return accounts.firstWhere((a) => a.id == id, orElse: () => accounts.first);
   }
@@ -170,7 +176,8 @@ class _FollowTargetScreenState extends State<FollowTargetScreen> {
                       style: const TextStyle(fontSize: 11)),
               trailing: const Icon(Icons.chevron_right),
               onTap: () => Navigator.of(context).push(MaterialPageRoute(
-                builder: (_) => FollowRelationScreen(handle: widget.handle),
+                builder: (_) => FollowRelationScreen(
+                    service: widget.service, handle: widget.handle),
               )),
             ),
             const Divider(),
@@ -265,7 +272,7 @@ class _FollowTargetScreenState extends State<FollowTargetScreen> {
           const Padding(
             padding: EdgeInsets.symmetric(horizontal: 16),
             child: Text(
-              '鍵アカウントは、つながっているアカウントでないと取得できません',
+              'X の鍵アカウントは、つながっているアカウントでないと取得できません',
               style: TextStyle(fontSize: 11, color: Colors.grey),
             ),
           ),
@@ -276,7 +283,7 @@ class _FollowTargetScreenState extends State<FollowTargetScreen> {
               value: _sessionAccount?.id,
               underline: const SizedBox.shrink(),
               items: [
-                for (final a in _xAccounts)
+                for (final a in _usableAccounts)
                   DropdownMenuItem(value: a.id, child: Text(a.handle)),
               ],
               onChanged: _job.isRunning
@@ -536,7 +543,7 @@ class _FollowTargetScreenState extends State<FollowTargetScreen> {
     );
     if (!ok) return;
     try {
-      await FollowDb.instance.deleteTarget(widget.handle);
+      await FollowDb.instance.deleteTarget(widget.service, widget.handle);
     } catch (e) {
       if (mounted) {
         showAppSnackBar(context, '削除に失敗しました: $e', type: SnackType.error);

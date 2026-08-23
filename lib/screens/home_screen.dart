@@ -5,7 +5,6 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../providers/notification_badge_provider.dart';
-import '../models/sns_service.dart';
 import '../services/account_storage_service.dart';
 import '../services/follow_capture_job_service.dart';
 import '../widgets/compose_queue_banner.dart';
@@ -60,9 +59,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   void _scheduleFollowCapture() {
     _followCaptureTimer = Timer(const Duration(seconds: 10), () async {
       if (!mounted) return;
-      final accounts = AccountStorageService.instance.accounts
-          .where((a) => a.service == SnsService.x)
-          .toList();
+      // 対象の SNS ごとに実行アカウントを選ぶので、ここでは絞らない
+      final accounts = AccountStorageService.instance.accounts;
       if (accounts.isEmpty) return;
       try {
         await FollowCaptureJobService.instance.runDueWork(accounts: accounts);

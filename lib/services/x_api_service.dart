@@ -5,11 +5,9 @@ import 'package:flutter/widgets.dart' show visibleForTesting;
 import 'package:http/http.dart' as http;
 
 import '../models/account.dart';
-import '../models/follow_user.dart';
 import '../models/notification_item.dart';
 import '../models/post.dart';
 import '../models/sns_service.dart';
-import '../models/x_rate_limit.dart';
 import '../utils/image_headers.dart';
 import 'debug_log_service.dart';
 import 'x_bearer_token_service.dart';
@@ -731,13 +729,9 @@ class XApiService {
 
   // ===== フォロー/フォロワー一覧 =====
 
-  /// 200 だが JSON として解釈できなかったことを表す擬似ステータス。
-  /// (HTML のエラーページ等。cursor を進めてはいけないので成功と区別する)
-  ///
-  /// 一覧の取得自体は FollowCaptureWebViewService が担当する。
-  /// X が x-client-transaction-id を検証しており、URL を自前で組み立てても
-  /// 404 になることを実測で確認しているため、ここには API 実装を置かない。
-  static const followListBadJson = -1;
+  // フォロー/フォロワー一覧の取得は FollowCaptureWebViewService が担当する。
+  // X が x-client-transaction-id を検証しており、URL を自前で組み立てても
+  // 404 になることを実測で確認しているため、ここには API 実装を置かない。
 
   /// screenName から rest_id を解決 (自分のいいね一覧取得で userId が必要なため)
   Future<String?> getRestId(XCredentials creds, String screenName) async {
@@ -1825,24 +1819,6 @@ class XApiResult {
 }
 
 /// Following / Followers 1 ページ分の取得結果
-class XFollowListPage {
-  const XFollowListPage({
-    required this.statusCode,
-    this.users = const [],
-    this.cursor,
-    this.rateLimit,
-  });
-
-  final int statusCode;
-  final List<FollowUser> users;
-
-  /// 次ページの cursor (末尾に達すると "0|..." が返る)
-  final String? cursor;
-  final XRateLimit? rateLimit;
-
-  bool get isSuccess => statusCode == 200;
-}
-
 class XApiException implements Exception {
   XApiException(this.message, {this.statusCode});
   final String message;

@@ -153,7 +153,10 @@ class _FollowSnapshotScreenState extends State<FollowSnapshotScreen> {
                 offset: offset,
               ),
               itemBuilder: (u) => FollowUserTile(
-                  user: u, accountId: widget.snapshot.sessionAccountId),
+                user: u,
+                service: widget.snapshot.service,
+                accountId: widget.snapshot.sessionAccountId,
+              ),
               emptyLabel: '該当なし',
             ),
           ),
@@ -326,16 +329,20 @@ class FollowUserTile extends StatelessWidget {
   const FollowUserTile({
     super.key,
     required this.user,
+    required this.service,
     this.leadingIcon,
     this.accountId,
     this.trailing,
   });
 
   final FollowUser user;
+
+  /// この一覧がどの SNS のものか。タップしたときのプロフィール取得先になる
+  final SnsService service;
   final Widget? leadingIcon;
   final Widget? trailing;
 
-  /// プロフィール取得に使う X アカウント。無いと「アカウント情報が見つかりません」になる
+  /// プロフィール取得に使うアカウント。無いと「アカウント情報が見つかりません」になる
   final String? accountId;
 
   @override
@@ -380,7 +387,7 @@ class FollowUserTile extends StatelessWidget {
       subtitle: Text(
         '@${user.screenName}  ・  '
         'フォロワー ${_fmt(user.followersCount)} / フォロー ${_fmt(user.friendsCount)}'
-        '${user.statusesCount == null ? '' : ' / ツイート ${_fmt(user.statusesCount!)}'}'
+        '${user.statusesCount == null ? '' : ' / 投稿 ${_fmt(user.statusesCount!)}'}'
         '${ratio == null ? '' : '  F比 ${ratio.toStringAsFixed(2)}'}',
         style: const TextStyle(fontSize: 11),
         overflow: TextOverflow.ellipsis,
@@ -390,7 +397,7 @@ class FollowUserTile extends StatelessWidget {
         builder: (_) => UserProfileScreen(
           username: user.name,
           handle: '@${user.screenName}',
-          service: SnsService.x,
+          service: service,
           avatarUrl: user.avatarUrl.isEmpty ? null : user.avatarUrl,
           accountId: accountId,
         ),

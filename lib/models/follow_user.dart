@@ -86,6 +86,52 @@ class FollowUser {
     );
   }
 
+  /// Bluesky の profileView / profileViewDetailed を 1 件パースする。
+  ///
+  /// 一覧の API (getFollows / getFollowers) が返すのは profileView で、
+  /// フォロワー数・フォロー数・投稿数は入っていない。件数は
+  /// app.bsky.actor.getProfiles でまとめて取り直して補う。
+  static FollowUser? fromBlueskyProfile(Map<String, dynamic>? profile) {
+    if (profile == null) return null;
+    final did = _str(profile['did']);
+    final handle = _str(profile['handle']);
+    if (did == null || did.isEmpty) return null;
+    if (handle == null || handle.isEmpty) return null;
+
+    return FollowUser(
+      restId: did,
+      screenName: handle,
+      name: _str(profile['displayName']) ?? '',
+      followersCount: _asInt(profile['followersCount']) ?? 0,
+      friendsCount: _asInt(profile['followsCount']) ?? 0,
+      statusesCount: _asInt(profile['postsCount']),
+      avatarUrl: _str(profile['avatar']) ?? '',
+      description: _str(profile['description']) ?? '',
+      verified: _asMap(profile['verification'])['verifiedStatus'] == 'valid',
+      // Bluesky に鍵アカウントの概念は無い
+      isProtected: false,
+      location: '',
+      createdAt: _str(profile['createdAt']) ?? '',
+    );
+  }
+
+  /// 件数だけを [detailed] の値で差し替える。
+  /// 一覧で得たプロフィールに、あとから取った件数を載せるために使う。
+  FollowUser withCountsFrom(FollowUser detailed) => FollowUser(
+        restId: restId,
+        screenName: screenName,
+        name: name,
+        followersCount: detailed.followersCount,
+        friendsCount: detailed.friendsCount,
+        statusesCount: detailed.statusesCount,
+        avatarUrl: avatarUrl,
+        description: description,
+        verified: verified,
+        isProtected: isProtected,
+        location: location,
+        createdAt: createdAt,
+      );
+
   Map<String, dynamic> toJson() => {
         'restId': restId,
         'screenName': screenName,

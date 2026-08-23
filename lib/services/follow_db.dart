@@ -5,6 +5,7 @@ import 'package:path/path.dart' as p;
 import 'package:sqflite/sqflite.dart';
 
 import '../models/follow_user.dart';
+import '../models/sns_service.dart';
 
 /// フォロー/フォロワー走査の保存先。
 ///
@@ -31,7 +32,10 @@ class FollowDb {
   /// v5: handle の大文字小文字をならす。引くときは小文字化していたのに
   ///     書くときは素通しだったため、大文字で入った行が
   ///     スケジュール判定から漏れて毎回取り直しになっていた
-  static const _version = 5;
+  /// v6: Bluesky も対象にできるよう service を持たせる。
+  ///     handle は X と Bluesky で衝突しうるので、対象のキーを
+  ///     (service, handle) にした
+  static const _version = 6;
 
   Database? _db;
 
@@ -73,12 +77,14 @@ class FollowDb {
           await _upgradeToV2(db);
           await _upgradeToV3(db);
           await _upgradeToV4(db);
+          await _upgradeToV6(db);
         },
         onUpgrade: (db, from, to) async {
           if (from < 2) await _upgradeToV2(db);
           if (from < 3) await _upgradeToV3(db);
           if (from < 4) await _upgradeToV4(db);
           if (from < 5) await _upgradeToV5(db);
+          if (from < 6) await _upgradeToV6(db);
         },
         onConfigure: (db) async => db.execute('PRAGMA foreign_keys = ON'),
       ),
@@ -138,7 +144,7 @@ class FollowDb {
   /// 相互は「同じ対象の followers と following を突き合わせる」必要があるので、
   /// 2 本の走査を 1 つの run にまとめる。
   /// 件数を snapshot_members にも持たせるのは、users が最新値で上書きされてしまい
-  /// 「ツイート数がいくつ増えたか」を後から出せないため。
+  /// 「投稿数がいくつ増えたか」を後から出せないため。
   static Future<void> _upgradeToV2(Database db) async {
     await db.execute('''
       CREATE TABLE IF NOT EXISTS runs (
@@ -212,6 +218,50 @@ class FollowDb {
     await db.execute('DELETE FROM targets WHERE handle <> LOWER(handle)');
   }
 
+  /// v6 より前に入った行の SNS。当時は X しか扱えなかった
+  static const _defaultService = 'x';
+
+  /// 対象に SNS を持たせる。
+  ///
+  /// X の screen_name と Bluesky の handle は別空間なので、handle だけでは
+  /// 対象を一意に指せない。targets の主キーを (service, handle) にする。
+  /// SQLite は主キーを後から変えられないのでテーブルごと作り直す。
+  static Future<void> _upgradeToV6(Database db) async {
+    try {
+      await db.execute('ALTER TABLE snapshots ADD COLUMN service TEXT '
+          "NOT NULL DEFAULT '$_defaultService'");
+    } catch (_) {
+      // 既にある場合は無視
+    }
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS targets_v6 (
+        handle TEXT NOT NULL,
+        service TEXT NOT NULL DEFAULT '$_defaultService',
+        displayName TEXT NOT NULL DEFAULT '',
+        avatarUrl TEXT NOT NULL DEFAULT '',
+        restId TEXT,
+        sessionAccountId TEXT,
+        followersIntervalDays INTEGER NOT NULL DEFAULT 0,
+        followingIntervalDays INTEGER NOT NULL DEFAULT 0,
+        addedAt INTEGER NOT NULL,
+        PRIMARY KEY (service, handle)
+      )
+    ''');
+    // v6 より前の対象はすべて X
+    await db.execute('''
+      INSERT OR IGNORE INTO targets_v6
+        (handle, service, displayName, avatarUrl, restId, sessionAccountId,
+         followersIntervalDays, followingIntervalDays, addedAt)
+      SELECT handle, '$_defaultService', displayName, avatarUrl, restId,
+         sessionAccountId, followersIntervalDays, followingIntervalDays, addedAt
+      FROM targets
+    ''');
+    await db.execute('DROP TABLE targets');
+    await db.execute('ALTER TABLE targets_v6 RENAME TO targets');
+    await db.execute('CREATE INDEX IF NOT EXISTS idx_snapshots_service_target '
+        'ON snapshots(service, targetHandle, kind, startedAt)');
+  }
+
   Future<void> setTotalExpected(int snapshotId, int? total) async {
     if (total == null) return;
     final db = await _database;
@@ -227,10 +277,12 @@ class FollowDb {
     return rows.map(FollowTarget.fromRow).toList();
   }
 
-  Future<FollowTarget?> getTarget(String handle) async {
+  Future<FollowTarget?> getTarget(SnsService service, String handle) async {
     final db = await _database;
     final rows = await db.query('targets',
-        where: 'handle = ?', whereArgs: [_norm(handle)], limit: 1);
+        where: 'service = ? AND handle = ?',
+        whereArgs: [service.name, _norm(handle)],
+        limit: 1);
     return rows.isEmpty ? null : FollowTarget.fromRow(rows.first);
   }
 
@@ -243,15 +295,19 @@ class FollowDb {
   }
 
   /// 対象と、そこに紐づくスナップショット一式を消す
-  Future<void> deleteTarget(String handle) async {
+  Future<void> deleteTarget(SnsService service, String handle) async {
     final db = await _database;
     final h = _norm(handle);
+    final sv = service.name;
     await db.transaction((txn) async {
       await txn.delete('snapshot_members',
-          where: 'snapshotId IN (SELECT id FROM snapshots WHERE targetHandle = ?)',
-          whereArgs: [h]);
-      await txn.delete('snapshots', where: 'targetHandle = ?', whereArgs: [h]);
-      await txn.delete('targets', where: 'handle = ?', whereArgs: [h]);
+          where: 'snapshotId IN (SELECT id FROM snapshots '
+              'WHERE service = ? AND targetHandle = ?)',
+          whereArgs: [sv, h]);
+      await txn.delete('snapshots',
+          where: 'service = ? AND targetHandle = ?', whereArgs: [sv, h]);
+      await txn.delete('targets',
+          where: 'service = ? AND handle = ?', whereArgs: [sv, h]);
     });
     await pruneOrphanUsers();
     // VACUUM しないとファイルサイズが縮まず、削除しても使用量が減らないように見える
@@ -266,11 +322,13 @@ class FollowDb {
       handle.replaceFirst('@', '').toLowerCase();
 
   /// 対象 × 種別の「最新の完了済み」スナップショット
-  Future<FollowSnapshot?> latestCompleted(String handle, String kind) async {
+  Future<FollowSnapshot?> latestCompleted(
+      SnsService service, String handle, String kind) async {
     final db = await _database;
     final rows = await db.query('snapshots',
-        where: "targetHandle = ? AND kind = ? AND status = 'completed'",
-        whereArgs: [_norm(handle), kind],
+        where: "service = ? AND targetHandle = ? AND kind = ? "
+            "AND status = 'completed'",
+        whereArgs: [service.name, _norm(handle), kind],
         // 同じミリ秒に 2 本並んでも順序が決まるように id を第 2 キーに置く
         orderBy: 'startedAt DESC, id DESC',
         limit: 1);
@@ -278,11 +336,13 @@ class FollowDb {
   }
 
   /// 対象の未完了スナップショット（再開候補）。新しい順
-  Future<List<FollowSnapshot>> resumableFor(String handle) async {
+  Future<List<FollowSnapshot>> resumableFor(
+      SnsService service, String handle) async {
     final db = await _database;
     final rows = await db.query('snapshots',
-        where: "targetHandle = ? AND status <> 'completed' AND cursor IS NOT NULL",
-        whereArgs: [_norm(handle)],
+        where: "service = ? AND targetHandle = ? "
+            "AND status <> 'completed' AND cursor IS NOT NULL",
+        whereArgs: [service.name, _norm(handle)],
         orderBy: 'startedAt DESC, id DESC');
     return rows.map(FollowSnapshot.fromRow).toList();
   }
@@ -298,15 +358,17 @@ class FollowDb {
   }
 
   /// 対象ごとの snapshot_members 行数。使用量の按分に使う
-  Future<Map<String, int>> memberRowsByTarget() async {
+  Future<Map<FollowTargetKey, int>> memberRowsByTarget() async {
     final db = await _database;
     final rows = await db.rawQuery(
-      'SELECT s.targetHandle AS h, COUNT(*) AS c '
+      'SELECT s.service AS sv, s.targetHandle AS h, COUNT(*) AS c '
       'FROM snapshot_members m JOIN snapshots s ON s.id = m.snapshotId '
-      'GROUP BY s.targetHandle',
+      'GROUP BY s.service, s.targetHandle',
     );
     return {
-      for (final r in rows) r['h'] as String: (r['c'] as int?) ?? 0,
+      for (final r in rows)
+        (service: _serviceOf(r['sv']), handle: r['h'] as String):
+            (r['c'] as int?) ?? 0,
     };
   }
 
@@ -379,12 +441,14 @@ class FollowDb {
 
   /// 走査を開始して snapshot 行を作る
   Future<int> startSnapshot({
+    required SnsService service,
     required String targetHandle,
     required String kind,
     String? sessionAccountId,
   }) async {
     final db = await _database;
     return db.insert('snapshots', {
+      'service': service.name,
       'targetHandle': _norm(targetHandle),
       'kind': kind,
       'sessionAccountId': sessionAccountId,
@@ -473,6 +537,7 @@ class FollowDb {
   }
 
   Future<List<FollowSnapshot>> listSnapshots({
+    SnsService? service,
     String? targetHandle,
     String? kind,
     int limit = 100,
@@ -480,6 +545,10 @@ class FollowDb {
     final db = await _database;
     final where = <String>[];
     final args = <Object?>[];
+    if (service != null) {
+      where.add('service = ?');
+      args.add(service.name);
+    }
     if (targetHandle != null) {
       where.add('targetHandle = ?');
       args.add(_norm(targetHandle));
@@ -574,13 +643,13 @@ class FollowDb {
     return rows.map(_userFromSnapshotRow).toList();
   }
 
-  /// 両方に居るユーザーの件数の変化 (ツイート数・フォロワー数の推移)。
+  /// 両方に居るユーザーの件数の変化 (投稿数・フォロワー数の推移)。
   ///
   /// 3 万人規模の対象では変化した人だけでも数万件になる。
   /// 上限で打ち切ると「見えていない分がある」ことに気づけないので、
   /// 件数は [countChangesTotal] で別に数え、中身はページングで読む。
   ///
-  /// 並びは ABS(ツイート増減) の降順。offset でページを進めても順序が
+  /// 並びは ABS(投稿数の増減) の降順。offset でページを進めても順序が
   /// 崩れないよう restId を第 2 キーに入れてある。
   Future<List<FollowCountChange>> countChanges({
     required int oldSnapshotId,
@@ -628,7 +697,7 @@ class FollowDb {
         0;
   }
 
-  /// 「ツイート数かフォロワー数のどちらかが動いた」条件。
+  /// 「投稿数かフォロワー数のどちらかが動いた」条件。
   /// 一覧と件数で条件がずれないよう 1 箇所にまとめる
   static const _countChangedClause =
       '(COALESCE(n.statusesCount,0) <> COALESCE(o.statusesCount,0) '
@@ -719,9 +788,19 @@ class FollowDb {
       );
 }
 
+/// 対象を一意に指すキー。handle は SNS ごとに別空間なので service と対にする
+typedef FollowTargetKey = ({SnsService service, String handle});
+
+SnsService _serviceOf(Object? value) => SnsService.values.firstWhere(
+      (s) => s.name == value,
+      // v6 より前の行には service が無い。当時は X しか扱えなかった
+      orElse: () => SnsService.x,
+    );
+
 /// 走査対象。自分のアカウントとは限らない
 class FollowTarget {
   const FollowTarget({
+    required this.service,
     required this.handle,
     required this.addedAt,
     this.displayName = '',
@@ -732,7 +811,10 @@ class FollowTarget {
     this.followingIntervalDays = 0,
   });
 
-  /// @ を除いた screen_name（小文字）
+  /// どの SNS の対象か
+  final SnsService service;
+
+  /// @ を除いた screen_name / handle（小文字）
   final String handle;
   final String displayName;
   final String avatarUrl;
@@ -749,6 +831,8 @@ class FollowTarget {
   int intervalFor(String kind) =>
       kind == 'followers' ? followersIntervalDays : followingIntervalDays;
 
+  FollowTargetKey get key => (service: service, handle: handle);
+
   FollowTarget copyWith({
     String? displayName,
     String? avatarUrl,
@@ -758,6 +842,7 @@ class FollowTarget {
     int? followingIntervalDays,
   }) =>
       FollowTarget(
+        service: service,
         handle: handle,
         displayName: displayName ?? this.displayName,
         avatarUrl: avatarUrl ?? this.avatarUrl,
@@ -771,6 +856,7 @@ class FollowTarget {
       );
 
   Map<String, Object?> toRow() => {
+        'service': service.name,
         'handle': handle,
         'displayName': displayName,
         'avatarUrl': avatarUrl,
@@ -782,6 +868,7 @@ class FollowTarget {
       };
 
   factory FollowTarget.fromRow(Map<String, Object?> r) => FollowTarget(
+        service: _serviceOf(r['service']),
         handle: r['handle'] as String,
         displayName: (r['displayName'] as String?) ?? '',
         avatarUrl: (r['avatarUrl'] as String?) ?? '',
@@ -802,9 +889,9 @@ enum FollowSortOrder {
       'COALESCE(m.followersCount, u.followersCount) ASC'),
   friendsDesc('フォロー数が多い順',
       'COALESCE(m.friendsCount, u.friendsCount) DESC'),
-  statusesDesc('ツイート数が多い順',
+  statusesDesc('投稿数が多い順',
       'COALESCE(m.statusesCount, u.statusesCount) DESC'),
-  statusesAsc('ツイート数が少ない順',
+  statusesAsc('投稿数が少ない順',
       'COALESCE(m.statusesCount, u.statusesCount) ASC'),
   ratioDesc(
       'F比が高い順',
@@ -846,6 +933,7 @@ class FollowCountChange {
 class FollowSnapshot {
   const FollowSnapshot({
     required this.id,
+    required this.service,
     required this.targetHandle,
     required this.kind,
     required this.startedAt,
@@ -859,6 +947,7 @@ class FollowSnapshot {
   });
 
   final int id;
+  final SnsService service;
   final String targetHandle;
   final String kind;
   final String? sessionAccountId;
@@ -886,6 +975,7 @@ class FollowSnapshot {
 
   factory FollowSnapshot.fromRow(Map<String, Object?> r) => FollowSnapshot(
         id: r['id'] as int,
+        service: _serviceOf(r['service']),
         targetHandle: r['targetHandle'] as String,
         kind: r['kind'] as String,
         sessionAccountId: r['sessionAccountId'] as String?,

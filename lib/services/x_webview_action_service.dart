@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io' show Platform;
 import 'dart:typed_data';
+import 'dart:ui' show Size;
 
 import 'package:cross_file/cross_file.dart';
 import 'package:flutter/foundation.dart';
@@ -39,6 +40,17 @@ class XWebViewActionService {
     _isReady = false;
 
     _webView = HeadlessInAppWebView(
+      // サイズ未指定だと iOS 側は UIScreen.main.bounds を使う
+      // (プラグインの HeadlessInAppWebView.swift)。iPhone なら UA と釣り合うが、
+      // iPad では「iPhone UA × iPad サイズのビューポート」になり、X が
+      // bot と判定して x.com/compose/post がロゴのまま止まる。
+      // intent/post は軽いページで影響を受けず、リプライと引用RTだけ
+      // 動いて見えていた。
+      //
+      // Android は既定 (-1, -1) のまま正常なので触らない。投稿は画像添付が
+      // プラットフォームごとに調整済みで、動いている側を動かしたくない。
+      initialSize:
+          Platform.isIOS ? const Size(412, 915) : const Size(-1, -1),
       initialUrlRequest: URLRequest(url: WebUri('about:blank')),
       initialSettings: InAppWebViewSettings(
         javaScriptEnabled: true,

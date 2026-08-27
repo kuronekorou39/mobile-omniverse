@@ -6,6 +6,7 @@ import '../models/sns_service.dart';
 import '../models/x_rate_limit.dart';
 import 'account_pool.dart';
 import 'bluesky_api_service.dart';
+import 'debug_log_service.dart';
 import 'follow_capture_bluesky_service.dart';
 import 'follow_capture_engine.dart';
 import 'follow_capture_webview_service.dart';
@@ -176,7 +177,11 @@ class FollowCaptureJobService {
     // Bluesky の走査は WebView も x.com の Cookie も触らないので、
     // 巻き込んで止める必要が無い
     if (!isRunning || progress.value?.service != SnsService.x) return;
+    // debugPrint だけだとアプリ内のログに残らず、利用者から見ると
+    // 「取得が理由もなく止まった」ようにしか見えない
     debugPrint('[FollowJob] $reason のため走査を中断します');
+    DebugLogService.instance
+        .log('FollowJob', '$reason のため走査を中断します（続きから再開できます）');
     cancel();
     final deadline = DateTime.now().add(const Duration(seconds: 30));
     while (isRunning && DateTime.now().isBefore(deadline)) {

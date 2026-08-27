@@ -193,29 +193,34 @@ class _FollowTargetScreenState extends State<FollowTargetScreen> {
           ],
         ),
       ),
-      body: Column(
+      // 走査中の表示は本文の上に重ねる。本文の中に差し込むと、
+      // 走査の開始・終了のたびにダッシュボードから下が丸ごとずれる
+      body: Stack(
         children: [
-          // 走査中の表示だけはスクロールの外に置く。
-          // 流れて見えなくなると中断ボタンにたどり着けない
-          if (isMine) _runningCard(running!),
-          Expanded(
-            child: RefreshIndicator(
-              onRefresh: _load,
-              child: ListView(
-                children: [
-                  _dashboard(),
-                  _actionSection(t),
-                  const Divider(height: 32),
-                  _scheduleSection(t),
-                  const Divider(height: 32),
-                  _historySection(),
-                  const Divider(height: 32),
-                  _storageSection(),
-                  const SizedBox(height: 32),
-                ],
-              ),
+          RefreshIndicator(
+            onRefresh: _load,
+            child: ListView(
+              children: [
+                _dashboard(),
+                _actionSection(t),
+                const Divider(height: 32),
+                _scheduleSection(t),
+                const Divider(height: 32),
+                _historySection(),
+                const Divider(height: 32),
+                _storageSection(),
+                // 重ねたカードで最後の項目が隠れないよう、その分だけ空ける
+                SizedBox(height: isMine ? _runningCardReserve : 32),
+              ],
             ),
           ),
+          if (isMine)
+            Positioned(
+              left: 0,
+              right: 0,
+              bottom: 0,
+              child: _runningCard(running!),
+            ),
         ],
       ),
     );
@@ -438,6 +443,9 @@ class _FollowTargetScreenState extends State<FollowTargetScreen> {
   /// 対象の画面に出す件数。溜まると 40 件近くになるので直近だけ出す
   static const _historyPreview = 3;
 
+  /// 走査中カードを重ねる分の余白。カードの実寸に合わせた概算
+  static const _runningCardReserve = 190.0;
+
   Widget _historySection() {
     if (_history.isEmpty) {
       return Column(
@@ -565,7 +573,8 @@ class _FollowTargetScreenState extends State<FollowTargetScreen> {
     final rate = p.rateLimit;
     final waitLeft = p.waitingUntil?.difference(DateTime.now());
     return Card(
-      margin: const EdgeInsets.fromLTRB(12, 8, 12, 0),
+      margin: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+      elevation: 6,
       child: Padding(
         padding: const EdgeInsets.all(12),
         child: Column(

@@ -531,6 +531,21 @@ class XApiService {
       final restId = userResult['rest_id'] as String?;
       final legacy = userResult['legacy'] as Map<String, dynamic>?;
 
+      // ブロック調査の設計材料。個別取得でも関係の項目が返るかを、一覧側の
+      // 診断 (FollowListParser.describeFirstUser) と同じ形で残す。
+      // ログ有効時だけ出す
+      if (DebugLogService.instance.enabled) {
+        final rp = userResult['relationship_perspectives'];
+        final blockKeys = legacy == null
+            ? const <String>[]
+            : legacy.keys
+                .where((k) => k.contains('block') || k.contains('follow') || k.contains('mut'))
+                .toList();
+        DebugLogService.instance.log('XApi',
+            'UserByScreenName @$screenName: relationship_perspectives=$rp '
+            'legacy(relation keys)=$blockKeys');
+      }
+
       if (legacy == null) {
         return {
           'rest_id': restId,

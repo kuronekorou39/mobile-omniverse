@@ -63,9 +63,14 @@ class FollowListParser {
         final legacy = _asMap(result['legacy']);
         final parsed = FollowUser.fromUserResult(result);
         // legacy が空でも件数が取れているかを、この 1 行で切り分ける
+        // relationship_perspectives は「閲覧アカウントから見た関係」。
+        // 一覧に blocked_by / blocking が載るなら、つながっている人のフォロー先を
+        // 走査してブロック状態を集められる。載らないなら 1 人ずつ引く必要がある。
+        // 中身が見えないと設計が決まらないので、そのまま出す。
         return 'top=[${result.keys.join(",")}] '
             'legacy=[${legacy.keys.take(20).join(",")}] '
             'relationship_counts=${_asMap(result['relationship_counts'])} '
+            'relationship_perspectives=${_asMap(result['relationship_perspectives'])} '
             'tweet_counts=${_asMap(result['tweet_counts'])} '
             'parsed=(followers=${parsed?.followersCount} '
             'friends=${parsed?.friendsCount} statuses=${parsed?.statusesCount})';

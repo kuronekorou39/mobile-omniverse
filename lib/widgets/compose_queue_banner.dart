@@ -75,9 +75,10 @@ class _Banner extends ConsumerWidget {
     final String message;
 
     if (state.isAllDone && state.hasFailure) {
-      bg = Colors.red.withValues(alpha: 0.15);
-      fg = Colors.red.shade700;
-      statusIcon = Icon(Icons.error_outline, size: 18, color: fg);
+      // 失敗は見落とすと困るので、成功・処理中より強く出す
+      bg = Colors.red.shade700;
+      fg = Colors.white;
+      statusIcon = Icon(Icons.error, size: 20, color: fg);
       message = state.totalCount == 1
           ? '投稿に失敗しました'
           : '${state.failureCount}/${state.totalCount} 件失敗';
@@ -109,13 +110,16 @@ class _Banner extends ConsumerWidget {
     return Material(
       color: bg,
       child: InkWell(
+        // 失敗時は行全体をタップ領域にしない。閉じようとして押すと
+        // 再投稿画面が開いてしまい、閉じる手段が無かった
         onTap: hasFailure
-            ? () => _retry(context, ref)
+            ? null
             : state.isAllDone
                 ? () => ref.read(composeQueueProvider.notifier).dismiss()
                 : null,
         child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          padding: EdgeInsets.symmetric(
+              horizontal: 12, vertical: hasFailure ? 10 : 8),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -135,19 +139,30 @@ class _Banner extends ConsumerWidget {
                       overflow: TextOverflow.ellipsis,
                     ),
                   ),
-                  if (hasFailure)
-                    Padding(
-                      padding: const EdgeInsets.only(left: 4),
-                      child: Text(
-                        '再投稿',
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: fg,
-                          fontWeight: FontWeight.bold,
-                        ),
+                  if (hasFailure) ...[
+                    TextButton(
+                      onPressed: () => _retry(context, ref),
+                      style: TextButton.styleFrom(
+                        foregroundColor: fg,
+                        backgroundColor: Colors.white.withValues(alpha: 0.18),
+                        padding: const EdgeInsets.symmetric(horizontal: 12),
+                        visualDensity: VisualDensity.compact,
                       ),
-                    )
-                  else if (state.isAllDone)
+                      child: const Text('再投稿',
+                          style: TextStyle(
+                              fontSize: 12, fontWeight: FontWeight.bold)),
+                    ),
+                    IconButton(
+                      onPressed: () =>
+                          ref.read(composeQueueProvider.notifier).dismiss(),
+                      icon: Icon(Icons.close, size: 18, color: fg),
+                      tooltip: '閉じる',
+                      visualDensity: VisualDensity.compact,
+                      constraints:
+                          const BoxConstraints(minWidth: 36, minHeight: 36),
+                      padding: EdgeInsets.zero,
+                    ),
+                  ] else if (state.isAllDone)
                     Padding(
                       padding: const EdgeInsets.only(left: 4),
                       child: Icon(Icons.close, size: 16, color: fg),

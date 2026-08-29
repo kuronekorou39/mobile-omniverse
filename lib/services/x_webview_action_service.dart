@@ -79,6 +79,17 @@ class XWebViewActionService {
               'http error ${response.statusCode} for ${request.url}');
         }
       },
+      // WKWebView はメモリを食いすぎるとコンテンツプロセスだけが落ちる。
+      // 落ちてもアプリ側は気づけず、以後の evaluateJavascript が空振りして
+      // 「エディタが見つからない」など無関係に見える失敗になる。
+      // ここで印を付けておき、次の投稿で作り直す。
+      onWebContentProcessDidTerminate: (controller) {
+        _contentProcessDied = true;
+        _isReady = false;
+        debugPrint('[XWebView] WebView のコンテンツプロセスが落ちた');
+        DebugLogService.instance.log('XWebView',
+            'WebContentProcess terminated (メモリ不足の可能性)。次回作り直す');
+      },
       onLoadStop: (controller, url) {
         debugPrint('[XWebView] onLoadStop: $url');
         _controller = controller;
@@ -105,9 +116,23 @@ class XWebViewActionService {
     );
   }
 
+  /// コンテンツプロセスが落ちたあとは WebView ごと作り直す
+  bool _contentProcessDied = false;
+
   /// アカウントの cookie をセットして x.com をロード
   Future<void> init(XCredentials creds) async {
     if (_isReady && _currentAuthToken == creds.authToken) return;
+
+    if (_contentProcessDied) {
+      DebugLogService.instance
+          .log('XWebView', '落ちた WebView を破棄して作り直す');
+      try {
+        await _webView?.dispose();
+      } catch (_) {}
+      _webView = null;
+      _controller = null;
+      _contentProcessDied = false;
+    }
 
     await _ensureWebView();
 
@@ -506,6 +531,14 @@ class XWebViewActionService {
   /// 1 回」で安定動作している（現状仕様）。iOS は iPad の X 側 React が
   /// 入力直後に input.files をクリアしてしまい複数枚分が拾われないため、
   /// 「1 枚ずつ setter call + change 発火 + delay」に分岐する。
+  ///
+  /// iOS で 2 枚目以降が落ちる件への対処:
+  /// 以前は累積 DataTransfer に全枚を溜め、毎回「これまでの全部」を
+  /// input.files に渡していた。X 側は change のたびに files を取り込むので
+  /// 1 枚目が二重に取り込まれるうえ、base64 文字列と File が枚数ぶん
+  /// メモリに残り、WKWebView のコンテンツプロセスが落ちていた疑いが強い。
+  /// 1 枚ごとに独立した DataTransfer を作って渡し、使い終わった参照は
+  /// JS 側で明示的に捨てる。
   Future<bool> _attachImageFiles(List<XFile> files) async {
     debugPrint('[XWebView] 添付開始 (${files.length}枚)');
     DebugLogService.instance.log(
@@ -556,27 +589,32 @@ class XWebViewActionService {
         final mimeJs = json.encode(mime);
         final nameJs = json.encode(name);
 
-        // iOS は 1 枚ごとに setter call + change を発火し、X 側の処理を
-        // 1.2 秒待ってから次の画像に進む。Android は累積 DT に add するだけで
+        // iOS は 1 枚ごとに独立した DataTransfer で setter call + change を
+        // 発火し、プレビューに反映されるのを待ってから次へ進む。
+        // 累積させない (上のコメント参照)。Android は累積 DT に add するだけで
         // setter call は最後に 1 回（既存挙動）。
         final perImageJs = Platform.isIOS
             ? r'''
-              if (!window.__omniverseDT) window.__omniverseDT = new DataTransfer();
-              window.__omniverseDT.items.add(file);
               var input = document.querySelector('input[type=file][data-testid="fileInput"]')
                        || document.querySelector('input[data-testid="fileInput"]')
                        || document.querySelector('input[type=file][accept*="image"]')
                        || document.querySelector('input[type=file]');
               if (!input) return JSON.stringify({ ok: false, reason: 'input_not_found' });
+              var dt = new DataTransfer();
+              dt.items.add(file);
               var setter = Object.getOwnPropertyDescriptor(
                 window.HTMLInputElement.prototype, 'files').set;
-              setter.call(input, window.__omniverseDT.files);
+              setter.call(input, dt.files);
               input.dispatchEvent(new Event('change', { bubbles: true }));
               // X 側の React が input.files セット後に editor へ focus を
               // 戻すことがあり、それで iOS のソフトキーボードが裏で点滅する。
               // ここで即 blur しておく。
               try { if (document.activeElement && document.activeElement.blur) document.activeElement.blur(); } catch(e) {}
-              return JSON.stringify({ ok: true, dt: window.__omniverseDT.files.length, inputLen: input.files.length });
+              var inputLen = input.files.length;
+              // 大きな文字列と配列をこの場で手放す。関数を抜けても
+              // クロージャに掴まれて残ることがある
+              b64 = null; bin = null; arr = null; blob = null; file = null; dt = null;
+              return JSON.stringify({ ok: true, inputLen: inputLen });
             '''
             : r'''
               if (!window.__omniverseDT) window.__omniverseDT = new DataTransfer();

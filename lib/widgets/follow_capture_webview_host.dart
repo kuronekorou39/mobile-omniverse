@@ -67,9 +67,12 @@ class _FollowCaptureWebViewHostState extends State<FollowCaptureWebViewHost> {
           FollowCaptureWebViewService.instance.attach(controller);
         },
         onLoadStop: (controller, url) {
+          FollowCaptureWebViewService.instance.noteLoadStop(url?.toString());
           controller.evaluateJavascript(
               source: FollowCaptureWebViewService.interceptorScript);
         },
+        onConsoleMessage: (controller, msg) =>
+            FollowCaptureWebViewService.instance.noteConsole(msg),
       ),
     );
   }

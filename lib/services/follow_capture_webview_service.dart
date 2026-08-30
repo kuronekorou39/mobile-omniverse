@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:collection';
 import 'dart:convert';
+import 'dart:io' show Platform;
 import 'dart:ui' show Size;
 
 import 'package:flutter/foundation.dart';
@@ -129,6 +130,17 @@ class FollowCaptureWebViewService {
     } catch(e) {}
   }
 
+  // 診断: 捕獲できないとき「X が何を投げていたか」が分からないと
+  // 手が出せない。GraphQL のオペレーション名と status だけを別口で報告する。
+  function seen(url, status){
+    try {
+      var m = /\/i\/api\/graphql\/[^\/]+\/([A-Za-z0-9_]+)/.exec(String(url));
+      if (!m) return;
+      window.flutter_inappwebview.callHandler('onFollowSeen',
+        m[1] + ':' + status + (hasCursor(String(url)) ? ':cursor' : ''));
+    } catch(e) {}
+  }
+
   var originalFetch = window.fetch;
   window.fetch = function(){
     var args = arguments;
@@ -137,6 +149,7 @@ class FollowCaptureWebViewService {
       if (window.__fcw_replaying) return p;
       var req = args[0];
       var url = (req && req.url) ? req.url : String(req);
+      p.then(function(r){ seen(url, r.status); }).catch(function(){ seen(url, 'ERR'); });
       if (!isTarget(url)) return p;
 
       var headers = {};
@@ -174,6 +187,9 @@ class FollowCaptureWebViewService {
   XHR.prototype.send = function(){
     var info = this.__fcw;
     var self = this;
+    if (info) {
+      this.addEventListener('loadend', function(){ seen(info.url, self.status); });
+    }
     if (info && isTarget(info.url) && !window.__fcw_replaying) {
       this.addEventListener('load', function(){
         if (self.status !== 200) return;
@@ -206,8 +222,40 @@ class FollowCaptureWebViewService {
         }
       },
     );
+    controller.addJavaScriptHandler(
+      handlerName: 'onFollowSeen',
+      callback: (args) {
+        if (args.isNotEmpty && _seenOps.length < 200) {
+          _seenOps.add(args[0].toString());
+        }
+      },
+    );
     if (!(_hostReady?.isCompleted ?? true)) _hostReady!.complete();
     debugPrint('[FollowCaptureWebView] ホストの WebView を受け取りました');
+    DebugLogService.instance.log('FollowCaptureWebView',
+        'ホストの WebView を受け取りました (${Platform.operatingSystem})');
+  }
+
+  /// 捕獲を待っている間に X が投げた GraphQL (名前:status)。診断用
+  final List<String> _seenOps = [];
+
+  /// ホスト側の onLoadStop から。捕獲が空振りしたとき、そもそもどの
+  /// ページに居たのか (ログイン画面に飛ばされた等) を残す
+  void noteLoadStop(String? url) {
+    if (!DebugLogService.instance.enabled) return;
+    DebugLogService.instance
+        .log('FollowCaptureWebView', 'onLoadStop: ${url ?? '(null)'}');
+  }
+
+  /// ホスト側の onConsoleMessage から
+  void noteConsole(ConsoleMessage msg) {
+    if (msg.messageLevel != ConsoleMessageLevel.ERROR &&
+        msg.messageLevel != ConsoleMessageLevel.WARNING) {
+      return;
+    }
+    final text = msg.message;
+    DebugLogService.instance.log('FollowCaptureWebView',
+        'console[${msg.messageLevel}]: ${text.length > 300 ? text.substring(0, 300) : text}');
   }
 
   Completer<void>? _hostReady;
@@ -460,6 +508,7 @@ class FollowCaptureWebViewService {
     _capturedHeaders = null;
     _pendingInitialPage = null;
     _capturingKind = kind;
+    _seenOps.clear();
     // トークンは endpoint をまたいで使い回せるので、通常は捨てない。
     // 404 からの捕り直し (force) のときだけ作り直す。
     if (force) {
@@ -479,8 +528,18 @@ class FollowCaptureWebViewService {
       await CaptureCancelToken.race(
           _captureCompleter!.future.timeout(_captureTimeout), cancelToken);
     } on TimeoutException {
+      String? location;
+      try {
+        location = (await _controller!
+                .evaluateJavascript(source: 'location.href')
+                .timeout(const Duration(seconds: 3)))
+            ?.toString();
+      } catch (_) {}
       DebugLogService.instance.log(
-          'FollowCaptureWebView', '@$handle/$path の捕獲がタイムアウト');
+          'FollowCaptureWebView',
+          '@$handle/$path の捕獲がタイムアウト '
+          '(${Platform.operatingSystem}) location=$location '
+          'seen=[${_seenOps.join(', ')}]');
       return false;
     }
 

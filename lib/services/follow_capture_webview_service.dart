@@ -387,8 +387,12 @@ class FollowCaptureWebViewService {
       try {
         final decoded = json.decode(body) as Map<String, dynamic>;
         if (_txIds.length <= 1) {
-          debugPrint('[FollowCaptureWebView] 項目配置: '
-              '${FollowListParser.describeFirstUser(decoded)}');
+          // debugPrint だけだとアプリ内のログに残らず、端末の生ログを
+          // 読める環境でしか見えない。切り分けの要なので両方に出す
+          final layout = FollowListParser.describeFirstUser(decoded);
+          debugPrint('[FollowCaptureWebView] 項目配置: $layout');
+          DebugLogService.instance
+              .log('FollowCaptureWebView', '項目配置: $layout');
         }
         final parsed = FollowListParser.parse(decoded);
         _pendingInitialPage = FollowListPage(

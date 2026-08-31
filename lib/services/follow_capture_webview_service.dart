@@ -33,13 +33,21 @@ class FollowCaptureWebViewService {
   FollowCaptureWebViewService._();
   static final instance = FollowCaptureWebViewService._();
 
-  /// 捕獲の待ち時間。
+  /// 捕獲を諦めるまでの総時間。
   ///
-  /// 30 秒だと iPad で毎回きっちり間に合わず、再試行を繰り返して
-  /// 打ち切られていた。iPad は desktop レイアウトで初期化が重く、
-  /// フォロワー画面は特に読み込む量が多い。待つほうが、
-  /// 30 秒で切って 30/60/90… と待ち直すより早く済む。
+  /// この中で何度か読み込み直す ([_reloadAfter] 参照)。
   static const _captureTimeout = Duration(seconds: 75);
+
+  /// 1 本も通信が来ないまま この時間が過ぎたら、ページを読み込み直す。
+  ///
+  /// 直前に同じユーザーの別の一覧を開いていると、X がキャッシュから
+  /// 描画してリクエストを 1 本も出さないことがある (実測: フォロー取得の
+  /// 直後にフォロワーを開くと seen=[] のまま 75 秒経過)。この状態は
+  /// いくら待っても変わらないので、待つのではなく開き直す。
+  static const _reloadAfter = Duration(seconds: 20);
+
+  /// 読み込み直す上限。これを超えたら諦める
+  static const _maxReloads = 3;
   static const _fetchTimeout = Duration(seconds: 45);
 
   /// 捕獲後、ページの初期化が落ち着くまでの待ち
@@ -539,14 +547,12 @@ class FollowCaptureWebViewService {
 
     final path = kind == FollowListKind.following ? 'following' : 'followers';
     final handle = targetHandle.replaceFirst('@', '');
-    await _controller!.loadUrl(
-      urlRequest:
-          URLRequest(url: WebUri('https://x.com/$handle/$path')),
-    );
+    final url = WebUri('https://x.com/$handle/$path');
+    await _controller!.loadUrl(urlRequest: URLRequest(url: url));
 
     try {
       await CaptureCancelToken.race(
-          _captureCompleter!.future.timeout(_captureTimeout), cancelToken);
+          _awaitCaptureWithReload(url, handle, path, cancelToken), cancelToken);
     } on TimeoutException {
       String? location;
       try {
@@ -557,7 +563,7 @@ class FollowCaptureWebViewService {
       } catch (_) {}
       DebugLogService.instance.log(
           'FollowCaptureWebView',
-          '@$handle/$path の捕獲が ${_captureTimeout.inSeconds}秒で タイムアウト '
+          '@$handle/$path の捕獲が ${_captureTimeout.inSeconds}秒でタイムアウト '
           '(${Platform.operatingSystem}) location=$location '
           'seen=[${_seenOps.join(', ')}]');
       return false;
@@ -693,6 +699,53 @@ class FollowCaptureWebViewService {
       }
     }
     return page;
+  }
+
+  /// 捕獲を待つ。何も通信が来ないまま [_reloadAfter] が過ぎたら開き直す。
+  ///
+  /// 「待てばそのうち来る」ではなく「来ないときは永遠に来ない」ので、
+  /// 待ち時間を延ばすだけでは解決しない。人がページを再読み込みするのと
+  /// 同じことをする。
+  Future<void> _awaitCaptureWithReload(
+    WebUri url,
+    String handle,
+    String path,
+    CaptureCancelToken? cancelToken,
+  ) async {
+    final deadline = DateTime.now().add(_captureTimeout);
+    var reloads = 0;
+
+    while (true) {
+      final remaining = deadline.difference(DateTime.now());
+      if (remaining <= Duration.zero) throw TimeoutException(path);
+
+      final slice = remaining < _reloadAfter ? remaining : _reloadAfter;
+      try {
+        await _captureCompleter!.future.timeout(slice);
+        return; // 捕獲できた
+      } on TimeoutException {
+        cancelToken?.throwIfCancelled();
+
+        // 何か通信は起きているなら、ページは動いている。開き直すと
+        // かえって遠回りになるので待ち続ける
+        if (_seenOps.isNotEmpty) continue;
+        if (reloads >= _maxReloads) continue;
+
+        reloads++;
+        DebugLogService.instance.log(
+            'FollowCaptureWebView',
+            '@$handle/$path が ${slice.inSeconds}秒 無通信のため読み込み直す '
+            '($reloads/$_maxReloads)');
+        try {
+          // キャッシュから描画されて何も起きない状態を抜けたいので、
+          // reload ではなく URL を指定し直す
+          await _controller!.loadUrl(urlRequest: URLRequest(url: url));
+        } catch (e) {
+          DebugLogService.instance
+              .log('FollowCaptureWebView', '読み込み直しに失敗: $e');
+        }
+      }
+    }
   }
 
   /// 捕獲時の ct0 は古くなっている可能性がある。X が ct0 をローテートすると

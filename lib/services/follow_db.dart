@@ -35,7 +35,9 @@ class FollowDb {
   /// v6: Bluesky も対象にできるよう service を持たせる。
   ///     handle は X と Bluesky で衝突しうるので、対象のキーを
   ///     (service, handle) にした
-  static const _version = 6;
+  /// v7: ブロック調査。つながっている人のフォロー先をたどり、
+  ///     実行アカウントとの関係 (blocked_by / blocking) を集める
+  static const _version = 7;
 
   Database? _db;
 
@@ -78,6 +80,7 @@ class FollowDb {
           await _upgradeToV3(db);
           await _upgradeToV4(db);
           await _upgradeToV6(db);
+          await _upgradeToV7(db);
         },
         onUpgrade: (db, from, to) async {
           if (from < 2) await _upgradeToV2(db);
@@ -85,6 +88,7 @@ class FollowDb {
           if (from < 4) await _upgradeToV4(db);
           if (from < 5) await _upgradeToV5(db);
           if (from < 6) await _upgradeToV6(db);
+          if (from < 7) await _upgradeToV7(db);
         },
         onConfigure: (db) async => db.execute('PRAGMA foreign_keys = ON'),
       ),
@@ -260,6 +264,63 @@ class FollowDb {
     await db.execute('ALTER TABLE targets_v6 RENAME TO targets');
     await db.execute('CREATE INDEX IF NOT EXISTS idx_snapshots_service_target '
         'ON snapshots(service, targetHandle, kind, startedAt)');
+  }
+
+  /// ブロック調査。
+  ///
+  /// 起点 (誰かのフォロー/フォロワー/相互) の 1 人ずつについて、その人の
+  /// フォロー一覧を取る。一覧の各ユーザーには実行アカウントから見た関係
+  /// (relationship_perspectives) が載るので、走査したそばから
+  /// ブロックの有無が分かる。
+  ///
+  ///   block_runs      調査 1 回。起点と進み具合を持つ
+  ///   block_sources   起点の 1 人。どこまで進んだか (cursor) を持つので
+  ///                   途中で切れてもその人の続きから再開できる
+  ///   block_findings  見つかった関係。同じ人が複数の source から
+  ///                   見つかるので (source, restId) を主キーにする
+  static Future<void> _upgradeToV7(Database db) async {
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS block_runs (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        service TEXT NOT NULL,
+        targetHandle TEXT NOT NULL,
+        sessionAccountId TEXT,
+        origin TEXT NOT NULL,
+        startedAt INTEGER NOT NULL,
+        completedAt INTEGER,
+        status TEXT NOT NULL
+      )
+    ''');
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS block_sources (
+        runId INTEGER NOT NULL,
+        restId TEXT NOT NULL,
+        screenName TEXT NOT NULL,
+        friendsCount INTEGER,
+        position INTEGER NOT NULL,
+        status TEXT NOT NULL,
+        cursor TEXT,
+        collected INTEGER NOT NULL DEFAULT 0,
+        reason TEXT,
+        PRIMARY KEY (runId, restId)
+      )
+    ''');
+    await db.execute('CREATE INDEX IF NOT EXISTS idx_block_sources_run '
+        'ON block_sources(runId, status, position)');
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS block_findings (
+        runId INTEGER NOT NULL,
+        sourceRestId TEXT NOT NULL,
+        restId TEXT NOT NULL,
+        blockedBy INTEGER,
+        blocking INTEGER,
+        muting INTEGER,
+        PRIMARY KEY (runId, sourceRestId, restId)
+      )
+    ''');
+    // 「誰から見つかったか」を横断で数えるため restId 側にも索引を張る
+    await db.execute('CREATE INDEX IF NOT EXISTS idx_block_findings_user '
+        'ON block_findings(runId, restId)');
   }
 
   Future<void> setTotalExpected(int snapshotId, int? total) async {
@@ -471,25 +532,8 @@ class FollowDb {
     await db.transaction((txn) async {
       final batch = txn.batch();
       for (final u in users) {
-        batch.insert(
-          'users',
-          {
-            'restId': u.restId,
-            'screenName': u.screenName,
-            'name': u.name,
-            'followersCount': u.followersCount,
-            'friendsCount': u.friendsCount,
-            'statusesCount': u.statusesCount,
-            'avatarUrl': u.avatarUrl,
-            'description': u.description,
-            'verified': u.verified ? 1 : 0,
-            'isProtected': u.isProtected ? 1 : 0,
-            'location': u.location,
-            'createdAt': u.createdAt,
-            'updatedAt': now,
-          },
-          conflictAlgorithm: ConflictAlgorithm.replace,
-        );
+        batch.insert('users', _userRow(u, now),
+            conflictAlgorithm: ConflictAlgorithm.replace);
         // 件数は「この走査時点の値」として members 側にも残す。
         // users は最新値で上書きされるため、推移はここからしか取れない。
         batch.insert(
@@ -881,11 +925,281 @@ class FollowDb {
     );
   }
 
-  /// 参照されなくなった users を掃除する
+  // ─── ブロック調査 ───
+
+  /// フォロー数がこれを超える相手は走査しない。
+  /// 1 人で数時間かかり、調査全体が進まなくなるため
+  static const blockScanFriendLimit = 10000;
+
+  /// 調査を始める。起点の一覧から走査対象を作る。
+  ///
+  /// [sources] は起点の並び順どおりに渡すこと。上から 1 人ずつ処理する。
+  Future<int> startBlockRun({
+    required SnsService service,
+    required String targetHandle,
+    required String origin,
+    String? sessionAccountId,
+    required List<FollowUser> sources,
+  }) async {
+    final db = await _database;
+    final runId = await db.insert('block_runs', {
+      'service': service.name,
+      'targetHandle': _norm(targetHandle),
+      'sessionAccountId': sessionAccountId,
+      'origin': origin,
+      'startedAt': DateTime.now().millisecondsSinceEpoch,
+      'status': 'running',
+    });
+
+    await db.transaction((txn) async {
+      final batch = txn.batch();
+      for (var i = 0; i < sources.length; i++) {
+        final u = sources[i];
+        // フォロー数が分かっていて多すぎる相手は、始める前に外しておく。
+        // 分からない相手は走らせてみて、上限に達したら打ち切る
+        final skip = u.friendsCount > blockScanFriendLimit;
+        batch.insert('block_sources', {
+          'runId': runId,
+          'restId': u.restId,
+          'screenName': u.screenName,
+          'friendsCount': u.friendsCount,
+          'position': i,
+          'status': skip ? 'skipped' : 'pending',
+          'reason': skip ? 'フォローが多すぎる (${u.friendsCount})' : null,
+        }, conflictAlgorithm: ConflictAlgorithm.ignore);
+      }
+      await batch.commit(noResult: true);
+    });
+    return runId;
+  }
+
+  /// 次に処理する 1 人。中断した人が居ればその人を優先して続きから
+  Future<BlockSource?> nextBlockSource(int runId) async {
+    final db = await _database;
+    final rows = await db.query('block_sources',
+        where: "runId = ? AND status IN ('running', 'pending')",
+        whereArgs: [runId],
+        // running (中断した人) を先に。あとは起点の並び順
+        orderBy: "CASE status WHEN 'running' THEN 0 ELSE 1 END, position",
+        limit: 1);
+    return rows.isEmpty ? null : BlockSource.fromRow(rows.first);
+  }
+
+  Future<void> markBlockSourceRunning(int runId, String restId) async {
+    final db = await _database;
+    await db.update('block_sources', {'status': 'running'},
+        where: 'runId = ? AND restId = ?', whereArgs: [runId, restId]);
+  }
+
+  /// 1 ページぶんの結果を足す。cursor も一緒に進めるので、
+  /// ここで落ちてもこの人の続きから再開できる
+  Future<void> addBlockFindings({
+    required int runId,
+    required String sourceRestId,
+    required List<FollowUser> users,
+    String? cursor,
+  }) async {
+    final db = await _database;
+    final now = DateTime.now().millisecondsSinceEpoch;
+    await db.transaction((txn) async {
+      final batch = txn.batch();
+      for (final u in users) {
+        // 関係が 1 つも取れていない相手は記録しない。
+        // 「調べた結果いずれでもない」と「そもそも取れていない」を
+        // 混ぜると集計が濁る
+        if (u.blockedBy == null && u.blocking == null && u.muting == null) {
+          continue;
+        }
+        // 名前やアイコンは users から引くので、ここで入れておく。
+        // 入れないと結果の一覧が JOIN で空になる
+        batch.insert('users', _userRow(u, now),
+            conflictAlgorithm: ConflictAlgorithm.replace);
+        batch.insert(
+          'block_findings',
+          {
+            'runId': runId,
+            'sourceRestId': sourceRestId,
+            'restId': u.restId,
+            'blockedBy': _boolInt(u.blockedBy),
+            'blocking': _boolInt(u.blocking),
+            'muting': _boolInt(u.muting),
+          },
+          conflictAlgorithm: ConflictAlgorithm.replace,
+        );
+      }
+      await batch.commit(noResult: true);
+      await txn.rawUpdate(
+        'UPDATE block_sources SET cursor = ?, collected = collected + ? '
+        'WHERE runId = ? AND restId = ?',
+        [cursor, users.length, runId, sourceRestId],
+      );
+    });
+  }
+
+  static int? _boolInt(bool? v) => v == null ? null : (v ? 1 : 0);
+
+  static Map<String, Object?> _userRow(FollowUser u, int now) => {
+        'restId': u.restId,
+        'screenName': u.screenName,
+        'name': u.name,
+        'followersCount': u.followersCount,
+        'friendsCount': u.friendsCount,
+        'statusesCount': u.statusesCount,
+        'avatarUrl': u.avatarUrl,
+        'description': u.description,
+        'verified': u.verified ? 1 : 0,
+        'isProtected': u.isProtected ? 1 : 0,
+        'location': u.location,
+        'createdAt': u.createdAt,
+        'updatedAt': now,
+      };
+
+  Future<void> finishBlockSource(int runId, String restId,
+      {required String status, String? reason}) async {
+    final db = await _database;
+    await db.update(
+        'block_sources', {'status': status, 'reason': reason, 'cursor': null},
+        where: 'runId = ? AND restId = ?', whereArgs: [runId, restId]);
+  }
+
+  Future<void> finishBlockRun(int runId, {required bool completed}) async {
+    final db = await _database;
+    await db.update(
+        'block_runs',
+        {
+          'status': completed ? 'completed' : 'interrupted',
+          'completedAt': DateTime.now().millisecondsSinceEpoch,
+        },
+        where: 'id = ?',
+        whereArgs: [runId]);
+  }
+
+  Future<List<BlockRun>> listBlockRuns(
+      {SnsService? service, String? targetHandle, int limit = 50}) async {
+    final db = await _database;
+    final where = <String>[];
+    final args = <Object?>[];
+    if (service != null) {
+      where.add('service = ?');
+      args.add(service.name);
+    }
+    if (targetHandle != null) {
+      where.add('targetHandle = ?');
+      args.add(_norm(targetHandle));
+    }
+    final rows = await db.query('block_runs',
+        where: where.isEmpty ? null : where.join(' AND '),
+        whereArgs: args.isEmpty ? null : args,
+        orderBy: 'startedAt DESC, id DESC',
+        limit: limit);
+    return rows.map(BlockRun.fromRow).toList();
+  }
+
+  /// 途中でも見られるように、いつでも数えられるようにしておく
+  Future<BlockRunProgress> blockRunProgress(int runId) async {
+    final db = await _database;
+    Future<int> count(String sql, [List<Object?> args = const []]) async =>
+        Sqflite.firstIntValue(await db.rawQuery(sql, [runId, ...args])) ?? 0;
+
+    return BlockRunProgress(
+      totalSources: await count('SELECT COUNT(*) FROM block_sources WHERE runId = ?'),
+      doneSources: await count(
+          "SELECT COUNT(*) FROM block_sources WHERE runId = ? AND status IN ('done', 'skipped', 'failed')"),
+      skippedSources: await count(
+          "SELECT COUNT(*) FROM block_sources WHERE runId = ? AND status = 'skipped'"),
+      scanned: await count('SELECT COUNT(*) FROM block_findings WHERE runId = ?'),
+      blockedBy: await count(
+          'SELECT COUNT(DISTINCT restId) FROM block_findings WHERE runId = ? AND blockedBy = 1'),
+      blocking: await count(
+          'SELECT COUNT(DISTINCT restId) FROM block_findings WHERE runId = ? AND blocking = 1'),
+      muting: await count(
+          'SELECT COUNT(DISTINCT restId) FROM block_findings WHERE runId = ? AND muting = 1'),
+    );
+  }
+
+  /// 見つかった相手を、発見元の人数つきで返す。
+  /// [relation] は 'blockedBy' / 'blocking' / 'muting'
+  Future<List<BlockFinding>> blockFindings({
+    required int runId,
+    required String relation,
+    FollowFilter filter = FollowFilter.none,
+    int limit = 100,
+    int offset = 0,
+  }) async {
+    assert(const ['blockedBy', 'blocking', 'muting'].contains(relation));
+    final db = await _database;
+    final f = filter.clause;
+    final rows = await db.rawQuery(
+      'SELECT u.*, '
+      'u.followersCount AS snapFollowers, u.friendsCount AS snapFriends, '
+      'u.statusesCount AS snapStatuses, '
+      'COUNT(*) AS sourceCount, '
+      "GROUP_CONCAT(s.screenName, ', ') AS sourceNames "
+      'FROM block_findings b '
+      'JOIN users u ON u.restId = b.restId '
+      'LEFT JOIN block_sources s '
+      '  ON s.runId = b.runId AND s.restId = b.sourceRestId '
+      'WHERE b.runId = ? AND b.$relation = 1${f.sql} '
+      'GROUP BY b.restId '
+      'ORDER BY sourceCount DESC, u.followersCount DESC, u.restId '
+      'LIMIT ? OFFSET ?',
+      [runId, ...f.args, limit, offset],
+    );
+    return rows
+        .map((r) => BlockFinding(
+              user: _userFromSnapshotRow(r),
+              sourceCount: (r['sourceCount'] as int?) ?? 0,
+              sourceNames: (r['sourceNames'] as String?) ?? '',
+            ))
+        .toList();
+  }
+
+  /// つながっている人たちの間で、何人からフォローされているか。
+  /// 走査結果の集計だけで出せるので追加の通信は要らない
+  Future<List<BlockFinding>> popularAmongSources({
+    required int runId,
+    bool onlyNotFollowed = false,
+    int limit = 100,
+    int offset = 0,
+  }) async {
+    final db = await _database;
+    // 起点の一覧に居る相手 = 自分がフォローしている相手とみなす
+    const notFollowed = ' AND b.restId NOT IN '
+        '(SELECT restId FROM block_sources WHERE runId = b.runId)';
+    final rows = await db.rawQuery(
+      'SELECT u.*, '
+      'u.followersCount AS snapFollowers, u.friendsCount AS snapFriends, '
+      'u.statusesCount AS snapStatuses, '
+      'COUNT(*) AS sourceCount, '
+      "GROUP_CONCAT(s.screenName, ', ') AS sourceNames "
+      'FROM block_findings b '
+      'JOIN users u ON u.restId = b.restId '
+      'LEFT JOIN block_sources s '
+      '  ON s.runId = b.runId AND s.restId = b.sourceRestId '
+      'WHERE b.runId = ?${onlyNotFollowed ? notFollowed : ''} '
+      'GROUP BY b.restId '
+      'ORDER BY sourceCount DESC, u.followersCount DESC, u.restId '
+      'LIMIT ? OFFSET ?',
+      [runId, limit, offset],
+    );
+    return rows
+        .map((r) => BlockFinding(
+              user: _userFromSnapshotRow(r),
+              sourceCount: (r['sourceCount'] as int?) ?? 0,
+              sourceNames: (r['sourceNames'] as String?) ?? '',
+            ))
+        .toList();
+  }
+
+  /// 参照されなくなった users を掃除する。
+  ///
+  /// ブロック調査の結果からも参照されているので、そちらも見る。
+  /// 見ないと、数時間かけて集めた相手の名前やアイコンが消える
   Future<int> pruneOrphanUsers() async {
     final db = await _database;
-    return db.rawDelete(
-        'DELETE FROM users WHERE restId NOT IN (SELECT restId FROM snapshot_members)');
+    return db.rawDelete('DELETE FROM users WHERE restId NOT IN '
+        '(SELECT restId FROM snapshot_members) '
+        'AND restId NOT IN (SELECT restId FROM block_findings)');
   }
 
   static FollowUser _userFromRow(Map<String, Object?> r) => FollowUser(
@@ -1212,4 +1526,133 @@ class FollowSnapshot {
         collectedCount: (r['collectedCount'] as int?) ?? 0,
         totalExpected: r['totalExpected'] as int?,
       );
+}
+
+/// ブロック調査 1 回
+class BlockRun {
+  const BlockRun({
+    required this.id,
+    required this.service,
+    required this.targetHandle,
+    required this.origin,
+    required this.startedAt,
+    required this.status,
+    this.sessionAccountId,
+    this.completedAt,
+  });
+
+  final int id;
+  final SnsService service;
+  final String targetHandle;
+
+  /// 起点。'following' / 'followers' / 'mutual'
+  final String origin;
+  final String? sessionAccountId;
+  final DateTime startedAt;
+  final DateTime? completedAt;
+  final String status;
+
+  bool get isCompleted => status == 'completed';
+
+  String get originLabel => switch (origin) {
+        'followers' => 'フォロワー',
+        'mutual' => '相互',
+        _ => 'フォロー',
+      };
+
+  factory BlockRun.fromRow(Map<String, Object?> r) => BlockRun(
+        id: r['id'] as int,
+        service: _serviceOf(r['service']),
+        targetHandle: r['targetHandle'] as String,
+        origin: (r['origin'] as String?) ?? 'following',
+        sessionAccountId: r['sessionAccountId'] as String?,
+        startedAt: DateTime.fromMillisecondsSinceEpoch(r['startedAt'] as int),
+        completedAt: r['completedAt'] == null
+            ? null
+            : DateTime.fromMillisecondsSinceEpoch(r['completedAt'] as int),
+        status: r['status'] as String,
+      );
+}
+
+/// 調査の走査対象 1 人
+class BlockSource {
+  const BlockSource({
+    required this.runId,
+    required this.restId,
+    required this.screenName,
+    required this.position,
+    required this.status,
+    this.friendsCount,
+    this.cursor,
+    this.collected = 0,
+    this.reason,
+  });
+
+  final int runId;
+  final String restId;
+  final String screenName;
+  final int? friendsCount;
+  final int position;
+
+  /// pending / running / done / skipped / failed
+  final String status;
+
+  /// 途中まで取れているときの再開位置
+  final String? cursor;
+  final int collected;
+  final String? reason;
+
+  factory BlockSource.fromRow(Map<String, Object?> r) => BlockSource(
+        runId: r['runId'] as int,
+        restId: r['restId'] as String,
+        screenName: r['screenName'] as String,
+        friendsCount: r['friendsCount'] as int?,
+        position: (r['position'] as int?) ?? 0,
+        status: r['status'] as String,
+        cursor: r['cursor'] as String?,
+        collected: (r['collected'] as int?) ?? 0,
+        reason: r['reason'] as String?,
+      );
+}
+
+/// 調査の進み具合。途中でも見られるように、いつでも数えられる
+class BlockRunProgress {
+  const BlockRunProgress({
+    required this.totalSources,
+    required this.doneSources,
+    required this.skippedSources,
+    required this.scanned,
+    required this.blockedBy,
+    required this.blocking,
+    required this.muting,
+  });
+
+  final int totalSources;
+  final int doneSources;
+  final int skippedSources;
+
+  /// 関係を記録できた延べ件数
+  final int scanned;
+  final int blockedBy;
+  final int blocking;
+  final int muting;
+
+  double get ratio => totalSources == 0 ? 0 : doneSources / totalSources;
+}
+
+/// 見つかった相手と、どこで見つかったか
+class BlockFinding {
+  const BlockFinding({
+    required this.user,
+    required this.sourceCount,
+    required this.sourceNames,
+  });
+
+  final FollowUser user;
+
+  /// 何人のフォロー先に現れたか
+  final int sourceCount;
+
+  /// 発見元の @ID をカンマで並べたもの (表示用)
+  final String sourceNames;
 }

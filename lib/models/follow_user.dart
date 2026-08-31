@@ -16,6 +16,9 @@ class FollowUser {
     this.isProtected = false,
     this.location = '',
     this.createdAt = '',
+    this.blockedBy,
+    this.blocking,
+    this.muting,
   });
 
   final String restId;
@@ -32,6 +35,19 @@ class FollowUser {
 
   /// X が返す生文字列 (例: "Thu Apr 06 15:24:15 +0000 2023")
   final String createdAt;
+
+  /// 一覧を取得したアカウントから見た関係 (relationship_perspectives)。
+  ///
+  /// **取得したアカウントに依存する**値なので、users には持たせず
+  /// スナップショット側に保存する。項目が返らなかったときは null。
+  /// 相手が自分をブロックしている
+  final bool? blockedBy;
+
+  /// 自分が相手をブロックしている
+  final bool? blocking;
+
+  /// 自分が相手をミュートしている
+  final bool? muting;
 
   /// フォロワー数 / フォロー数。フォロー 0 は比が定義できないので null
   double? get followRatio =>
@@ -53,6 +69,8 @@ class FollowUser {
     final verification = _asMap(result['verification']);
     final counts = _asMap(result['relationship_counts']);
     final tweetCounts = _asMap(result['tweet_counts']);
+    // 閲覧アカウントから見た関係。一覧にもそのまま載る
+    final perspectives = _asMap(result['relationship_perspectives']);
     final locationObj = _asMap(result['location']);
 
     final restId = _str(result['rest_id']);
@@ -88,6 +106,11 @@ class FollowUser {
           false,
       location: _str(legacy['location']) ?? _str(locationObj['location']) ?? '',
       createdAt: _str(legacy['created_at']) ?? _str(core['created_at']) ?? '',
+      blockedBy: perspectives['blocked_by'] as bool? ??
+          legacy['blocked_by'] as bool?,
+      blocking:
+          perspectives['blocking'] as bool? ?? legacy['blocking'] as bool?,
+      muting: perspectives['muting'] as bool? ?? legacy['muting'] as bool?,
     );
   }
 
@@ -135,6 +158,9 @@ class FollowUser {
         isProtected: isProtected,
         location: location,
         createdAt: createdAt,
+        blockedBy: blockedBy,
+        blocking: blocking,
+        muting: muting,
       );
 
   Map<String, dynamic> toJson() => {
@@ -150,6 +176,9 @@ class FollowUser {
         'isProtected': isProtected,
         'location': location,
         'createdAt': createdAt,
+        'blockedBy': blockedBy,
+        'blocking': blocking,
+        'muting': muting,
       };
 
   factory FollowUser.fromJson(Map<String, dynamic> map) => FollowUser(
@@ -165,6 +194,9 @@ class FollowUser {
         isProtected: (map['isProtected'] as bool?) ?? false,
         location: (map['location'] as String?) ?? '',
         createdAt: (map['createdAt'] as String?) ?? '',
+        blockedBy: map['blockedBy'] as bool?,
+        blocking: map['blocking'] as bool?,
+        muting: map['muting'] as bool?,
       );
 
   @override

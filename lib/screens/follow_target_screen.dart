@@ -10,6 +10,7 @@ import '../services/follow_db.dart';
 import '../utils/app_snackbar.dart';
 import '../utils/confirm_dialog.dart';
 import '../utils/image_headers.dart';
+import '../widgets/block_scan_section.dart';
 import 'follow_history_screen.dart';
 import 'follow_relation_screen.dart';
 import 'follow_snapshot_screen.dart';
@@ -207,6 +208,13 @@ class _FollowTargetScreenState extends State<FollowTargetScreen> {
                 _scheduleSection(t),
                 const Divider(height: 32),
                 _historySection(),
+                const Divider(height: 32),
+                BlockScanSection(
+                  service: widget.service,
+                  handle: widget.handle,
+                  account: _sessionAccount,
+                  onChanged: _load,
+                ),
                 const Divider(height: 32),
                 _storageSection(),
                 // 重ねたカードで最後の項目が隠れないよう、その分だけ空ける

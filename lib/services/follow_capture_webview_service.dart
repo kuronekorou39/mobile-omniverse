@@ -554,18 +554,22 @@ class FollowCaptureWebViewService {
       await CaptureCancelToken.race(
           _awaitCaptureWithReload(url, handle, path, cancelToken), cancelToken);
     } on TimeoutException {
-      String? location;
+      // 通信が 1 本も来ないまま終わったときは、画面に何が出ているかを
+      // 見ないと切り分けようがない。推測を重ねるより実物を見る。
+      String? dump;
       try {
-        location = (await _controller!
-                .evaluateJavascript(source: 'location.href')
-                .timeout(const Duration(seconds: 3)))
+        dump = (await _controller!
+                .evaluateJavascript(source: _pageStateJs)
+                .timeout(const Duration(seconds: 5)))
             ?.toString();
-      } catch (_) {}
+      } catch (e) {
+        dump = 'dump_failed: $e';
+      }
       DebugLogService.instance.log(
           'FollowCaptureWebView',
           '@$handle/$path の捕獲が ${_captureTimeout.inSeconds}秒でタイムアウト '
-          '(${Platform.operatingSystem}) location=$location '
-          'seen=[${_seenOps.join(', ')}]');
+          '(${Platform.operatingSystem}) '
+          'seen=[${_seenOps.join(', ')}] page=$dump');
       return false;
     }
 
@@ -700,6 +704,35 @@ class FollowCaptureWebViewService {
     }
     return page;
   }
+
+  /// 捕獲が空振りしたときに、ページの状態を 1 行にまとめる JS。
+  ///
+  /// 個人情報を撒かないよう、本文はそのまま出さずに「先頭 400 文字の
+  /// 抜粋」に留める。知りたいのは中身ではなく「何の画面か」。
+  static const _pageStateJs = r'''
+    (function(){
+      try {
+        var t = document.body ? (document.body.innerText || '') : '';
+        var norm = t.replace(/\s+/g, ' ').trim();
+        // タブ (フォロー/フォロワー) の見出しがあるか
+        var tabs = [];
+        document.querySelectorAll('[role="tab"]').forEach(function(el){
+          tabs.push((el.innerText || '').replace(/\s+/g,' ').trim());
+        });
+        // 一覧のセルがいくつ描画されているか
+        var cells = document.querySelectorAll('[data-testid="UserCell"]').length;
+        return JSON.stringify({
+          url: location.href,
+          title: document.title || '',
+          reactRoot: !!document.getElementById('react-root'),
+          tabs: tabs.slice(0, 6),
+          userCells: cells,
+          textLen: norm.length,
+          text: norm.substring(0, 400)
+        });
+      } catch(e) { return 'js_error: ' + e; }
+    })()
+  ''';
 
   /// 捕獲を待つ。何も通信が来ないまま [_reloadAfter] が過ぎたら開き直す。
   ///

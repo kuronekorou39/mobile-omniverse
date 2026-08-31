@@ -153,11 +153,6 @@ class FollowCaptureJobService {
   /// 中断したら「次の種別」「次の対象」も走らせない
   bool _chainAborted = false;
 
-  /// 連続実行の最中は true。1 本終わるたびにホストを畳むと、
-  /// 次の 1 本が始まった直後に「もう居ない WebView」を掴んでしまう。
-  /// 畳むのは連続実行そのものが終わってから。
-  bool _keepHost = false;
-
   /// 他の処理が x.com の WebView / Cookie を占有している間は true。
   ///
   /// 投稿・ログイン・セッション更新・通知 queryId 取得はいずれも
@@ -214,7 +209,6 @@ class FollowCaptureJobService {
   }) async {
     final handle = targetHandle.replaceFirst('@', '');
     _chainAborted = false;
-    _keepHost = true;
     try {
       for (final kind in FollowListKind.values) {
         // 中断したのに次の種別が始まると、止めたつもりが止まっていないように見える
@@ -222,7 +216,6 @@ class FollowCaptureJobService {
         await run(account: account, targetHandle: handle, kind: kind);
       }
     } finally {
-      _keepHost = false;
       hostNeeded.value = false;
     }
   }
@@ -247,11 +240,9 @@ class FollowCaptureJobService {
     if (accounts.isEmpty) return;
 
     _chainAborted = false;
-    _keepHost = true;
     try {
       await _runDueWork(accounts);
     } finally {
-      _keepHost = false;
       hostNeeded.value = false;
     }
     await FollowDb.instance.pruneToSizeLimit(sizeLimitBytes);
@@ -490,8 +481,17 @@ class FollowCaptureJobService {
       progress.value = null;
       if (needsHost) {
         await webView.reset();
-        // 連続実行の途中では畳まない（次の 1 本で使い回す）
-        if (!_keepHost) hostNeeded.value = false;
+        // 1 本ごとに必ず畳んで作り直す。
+        //
+        // 使い回すと 2 本目で X の SPA が起動しない。実測では、フォローの
+        // 直後に同じ WebView でフォロワーを開くと react-root の器だけが
+        // 残り、本文が空 (textLen=0) のまま GraphQL を 1 本も投げなかった。
+        // 新しい WebView なら必ず動く。作り直すぶん数秒かかるが、
+        // 速さより確実さを取る。
+        //
+        // 畳むと host 側が detachHost で古い controller を手放すので、
+        // 次の waitForHost は新しいものを待てる。
+        hostNeeded.value = false;
       } else {
         bluesky.reset();
       }

@@ -33,7 +33,13 @@ class FollowCaptureWebViewService {
   FollowCaptureWebViewService._();
   static final instance = FollowCaptureWebViewService._();
 
-  static const _captureTimeout = Duration(seconds: 30);
+  /// 捕獲の待ち時間。
+  ///
+  /// 30 秒だと iPad で毎回きっちり間に合わず、再試行を繰り返して
+  /// 打ち切られていた。iPad は desktop レイアウトで初期化が重く、
+  /// フォロワー画面は特に読み込む量が多い。待つほうが、
+  /// 30 秒で切って 30/60/90… と待ち直すより早く済む。
+  static const _captureTimeout = Duration(seconds: 75);
   static const _fetchTimeout = Duration(seconds: 45);
 
   /// 捕獲後、ページの初期化が落ち着くまでの待ち
@@ -132,12 +138,19 @@ class FollowCaptureWebViewService {
 
   // 診断: 捕獲できないとき「X が何を投げていたか」が分からないと
   // 手が出せない。GraphQL のオペレーション名と status だけを別口で報告する。
+  //
+  // 橋 (WebView↔ネイティブ) の往復はただではない。全リクエストで呼ぶと
+  // 本来の捕獲通知と競合しかねないので、GraphQL に限り、
+  // 同じ名前は 1 回しか送らない。
+  window.__fcw_seen = {};
   function seen(url, status){
     try {
       var m = /\/i\/api\/graphql\/[^\/]+\/([A-Za-z0-9_]+)/.exec(String(url));
       if (!m) return;
-      window.flutter_inappwebview.callHandler('onFollowSeen',
-        m[1] + ':' + status + (hasCursor(String(url)) ? ':cursor' : ''));
+      var key = m[1] + ':' + status + (hasCursor(String(url)) ? ':cursor' : '');
+      if (window.__fcw_seen[key]) return;
+      window.__fcw_seen[key] = 1;
+      window.flutter_inappwebview.callHandler('onFollowSeen', key);
     } catch(e) {}
   }
 
@@ -149,7 +162,10 @@ class FollowCaptureWebViewService {
       if (window.__fcw_replaying) return p;
       var req = args[0];
       var url = (req && req.url) ? req.url : String(req);
-      p.then(function(r){ seen(url, r.status); }).catch(function(){ seen(url, 'ERR'); });
+      if (String(url).indexOf('/i/api/graphql/') >= 0) {
+        p.then(function(r){ seen(url, r.status); })
+         .catch(function(){ seen(url, 'ERR'); });
+      }
       if (!isTarget(url)) return p;
 
       var headers = {};
@@ -187,7 +203,7 @@ class FollowCaptureWebViewService {
   XHR.prototype.send = function(){
     var info = this.__fcw;
     var self = this;
-    if (info) {
+    if (info && String(info.url).indexOf('/i/api/graphql/') >= 0) {
       this.addEventListener('loadend', function(){ seen(info.url, self.status); });
     }
     if (info && isTarget(info.url) && !window.__fcw_replaying) {
@@ -541,7 +557,7 @@ class FollowCaptureWebViewService {
       } catch (_) {}
       DebugLogService.instance.log(
           'FollowCaptureWebView',
-          '@$handle/$path の捕獲がタイムアウト '
+          '@$handle/$path の捕獲が ${_captureTimeout.inSeconds}秒で タイムアウト '
           '(${Platform.operatingSystem}) location=$location '
           'seen=[${_seenOps.join(', ')}]');
       return false;

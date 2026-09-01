@@ -16,6 +16,7 @@ import '../providers/fetch_status_provider.dart';
 import '../providers/notification_badge_provider.dart';
 import '../providers/notification_fetch_status_provider.dart';
 import '../providers/notification_highlight_provider.dart';
+import '../widgets/appear_once.dart';
 import '../providers/settings_provider.dart';
 import '../services/bluesky_api_service.dart';
 import '../services/notification_cache_service.dart';
@@ -620,6 +621,9 @@ class _NotificationList extends ConsumerStatefulWidget {
 
 class _NotificationListState extends ConsumerState<_NotificationList>
     with AutomaticKeepAliveClientMixin {
+  /// どの通知が新しく来たか。新着だけ現れる演出をするために覚えておく
+  final _newItems = NewItemTracker();
+
   final _notifications = <NotificationItem>[];
   bool _isLoading = true;
   String? _error;
@@ -897,6 +901,10 @@ class _NotificationListState extends ConsumerState<_NotificationList>
 
     final types = _availableTypes;
     final filtered = _filteredNotifications;
+    // 描画が終わってから覚える。build 中に触ると、同じフレームで
+    // 「新着ではない」ことになってしまう
+    WidgetsBinding.instance.addPostFrameCallback(
+        (_) => _newItems.remember(filtered.map((n) => n.id)));
     final isFiltered = _hiddenTypes.isNotEmpty;
 
     return Column(
@@ -965,11 +973,14 @@ class _NotificationListState extends ConsumerState<_NotificationList>
                   );
                 }
                 final n = filtered[index];
-                return _NotificationTile(
-                  key: ValueKey(n.id),
-                  notification: n,
-                  account: widget.account,
-                  showSnsBadge: false,
+                return AppearOnce(
+                  enabled: _newItems.isNew(n.id),
+                  child: _NotificationTile(
+                    key: ValueKey(n.id),
+                    notification: n,
+                    account: widget.account,
+                    showSnsBadge: false,
+                  ),
                 );
               },
             ),
@@ -1085,9 +1096,11 @@ class _NotificationTileState extends ConsumerState<_NotificationTile> {
         AnimatedContainer(
       duration: const Duration(milliseconds: 800),
       curve: Curves.easeOut,
+      // null ではなく透明を渡す。null と色の間は素直に補間されず、
+      // 消えるときにパッと切り替わって見える
       color: highlighted
           ? Theme.of(context).colorScheme.primary.withValues(alpha: 0.15)
-          : null,
+          : Colors.transparent,
       child: InkWell(
         onTap: () {
           if (_isSystemNotification) {
@@ -1133,9 +1146,21 @@ class _NotificationTileState extends ConsumerState<_NotificationTile> {
                           onTap: _isSystemNotification ? null : () => _navigateToActorProfile(context),
                           child: _buildAvatar(notification.actorAvatarUrl, notification.actorName),
                         ),
+                        // 先頭だけタップできて 2 人目以降は反応しない、という
+                        // 状態だった。並んでいる以上どれも同じように押せるべき
                         for (var i = 0; i < actors.length && i < 4; i++) ...[
                           const SizedBox(width: 4),
-                          _buildAvatar(actors[i].avatarUrl, actors[i].name, radius: 12),
+                          GestureDetector(
+                            onTap: () => _navigateToProfile(
+                              context,
+                              name: actors[i].name,
+                              handle: actors[i].handle,
+                              avatarUrl: actors[i].avatarUrl,
+                            ),
+                            child: _buildAvatar(
+                                actors[i].avatarUrl, actors[i].name,
+                                radius: 12),
+                          ),
                         ],
                         if (actors.length > 4) ...[
                           const SizedBox(width: 4),
@@ -1183,19 +1208,30 @@ class _NotificationTileState extends ConsumerState<_NotificationTile> {
     );
   }
 
-  void _navigateToActorProfile(BuildContext context) {
-    // actorHandle has '@' prefix — strip it for UserProfileScreen
-    final handle = notification.actorHandle.startsWith('@')
-        ? notification.actorHandle.substring(1)
-        : notification.actorHandle;
+  void _navigateToActorProfile(BuildContext context) => _navigateToProfile(
+        context,
+        name: notification.actorName,
+        handle: notification.actorHandle,
+        avatarUrl: notification.actorAvatarUrl,
+      );
+
+  void _navigateToProfile(
+    BuildContext context, {
+    required String name,
+    required String handle,
+    String? avatarUrl,
+  }) {
+    // handle には '@' が付いていることがある。UserProfileScreen は付かない前提
+    final stripped = handle.startsWith('@') ? handle.substring(1) : handle;
+    if (stripped.isEmpty) return;
 
     Navigator.of(context).push(
       MaterialPageRoute(
         builder: (_) => UserProfileScreen(
-          username: notification.actorName,
-          handle: handle,
+          username: name,
+          handle: stripped,
           service: notification.source,
-          avatarUrl: notification.actorAvatarUrl,
+          avatarUrl: avatarUrl,
           accountId: account.id,
         ),
       ),
@@ -1290,6 +1326,9 @@ class _UnifiedNotificationList extends ConsumerStatefulWidget {
 class _UnifiedNotificationListState
     extends ConsumerState<_UnifiedNotificationList>
     with AutomaticKeepAliveClientMixin {
+  /// どの通知が新しく来たか。新着だけ現れる演出をするために覚えておく
+  final _newItems = NewItemTracker();
+
   bool _isLoading = true;
   bool _isFetching = false;
   DateTime? _lastFetchTime;
@@ -1453,6 +1492,10 @@ class _UnifiedNotificationListState
 
     final types = _availableTypes;
     final filtered = _filteredNotifications;
+    // 描画が終わってから覚える。build 中に触ると、同じフレームで
+    // 「新着ではない」ことになってしまう
+    WidgetsBinding.instance.addPostFrameCallback(
+        (_) => _newItems.remember(filtered.map((n) => n.id)));
 
     return Column(
       children: [
@@ -1484,12 +1527,15 @@ class _UnifiedNotificationListState
                 final n = filtered[index];
                 final account = _accountForNotification(n);
                 if (account == null) return const SizedBox.shrink();
-                return _NotificationTile(
-                  key: ValueKey(n.id),
-                  notification: n,
-                  account: account,
-                  showRecipient: true,
-                  markSeenOnView: false, // 「すべて」タブは未読のまま保持
+                return AppearOnce(
+                  enabled: _newItems.isNew(n.id),
+                  child: _NotificationTile(
+                    key: ValueKey(n.id),
+                    notification: n,
+                    account: account,
+                    showRecipient: true,
+                    markSeenOnView: false, // 「すべて」タブは未読のまま保持
+                  ),
                 );
               },
             ),

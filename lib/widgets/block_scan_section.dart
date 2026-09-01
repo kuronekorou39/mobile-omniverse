@@ -188,12 +188,23 @@ class _BlockScanSectionState extends State<BlockScanSection> {
                 '${r.isCompleted ? '' : ' ・ 未完了'}',
         style: const TextStyle(fontSize: 11),
       ),
-      trailing: resumable
-          ? TextButton(
+      trailing: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (resumable)
+            TextButton(
               onPressed: () => _resume(r),
               child: const Text('再開', style: TextStyle(fontSize: 12)),
-            )
-          : const Icon(Icons.chevron_right),
+            ),
+          // 調査は GB 単位になるので、消す手段は必ず出しておく
+          IconButton(
+            icon: const Icon(Icons.delete_outline, size: 20),
+            tooltip: 'この調査を削除',
+            visualDensity: VisualDensity.compact,
+            onPressed: _scan.isRunning ? null : () => _confirmDelete(r, s),
+          ),
+        ],
+      ),
       onTap: () async {
         await Navigator.of(context)
             .push(MaterialPageRoute(builder: (_) => BlockScanResultScreen(run: r)));
@@ -295,6 +306,30 @@ class _BlockScanSectionState extends State<BlockScanSection> {
     } catch (e) {
       if (mounted) showAppSnackBar(context, '$e', type: SnackType.error);
     }
+    await _load();
+    widget.onChanged();
+  }
+
+  Future<void> _confirmDelete(BlockRun run, BlockRunProgress? s) async {
+    final ok = await confirmDialog(
+      context,
+      title: 'この調査を削除',
+      message: '${run.originLabel}起点の調査'
+          '${s == null ? '' : '（${s.doneSources}/${s.totalSources}人ぶん）'}'
+          'を削除します。\n\n'
+          '集めた結果はすべて失われ、元に戻せません。'
+          '走らせ直す場合は最初からになります。',
+      confirmLabel: '削除',
+      destructive: true,
+    );
+    if (!ok) return;
+    try {
+      await FollowDb.instance.deleteBlockRun(run.id);
+    } catch (e) {
+      if (mounted) showAppSnackBar(context, '削除に失敗しました: $e', type: SnackType.error);
+      return;
+    }
+    if (mounted) showAppSnackBar(context, '調査を削除しました');
     await _load();
     widget.onChanged();
   }

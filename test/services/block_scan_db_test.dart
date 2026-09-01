@@ -291,6 +291,68 @@ void main() {
     });
   });
 
+  group('削除', () {
+    test('調査を消すと結果も消える', () async {
+      final runId = await startRun([user('1')]);
+      await db.addBlockFindings(
+          runId: runId,
+          sourceRestId: '1',
+          users: [user('10', blockedBy: true)]);
+
+      await db.deleteBlockRun(runId);
+
+      expect(await db.listBlockRuns(), isEmpty);
+      expect(await db.nextBlockSource(runId), isNull);
+      final p = await db.blockRunProgress(runId);
+      expect(p.scanned, 0);
+      expect(p.totalSources, 0);
+    });
+
+    test('調査を消しても他の調査は残る', () async {
+      final a = await startRun([user('1')]);
+      final b = await startRun([user('2')]);
+      await db.addBlockFindings(
+          runId: b, sourceRestId: '2', users: [user('20', blockedBy: true)]);
+
+      await db.deleteBlockRun(a);
+
+      expect((await db.listBlockRuns()).map((r) => r.id), [b]);
+      expect((await db.blockRunProgress(b)).blockedBy, 1);
+    });
+
+    test('調査でしか出てこない相手は消えるが、一覧に居る相手は残る', () async {
+      final runId = await startRun([user('1')]);
+      await db.addBlockFindings(
+          runId: runId,
+          sourceRestId: '1',
+          // 1 は起点なので snapshot_members にも居る
+          users: [user('1', blockedBy: false), user('10', blockedBy: true)]);
+
+      await db.deleteBlockRun(runId);
+
+      final raw = await db.debugDatabase();
+      final ids = (await raw.query('users', columns: ['restId']))
+          .map((r) => r['restId'])
+          .toList();
+      expect(ids, contains('1'), reason: 'フォロー一覧に居るので残す');
+      expect(ids, isNot(contains('10')), reason: '調査でしか出てこない');
+    });
+
+    test('対象を消すと、その対象の調査も道連れになる', () async {
+      final runId = await startRun([user('1')]);
+      await db.addBlockFindings(
+          runId: runId,
+          sourceRestId: '1',
+          users: [user('10', blockedBy: true)]);
+
+      await db.deleteTarget(SnsService.x, 'alice');
+
+      // 対象を消したのに調査だけ残ると、どこにも出てこないデータが居座る
+      expect(await db.listBlockRuns(), isEmpty);
+      expect((await db.blockRunProgress(runId)).scanned, 0);
+    });
+  });
+
   group('容量', () {
     test('調査で初めて見た相手は自己紹介と場所を持たない', () async {
       final runId = await startRun([user('1')]);

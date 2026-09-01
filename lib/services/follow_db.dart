@@ -369,6 +369,18 @@ class FollowDb {
           where: 'service = ? AND targetHandle = ?', whereArgs: [sv, h]);
       await txn.delete('targets',
           where: 'service = ? AND handle = ?', whereArgs: [sv, h]);
+      // 対象を消したのに調査だけ残ると、どこにも出てこないデータが
+      // GB 単位で居座る
+      await txn.delete('block_findings',
+          where: 'runId IN (SELECT id FROM block_runs '
+              'WHERE service = ? AND targetHandle = ?)',
+          whereArgs: [sv, h]);
+      await txn.delete('block_sources',
+          where: 'runId IN (SELECT id FROM block_runs '
+              'WHERE service = ? AND targetHandle = ?)',
+          whereArgs: [sv, h]);
+      await txn.delete('block_runs',
+          where: 'service = ? AND targetHandle = ?', whereArgs: [sv, h]);
     });
     await pruneOrphanUsers();
     // VACUUM しないとファイルサイズが縮まず、削除しても使用量が減らないように見える
@@ -1141,6 +1153,28 @@ class FollowDb {
         },
         where: 'id = ?',
         whereArgs: [runId]);
+  }
+
+  /// 調査 1 回ぶんを消す。
+  ///
+  /// 調査は単体で GB に達するので、消したあとは必ず VACUUM して
+  /// ファイルを縮める。しないと「消したのに減らない」ように見える。
+  Future<void> deleteBlockRun(int runId) async {
+    final db = await _database;
+    await db.transaction((txn) async {
+      await txn.delete('block_findings',
+          where: 'runId = ?', whereArgs: [runId]);
+      await txn
+          .delete('block_sources', where: 'runId = ?', whereArgs: [runId]);
+      await txn.delete('block_runs', where: 'id = ?', whereArgs: [runId]);
+    });
+    // 調査でしか出てこなかった相手を掃除する
+    await pruneOrphanUsers();
+    try {
+      await db.execute('VACUUM');
+    } catch (e) {
+      debugPrint('[FollowDb] VACUUM に失敗: $e');
+    }
   }
 
   Future<List<BlockRun>> listBlockRuns(

@@ -63,6 +63,10 @@ android/key.properties
 
 # Build artifacts
 *.apk
+*.ipa
+*.aab
+# リリースから落とした成果物の置き場
+/dist/
 
 # Screenshots / images (debug)
 Screenshot_*.png

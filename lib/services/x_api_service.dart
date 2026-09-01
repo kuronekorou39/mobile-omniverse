@@ -546,32 +546,68 @@ class XApiService {
             'legacy(relation keys)=$blockKeys');
       }
 
-      if (legacy == null) {
-        return {
-          'rest_id': restId,
-          'protected': (userResult['privacy'] as Map<String, dynamic>?)?['protected'] as bool? ?? false,
-        };
-      }
-
-      final isFollowing = legacy['following'] as bool? ?? false;
-
-      return {
-        'rest_id': restId,
-        'name': legacy['name'] as String?,
-        'screen_name': legacy['screen_name'] as String?,
-        'description': legacy['description'] as String?,
-        'followers_count': legacy['followers_count'] as int? ?? 0,
-        'friends_count': legacy['friends_count'] as int? ?? 0,
-        'statuses_count': legacy['statuses_count'] as int? ?? 0,
-        'profile_image_url_https': (legacy['profile_image_url_https'] as String?)
-            ?.replaceFirst('_normal', '_400x400'),
-        'profile_banner_url': legacy['profile_banner_url'] as String?,
-        'is_following': isFollowing,
-        'protected': legacy['protected'] as bool?
-            ?? (userResult['privacy'] as Map<String, dynamic>?)?['protected'] as bool?
-            ?? false,
-      };
+      return _profileMap(userResult, restId, legacy);
     });
+  }
+
+  /// UserByScreenName の応答を、画面が使う形にならす。
+  ///
+  /// X は項目を legacy から core / avatar / banner / profile_bio /
+  /// relationship_counts / tweet_counts へ移している最中で、**移し終えた
+  /// アカウントでは legacy が空で返る**。実機のログで確認済み:
+  ///
+  ///   top=[..., avatar, banner, core, ..., profile_bio, ...] legacy=[]
+  ///
+  /// legacy だけを見ていたため、自己紹介とヘッダ画像が空になっていた。
+  /// フォロー数などは legacy に残っていたので気づきにくかった。
+  /// 一覧側の FollowUser.fromUserResult と同じく、両方から読む。
+  static Map<String, dynamic> _profileMap(
+    Map<String, dynamic> result,
+    String? restId,
+    Map<String, dynamic>? legacyOrNull,
+  ) {
+    Map<String, dynamic> sub(String key) => result[key] is Map<String, dynamic>
+        ? result[key] as Map<String, dynamic>
+        : const {};
+
+    final legacy = legacyOrNull ?? const <String, dynamic>{};
+    final core = sub('core');
+    final avatar = sub('avatar');
+    final banner = sub('banner');
+    final profileBio = sub('profile_bio');
+    final privacy = sub('privacy');
+    final counts = sub('relationship_counts');
+    final tweetCounts = sub('tweet_counts');
+    final perspectives = sub('relationship_perspectives');
+
+    int? asInt(Object? v) => v is int ? v : (v is num ? v.toInt() : null);
+    String? asStr(Object? v) => v is String ? v : null;
+
+    return {
+      'rest_id': restId,
+      'name': asStr(legacy['name']) ?? asStr(core['name']),
+      'screen_name': asStr(legacy['screen_name']) ?? asStr(core['screen_name']),
+      'description':
+          asStr(legacy['description']) ?? asStr(profileBio['description']),
+      'followers_count':
+          asInt(legacy['followers_count']) ?? asInt(counts['followers']) ?? 0,
+      'friends_count':
+          asInt(legacy['friends_count']) ?? asInt(counts['following']) ?? 0,
+      'statuses_count':
+          asInt(legacy['statuses_count']) ?? asInt(tweetCounts['tweets']) ?? 0,
+      'profile_image_url_https':
+          (asStr(legacy['profile_image_url_https']) ??
+                  asStr(avatar['image_url']))
+              ?.replaceFirst('_normal', '_400x400'),
+      'profile_banner_url':
+          asStr(legacy['profile_banner_url']) ?? asStr(banner['image_url']),
+      'is_following': (legacy['following'] as bool?) ??
+          (perspectives['following'] as bool?) ??
+          false,
+      'protected': (legacy['protected'] as bool?) ??
+          (privacy['protected'] as bool?) ??
+          false,
+    };
   }
 
   /// ユーザーの投稿一覧取得 (UserTweets)

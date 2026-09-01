@@ -889,6 +889,100 @@ void main() {
 
   // ===== HTTP-level tests =====
 
+  group('getUserProfile (HTTP)', () {
+    Map<String, dynamic> envelope(Map<String, dynamic> result) => {
+          'data': {
+            'user': {'result': result}
+          }
+        };
+
+    Future<Map<String, dynamic>?> fetch(Map<String, dynamic> result) async {
+      service.httpClientOverride = createMockClient(
+          statusCode: 200, body: jsonEncode(envelope(result)));
+      return service.getUserProfile(
+          XCredentials(authToken: 'a', ct0: 'c'), 'someone');
+    }
+
+    test('legacy から読める（従来の形）', () async {
+      final p = await fetch({
+        '__typename': 'User',
+        'rest_id': '1',
+        'legacy': {
+          'name': 'Old',
+          'screen_name': 'old',
+          'description': '旧形式の自己紹介',
+          'followers_count': 10,
+          'friends_count': 20,
+          'statuses_count': 30,
+          'profile_banner_url': 'https://img/banner_old',
+          'profile_image_url_https': 'https://img/a_normal.jpg',
+        },
+      });
+
+      expect(p!['description'], '旧形式の自己紹介');
+      expect(p['profile_banner_url'], 'https://img/banner_old');
+      expect(p['followers_count'], 10);
+      expect(p['profile_image_url_https'], 'https://img/a_400x400.jpg');
+    });
+
+    test('legacy が空でも新しい入れ物から読める', () async {
+      // 実機で観測した形。X が項目を移し終えたアカウントは legacy が空になる
+      final p = await fetch({
+        '__typename': 'User',
+        'rest_id': '2',
+        'legacy': const {},
+        'core': {'name': 'New', 'screen_name': 'new'},
+        'avatar': {'image_url': 'https://img/b_normal.jpg'},
+        'banner': {'image_url': 'https://img/banner_new'},
+        'profile_bio': {'description': '新形式の自己紹介'},
+        'privacy': {'protected': true},
+        'relationship_counts': {'followers': 88, 'following': 99},
+        'tweet_counts': {'tweets': 777},
+        'relationship_perspectives': {'following': true},
+      });
+
+      // ここが空になって、プロフィール文とヘッダ画像が出ていなかった
+      expect(p!['description'], '新形式の自己紹介');
+      expect(p['profile_banner_url'], 'https://img/banner_new');
+
+      expect(p['name'], 'New');
+      expect(p['screen_name'], 'new');
+      expect(p['followers_count'], 88);
+      expect(p['friends_count'], 99);
+      expect(p['statuses_count'], 777);
+      expect(p['profile_image_url_https'], 'https://img/b_400x400.jpg');
+      expect(p['protected'], isTrue);
+      expect(p['is_following'], isTrue);
+    });
+
+    test('legacy がまったく無くても落ちない', () async {
+      final p = await fetch({
+        '__typename': 'User',
+        'rest_id': '3',
+        'core': {'name': 'NoLegacy', 'screen_name': 'nolegacy'},
+        'profile_bio': {'description': '自己紹介'},
+      });
+
+      expect(p!['rest_id'], '3');
+      expect(p['description'], '自己紹介');
+      expect(p['followers_count'], 0);
+      expect(p['profile_banner_url'], isNull);
+    });
+
+    test('両方にあれば legacy を優先する', () async {
+      final p = await fetch({
+        '__typename': 'User',
+        'rest_id': '4',
+        'legacy': {'description': '旧', 'profile_banner_url': 'https://old'},
+        'profile_bio': {'description': '新'},
+        'banner': {'image_url': 'https://new'},
+      });
+
+      expect(p!['description'], '旧');
+      expect(p['profile_banner_url'], 'https://old');
+    });
+  });
+
   group('getTimeline (HTTP)', () {
     test('returns posts on 200', () async {
       final creds = XCredentials(authToken: 'a', ct0: 'c');

@@ -418,6 +418,37 @@ class FollowDb {
     return file.existsSync() ? file.lengthSync() : 0;
   }
 
+  /// ブロック調査が占めている概算バイト数。
+  ///
+  /// SQLite の 1 ファイルなので実測はできない。行数から見積もる。
+  /// 知りたいのは正確な値ではなく「フォロー/フォロワーの間引きを
+  /// 発動させるべきか」なので、桁が合っていれば足りる。
+  Future<int> blockScanBytes() async {
+    final db = await _database;
+    Future<int> count(String table) async =>
+        Sqflite.firstIntValue(
+            await db.rawQuery('SELECT COUNT(*) FROM $table')) ??
+        0;
+
+    // findings 1 行は 5 列の小さな行。users 側は調査でしか出てこない
+    // 相手のぶんを見積もる (実測でおよそ 1 件 350 バイト前後)
+    final findings = await count('block_findings');
+    final onlyInScan = Sqflite.firstIntValue(await db.rawQuery(
+          'SELECT COUNT(*) FROM users WHERE restId NOT IN '
+          '(SELECT restId FROM snapshot_members)',
+        )) ??
+        0;
+    return findings * 60 + onlyInScan * 350;
+  }
+
+  /// フォロー/フォロワーが占めている概算。間引きの判定はこちらで行う
+  Future<int> followDataBytes() async {
+    final total = await databaseSizeBytes();
+    final scan = await blockScanBytes();
+    final rest = total - scan;
+    return rest < 0 ? 0 : rest;
+  }
+
   /// 対象ごとの snapshot_members 行数。使用量の按分に使う
   Future<Map<FollowTargetKey, int>> memberRowsByTarget() async {
     final db = await _database;
@@ -435,8 +466,13 @@ class FollowDb {
 
   /// 保持サイズの上限を超えていたら、古い完了スナップショットから削除する。
   /// 差分が取れなくなるので、(対象 × 種別) ごとに [keepPerKind] 世代は必ず残す。
+  /// 上限を超えていたら、古い完了スナップショットから削除する。
+  ///
+  /// 判定にはブロック調査ぶんを含めない。調査は単体で GB に達するので、
+  /// ファイル全体で測ると「スナップショットを全部消しても上限を
+  /// 下回らない」状態になり、履歴が消し損になる。
   Future<int> pruneToSizeLimit(int limitBytes, {int keepPerKind = 2}) async {
-    if (await databaseSizeBytes() <= limitBytes) return 0;
+    if (await followDataBytes() <= limitBytes) return 0;
     final db = await _database;
 
     final victims = await db.rawQuery('''
@@ -457,7 +493,7 @@ class FollowDb {
       // 消すたびに測ると重いので、数件ごとに確認する
       if (deleted % 5 == 0) {
         await db.execute('VACUUM');
-        if (await databaseSizeBytes() <= limitBytes) break;
+        if (await followDataBytes() <= limitBytes) break;
       }
     }
     if (deleted > 0) {
@@ -1011,9 +1047,42 @@ class FollowDb {
           continue;
         }
         // 名前やアイコンは users から引くので、ここで入れておく。
-        // 入れないと結果の一覧が JOIN で空になる
-        batch.insert('users', _userRow(u, now),
-            conflictAlgorithm: ConflictAlgorithm.replace);
+        // 入れないと結果の一覧が JOIN で空になる。
+        //
+        // ただし調査は数千人 × 数百人を巡るので、全員ぶんの自己紹介文と
+        // 場所まで持つとファイルが GB 級に膨らむ。結果の一覧に要るのは
+        // @ID・名前・アイコン・件数なので、かさばる 2 つは捨てる。
+        // 既にフォロー/フォロワーで保存済みの相手は、そちらの値を消さない
+        batch.rawInsert(
+          'INSERT INTO users '
+          '(restId, screenName, name, followersCount, friendsCount, '
+          ' statusesCount, avatarUrl, description, verified, isProtected, '
+          ' location, createdAt, updatedAt) '
+          "VALUES (?,?,?,?,?,?,?,'',?,?,'',?,?) "
+          'ON CONFLICT(restId) DO UPDATE SET '
+          '  screenName = excluded.screenName, '
+          '  name = excluded.name, '
+          '  followersCount = excluded.followersCount, '
+          '  friendsCount = excluded.friendsCount, '
+          '  statusesCount = excluded.statusesCount, '
+          '  avatarUrl = excluded.avatarUrl, '
+          '  verified = excluded.verified, '
+          '  isProtected = excluded.isProtected, '
+          '  updatedAt = excluded.updatedAt',
+          [
+            u.restId,
+            u.screenName,
+            u.name,
+            u.followersCount,
+            u.friendsCount,
+            u.statusesCount,
+            u.avatarUrl,
+            u.verified ? 1 : 0,
+            u.isProtected ? 1 : 0,
+            u.createdAt,
+            now,
+          ],
+        );
         batch.insert(
           'block_findings',
           {

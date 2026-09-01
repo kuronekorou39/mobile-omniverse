@@ -291,6 +291,78 @@ void main() {
     });
   });
 
+  group('容量', () {
+    test('調査で初めて見た相手は自己紹介と場所を持たない', () async {
+      final runId = await startRun([user('1')]);
+      await db.addBlockFindings(runId: runId, sourceRestId: '1', users: [
+        FollowUser(
+          restId: '10',
+          screenName: 'found',
+          name: 'Found',
+          description: '長い自己紹介がここに入る' * 10,
+          location: '東京',
+          avatarUrl: 'https://example.com/a.jpg',
+          blockedBy: true,
+        ),
+      ]);
+
+      final raw = await db.debugDatabase();
+      final row = (await raw
+              .query('users', where: 'restId = ?', whereArgs: ['10']))
+          .single;
+      // 数千人 x 数百人を巡るので、かさばる 2 つは捨てる
+      expect(row['description'], '');
+      expect(row['location'], '');
+      // アイコンと名前は結果の一覧に要るので残す
+      expect(row['avatarUrl'], 'https://example.com/a.jpg');
+      expect(row['screenName'], 'found');
+    });
+
+    test('フォロー取得で保存済みの自己紹介を消さない', () async {
+      final snapshotId = await db.startSnapshot(
+          service: SnsService.x, targetHandle: 'alice', kind: 'following');
+      await db.addBatch(snapshotId: snapshotId, users: [
+        FollowUser(
+          restId: '10',
+          screenName: 'found',
+          name: 'Found',
+          description: '大事な自己紹介',
+          location: '東京',
+        ),
+      ], cursor: null);
+
+      final runId = await startRun([user('1')]);
+      await db.addBlockFindings(runId: runId, sourceRestId: '1', users: [
+        FollowUser(
+            restId: '10',
+            screenName: 'found',
+            name: 'Found',
+            blockedBy: true),
+      ]);
+
+      final raw = await db.debugDatabase();
+      final row = (await raw
+              .query('users', where: 'restId = ?', whereArgs: ['10']))
+          .single;
+      // 調査が上書きして消してしまわないこと
+      expect(row['description'], '大事な自己紹介');
+      expect(row['location'], '東京');
+    });
+
+    test('調査ぶんを除いた容量で間引きを判定する', () async {
+      // インメモリではファイルが無いので 0。調査ぶんを引いても
+      // 負にならないことだけ確かめる
+      final runId = await startRun([user('1')]);
+      await db.addBlockFindings(
+          runId: runId,
+          sourceRestId: '1',
+          users: [user('10', blockedBy: true)]);
+
+      expect(await db.blockScanBytes(), greaterThan(0));
+      expect(await db.followDataBytes(), greaterThanOrEqualTo(0));
+    });
+  });
+
   group('調査の記録', () {
     test('対象で絞って新しい順に返る', () async {
       final a = await startRun([user('1')]);

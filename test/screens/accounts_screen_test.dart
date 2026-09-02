@@ -277,6 +277,13 @@ void main() {
 
       await navigateToDetail(tester, 'SwitchUser');
 
+      // スイッチ2つはページ下部にあるので、そこまでスクロールする
+      await tester.scrollUntilVisible(
+        find.text('フォロー先の RT を非表示'),
+        200,
+        scrollable: find.byType(Scrollable).last,
+      );
+
       expect(find.text('タイムライン取得'), findsOneWidget);
       expect(
         find.text('このアカウントの投稿をフィードに表示する'),
@@ -467,6 +474,13 @@ void main() {
       await tester.pump();
 
       await navigateToDetail(tester, 'ToggleDetail');
+
+      // スイッチ2つはページ下部にあるので、そこまでスクロールする
+      await tester.scrollUntilVisible(
+        find.text('フォロー先の RT を非表示'),
+        200,
+        scrollable: find.byType(Scrollable).last,
+      );
 
       // Two SwitchListTiles: timeline + hide RT
       final switchTiles = find.byType(SwitchListTile);

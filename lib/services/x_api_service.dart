@@ -1835,6 +1835,117 @@ class XApiService {
     }
   }
 
+  // ─────────── DM（見る専・読み取り専用） ───────────
+  //
+  // 既読をつける mark_read は読み取りとは別の書き込み API で、この機能では
+  // 一切呼ばない。GET だけなので、開いても相手に既読はつかない。
+  // どのエンドポイントも entries + users + conversations の同じ部品を返す
+  // （ならすのは XDmParser の仕事）。
+
+  static const _dmBase = 'https://x.com/i/api/1.1/dm';
+
+  /// Web クライアントが DM 系 GET に付けている主なパラメータ。
+  /// 添付・グループ・受信箱カーソルを含めて返してもらうために必要
+  static const _dmParams = 'include_profile_interstitial_type=1'
+      '&include_blocking=1'
+      '&include_blocked_by=1'
+      '&include_followed_by=1'
+      '&include_want_retweets=1'
+      '&include_mute_edge=1'
+      '&include_can_dm=1'
+      '&include_can_media_tag=1'
+      '&include_ext_is_blue_verified=1'
+      '&skip_status=1'
+      '&dm_secret_conversations_enabled=false'
+      '&krs_registration_enabled=true'
+      '&cards_platform=Web-12'
+      '&include_cards=1'
+      '&include_ext_alt_text=true'
+      '&include_quote_count=true'
+      '&include_reply_count=1'
+      '&tweet_mode=extended'
+      '&include_ext_views=true'
+      '&dm_users=true'
+      '&include_groups=true'
+      '&include_inbox_timelines=true'
+      '&include_ext_media_color=true'
+      '&supports_reactions=true';
+
+  /// 受信箱の初期状態（会話一覧 + 直近のメッセージ）
+  Future<({int statusCode, Map<String, dynamic>? data})> getDmInbox(
+      XCredentials creds) {
+    return _dmGet(
+      creds,
+      label: 'DmInbox',
+      url: '$_dmBase/inbox_initial_state.json?$_dmParams',
+      rootKey: 'inbox_initial_state',
+    );
+  }
+
+  /// 受信箱の続き。[timeline] は 'trusted'（通常）か 'untrusted'（リクエスト）
+  Future<({int statusCode, Map<String, dynamic>? data})> getDmInboxTimeline(
+    XCredentials creds, {
+    required String maxId,
+    String timeline = 'trusted',
+  }) {
+    return _dmGet(
+      creds,
+      label: 'DmInboxTimeline',
+      url: '$_dmBase/inbox_timeline/$timeline.json?$_dmParams'
+          '&max_id=${Uri.encodeComponent(maxId)}',
+      rootKey: 'inbox_timeline',
+    );
+  }
+
+  /// 会話のメッセージ。[maxId] を渡すとそれより前を読む
+  Future<({int statusCode, Map<String, dynamic>? data})> getDmConversation(
+    XCredentials creds,
+    String conversationId, {
+    String? maxId,
+  }) {
+    return _dmGet(
+      creds,
+      label: 'DmConversation',
+      url: '$_dmBase/conversation/${Uri.encodeComponent(conversationId)}.json'
+          '?$_dmParams&include_conversation_info=true&count=50'
+          '${maxId == null ? '' : '&max_id=${Uri.encodeComponent(maxId)}'}',
+      rootKey: 'conversation_timeline',
+    );
+  }
+
+  Future<({int statusCode, Map<String, dynamic>? data})> _dmGet(
+    XCredentials creds, {
+    required String label,
+    required String url,
+    required String rootKey,
+  }) async {
+    final uri = Uri.parse(url);
+    final hdrs = _buildHeaders(creds);
+    final sw = Stopwatch()..start();
+    final response = await _withRateLimitRetry(
+      () => _client.get(uri, headers: hdrs),
+    );
+    sw.stop();
+    _updateCt0FromResponse(creds, response);
+    _logResponse(label, 'GET', uri, hdrs, null, response, sw);
+
+    if (response.statusCode != 200) {
+      debugPrint('[XApi] $label failed: ${response.statusCode}');
+      return (statusCode: response.statusCode, data: null);
+    }
+    try {
+      final body = json.decode(response.body) as Map<String, dynamic>;
+      final root = body[rootKey];
+      return (
+        statusCode: 200,
+        data: root is Map<String, dynamic> ? root : null,
+      );
+    } catch (e) {
+      debugPrint('[XApi] $label decode failed: $e');
+      return (statusCode: response.statusCode, data: null);
+    }
+  }
+
   @visibleForTesting
   dynamic dig(Map<String, dynamic> map, List<String> keys) {
     dynamic current = map;

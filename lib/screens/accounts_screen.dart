@@ -12,6 +12,7 @@ import '../widgets/empty_state.dart';
 import '../widgets/sns_badge.dart';
 import 'follow_capture_screen.dart';
 import 'follow_target_screen.dart';
+import 'dm_screen.dart';
 import 'likes_bookmarks_screen.dart';
 import 'login_webview_screen.dart';
 import 'session_refresh_screen.dart';
@@ -485,6 +486,18 @@ class _AccountDetailScreen extends ConsumerWidget {
               MaterialPageRoute(
                 builder: (_) =>
                     LikesBookmarksScreen(account: account, initialIndex: 1),
+              ),
+            ),
+          ),
+          ListTile(
+            leading: const Icon(Icons.mail_outline),
+            title: const Text('DM（見る専）'),
+            subtitle: const Text('既読をつけずに読む・送信なし',
+                style: TextStyle(fontSize: 11)),
+            trailing: const Icon(Icons.chevron_right, size: 20),
+            onTap: () => Navigator.of(context).push(
+              MaterialPageRoute(
+                builder: (_) => DmScreen(account: account),
               ),
             ),
           ),

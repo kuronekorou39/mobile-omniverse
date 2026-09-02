@@ -7,6 +7,7 @@ import 'package:flutter/widgets.dart' show visibleForTesting;
 import 'package:http/http.dart' as http;
 
 import '../models/account.dart';
+import '../models/dm_models.dart';
 import '../models/follow_user.dart';
 import '../models/notification_item.dart';
 import '../models/post.dart';
@@ -1241,6 +1242,198 @@ class BlueskyApiService {
           accountId: accountId, cursor: cursor);
       return (posts: result.posts, cursor: result.cursor, updatedCreds: newCreds);
     }
+  }
+
+  // ─────────── DM（見る専・読み取り専用） ───────────
+  //
+  // 既読をつける chat.bsky.convo.updateRead は読み取りとは別の書き込み API
+  // で、この機能では一切呼ばない。GET だけなので、開いても相手に既読は
+  // つかず、unreadCount も減らない。
+  // chat 系 XRPC は PDS 経由で bsky.chat へプロキシさせる必要がある
+
+  static const _chatProxy = 'did:web:api.bsky.chat#bsky_chat';
+
+  Map<String, String> _chatHeaders(BlueskyCredentials creds) => {
+        'Authorization': 'Bearer ${creds.accessJwt}',
+        'Accept': 'application/json',
+        'atproto-proxy': _chatProxy,
+      };
+
+  /// DM の会話一覧
+  Future<({List<DmConversation> convos, String? cursor})> listConvos(
+    BlueskyCredentials creds, {
+    int limit = 50,
+    String? cursor,
+  }) async {
+    var url = '${creds.pdsUrl}/xrpc/chat.bsky.convo.listConvos?limit=$limit';
+    if (cursor != null) url += '&cursor=${Uri.encodeComponent(cursor)}';
+    final body = await _chatGet(creds, 'listConvos', url);
+
+    final convos = <DmConversation>[];
+    final rawConvos = body['convos'];
+    if (rawConvos is List) {
+      for (final c in rawConvos.whereType<Map<String, dynamic>>()) {
+        convos.add(_parseConvo(c, creds.did));
+      }
+    }
+    return (convos: convos, cursor: body['cursor'] as String?);
+  }
+
+  /// 会話のメッセージ。新しい順で返る
+  Future<({List<DmMessage> messages, String? cursor})> getConvoMessages(
+    BlueskyCredentials creds,
+    String convoId, {
+    int limit = 50,
+    String? cursor,
+  }) async {
+    var url = '${creds.pdsUrl}/xrpc/chat.bsky.convo.getMessages'
+        '?convoId=${Uri.encodeComponent(convoId)}&limit=$limit';
+    if (cursor != null) url += '&cursor=${Uri.encodeComponent(cursor)}';
+    final body = await _chatGet(creds, 'getMessages', url);
+
+    final messages = <DmMessage>[];
+    final raw = body['messages'];
+    if (raw is List) {
+      for (final m in raw.whereType<Map<String, dynamic>>()) {
+        final sender = m['sender'];
+        final senderDid =
+            sender is Map<String, dynamic> ? sender['did'] as String? : null;
+        final deleted =
+            (m[r'$type'] as String?)?.endsWith('deletedMessageView') == true;
+        messages.add(DmMessage(
+          id: m['id'] as String? ?? '',
+          senderId: senderDid ?? '',
+          text: deleted
+              ? '（削除されたメッセージ）'
+              : (m['text'] as String? ?? ''),
+          sentAt: DateTime.tryParse(m['sentAt'] as String? ?? ''),
+          isMine: senderDid == creds.did,
+          attachmentLabel:
+              m['embed'] is Map<String, dynamic> ? '埋め込み' : null,
+        ));
+      }
+    }
+    return (messages: messages, cursor: body['cursor'] as String?);
+  }
+
+  Future<({List<DmConversation> convos, String? cursor,
+      BlueskyCredentials? updatedCreds})> listConvosWithRefresh(
+    BlueskyCredentials creds, {
+    String? cursor,
+  }) async {
+    try {
+      final result = await listConvos(creds, cursor: cursor);
+      return (convos: result.convos, cursor: result.cursor, updatedCreds: null);
+    } on BlueskyAuthException {
+      final newCreds = await refreshSession(creds);
+      final result = await listConvos(newCreds, cursor: cursor);
+      return (
+        convos: result.convos,
+        cursor: result.cursor,
+        updatedCreds: newCreds
+      );
+    }
+  }
+
+  Future<({List<DmMessage> messages, String? cursor,
+      BlueskyCredentials? updatedCreds})> getConvoMessagesWithRefresh(
+    BlueskyCredentials creds,
+    String convoId, {
+    String? cursor,
+  }) async {
+    try {
+      final result = await getConvoMessages(creds, convoId, cursor: cursor);
+      return (
+        messages: result.messages,
+        cursor: result.cursor,
+        updatedCreds: null
+      );
+    } on BlueskyAuthException {
+      final newCreds = await refreshSession(creds);
+      final result = await getConvoMessages(newCreds, convoId, cursor: cursor);
+      return (
+        messages: result.messages,
+        cursor: result.cursor,
+        updatedCreds: newCreds
+      );
+    }
+  }
+
+  DmConversation _parseConvo(Map<String, dynamic> c, String selfDid) {
+    final members = <DmMember>[];
+    final rawMembers = c['members'];
+    if (rawMembers is List) {
+      for (final m in rawMembers.whereType<Map<String, dynamic>>()) {
+        final did = m['did'] as String?;
+        if (did == null || did == selfDid) continue;
+        members.add(DmMember(
+          id: did,
+          handle: m['handle'] as String?,
+          displayName: m['displayName'] as String?,
+          avatarUrl: m['avatar'] as String?,
+        ));
+      }
+    }
+
+    final last = c['lastMessage'];
+    String lastText = '';
+    DateTime? lastAt;
+    if (last is Map<String, dynamic>) {
+      final deleted =
+          (last[r'$type'] as String?)?.endsWith('deletedMessageView') == true;
+      lastText = deleted
+          ? '（削除されたメッセージ）'
+          : (last['text'] as String? ?? '');
+      if (lastText.isEmpty && last['embed'] is Map<String, dynamic>) {
+        lastText = '埋め込み';
+      }
+      lastAt = DateTime.tryParse(last['sentAt'] as String? ?? '');
+    }
+
+    final unread = c['unreadCount'] as int? ?? 0;
+    return DmConversation(
+      id: c['id'] as String? ?? '',
+      title: members.map((m) => m.label).join('、'),
+      avatarUrl: members.isNotEmpty ? members.first.avatarUrl : null,
+      isGroup: members.length > 1,
+      hasUnread: unread > 0,
+      unreadCount: unread,
+      lastText: lastText,
+      lastAt: lastAt,
+      isRequest: c['status'] == 'request',
+      muted: c['muted'] == true,
+      members: members,
+    );
+  }
+
+  /// chat 系 GET の共通処理。401/期限切れは getTimeline と同じ扱い
+  Future<Map<String, dynamic>> _chatGet(
+      BlueskyCredentials creds, String label, String url) async {
+    final uri = Uri.parse(url);
+    final hdrs = _chatHeaders(creds);
+    final sw = Stopwatch()..start();
+    final response = await _client.get(uri, headers: hdrs);
+    sw.stop();
+    _logResponse(label, 'GET', uri, hdrs, null, response, sw);
+
+    if (response.statusCode == 401) {
+      throw BlueskyAuthException('Token expired');
+    }
+    if (response.statusCode != 200) {
+      if (response.statusCode == 400) {
+        try {
+          final errBody = json.decode(response.body) as Map<String, dynamic>;
+          final errCode = errBody['error'] as String?;
+          if (errCode == 'ExpiredToken' || errCode == 'InvalidToken') {
+            throw BlueskyAuthException('Token expired (400: $errCode)');
+          }
+        } catch (e) {
+          if (e is BlueskyAuthException) rethrow;
+        }
+      }
+      throw BlueskyApiException('$label failed: ${response.statusCode}');
+    }
+    return json.decode(response.body) as Map<String, dynamic>;
   }
 
   /// ブックマーク一覧取得 (トークン期限切れ時は自動リフレッシュ)

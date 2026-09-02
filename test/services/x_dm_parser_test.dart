@@ -134,6 +134,19 @@ void main() {
     });
   });
 
+  test('entryTypeHistogram は entry の種類を数える', () {
+    final hist = XDmParser.entryTypeHistogram({
+      'entries': [
+        messageEntry(
+            msgId: '1', convoId: 'c', senderId: '2', text: 'a', timeMs: 1),
+        messageEntry(
+            msgId: '2', convoId: 'c', senderId: '2', text: 'b', timeMs: 2),
+        {'reaction_create': {}},
+      ],
+    });
+    expect(hist, {'message': 2, 'reaction_create': 1});
+  });
+
   group('parseThread', () {
     test('新しい順に並び、自分の発言と添付が分かる', () {
       final payload = {
@@ -198,6 +211,40 @@ void main() {
       expect(theirs.text, 'これ見て https://example.com/page');
       expect(theirs.sentAt,
           DateTime.fromMillisecondsSinceEpoch(1000));
+    });
+
+    test('ポスト参照は中身（本文・作者・URL）ごと取り出す', () {
+      final payload = {
+        'entries': [
+          messageEntry(
+            msgId: '500',
+            convoId: '11-22',
+            senderId: '22',
+            text: '見て https://t.co/tw',
+            timeMs: 5000,
+            attachment: {
+              'tweet': {
+                'url': 'https://t.co/tw',
+                'expanded_url': 'https://x.com/bob/status/123',
+                'status': {
+                  'full_text': '面白い出来事があった',
+                  'user': {'name': 'ボブ', 'screen_name': 'bob'},
+                },
+              },
+            },
+          ),
+        ],
+        'users': {'22': user('22', 'alice', 'アリス')},
+      };
+
+      final m = XDmParser.parseThread(payload, selfUserId: '11').messages.single;
+      // 参照の t.co は本文から消え、カードとして別枠になる
+      expect(m.text, '見て');
+      expect(m.attachmentLabel, 'ポスト');
+      expect(m.quoteText, '面白い出来事があった');
+      expect(m.quoteAuthor, 'ボブ');
+      expect(m.quoteHandle, 'bob');
+      expect(m.quoteUrl, 'https://x.com/bob/status/123');
     });
 
     test('AT_END ならそれより前は読まない', () {

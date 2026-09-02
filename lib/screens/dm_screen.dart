@@ -7,10 +7,12 @@ import '../models/dm_models.dart';
 import '../models/sns_service.dart';
 import '../providers/account_provider.dart';
 import '../services/bluesky_api_service.dart';
+import '../services/debug_log_service.dart';
 import '../services/x_api_service.dart';
 import '../services/x_dm_parser.dart';
 import '../utils/image_headers.dart';
 import 'dm_thread_screen.dart';
+import 'user_profile_screen.dart';
 
 /// DM の会話一覧（見る専）。
 ///
@@ -33,6 +35,13 @@ class _DmScreenState extends ConsumerState<DmScreen> {
   bool _loadingMore = false;
   String? _error;
 
+  // ─ フィルタ ─
+  final _searchController = TextEditingController();
+  String _search = '';
+  bool _unreadOnly = false;
+  bool _requestOnly = false;
+  bool _groupOnly = false;
+
   /// X: 受信箱の続きを読む max_id / Bluesky: cursor
   String? _nextCursor;
 
@@ -45,6 +54,12 @@ class _DmScreenState extends ConsumerState<DmScreen> {
   void initState() {
     super.initState();
     _load();
+  }
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
   }
 
   Future<void> _load() async {
@@ -73,6 +88,10 @@ class _DmScreenState extends ConsumerState<DmScreen> {
     }
     final page =
         XDmParser.parseInbox(res.data!, selfHandle: _account.handle);
+    // 取得漏れの調査用: 応答に入っていた entry の種類を残す
+    DebugLogService.instance.log('DmParse',
+        'inbox: convos=${page.conversations.length} '
+        'types=${XDmParser.entryTypeHistogram(res.data!)}');
     setState(() {
       _convos.clear();
       _convoIds.clear();
@@ -140,6 +159,23 @@ class _DmScreenState extends ConsumerState<DmScreen> {
     ref.read(accountProvider.notifier).updateCredentials(_account.id, updated);
   }
 
+  List<DmConversation> get _filtered {
+    final q = _search.trim().toLowerCase();
+    return _convos.where((c) {
+      if (_unreadOnly && !c.hasUnread) return false;
+      if (_requestOnly && !c.isRequest) return false;
+      if (_groupOnly && !c.isGroup) return false;
+      if (q.isEmpty) return true;
+      if (c.title.toLowerCase().contains(q)) return true;
+      for (final m in c.members) {
+        if (m.handle?.toLowerCase().contains(q) == true) return true;
+        if (m.displayName?.toLowerCase().contains(q) == true) return true;
+        if (m.id.toLowerCase().contains(q)) return true;
+      }
+      return false;
+    }).toList();
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -180,13 +216,15 @@ class _DmScreenState extends ConsumerState<DmScreen> {
         ),
       ]);
     }
+    final filtered = _filtered;
     return ListView.builder(
       physics: const AlwaysScrollableScrollPhysics(),
-      itemCount: _convos.length + 2,
+      itemCount: filtered.length + 3,
       itemBuilder: (context, index) {
         if (index == 0) return _readOnlyBanner();
-        if (index == _convos.length + 1) return _footer();
-        return _convoTile(_convos[index - 1]);
+        if (index == 1) return _filterBar();
+        if (index == filtered.length + 2) return _footer(filtered);
+        return _convoTile(filtered[index - 2]);
       },
     );
   }
@@ -211,11 +249,64 @@ class _DmScreenState extends ConsumerState<DmScreen> {
         ]),
       );
 
-  Widget _footer() {
-    if (_convos.isEmpty) {
-      return const Padding(
-        padding: EdgeInsets.all(32),
-        child: Center(child: Text('会話がありません')),
+  Widget _filterBar() => Padding(
+        padding: const EdgeInsets.fromLTRB(12, 4, 12, 4),
+        child: Column(children: [
+          SizedBox(
+            height: 40,
+            child: TextField(
+              controller: _searchController,
+              decoration: InputDecoration(
+                hintText: '名前・ID で検索',
+                hintStyle: const TextStyle(fontSize: 13),
+                prefixIcon: const Icon(Icons.search, size: 18),
+                suffixIcon: _search.isEmpty
+                    ? null
+                    : IconButton(
+                        icon: const Icon(Icons.clear, size: 16),
+                        onPressed: () {
+                          _searchController.clear();
+                          setState(() => _search = '');
+                        },
+                      ),
+                isDense: true,
+                contentPadding: const EdgeInsets.symmetric(vertical: 8),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(20),
+                ),
+              ),
+              style: const TextStyle(fontSize: 13),
+              onChanged: (v) => setState(() => _search = v),
+            ),
+          ),
+          const SizedBox(height: 6),
+          Row(children: [
+            _chip('未読', _unreadOnly, (v) => setState(() => _unreadOnly = v)),
+            const SizedBox(width: 6),
+            _chip('リクエスト', _requestOnly,
+                (v) => setState(() => _requestOnly = v)),
+            const SizedBox(width: 6),
+            _chip('グループ', _groupOnly, (v) => setState(() => _groupOnly = v)),
+          ]),
+        ]),
+      );
+
+  Widget _chip(String label, bool selected, ValueChanged<bool> onChanged) =>
+      FilterChip(
+        label: Text(label, style: const TextStyle(fontSize: 11)),
+        selected: selected,
+        onSelected: onChanged,
+        visualDensity: VisualDensity.compact,
+        materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+        padding: const EdgeInsets.symmetric(horizontal: 4),
+      );
+
+  Widget _footer(List<DmConversation> filtered) {
+    if (filtered.isEmpty) {
+      return Padding(
+        padding: const EdgeInsets.all(32),
+        child: Center(
+            child: Text(_convos.isEmpty ? '会話がありません' : '該当なし')),
       );
     }
     if (_nextCursor == null) return const SizedBox(height: 24);
@@ -233,17 +324,75 @@ class _DmScreenState extends ConsumerState<DmScreen> {
     );
   }
 
+  /// アイコンからプロフィールへ。グループは相手を選んでもらう
+  void _openProfile(DmConversation c) {
+    if (c.members.isEmpty) return;
+    if (c.members.length == 1) {
+      _pushProfile(c.members.first);
+      return;
+    }
+    showModalBottomSheet<void>(
+      context: context,
+      builder: (ctx) => SafeArea(
+        child: ListView(
+          shrinkWrap: true,
+          children: [
+            for (final m in c.members)
+              ListTile(
+                dense: true,
+                leading: CircleAvatar(
+                  radius: 14,
+                  backgroundImage: m.avatarUrl == null
+                      ? null
+                      : CachedNetworkImageProvider(m.avatarUrl!,
+                          headers: kImageHeaders),
+                  child: m.avatarUrl == null
+                      ? const Icon(Icons.person, size: 14)
+                      : null,
+                ),
+                title: Text(m.label, style: const TextStyle(fontSize: 13)),
+                subtitle: m.handle == null
+                    ? null
+                    : Text('@${m.handle}', style: const TextStyle(fontSize: 11)),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  _pushProfile(m);
+                },
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _pushProfile(DmMember m) {
+    final handle = m.handle;
+    if (handle == null || handle.isEmpty) return;
+    Navigator.of(context).push(MaterialPageRoute(
+      builder: (_) => UserProfileScreen(
+        username: m.displayName ?? handle,
+        handle: handle.startsWith('@') ? handle.substring(1) : handle,
+        service: _account.service,
+        avatarUrl: m.avatarUrl,
+        accountId: _account.id,
+      ),
+    ));
+  }
+
   Widget _convoTile(DmConversation c) {
     final theme = Theme.of(context);
     return ListTile(
-      leading: CircleAvatar(
-        backgroundImage: c.avatarUrl == null
-            ? null
-            : CachedNetworkImageProvider(c.avatarUrl!,
-                headers: kImageHeaders),
-        child: c.avatarUrl == null
-            ? Icon(c.isGroup ? Icons.group : Icons.person)
-            : null,
+      leading: GestureDetector(
+        onTap: () => _openProfile(c),
+        child: CircleAvatar(
+          backgroundImage: c.avatarUrl == null
+              ? null
+              : CachedNetworkImageProvider(c.avatarUrl!,
+                  headers: kImageHeaders),
+          child: c.avatarUrl == null
+              ? Icon(c.isGroup ? Icons.group : Icons.person)
+              : null,
+        ),
       ),
       title: Row(children: [
         Flexible(

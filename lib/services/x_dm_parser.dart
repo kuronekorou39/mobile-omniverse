@@ -145,6 +145,7 @@ class XDmParser {
           sender is Map<String, dynamic> ? sender : const <String, dynamic>{};
 
       final (media, label) = _attachmentOf(data);
+      final quote = _quoteOf(data);
       out.add(DmMessage(
         id: data['id'] as String? ?? message['id'] as String? ?? '',
         senderId: senderId,
@@ -156,6 +157,10 @@ class XDmParser {
         isMine: selfId != null && senderId == selfId,
         mediaUrl: media,
         attachmentLabel: label,
+        quoteText: quote?.text,
+        quoteAuthor: quote?.author,
+        quoteHandle: quote?.handle,
+        quoteUrl: quote?.url,
       ));
     }
     return out;
@@ -180,7 +185,7 @@ class XDmParser {
     }
     final attachment = data['attachment'];
     if (attachment is Map<String, dynamic>) {
-      for (final kind in const ['photo', 'video', 'animated_gif']) {
+      for (final kind in const ['photo', 'video', 'animated_gif', 'tweet']) {
         final media = attachment[kind];
         if (media is Map<String, dynamic>) {
           final short = media['url'] as String?;
@@ -207,6 +212,40 @@ class XDmParser {
     if (attachment['tweet'] is Map<String, dynamic>) return (null, 'ポスト');
     if (attachment['card'] is Map<String, dynamic>) return (null, 'リンク');
     return (null, null);
+  }
+
+  /// 添付がポスト参照のとき、その本文・作者・URL を取り出す
+  static ({String? text, String? author, String? handle, String? url})?
+      _quoteOf(Map<String, dynamic> data) {
+    final attachment = data['attachment'];
+    if (attachment is! Map<String, dynamic>) return null;
+    final tweet = attachment['tweet'];
+    if (tweet is! Map<String, dynamic>) return null;
+
+    final status = tweet['status'];
+    final statusMap =
+        status is Map<String, dynamic> ? status : const <String, dynamic>{};
+    // DM 添付の status は v1.1 形式で user が埋め込まれている
+    final user = statusMap['user'];
+    final userMap =
+        user is Map<String, dynamic> ? user : const <String, dynamic>{};
+    return (
+      text: statusMap['full_text'] as String? ?? statusMap['text'] as String?,
+      author: userMap['name'] as String?,
+      handle: userMap['screen_name'] as String?,
+      url: tweet['expanded_url'] as String?,
+    );
+  }
+
+  /// 応答に入っていた entry の種類と件数。取得漏れの調査用ログに使う
+  static Map<String, int> entryTypeHistogram(Map<String, dynamic> payload) {
+    final hist = <String, int>{};
+    for (final e in _entriesOf(payload)) {
+      for (final key in e.keys) {
+        hist[key] = (hist[key] ?? 0) + 1;
+      }
+    }
+    return hist;
   }
 
   static DmConversation _parseConversation(

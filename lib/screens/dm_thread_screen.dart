@@ -1,15 +1,18 @@
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../models/account.dart';
 import '../models/dm_models.dart';
 import '../models/sns_service.dart';
 import '../providers/account_provider.dart';
 import '../services/bluesky_api_service.dart';
+import '../services/debug_log_service.dart';
 import '../services/x_api_service.dart';
 import '../services/x_dm_parser.dart';
 import '../utils/image_headers.dart';
+import 'user_profile_screen.dart';
 
 /// DM のスレッド表示（見る専）。
 ///
@@ -65,6 +68,12 @@ class _DmThreadScreenState extends ConsumerState<DmThreadScreen> {
         } else {
           final page = XDmParser.parseThread(res.data!,
               selfUserId: widget.selfUserId, selfHandle: _account.handle);
+          // 取得漏れの調査用: 応答に入っていた entry の種類を残す
+          DebugLogService.instance.log('DmParse',
+              'thread ${widget.conversation.id}: '
+              'messages=${page.messages.length} '
+              'status=${res.data!['status']} '
+              'types=${XDmParser.entryTypeHistogram(res.data!)}');
           setState(() {
             _messages.clear();
             _messageIds.clear();
@@ -246,7 +255,9 @@ class _DmThreadScreenState extends ConsumerState<DmThreadScreen> {
         mainAxisSize: MainAxisSize.min,
         children: [
           if (m.mediaUrl != null) _media(m),
-          if (m.mediaUrl == null && m.attachmentLabel != null)
+          if (m.quoteText != null || m.quoteUrl != null)
+            _quoteCard(m)
+          else if (m.mediaUrl == null && m.attachmentLabel != null)
             _attachmentChip(m.attachmentLabel!),
           if (m.text.isNotEmpty)
             Text(m.text, style: const TextStyle(fontSize: 14)),
@@ -262,15 +273,18 @@ class _DmThreadScreenState extends ConsumerState<DmThreadScreen> {
         crossAxisAlignment: CrossAxisAlignment.end,
         children: [
           if (!mine) ...[
-            CircleAvatar(
-              radius: 12,
-              backgroundImage: avatarUrl == null
-                  ? null
-                  : CachedNetworkImageProvider(avatarUrl,
-                      headers: kImageHeaders),
-              child: avatarUrl == null
-                  ? const Icon(Icons.person, size: 14)
-                  : null,
+            GestureDetector(
+              onTap: () => _openSenderProfile(m, member),
+              child: CircleAvatar(
+                radius: 12,
+                backgroundImage: avatarUrl == null
+                    ? null
+                    : CachedNetworkImageProvider(avatarUrl,
+                        headers: kImageHeaders),
+                child: avatarUrl == null
+                    ? const Icon(Icons.person, size: 14)
+                    : null,
+              ),
             ),
             const SizedBox(width: 6),
           ],
@@ -339,6 +353,75 @@ class _DmThreadScreenState extends ConsumerState<DmThreadScreen> {
                       child: CircularProgressIndicator(strokeWidth: 2)))),
           errorWidget: (_, __, ___) =>
               _attachmentChip(m.attachmentLabel ?? '画像'),
+        ),
+      ),
+    );
+  }
+
+  void _openSenderProfile(DmMessage m, DmMember? member) {
+    // X はメッセージに screen_name が乗らないので会話の参加者から引く
+    final handle = member?.handle;
+    if (handle == null || handle.isEmpty) return;
+    Navigator.of(context).push(MaterialPageRoute(
+      builder: (_) => UserProfileScreen(
+        username: m.senderName ?? member?.displayName ?? handle,
+        handle: handle.startsWith('@') ? handle.substring(1) : handle,
+        service: _account.service,
+        avatarUrl: m.senderAvatarUrl ?? member?.avatarUrl,
+        accountId: _account.id,
+      ),
+    ));
+  }
+
+  /// ポスト参照。中身が取れれば本文入りのカード、URL だけなら開くだけ
+  Widget _quoteCard(DmMessage m) {
+    final theme = Theme.of(context);
+    return GestureDetector(
+      onTap: m.quoteUrl == null
+          ? null
+          : () => launchUrl(Uri.parse(m.quoteUrl!),
+              mode: LaunchMode.externalApplication),
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 4),
+        padding: const EdgeInsets.all(8),
+        decoration: BoxDecoration(
+          border: Border.all(color: theme.dividerColor),
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Row(mainAxisSize: MainAxisSize.min, children: [
+              const Icon(Icons.article_outlined, size: 12, color: Colors.grey),
+              const SizedBox(width: 4),
+              Flexible(
+                child: Text(
+                  m.quoteAuthor == null
+                      ? 'ポスト'
+                      : '${m.quoteAuthor}'
+                          '${m.quoteHandle == null ? '' : ' @${m.quoteHandle}'}',
+                  style: TextStyle(
+                      fontSize: 10,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.grey[600]),
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+            ]),
+            if (m.quoteText != null) ...[
+              const SizedBox(height: 2),
+              Text(m.quoteText!,
+                  style: const TextStyle(fontSize: 12),
+                  maxLines: 4,
+                  overflow: TextOverflow.ellipsis),
+            ] else if (m.quoteUrl != null)
+              Text(m.quoteUrl!,
+                  style: TextStyle(
+                      fontSize: 11, color: theme.colorScheme.primary),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis),
+          ],
         ),
       ),
     );

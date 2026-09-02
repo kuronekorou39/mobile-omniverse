@@ -45,6 +45,21 @@ void main() {
           encoding: any(named: 'encoding')));
     });
 
+    test('品質フィルタを無効化して全メッセージを受け取る', () async {
+      Uri? seen;
+      service.httpClientOverride = createUriAwareClient((uri) {
+        seen = uri;
+        return (200, jsonEncode({'inbox_initial_state': {}}));
+      });
+      await service.getDmInbox(creds);
+
+      // これらを省くと低品質判定のメッセージ・会話が黙って間引かれる
+      final q = seen!.queryParameters;
+      expect(q['filter_low_quality'], 'false');
+      expect(q['include_quality'], 'all');
+      expect(q['nsfw_filtering_enabled'], 'false');
+    });
+
     test('会話は id と max_id が URL に乗る', () async {
       Uri? seen;
       service.httpClientOverride = createUriAwareClient((uri) {
@@ -167,6 +182,29 @@ void main() {
           body: jsonEncode({'error': 'ExpiredToken', 'message': 'expired'}));
       expect(() => service.listConvos(creds),
           throwsA(isA<BlueskyAuthException>()));
+    });
+
+    test('DM 権限のないセッションはログインし直しの案内を出す', () async {
+      // アプリパスワード由来のセッション。リフレッシュしても直らない
+      service.httpClientOverride = createMockClient(
+          statusCode: 400,
+          body: jsonEncode(
+              {'error': 'InvalidToken', 'message': 'Bad token scope'}));
+      expect(
+          () => service.listConvos(creds),
+          throwsA(isA<BlueskyApiException>().having(
+              (e) => '$e', 'message', contains('本パスワードでログイン'))));
+    });
+
+    test('その他のエラーは本文を画面まで届ける（原因調査用）', () async {
+      service.httpClientOverride = createMockClient(
+          statusCode: 400,
+          body: jsonEncode(
+              {'error': 'InvalidRequest', 'message': 'bad params'}));
+      expect(
+          () => service.listConvos(creds),
+          throwsA(isA<BlueskyApiException>().having((e) => '$e', 'message',
+              allOf(contains('InvalidRequest'), contains('bad params')))));
     });
   });
 }

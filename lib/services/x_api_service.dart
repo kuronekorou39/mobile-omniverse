@@ -1846,7 +1846,10 @@ class XApiService {
 
   /// Web クライアントが DM 系 GET に付けている主なパラメータ。
   /// 添付・グループ・受信箱カーソルを含めて返してもらうために必要
-  static const _dmParams = 'include_profile_interstitial_type=1'
+  static const _dmParams = 'nsfw_filtering_enabled=false'
+      '&filter_low_quality=false'
+      '&include_quality=all'
+      '&include_profile_interstitial_type=1'
       '&include_blocking=1'
       '&include_blocked_by=1'
       '&include_followed_by=1'
@@ -1869,7 +1872,9 @@ class XApiService {
       '&include_groups=true'
       '&include_inbox_timelines=true'
       '&include_ext_media_color=true'
-      '&supports_reactions=true';
+      '&supports_reactions=true'
+      '&supports_edit=true'
+      '&include_ext_edit_control=true';
 
   /// 受信箱の初期状態（会話一覧 + 直近のメッセージ）
   Future<({int statusCode, Map<String, dynamic>? data})> getDmInbox(
@@ -1907,7 +1912,8 @@ class XApiService {
       creds,
       label: 'DmConversation',
       url: '$_dmBase/conversation/${Uri.encodeComponent(conversationId)}.json'
-          '?$_dmParams&include_conversation_info=true&count=50'
+          '?$_dmParams&context=FETCH_DM_CONVERSATION'
+          '&include_conversation_info=true&count=50'
           '${maxId == null ? '' : '&max_id=${Uri.encodeComponent(maxId)}'}',
       rootKey: 'conversation_timeline',
     );

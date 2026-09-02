@@ -79,6 +79,10 @@ class DmMessage {
     this.isMine = false,
     this.mediaUrl,
     this.attachmentLabel,
+    this.quoteText,
+    this.quoteAuthor,
+    this.quoteHandle,
+    this.quoteUrl,
   });
 
   final String id;
@@ -92,6 +96,12 @@ class DmMessage {
   /// 添付画像・動画サムネイル。X の DM 画像は認証ヘッダが必要
   final String? mediaUrl;
 
-  /// 「画像」「動画」「GIF」「ツイート」など、本文の外にある添付の種別
+  /// 「画像」「動画」「GIF」「ポスト」など、本文の外にある添付の種別
   final String? attachmentLabel;
+
+  /// 添付がポスト参照のとき、その中身（本文・作者・URL）
+  final String? quoteText;
+  final String? quoteAuthor;
+  final String? quoteHandle;
+  final String? quoteUrl;
 }

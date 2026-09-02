@@ -1416,22 +1416,31 @@ class BlueskyApiService {
     sw.stop();
     _logResponse(label, 'GET', uri, hdrs, null, response, sw);
 
-    if (response.statusCode == 401) {
-      throw BlueskyAuthException('Token expired');
-    }
     if (response.statusCode != 200) {
-      if (response.statusCode == 400) {
-        try {
-          final errBody = json.decode(response.body) as Map<String, dynamic>;
-          final errCode = errBody['error'] as String?;
-          if (errCode == 'ExpiredToken' || errCode == 'InvalidToken') {
-            throw BlueskyAuthException('Token expired (400: $errCode)');
-          }
-        } catch (e) {
-          if (e is BlueskyAuthException) rethrow;
-        }
+      String? errCode;
+      String? errMessage;
+      try {
+        final errBody = json.decode(response.body) as Map<String, dynamic>;
+        errCode = errBody['error'] as String?;
+        errMessage = errBody['message'] as String?;
+      } catch (_) {}
+
+      // アプリパスワードのセッションは DM 権限がなく Bad token scope になる。
+      // これはリフレッシュしても直らないので、期限切れとは別に案内する
+      if (errMessage?.contains('Bad token scope') == true) {
+        throw BlueskyApiException(
+            'このセッションには DM の権限がありません。'
+            'Bluesky に本パスワードでログインし直してください');
       }
-      throw BlueskyApiException('$label failed: ${response.statusCode}');
+      if (response.statusCode == 401 ||
+          (response.statusCode == 400 &&
+              (errCode == 'ExpiredToken' || errCode == 'InvalidToken'))) {
+        throw BlueskyAuthException('Token expired ($errCode)');
+      }
+      // 原因調査のためエラー本文を画面まで届ける
+      throw BlueskyApiException('$label failed: ${response.statusCode}'
+          '${errCode == null ? '' : ' $errCode'}'
+          '${errMessage == null ? '' : ' ($errMessage)'}');
     }
     return json.decode(response.body) as Map<String, dynamic>;
   }

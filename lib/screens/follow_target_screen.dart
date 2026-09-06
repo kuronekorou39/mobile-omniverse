@@ -13,9 +13,13 @@ import '../utils/image_headers.dart';
 import '../widgets/block_scan_section.dart';
 import 'follow_history_screen.dart';
 import 'follow_relation_screen.dart';
+import 'follow_schedule_screen.dart';
 import 'follow_snapshot_screen.dart';
 
-/// 走査対象 1 件の詳細。情報量が多いので 概要 / 履歴 / 設定 の 3 タブに分ける。
+/// 走査対象 1 件の詳細。
+///
+/// この画面は「今の状態」と「今すぐ取得」に絞る。定期取得の設定と履歴の
+/// 一覧はそれぞれ別画面に置き、ここには次回予定日と入口だけを出す。
 class FollowTargetScreen extends StatefulWidget {
   const FollowTargetScreen({
     super.key,
@@ -31,8 +35,6 @@ class FollowTargetScreen extends StatefulWidget {
 }
 
 class _FollowTargetScreenState extends State<FollowTargetScreen> {
-  static const _intervalChoices = [0, 1, 3, 7];
-
   final _job = FollowCaptureJobService.instance;
 
   FollowTarget? _target;
@@ -205,9 +207,8 @@ class _FollowTargetScreenState extends State<FollowTargetScreen> {
                 _dashboard(),
                 _actionSection(t),
                 const Divider(height: 32),
-                _scheduleSection(t),
-                const Divider(height: 32),
-                _historySection(),
+                _scheduleTile(t),
+                _historyTile(),
                 const Divider(height: 32),
                 BlockScanSection(
                   service: widget.service,
@@ -389,6 +390,23 @@ class _FollowTargetScreenState extends State<FollowTargetScreen> {
               'X の鍵アカウントは、つながっているアカウントでないと取得できません',
               style: TextStyle(fontSize: 11, color: Colors.grey),
             ),
+          // 定期取得の設定は別画面。ここに出すのは次回の予定日だけ
+          if (_dueSummary(t) case final due?)
+            Padding(
+              padding: const EdgeInsets.only(top: 6),
+              child: Row(
+                children: [
+                  const Icon(Icons.schedule, size: 14, color: Colors.grey),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: Text(
+                      due,
+                      style: const TextStyle(fontSize: 11, color: Colors.grey),
+                    ),
+                  ),
+                ],
+              ),
+            ),
           for (final s in resumable)
             Padding(
               padding: const EdgeInsets.only(top: 6),
@@ -420,76 +438,65 @@ class _FollowTargetScreenState extends State<FollowTargetScreen> {
 
   // ─── 定期取得 ───
 
-  Widget _scheduleSection(FollowTarget t) => Column(
-    crossAxisAlignment: CrossAxisAlignment.start,
-    children: [
-      _header('定期取得'),
-      const Padding(
-        padding: EdgeInsets.symmetric(horizontal: 16),
-        child: Text(
-          '前回の完了から指定日数が過ぎていれば、次の起動時に1回だけ実行します',
-          style: TextStyle(fontSize: 11, color: Colors.grey),
-        ),
-      ),
-      _intervalPicker(
-        'フォロワー',
-        'followers',
-        t.followersIntervalDays,
-        (v) => _updateTarget(t.copyWith(followersIntervalDays: v)),
-      ),
-      _intervalPicker(
-        'フォロー',
-        'following',
-        t.followingIntervalDays,
-        (v) => _updateTarget(t.copyWith(followingIntervalDays: v)),
-      ),
-    ],
+  /// 間隔の変更は別画面。ここは今の設定と入口だけ
+  Widget _scheduleTile(FollowTarget t) => ListTile(
+    leading: const Icon(Icons.schedule),
+    title: const Text('定期取得'),
+    subtitle: Text(
+      _scheduleSummary(t),
+      style: const TextStyle(fontSize: 11),
+    ),
+    trailing: const Icon(Icons.chevron_right, size: 20),
+    onTap: () async {
+      await Navigator.of(context).push(
+        MaterialPageRoute(builder: (_) => FollowScheduleScreen(target: t)),
+      );
+      await _load();
+    },
   );
 
-  // ─── 履歴 ───
+  String _scheduleSummary(FollowTarget t) {
+    final parts = <String>[];
+    if (t.followersIntervalDays > 0) {
+      parts.add('フォロワー ${t.followersIntervalDays}日おき');
+    }
+    if (t.followingIntervalDays > 0) {
+      parts.add('フォロー ${t.followingIntervalDays}日おき');
+    }
+    return parts.isEmpty ? 'なし' : parts.join(' / ');
+  }
 
-  /// 対象の画面に出す件数。溜まると 40 件近くになるので直近だけ出す
-  static const _historyPreview = 3;
+  /// 取得ボタンのそばに出す次回予定。設定していなければ出さない
+  String? _dueSummary(FollowTarget t) {
+    String at(String kind) =>
+        nextDueLabel(_nextDue[kind]).replaceFirst('次回: ', '');
+    final parts = <String>[];
+    if (t.followersIntervalDays > 0) {
+      parts.add('フォロワー ${at('followers')}');
+    }
+    if (t.followingIntervalDays > 0) {
+      parts.add('フォロー ${at('following')}');
+    }
+    return parts.isEmpty ? null : '次回  ${parts.join('  /  ')}';
+  }
+
+  // ─── 履歴（一覧は履歴画面にまとめる） ───
 
   /// 走査中カードを重ねる分の余白。カードの実寸に合わせた概算
   static const _runningCardReserve = 190.0;
 
-  Widget _historySection() {
-    if (_history.isEmpty) {
-      return Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          _header('履歴'),
-          const Padding(
-            padding: EdgeInsets.fromLTRB(16, 0, 16, 8),
-            child: Text(
-              'まだ取得していません',
-              style: TextStyle(fontSize: 12, color: Colors.grey),
-            ),
-          ),
-        ],
-      );
-    }
-    final shown = _history.take(_historyPreview).toList();
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          children: [
-            Expanded(child: _header('履歴 (${_history.length})')),
-            if (_history.length > shown.length)
-              TextButton(
-                onPressed: _openHistory,
-                child: const Text('すべて', style: TextStyle(fontSize: 12)),
-              ),
-            const SizedBox(width: 8),
-          ],
-        ),
-        for (final s in shown)
-          followHistoryTile(s, onTap: () => _openSnapshot(s)),
-      ],
-    );
-  }
+  Widget _historyTile() => ListTile(
+    leading: const Icon(Icons.history),
+    title: const Text('履歴'),
+    subtitle: Text(
+      _history.isEmpty ? 'まだ取得していません' : '${_history.length}件',
+      style: const TextStyle(fontSize: 11),
+    ),
+    trailing: _history.isEmpty
+        ? null
+        : const Icon(Icons.chevron_right, size: 20),
+    onTap: _history.isEmpty ? null : _openHistory,
+  );
 
   // ─── 保存容量と削除 ───
 
@@ -505,38 +512,6 @@ class _FollowTargetScreenState extends State<FollowTargetScreen> {
       ),
     ],
   );
-
-  Widget _intervalPicker(
-    String label,
-    String kind,
-    int value,
-    ValueChanged<int> onChanged,
-  ) => ListTile(
-    dense: true,
-    title: Text(label),
-    subtitle: value <= 0
-        ? null
-        : Text(
-            _nextDueLabel(kind),
-            style: const TextStyle(fontSize: 11, color: Colors.grey),
-          ),
-    trailing: DropdownButton<int>(
-      value: _intervalChoices.contains(value) ? value : 0,
-      underline: const SizedBox.shrink(),
-      items: [
-        for (final d in _intervalChoices)
-          DropdownMenuItem(value: d, child: Text(d == 0 ? 'なし' : '$d日おき')),
-      ],
-      onChanged: (v) => v == null ? null : onChanged(v),
-    ),
-  );
-
-  String _nextDueLabel(String kind) {
-    final due = _nextDue[kind];
-    if (due == null) return '次回: 未定';
-    if (!due.isAfter(DateTime.now())) return '次回: 次の起動時';
-    return '次回: ${dateLabel(due)}';
-  }
 
   Widget _sizeBar() {
     final limit = _job.sizeLimitBytes;

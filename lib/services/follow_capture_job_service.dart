@@ -11,6 +11,7 @@ import 'follow_capture_bluesky_service.dart';
 import 'follow_capture_engine.dart';
 import 'follow_capture_webview_service.dart';
 import 'follow_db.dart';
+import 'timeline_fetch_scheduler.dart';
 import 'x_api_service.dart';
 
 /// 実行中の走査の状態。UI はこれを見て描画する
@@ -402,6 +403,13 @@ class FollowCaptureJobService {
     final needsHost = service == SnsService.x;
     var lastCursor = resume?.cursor;
 
+    // 取得中はタイムラインの自動取得を止める。15 秒おきの取得と走査が重なると
+    // 端末が詰まり、フリーズや取りこぼしの原因になる。
+    // 元から止まっていたなら、終わっても勝手に動かさない
+    final scheduler = TimelineFetchScheduler.instance;
+    final schedulerWasRunning = scheduler.isRunning;
+    if (schedulerWasRunning) scheduler.stop();
+
     // ホストが立たない場合もここで受ける。try の外に出すと
     // snapshot が running のまま残り、WebView も畳まれずに居座る。
     try {
@@ -495,6 +503,7 @@ class FollowCaptureJobService {
       } else {
         bluesky.reset();
       }
+      if (schedulerWasRunning) scheduler.start();
     }
   }
 }

@@ -9,6 +9,7 @@ import 'follow_capture_engine.dart';
 import 'follow_capture_job_service.dart';
 import 'follow_capture_webview_service.dart';
 import 'follow_db.dart';
+import 'timeline_fetch_scheduler.dart';
 
 /// ブロック調査の進み具合。UI はこれを見て描画する
 class BlockScanProgress {
@@ -101,7 +102,7 @@ class BlockScanService {
   }) async {
     if (isRunning) throw StateError('別の調査が実行中です');
     if (account.service != SnsService.x) {
-      throw StateError('ブロック調査は X のみ対応しています');
+      throw StateError('つながり調査は X のみ対応しています');
     }
 
     final db = FollowDb.instance;
@@ -169,6 +170,13 @@ class BlockScanService {
     final webView = FollowCaptureWebViewService.instance;
     _cancelToken = CaptureCancelToken();
 
+    // 調査中はタイムラインの自動取得を止める。15 秒おきの取得と WebView 走査が
+    // 重なると端末が詰まり、フリーズや取りこぼしの原因になる。
+    // 元から止まっていたなら、終わっても勝手に動かさない
+    final scheduler = TimelineFetchScheduler.instance;
+    final schedulerWasRunning = scheduler.isRunning;
+    if (schedulerWasRunning) scheduler.stop();
+
     final stats = await db.blockRunProgress(runId);
     progress.value = BlockScanProgress(
       runId: runId,
@@ -207,6 +215,7 @@ class BlockScanService {
       await webView.reset();
       // 走査用 WebView は 1 人ごとに畳んでいるので、ここで最後に落とす
       job.hostNeeded.value = false;
+      if (schedulerWasRunning) scheduler.start();
       DebugLogService.instance
           .log('BlockScan', '調査を終了 (completed=$completed)');
     }

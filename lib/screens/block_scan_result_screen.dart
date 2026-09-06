@@ -59,7 +59,7 @@ class _BlockScanResultScreenState extends State<BlockScanResultScreen> {
       length: _tabs.length,
       child: Scaffold(
         appBar: AppBar(
-          title: Text('@${run.targetHandle} のブロック調査'),
+          title: Text('@${run.targetHandle} のつながり調査'),
           actions: [
             IconButton(
               icon: const Icon(Icons.refresh),

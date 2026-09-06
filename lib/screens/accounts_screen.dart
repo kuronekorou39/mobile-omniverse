@@ -464,21 +464,6 @@ class _AccountDetailScreen extends ConsumerWidget {
             ),
           ),
           ListTile(
-            leading: const Icon(Icons.groups_outlined),
-            title: const Text('フォロー / フォロワー'),
-            subtitle: const Text('一覧の取得・相互の判定・差分',
-                style: TextStyle(fontSize: 11)),
-            trailing: const Icon(Icons.chevron_right, size: 20),
-            onTap: () => Navigator.of(context).push(
-              MaterialPageRoute(
-                builder: (_) => FollowTargetScreen(
-                  service: account.service,
-                  handle: account.handle.replaceFirst('@', '').toLowerCase(),
-                ),
-              ),
-            ),
-          ),
-          ListTile(
             leading: const Icon(Icons.bookmark_border),
             title: const Text('ブックマーク'),
             trailing: const Icon(Icons.chevron_right, size: 20),
@@ -498,6 +483,21 @@ class _AccountDetailScreen extends ConsumerWidget {
             onTap: () => Navigator.of(context).push(
               MaterialPageRoute(
                 builder: (_) => DmScreen(account: account),
+              ),
+            ),
+          ),
+          ListTile(
+            leading: const Icon(Icons.groups_outlined),
+            title: const Text('フォロー / フォロワー'),
+            subtitle: const Text('一覧の取得・相互の判定・差分',
+                style: TextStyle(fontSize: 11)),
+            trailing: const Icon(Icons.chevron_right, size: 20),
+            onTap: () => Navigator.of(context).push(
+              MaterialPageRoute(
+                builder: (_) => FollowTargetScreen(
+                  service: account.service,
+                  handle: account.handle.replaceFirst('@', '').toLowerCase(),
+                ),
               ),
             ),
           ),

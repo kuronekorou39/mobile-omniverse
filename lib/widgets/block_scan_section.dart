@@ -87,12 +87,12 @@ class _BlockScanSectionState extends State<BlockScanSection> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        _header('ブロック調査'),
+        _header('つながり調査'),
         const Padding(
           padding: EdgeInsets.fromLTRB(16, 0, 16, 8),
           child: Text(
-            'つながっている人のフォロー先をたどって、ブロックの有無を調べます。'
-            '数時間かかりますが、途中で止めても続きから再開でき、'
+            'つながっている人のフォロー先をたどって、ブロック・ミュートの有無を'
+            '調べます。数時間かかりますが、途中で止めても続きから再開でき、'
             'その時点までの結果を見られます。',
             style: TextStyle(fontSize: 11, color: Colors.grey),
           ),
@@ -283,7 +283,7 @@ class _BlockScanSectionState extends State<BlockScanSection> {
     // 十数時間かかることがあるので、規模を見せてから始める
     final ok = await confirmDialog(
       context,
-      title: 'ブロック調査を開始',
+      title: 'つながり調査を開始',
       message: '$count人のフォロー先を1人ずつたどります。\n\n'
           'フォローが1万を超える相手は飛ばします。'
           '数時間から十数時間かかることがあります。\n'

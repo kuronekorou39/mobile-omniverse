@@ -1,11 +1,14 @@
 import 'package:flutter/material.dart';
+import 'package:share_plus/share_plus.dart';
 
 import '../models/sns_service.dart';
+import '../services/export_service.dart';
 import '../services/follow_db.dart';
+import '../utils/app_snackbar.dart';
 import '../widgets/follow_list_controls.dart';
 import 'follow_snapshot_screen.dart';
 
-/// ブロック調査の結果。
+/// つながり調査の結果。
 ///
 /// 走査は数時間かかるので、**途中でも見られる**ことを前提にしている。
 /// 集計はそのつど数え直すので、走査中に開いても今までの分が出る。
@@ -50,6 +53,30 @@ class _BlockScanResultScreenState extends State<BlockScanResultScreen> {
     setState(() => _stats = stats);
   }
 
+  bool _exporting = false;
+
+  /// 数万件になることがあるので、書き出し中はボタンを止めて待たせる
+  Future<void> _export() async {
+    setState(() => _exporting = true);
+    try {
+      final file = await ExportService.instance.blockRunCsv(widget.run);
+      if (!mounted) return;
+      final box = context.findRenderObject() as RenderBox?;
+      await Share.shareXFiles(
+        [XFile(file.path)],
+        text: '@${widget.run.targetHandle} のつながり調査',
+        sharePositionOrigin:
+            box != null ? box.localToGlobal(Offset.zero) & box.size : null,
+      );
+    } catch (e) {
+      if (mounted) {
+        showAppSnackBar(context, '書き出しに失敗しました: $e', type: SnackType.error);
+      }
+    } finally {
+      if (mounted) setState(() => _exporting = false);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final run = widget.run;
@@ -61,6 +88,11 @@ class _BlockScanResultScreenState extends State<BlockScanResultScreen> {
         appBar: AppBar(
           title: Text('@${run.targetHandle} のつながり調査'),
           actions: [
+            IconButton(
+              icon: const Icon(Icons.ios_share),
+              tooltip: 'CSV で書き出す',
+              onPressed: _exporting ? null : _export,
+            ),
             IconButton(
               icon: const Icon(Icons.refresh),
               tooltip: '数え直す',

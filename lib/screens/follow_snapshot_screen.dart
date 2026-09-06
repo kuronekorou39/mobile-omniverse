@@ -2,9 +2,11 @@ import 'dart:async';
 
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
+import 'package:share_plus/share_plus.dart';
 
 import '../models/follow_user.dart';
 import '../models/sns_service.dart';
+import '../services/export_service.dart';
 import '../services/follow_db.dart';
 import '../widgets/follow_list_controls.dart';
 import '../utils/image_headers.dart';
@@ -27,6 +29,34 @@ class _FollowSnapshotScreenState extends State<FollowSnapshotScreen> {
   FollowSort _sort = FollowSort.initial;
 
   /// 比較相手を選んで差分画面へ
+  bool _exporting = false;
+
+  /// 数万件になることがあるので、書き出し中はボタンを止めて待たせる
+  Future<void> _export() async {
+    setState(() => _exporting = true);
+    try {
+      final s = widget.snapshot;
+      final file = await ExportService.instance.snapshotCsv(s);
+      if (!mounted) return;
+      final kindLabel = s.kind == 'followers' ? 'フォロワー' : 'フォロー';
+      final box = context.findRenderObject() as RenderBox?;
+      await Share.shareXFiles(
+        [XFile(file.path)],
+        text: '@${s.targetHandle} の$kindLabel（${s.collectedCount}件）',
+        sharePositionOrigin:
+            box != null ? box.localToGlobal(Offset.zero) & box.size : null,
+      );
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('書き出しに失敗しました: $e')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _exporting = false);
+    }
+  }
+
   Future<void> _openDiff() async {
     final s = widget.snapshot;
     final candidates = (await FollowDb.instance.listSnapshots(
@@ -84,6 +114,11 @@ class _FollowSnapshotScreenState extends State<FollowSnapshotScreen> {
       appBar: AppBar(
         title: Text('@${s.targetHandle} の$kindLabel'),
         actions: [
+          IconButton(
+            icon: const Icon(Icons.ios_share),
+            tooltip: 'CSV で書き出す',
+            onPressed: _exporting ? null : _export,
+          ),
           IconButton(
             icon: const Icon(Icons.compare_arrows),
             tooltip: '比較する',

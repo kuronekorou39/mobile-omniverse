@@ -16,6 +16,7 @@ import 'services/debug_log_service.dart';
 import 'services/draft_service.dart';
 import 'services/memory_guard_service.dart';
 import 'services/notification_cache_service.dart';
+import 'services/scan_log_service.dart';
 import 'services/x_bearer_token_service.dart';
 import 'services/x_features_service.dart';
 import 'services/follow_capture_job_service.dart';
@@ -39,6 +40,7 @@ void main() async {
     await XQueryIdService.instance.init();
     await XFeaturesService.instance.init();
     await DebugLogService.instance.init();
+    await ScanLogService.instance.init();
     await NotificationCacheService.instance.loadSeenAt();
     MemoryGuardService.instance.start();
 

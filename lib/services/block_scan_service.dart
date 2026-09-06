@@ -9,6 +9,7 @@ import 'follow_capture_engine.dart';
 import 'follow_capture_job_service.dart';
 import 'follow_capture_webview_service.dart';
 import 'follow_db.dart';
+import 'scan_log_service.dart';
 import 'timeline_fetch_scheduler.dart';
 
 /// ブロック調査の進み具合。UI はこれを見て描画する
@@ -88,6 +89,7 @@ class BlockScanService {
     _cancelToken?.cancel();
     progress.value = progress.value?.copyWith(cancelling: true);
     DebugLogService.instance.log('BlockScan', '中断を要求');
+    ScanLogService.instance.log('中断を要求');
   }
 
   /// 起点の一覧から調査を始める。
@@ -118,6 +120,9 @@ class BlockScanService {
     );
     DebugLogService.instance.log('BlockScan',
         '調査を開始: @$handle の$origin ${sources.length}人 (runId=$runId)');
+    ScanLogService.instance.log(
+        '=== 調査を開始 runId=$runId 対象=@$handle 起点=$origin '
+        '${sources.length}人 実行=@${account.handle} ===');
     await resume(account: account, runId: runId);
     return runId;
   }
@@ -185,6 +190,10 @@ class BlockScanService {
       done: stats.doneSources,
       total: stats.totalSources,
     );
+    final startedAt = DateTime.now();
+    ScanLogService.instance.log(
+        '--- 走査を開始 runId=$runId ${stats.doneSources}/${stats.totalSources}人 '
+        '済み（残り ${stats.totalSources - stats.doneSources}人）---');
 
     var completed = false;
     try {
@@ -218,6 +227,11 @@ class BlockScanService {
       if (schedulerWasRunning) scheduler.start();
       DebugLogService.instance
           .log('BlockScan', '調査を終了 (completed=$completed)');
+      final s = await db.blockRunProgress(runId);
+      final mins = DateTime.now().difference(startedAt).inMinutes;
+      await ScanLogService.instance.log(
+          '=== ${completed ? '調査を完了' : '走査を中断'} runId=$runId '
+          '${s.doneSources}/${s.totalSources}人 所要 $mins分 ===');
     }
   }
 
@@ -242,6 +256,8 @@ class BlockScanService {
     } catch (e) {
       await db.finishBlockSource(runId, source.restId,
           status: 'failed', reason: 'WebView を用意できなかった: $e');
+      ScanLogService.instance
+          .log('@${source.screenName} 失敗 WebView を用意できなかった: $e');
       return;
     }
 
@@ -272,27 +288,38 @@ class BlockScanService {
 
       if (result.completed) {
         await db.finishBlockSource(runId, source.restId, status: 'done');
+        ScanLogService.instance
+            .log('@${source.screenName} 完了 $collected件');
       } else if (_cancelToken?.isCancelled ?? false) {
         // 中断。status は running のままにして、次回この人の続きから
         DebugLogService.instance.log(
             'BlockScan', '@${source.screenName} を $collected 件で中断');
+        ScanLogService.instance
+            .log('@${source.screenName} 中断 $collected件（次回この続きから）');
       } else {
         await db.finishBlockSource(runId, source.restId,
             status: 'failed', reason: result.reason.name);
+        ScanLogService.instance.log(
+            '@${source.screenName} 失敗 ${result.reason.name} $collected件');
       }
     } on CaptureCancelledException {
       DebugLogService.instance
           .log('BlockScan', '@${source.screenName} を中断');
+      ScanLogService.instance
+          .log('@${source.screenName} 中断 $collected件（次回この続きから）');
     } catch (e) {
       await db.finishBlockSource(runId, source.restId,
           status: 'failed', reason: '$e');
       debugPrint('[BlockScan] @${source.screenName} 失敗: $e');
+      ScanLogService.instance.log('@${source.screenName} 失敗 $e');
     } finally {
       // 上限に達していたら、完了扱いにして次へ進む。
       // 事前にフォロー数が分からない相手はここで止める
       if (collected >= _perSourceLimit) {
         await db.finishBlockSource(runId, source.restId,
             status: 'done', reason: 'フォローが多いため $collected 件で打ち切り');
+        ScanLogService.instance.log(
+            '@${source.screenName} 打ち切り $collected件（フォローが多い）');
       }
       await webView.reset();
       job.hostNeeded.value = false;

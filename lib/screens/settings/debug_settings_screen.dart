@@ -10,6 +10,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../../providers/settings_provider.dart';
 import '../../services/debug_log_service.dart';
 import '../../services/notification_cache_service.dart';
+import '../../services/scan_log_service.dart';
 import '../../services/timeline_cache_service.dart';
 import '../../services/x_features_service.dart';
 import '../../services/x_query_id_service.dart';
@@ -73,6 +74,58 @@ class _DebugSettingsScreenState extends ConsumerState<DebugSettingsScreen> {
       if (mounted) {
         setState(() {});
         showAppSnackBar(context, 'ログをクリアしました', type: SnackType.success);
+      }
+    }
+  }
+
+  Future<void> _downloadScanLog() async {
+    final path = ScanLogService.instance.logFilePath;
+    if (path == null || !await File(path).exists()) {
+      if (mounted) {
+        showAppSnackBar(context, '調査ログはまだありません', type: SnackType.info);
+      }
+      return;
+    }
+    final now = DateTime.now();
+    final ts =
+        '${now.year}${now.month.toString().padLeft(2, '0')}${now.day.toString().padLeft(2, '0')}_${now.hour.toString().padLeft(2, '0')}${now.minute.toString().padLeft(2, '0')}';
+    final tmpDir = await getTemporaryDirectory();
+    final tmpPath = '${tmpDir.path}/omniverse_scan_$ts.log';
+    await File(path).copy(tmpPath);
+    if (!mounted) return;
+    final box = context.findRenderObject() as RenderBox?;
+    await Share.shareXFiles(
+      [XFile(tmpPath)],
+      text: 'OmniVerse つながり調査ログ ($ts)',
+      sharePositionOrigin:
+          box != null ? box.localToGlobal(Offset.zero) & box.size : null,
+    );
+  }
+
+  Future<void> _clearScanLog() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('調査ログをクリア'),
+        content: Text(
+            '${ScanLogService.instance.logSizeLabel} の調査ログを削除します。'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('キャンセル'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: const Text('クリア'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed == true) {
+      await ScanLogService.instance.clear();
+      if (mounted) {
+        setState(() {});
+        showAppSnackBar(context, '調査ログをクリアしました', type: SnackType.success);
       }
     }
   }
@@ -225,6 +278,28 @@ class _DebugSettingsScreenState extends ConsumerState<DebugSettingsScreen> {
             leading: const Icon(Icons.delete_sweep),
             title: const Text('ログをクリア'),
             onTap: _clearLog,
+          ),
+          const Divider(),
+          // つながり調査は数時間かかり、通信ログだと序盤が消えてしまうので
+          // 別ファイルに分けている。こちらは常に記録している
+          ListTile(
+            leading: const Icon(Icons.travel_explore_outlined),
+            title: const Text('つながり調査のログ'),
+            subtitle: Text(
+              '${ScanLogService.instance.logSizeLabel} — 通信ログとは別に'
+              '常に記録（進み具合と失敗した相手）',
+              style: const TextStyle(fontSize: 12),
+            ),
+          ),
+          ListTile(
+            leading: const Icon(Icons.download),
+            title: const Text('調査ログをダウンロード'),
+            onTap: _downloadScanLog,
+          ),
+          ListTile(
+            leading: const Icon(Icons.delete_sweep),
+            title: const Text('調査ログをクリア'),
+            onTap: _clearScanLog,
           ),
           const Divider(),
           ListTile(

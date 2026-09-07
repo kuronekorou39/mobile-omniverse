@@ -184,8 +184,9 @@ void main() {
           throwsA(isA<BlueskyAuthException>()));
     });
 
-    test('DM 権限のないセッションはログインし直しの案内を出す', () async {
-      // アプリパスワード由来のセッション。リフレッシュしても直らない
+    // DM が使えないセッションの断り方は実測で 3 通りあった。どれも
+    // リフレッシュでは直らないので、期限切れ扱いにしてはいけない
+    test('Bad token scope はアプリパスワードの案内を出す', () async {
       service.httpClientOverride = createMockClient(
           statusCode: 400,
           body: jsonEncode(
@@ -193,7 +194,31 @@ void main() {
       expect(
           () => service.listConvos(creds),
           throwsA(isA<BlueskyApiException>().having(
-              (e) => '$e', 'message', contains('本パスワードでログイン'))));
+              (e) => '$e', 'message', contains('アプリパスワード'))));
+    });
+
+    test('Bad token method もアプリパスワードの案内を出す', () async {
+      service.httpClientOverride = createMockClient(
+          statusCode: 400,
+          body: jsonEncode(
+              {'error': 'InvalidToken', 'message': 'Bad token method'}));
+      expect(
+          () => service.listConvos(creds),
+          throwsA(isA<BlueskyApiException>().having(
+              (e) => '$e', 'message', contains('アプリパスワード'))));
+    });
+
+    test('501 もアプリパスワードの案内を出す', () async {
+      service.httpClientOverride = createMockClient(
+          statusCode: 501,
+          body: jsonEncode({
+            'error': 'MethodNotImplemented',
+            'message': 'Method Not Implemented'
+          }));
+      expect(
+          () => service.listConvos(creds),
+          throwsA(isA<BlueskyApiException>().having(
+              (e) => '$e', 'message', contains('アプリパスワード'))));
     });
 
     test('その他のエラーは本文を画面まで届ける（原因調査用）', () async {

@@ -1425,12 +1425,22 @@ class BlueskyApiService {
         errMessage = errBody['message'] as String?;
       } catch (_) {}
 
-      // アプリパスワードのセッションは DM 権限がなく Bad token scope になる。
-      // これはリフレッシュしても直らないので、期限切れとは別に案内する
-      if (errMessage?.contains('Bad token scope') == true) {
+      // DM が使えないセッションの断り方は 3 通りある。実測では
+      //   400 InvalidToken     "Bad token method"
+      //   400 InvalidToken     "Bad token scope"
+      //   501 MethodNotImplemented
+      // のいずれか。どれもリフレッシュや再ログインでは直らず、DM への
+      // アクセスを許可したアプリパスワードで入り直すしかない。
+      // InvalidToken を期限切れ扱いにすると、無駄なリフレッシュを繰り返した
+      // 末に「Token expired」と出て、原因が分からなくなる
+      final noChatAccess = response.statusCode == 501 ||
+          errMessage?.contains('Bad token scope') == true ||
+          errMessage?.contains('Bad token method') == true;
+      if (noChatAccess) {
         throw BlueskyApiException(
-            'このセッションには DM の権限がありません。'
-            'Bluesky に本パスワードでログインし直してください');
+            'このログインでは DM を読めません。Bluesky の設定で '
+            '「Direct messages」への許可を付けたアプリパスワードを作り、'
+            'そのパスワードでこのアカウントを登録し直してください');
       }
       if (response.statusCode == 401 ||
           (response.statusCode == 400 &&

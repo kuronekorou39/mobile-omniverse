@@ -132,9 +132,11 @@ class _FollowCaptureScreenState extends State<FollowCaptureScreen> {
       appBar: AppBar(
         title: const Text('フォロー / フォロワー取得'),
         actions: [
+          // 歯車はアプリ全体の設定画面に使っているので、ここでは使わない。
+          // 同じ位置に同じ記号で別のものが出ると取り違える
           IconButton(
-            icon: const Icon(Icons.settings_outlined),
-            tooltip: '設定',
+            icon: const Icon(Icons.tune),
+            tooltip: '取得の設定',
             onPressed: _openSettings,
           ),
         ],

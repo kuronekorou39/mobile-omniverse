@@ -84,41 +84,80 @@ class _BlockScanSectionState extends State<BlockScanSection> {
     final running = _scan.progress.value;
     final isMine = running != null;
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        _header('つながり調査'),
-        const Padding(
-          padding: EdgeInsets.fromLTRB(16, 0, 16, 8),
-          child: Text(
-            'つながっている人のフォロー先をたどって、ブロック・ミュートの有無を'
-            '調べます。数時間かかりますが、途中で止めても続きから再開でき、'
-            'その時点までの結果を見られます。',
-            style: TextStyle(fontSize: 11, color: Colors.grey),
+    final scheme = Theme.of(context).colorScheme;
+    // フォロー/フォロワー取得とは別の機能なので、面を変えて隔離する
+    return Container(
+      margin: const EdgeInsets.fromLTRB(8, 22, 8, 0),
+      decoration: BoxDecoration(
+        color: scheme.surfaceContainerHigh,
+        borderRadius: BorderRadius.circular(20),
+      ),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.hub, size: 20),
+              const SizedBox(width: 8),
+              const Expanded(
+                child: Text('つながり調査',
+                    style: TextStyle(
+                        fontSize: 16, fontWeight: FontWeight.bold)),
+              ),
+              // 3 行の説明は毎回読むものではないので畳む
+              Tooltip(
+                triggerMode: TooltipTriggerMode.tap,
+                message: 'つながっている人のフォロー先をたどって、'
+                    'ブロック・ミュートの有無を調べます。\n'
+                    '数時間かかりますが、途中で止めても続きから再開でき、'
+                    'その時点までの結果を見られます。',
+                child: Icon(Icons.info_outline,
+                    size: 18, color: scheme.onSurfaceVariant),
+              ),
+            ],
           ),
-        ),
-        if (isMine) _runningCard(running) else _startTile(),
-        if (_loading)
-          const Padding(
-            padding: EdgeInsets.all(16),
-            child: Center(
-                child: SizedBox(
-                    width: 18,
-                    height: 18,
-                    child: CircularProgressIndicator(strokeWidth: 2))),
-          )
-        else
-          for (final r in _runs) _runTile(r),
-      ],
+          const SizedBox(height: 12),
+          if (isMine) _runningCard(running),
+          if (_loading)
+            const Padding(
+              padding: EdgeInsets.all(16),
+              child: Center(
+                  child: SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2))),
+            )
+          else
+            for (final r in _runs) ...[
+              _runTile(r),
+              const SizedBox(height: 8),
+            ],
+          if (!isMine) ...[
+            const SizedBox(height: 12),
+            _startButton(),
+          ],
+        ],
+      ),
     );
   }
 
-  Widget _startTile() => ListTile(
-        leading: const Icon(Icons.travel_explore),
-        title: const Text('調査を開始'),
-        subtitle: const Text('起点を選びます', style: TextStyle(fontSize: 11)),
-        enabled: widget.account != null,
-        onTap: widget.account == null ? null : _pickOrigin,
+  Widget _startButton() => SizedBox(
+        width: double.infinity,
+        child: OutlinedButton(
+          onPressed: widget.account == null ? null : _pickOrigin,
+          style: OutlinedButton.styleFrom(
+            padding: const EdgeInsets.symmetric(vertical: 12),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(22),
+            ),
+            side: BorderSide(
+                color: Theme.of(context).colorScheme.primary, width: 1.5),
+            textStyle:
+                const TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
+          ),
+          child: const Text('調査を開始'),
+        ),
       );
 
   Widget _runningCard(BlockScanProgress p) => Card(
@@ -169,24 +208,36 @@ class _BlockScanSectionState extends State<BlockScanSection> {
   Widget _runTile(BlockRun r) {
     final s = _stats[r.id];
     final resumable = !r.isCompleted && !_scan.isRunning;
+    final scheme = Theme.of(context).colorScheme;
     return ListTile(
       dense: true,
-      leading: Icon(
-        r.isCompleted ? Icons.check_circle_outline : Icons.pause_circle_outline,
-        size: 20,
-        color: r.isCompleted ? Colors.green : Colors.orange,
+      contentPadding: EdgeInsets.zero,
+      // カードの面に載るので、行ごとに面を持たせて沈ませる
+      tileColor: scheme.surface,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(14),
+      ),
+      leading: Padding(
+        padding: const EdgeInsets.only(left: 12),
+        child: Icon(
+          r.isCompleted
+              ? Icons.check_circle_outline
+              : Icons.pause_circle_outline,
+          size: 20,
+          color: r.isCompleted ? scheme.primary : scheme.tertiary,
+        ),
       ),
       title: Text(
         '${r.originLabel}起点'
         '${s == null ? '' : ' ・ ブロックされてる ${s.blockedBy}'}',
-        style: const TextStyle(fontSize: 13),
+        style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold),
       ),
       subtitle: Text(
         s == null
             ? ''
             : '${s.doneSources}/${s.totalSources}人'
                 '${r.isCompleted ? '' : ' ・ 未完了'}',
-        style: const TextStyle(fontSize: 11),
+        style: TextStyle(fontSize: 11, color: scheme.onSurfaceVariant),
       ),
       trailing: Row(
         mainAxisSize: MainAxisSize.min,
@@ -346,13 +397,4 @@ class _BlockScanSectionState extends State<BlockScanSection> {
     widget.onChanged();
   }
 
-  Widget _header(String title) => Padding(
-        padding: const EdgeInsets.fromLTRB(16, 16, 16, 4),
-        child: Text(title,
-            style: TextStyle(
-              fontSize: 13,
-              fontWeight: FontWeight.bold,
-              color: Theme.of(context).colorScheme.primary,
-            )),
-      );
 }

@@ -205,18 +205,17 @@ class _FollowTargetScreenState extends State<FollowTargetScreen> {
             child: ListView(
               children: [
                 _dashboard(),
+                const SizedBox(height: 22),
                 _actionSection(t),
-                const Divider(height: 32),
-                _scheduleTile(t),
-                _historyTile(),
-                const Divider(height: 32),
+                const SizedBox(height: 22),
+                // 設定と履歴は面と枠でひとまとめにして、操作から切り離す
+                _settingsCard(t),
                 BlockScanSection(
                   service: widget.service,
                   handle: widget.handle,
                   account: _sessionAccount,
                   onChanged: _load,
                 ),
-                const Divider(height: 32),
                 _storageSection(),
                 // 重ねたカードで最後の項目が隠れないよう、その分だけ空ける
                 SizedBox(height: isMine ? _runningCardReserve : 32),
@@ -290,47 +289,61 @@ class _FollowTargetScreenState extends State<FollowTargetScreen> {
     },
   );
 
+  /// 数値を主役にする。取得日などの補足は詰め込まず、警告だけ点で示す
   Widget _statCard({
     required String label,
     required String value,
     required String sub,
     bool warn = false,
     VoidCallback? onTap,
-  }) => Card(
-    margin: EdgeInsets.zero,
-    child: InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(12),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 6),
-        child: Column(
-          children: [
-            Text(
-              label,
-              style: const TextStyle(fontSize: 11, color: Colors.grey),
-            ),
-            const SizedBox(height: 4),
-            Text(
-              value,
-              maxLines: 1,
-              style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
-            ),
-            const SizedBox(height: 2),
-            Text(
-              sub,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              textAlign: TextAlign.center,
-              style: TextStyle(
-                fontSize: 10,
-                color: warn ? Colors.orange : Colors.grey,
+  }) {
+    final scheme = Theme.of(context).colorScheme;
+    return Material(
+      color: scheme.surfaceContainer,
+      borderRadius: BorderRadius.circular(16),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(16),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 12),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Flexible(
+                    child: Text(
+                      label,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                          fontSize: 11, color: scheme.onSurfaceVariant),
+                    ),
+                  ),
+                  // 取りこぼしは見落とすと後から気づけないので、
+                  // 文字を削っても印だけは残す
+                  if (warn) ...[
+                    const SizedBox(width: 4),
+                    Tooltip(
+                      message: sub,
+                      child: Icon(Icons.error_outline,
+                          size: 13, color: scheme.tertiary),
+                    ),
+                  ],
+                ],
               ),
-            ),
-          ],
+              const SizedBox(height: 6),
+              Text(
+                value,
+                maxLines: 1,
+                style: const TextStyle(
+                    fontSize: 26, fontWeight: FontWeight.bold, height: 1),
+              ),
+            ],
+          ),
         ),
       ),
-    ),
-  );
+    );
+  }
 
   /// 3 等分の幅に収める。4 桁までは素の数字のほうが読みやすい
   static String _compact(int v) =>
@@ -340,40 +353,47 @@ class _FollowTargetScreenState extends State<FollowTargetScreen> {
 
   Widget _actionSection(FollowTarget t) {
     final resumable = _history.where((s) => s.isResumable).toList();
+    final scheme = Theme.of(context).colorScheme;
     return Padding(
-      padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
+      padding: const EdgeInsets.symmetric(horizontal: 16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          FilledButton.icon(
-            icon: const Icon(Icons.play_arrow),
-            label: const Text('今すぐ取得'),
+          FilledButton(
             style: FilledButton.styleFrom(
-              padding: const EdgeInsets.symmetric(vertical: 14),
+              padding: const EdgeInsets.symmetric(vertical: 16),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(24),
+              ),
+              textStyle: const TextStyle(
+                  fontSize: 16, fontWeight: FontWeight.bold),
             ),
             onPressed: _job.isRunning ? null : _startWithConfirm,
+            child: const Text('今すぐ取得'),
           ),
+          const SizedBox(height: 12),
           // 実行アカウントは取得ボタンのすぐ下に置く。鍵アカウント相手だと
           // ここを変えないと取れないので、離れていると
           // 「取得 → 失敗 → 設定を探す」の往復になる
           Row(
             children: [
-              const Icon(Icons.account_circle_outlined, size: 18),
-              const SizedBox(width: 8),
-              const Text('実行アカウント', style: TextStyle(fontSize: 12)),
+              Text('実行アカウント',
+                  style: TextStyle(
+                      fontSize: 12, color: scheme.onSurfaceVariant)),
               const Spacer(),
               if (_usableAccounts.isEmpty)
-                const Text(
-                  'なし',
-                  style: TextStyle(fontSize: 12, color: Colors.grey),
-                )
+                Text('なし',
+                    style: TextStyle(
+                        fontSize: 13, color: scheme.onSurfaceVariant))
               else
                 DropdownButton<String>(
                   value: _sessionAccount?.id,
                   underline: const SizedBox.shrink(),
+                  isDense: true,
                   style: TextStyle(
-                    fontSize: 13,
-                    color: Theme.of(context).colorScheme.onSurface,
+                    fontSize: 14,
+                    fontWeight: FontWeight.w500,
+                    color: scheme.onSurface,
                   ),
                   items: [
                     for (final a in _usableAccounts)
@@ -383,52 +403,81 @@ class _FollowTargetScreenState extends State<FollowTargetScreen> {
                       ? null
                       : (v) => _updateTarget(t.copyWith(sessionAccountId: v)),
                 ),
+              // 常に出しておくほどの情報ではないので畳む
+              if (widget.service == SnsService.x) ...[
+                const SizedBox(width: 4),
+                Tooltip(
+                  triggerMode: TooltipTriggerMode.tap,
+                  message:
+                      'X の鍵アカウントは、つながっているアカウントでないと取得できません',
+                  child: Icon(Icons.info_outline,
+                      size: 18, color: scheme.onSurfaceVariant),
+                ),
+              ],
             ],
           ),
-          if (widget.service == SnsService.x)
-            const Text(
-              'X の鍵アカウントは、つながっているアカウントでないと取得できません',
-              style: TextStyle(fontSize: 11, color: Colors.grey),
-            ),
           // 定期取得の設定は別画面。ここに出すのは次回の予定日だけ
           if (_dueSummary(t) case final due?)
             Padding(
-              padding: const EdgeInsets.only(top: 6),
+              padding: const EdgeInsets.only(top: 4),
               child: Row(
                 children: [
-                  const Icon(Icons.schedule, size: 14, color: Colors.grey),
+                  Icon(Icons.schedule,
+                      size: 14, color: scheme.onSurfaceVariant),
                   const SizedBox(width: 6),
                   Expanded(
                     child: Text(
                       due,
-                      style: const TextStyle(fontSize: 11, color: Colors.grey),
+                      style: TextStyle(
+                          fontSize: 11, color: scheme.onSurfaceVariant),
                     ),
                   ),
                 ],
               ),
             ),
+          // 中断した続きは、埋もれると気づかれないので面を持たせる
           for (final s in resumable)
             Padding(
-              padding: const EdgeInsets.only(top: 6),
-              child: OutlinedButton.icon(
-                icon: const Icon(
-                  Icons.play_arrow,
-                  size: 18,
-                  color: Colors.orange,
+              padding: const EdgeInsets.only(top: 12),
+              child: Material(
+                color: scheme.tertiaryContainer,
+                borderRadius: BorderRadius.circular(16),
+                child: InkWell(
+                  borderRadius: BorderRadius.circular(16),
+                  onTap: _job.isRunning
+                      ? null
+                      : () => _start(
+                            s.kind == 'followers'
+                                ? FollowListKind.followers
+                                : FollowListKind.following,
+                            resume: s,
+                          ),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(
+                        vertical: 12, horizontal: 14),
+                    child: Row(
+                      children: [
+                        Icon(Icons.play_arrow,
+                            size: 20, color: scheme.onTertiaryContainer),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Text(
+                            '${s.kind == 'followers' ? 'フォロワー' : 'フォロー'} '
+                            '${s.collectedCount}件目から',
+                            style: TextStyle(
+                                fontSize: 13,
+                                color: scheme.onTertiaryContainer),
+                          ),
+                        ),
+                        Text('再開',
+                            style: TextStyle(
+                                fontSize: 13,
+                                fontWeight: FontWeight.bold,
+                                color: scheme.onTertiaryContainer)),
+                      ],
+                    ),
+                  ),
                 ),
-                label: Text(
-                  '${s.kind == 'followers' ? 'フォロワー' : 'フォロー'}を'
-                  '${s.collectedCount}件目から再開',
-                  style: const TextStyle(fontSize: 12),
-                ),
-                onPressed: _job.isRunning
-                    ? null
-                    : () => _start(
-                        s.kind == 'followers'
-                            ? FollowListKind.followers
-                            : FollowListKind.following,
-                        resume: s,
-                      ),
               ),
             ),
         ],
@@ -438,22 +487,76 @@ class _FollowTargetScreenState extends State<FollowTargetScreen> {
 
   // ─── 定期取得 ───
 
-  /// 間隔の変更は別画面。ここは今の設定と入口だけ
-  Widget _scheduleTile(FollowTarget t) => ListTile(
-    leading: const Icon(Icons.schedule),
-    title: const Text('定期取得'),
-    subtitle: Text(
-      _scheduleSummary(t),
-      style: const TextStyle(fontSize: 11),
-    ),
-    trailing: const Icon(Icons.chevron_right, size: 20),
-    onTap: () async {
-      await Navigator.of(context).push(
-        MaterialPageRoute(builder: (_) => FollowScheduleScreen(target: t)),
-      );
-      await _load();
-    },
-  );
+  /// 定期取得と履歴。どちらも「開くと別画面」なので 1 枚にまとめる
+  Widget _settingsCard(FollowTarget t) {
+    final scheme = Theme.of(context).colorScheme;
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16),
+      child: Container(
+        decoration: BoxDecoration(
+          color: scheme.surfaceContainerLowest,
+          border: Border.all(color: scheme.outlineVariant),
+          borderRadius: BorderRadius.circular(16),
+        ),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 2),
+        child: Column(
+          children: [
+            _linkRow(
+              icon: Icons.autorenew,
+              label: '定期取得',
+              value: _scheduleSummary(t),
+              onTap: () async {
+                await Navigator.of(context).push(
+                  MaterialPageRoute(
+                      builder: (_) => FollowScheduleScreen(target: t)),
+                );
+                await _load();
+              },
+            ),
+            Container(height: 1, color: scheme.outlineVariant),
+            _linkRow(
+              icon: Icons.history,
+              label: '履歴',
+              value: _history.isEmpty ? 'なし' : '${_history.length}件',
+              onTap: _history.isEmpty ? null : _openHistory,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _linkRow({
+    required IconData icon,
+    required String label,
+    required String value,
+    VoidCallback? onTap,
+  }) {
+    final scheme = Theme.of(context).colorScheme;
+    return InkWell(
+      onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 15),
+        child: Row(
+          children: [
+            Icon(icon, size: 20, color: scheme.onSurfaceVariant),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Text(label,
+                  style: const TextStyle(
+                      fontSize: 15, fontWeight: FontWeight.w500)),
+            ),
+            Text(value,
+                style:
+                    TextStyle(fontSize: 13, color: scheme.onSurfaceVariant)),
+            const SizedBox(width: 6),
+            Icon(Icons.chevron_right,
+                size: 20, color: scheme.onSurfaceVariant),
+          ],
+        ),
+      ),
+    );
+  }
 
   String _scheduleSummary(FollowTarget t) {
     final parts = <String>[];
@@ -485,50 +588,74 @@ class _FollowTargetScreenState extends State<FollowTargetScreen> {
   /// 走査中カードを重ねる分の余白。カードの実寸に合わせた概算
   static const _runningCardReserve = 190.0;
 
-  Widget _historyTile() => ListTile(
-    leading: const Icon(Icons.history),
-    title: const Text('履歴'),
-    subtitle: Text(
-      _history.isEmpty ? 'まだ取得していません' : '${_history.length}件',
-      style: const TextStyle(fontSize: 11),
-    ),
-    trailing: _history.isEmpty
-        ? null
-        : const Icon(Icons.chevron_right, size: 20),
-    onTap: _history.isEmpty ? null : _openHistory,
-  );
 
   // ─── 保存容量と削除 ───
 
-  Widget _storageSection() => Column(
-    crossAxisAlignment: CrossAxisAlignment.start,
-    children: [
-      _header('保存容量'),
-      _sizeBar(),
-      ListTile(
-        leading: const Icon(Icons.delete_outline, color: Colors.red),
-        title: const Text('この対象と履歴を削除', style: TextStyle(color: Colors.red)),
-        onTap: _confirmDelete,
+  Widget _storageSection() {
+    final scheme = Theme.of(context).colorScheme;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 20, 16, 0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.storage, size: 20, color: scheme.onSurfaceVariant),
+              const SizedBox(width: 12),
+              Expanded(child: _sizeBar()),
+            ],
+          ),
+          const SizedBox(height: 14),
+          InkWell(
+            onTap: _confirmDelete,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 6),
+              child: Row(
+                children: [
+                  Icon(Icons.delete_outline, size: 20, color: scheme.error),
+                  const SizedBox(width: 10),
+                  Text('この対象と履歴を削除',
+                      style: TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.bold,
+                          color: scheme.error)),
+                ],
+              ),
+            ),
+          ),
+        ],
       ),
-    ],
-  );
+    );
+  }
 
   Widget _sizeBar() {
     final limit = _job.sizeLimitBytes;
     final ratio = limit == 0 ? 0.0 : (_sizeBytes / limit).clamp(0.0, 1.0);
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          LinearProgressIndicator(value: ratio, minHeight: 6),
-          const SizedBox(height: 4),
-          Text(
-            '${formatBytes(_sizeBytes)} / 全体上限 ${formatBytes(limit)}（概算）',
-            style: const TextStyle(fontSize: 10, color: Colors.grey),
-          ),
-        ],
-      ),
+    final scheme = Theme.of(context).colorScheme;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.baseline,
+          textBaseline: TextBaseline.alphabetic,
+          children: [
+            const Expanded(
+              child: Text('保存容量',
+                  style: TextStyle(
+                      fontSize: 14, fontWeight: FontWeight.w500)),
+            ),
+            Text(
+              '${formatBytes(_sizeBytes)} / ${formatBytes(limit)}',
+              style: TextStyle(fontSize: 11, color: scheme.onSurfaceVariant),
+            ),
+          ],
+        ),
+        const SizedBox(height: 6),
+        ClipRRect(
+          borderRadius: BorderRadius.circular(3),
+          child: LinearProgressIndicator(value: ratio, minHeight: 6),
+        ),
+      ],
     );
   }
 
@@ -619,17 +746,6 @@ class _FollowTargetScreenState extends State<FollowTargetScreen> {
     );
   }
 
-  Widget _header(String title) => Padding(
-    padding: const EdgeInsets.fromLTRB(16, 16, 16, 4),
-    child: Text(
-      title,
-      style: TextStyle(
-        fontSize: 13,
-        fontWeight: FontWeight.bold,
-        color: Theme.of(context).colorScheme.primary,
-      ),
-    ),
-  );
 
   // ─── 操作 ───
 

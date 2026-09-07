@@ -19,6 +19,7 @@ import '../services/app_update_service.dart';
 import '../services/debug_log_service.dart';
 import '../services/timeline_fetch_scheduler.dart';
 import '../utils/app_snackbar.dart';
+import '../widgets/background_job_indicator.dart';
 import '../utils/engagement_errors.dart';
 import '../models/account.dart';
 import '../widgets/account_picker_modal.dart';
@@ -509,6 +510,10 @@ class _OmniFeedScreenState extends ConsumerState<OmniFeedScreen>
     if (showTimer) {
       buttons.add(_buildFetchIndicator(context, settings));
     }
+
+    // 裏で走っている収集は、この画面からは見えないまま何時間も続く。
+    // 動いていることと、その進みをここに出す
+    buttons.add(const BackgroundJobIndicator());
 
     return buttons;
   }

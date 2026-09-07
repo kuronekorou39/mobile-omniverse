@@ -98,6 +98,44 @@ class BlockScanService {
     ScanLogService.instance.log('中断を要求');
   }
 
+  /// 未完了の調査を、起動時に続きから走らせる。
+  ///
+  /// 数時間から数日かかるので、アプリを閉じるたびに手で再開させるのは
+  /// 現実的でない。フォロー/フォロワー取得と同じように、放っておいても
+  /// 進むようにする。走るのは 1 本だけ（新しいものから）。
+  Future<void> resumeUnfinished({required List<Account> accounts}) async {
+    if (isRunning) return;
+    final job = FollowCaptureJobService.instance;
+    if (job.isRunning || job.isWebViewBusy) return;
+    if (accounts.isEmpty) return;
+
+    final runs = await FollowDb.instance.listBlockRuns(limit: 20);
+    for (final r in runs) {
+      if (r.isCompleted) continue;
+      // 調査を始めたアカウントで続ける。無ければ同じ SNS の別アカウント
+      final usable = accounts.where((a) => a.service == r.service).toList();
+      if (usable.isEmpty) continue;
+      final account = usable.firstWhere(
+        (a) => a.id == r.sessionAccountId,
+        orElse: () => usable.first,
+      );
+      ScanLogService.instance
+          .log('起動時の自動再開: runId=${r.id} 対象=@${r.targetHandle}');
+      try {
+        await resume(
+          account: account,
+          runId: r.id,
+          targetHandle: r.targetHandle,
+        );
+      } catch (e) {
+        debugPrint('[BlockScan] 自動再開に失敗: $e');
+        ScanLogService.instance.log('自動再開に失敗: $e');
+      }
+      // 1 本走らせたら終わり。並べて走らせない
+      return;
+    }
+  }
+
   /// 起点の一覧から調査を始める。
   ///
   /// [origin] は 'following' / 'followers' / 'mutual'。

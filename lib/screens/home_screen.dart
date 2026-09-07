@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../providers/notification_badge_provider.dart';
 import '../services/account_storage_service.dart';
+import '../services/block_scan_service.dart';
 import '../services/follow_capture_job_service.dart';
 import '../widgets/compose_queue_banner.dart';
 import 'accounts_screen.dart';
@@ -53,7 +54,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     _scheduleFollowCapture();
   }
 
-  /// 期日が来ているフォロー/フォロワー取得を、起動時に 1 回だけ走らせる。
+  /// 期日が来ているフォロー/フォロワー取得と、途中のつながり調査を
+  /// 起動時に 1 回だけ走らせる。
   /// 起動直後はタイムライン取得と重なるので少し待ってから始める。
   /// 画面が消えたら止められるよう Timer で持つ（投げっぱなしにしない）。
   void _scheduleFollowCapture() {
@@ -66,6 +68,13 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         await FollowCaptureJobService.instance.runDueWork(accounts: accounts);
       } catch (e) {
         debugPrint('[HomeScreen] 自動取得に失敗: $e');
+      }
+      // 取得が終わってから。どちらも走査用 WebView を使うので重ねられない
+      if (!mounted) return;
+      try {
+        await BlockScanService.instance.resumeUnfinished(accounts: accounts);
+      } catch (e) {
+        debugPrint('[HomeScreen] 調査の自動再開に失敗: $e');
       }
     });
   }

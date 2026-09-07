@@ -567,11 +567,9 @@ class _AccountDetailScreen extends ConsumerWidget {
                                     fontWeight: FontWeight.bold)),
                             const SizedBox(height: 4),
                             Text(
-                              'フォロー / フォロワーの一覧・相互の判定・差分\n'
-                              '収集には時間がかかります',
+                              'フォロー / フォロワーの一覧・相互の判定・差分',
                               style: TextStyle(
                                 fontSize: 12,
-                                height: 1.6,
                                 color: scheme.onSurfaceVariant,
                               ),
                             ),
@@ -586,30 +584,17 @@ class _AccountDetailScreen extends ConsumerWidget {
               ),
             ),
           ),
-          const SizedBox(height: 22),
-          // 設定は面を持たせず、入口より一段軽くする
-          Padding(
-            padding: const EdgeInsets.fromLTRB(24, 0, 24, 8),
-            child: Text(
-              'このアカウントの設定',
-              style: TextStyle(
-                fontSize: 11,
-                fontWeight: FontWeight.bold,
-                letterSpacing: 1.1,
-                color: scheme.onSurfaceVariant,
-              ),
-            ),
-          ),
+          const SizedBox(height: 18),
+          // 設定は面を持たせず、入口より一段軽くする。見出しは付けない
+          // （2 行しかなく、面の違いで入口とは区別がつく）
           _SettingRow(
             label: 'タイムライン取得',
-            sub: 'このアカウントの投稿をフィードに表示する',
             value: account.isEnabled,
             onChanged: (_) =>
                 ref.read(accountProvider.notifier).toggleAccount(account.id),
           ),
           _SettingRow(
             label: 'フォロー先の RT を非表示',
-            sub: '他ユーザーの RT / リポストを除外する',
             value: ref
                 .watch(settingsProvider)
                 .hideRetweetsAccountIds
@@ -618,36 +603,26 @@ class _AccountDetailScreen extends ConsumerWidget {
                 .read(settingsProvider.notifier)
                 .toggleHideRetweets(account.id),
           ),
-          // 破壊的操作はフォールドの下へ
+          // 破壊的操作はフォールドの下へ。消えるのはこのアプリの登録と
+          // 保存データで、SNS 側のアカウントではない。何が消えるかは
+          // 確認ダイアログで伝える
           Padding(
-            padding: const EdgeInsets.fromLTRB(24, 22, 24, 12),
+            padding: const EdgeInsets.fromLTRB(24, 20, 24, 10),
             child: Divider(height: 1, color: scheme.outlineVariant),
           ),
           InkWell(
             onTap: () => _confirmDelete(context, ref, account),
             child: Padding(
-              padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 24),
+              padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 24),
               child: Row(
                 children: [
                   Icon(Icons.delete_outline, size: 22, color: scheme.error),
                   const SizedBox(width: 14),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text('アカウントを削除',
-                            style: TextStyle(
-                                fontSize: 15,
-                                fontWeight: FontWeight.bold,
-                                color: scheme.error)),
-                        const SizedBox(height: 3),
-                        Text('保存済みのデータもすべて消えます',
-                            style: TextStyle(
-                                fontSize: 11,
-                                color: scheme.onSurfaceVariant)),
-                      ],
-                    ),
-                  ),
+                  Text('アカウント一覧から削除',
+                      style: TextStyle(
+                          fontSize: 15,
+                          fontWeight: FontWeight.bold,
+                          color: scheme.error)),
                 ],
               ),
             ),
@@ -701,9 +676,13 @@ class _AccountDetailScreen extends ConsumerWidget {
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('アカウント削除'),
-        content:
-            Text('${account.displayName} (${account.handle}) を削除しますか？'),
+        title: const Text('アカウント一覧から削除'),
+        // SNS 側のアカウントは消えない。消えるのはこのアプリの登録と、
+        // そのアカウントで集めた保存データ
+        content: Text('${account.displayName} (${account.handle}) を'
+            'アプリから削除します。\n\n'
+            'このアカウントで保存したデータもすべて消えます。'
+            'X / Bluesky 側のアカウントはそのままです。'),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(),
@@ -790,43 +769,27 @@ class _NavDivider extends StatelessWidget {
 class _SettingRow extends StatelessWidget {
   const _SettingRow({
     required this.label,
-    required this.sub,
     required this.value,
     required this.onChanged,
   });
 
   final String label;
-  final String sub;
   final bool value;
   final ValueChanged<bool> onChanged;
 
   @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 24),
-      child: Row(
-        children: [
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(label, style: const TextStyle(fontSize: 15)),
-                const SizedBox(height: 3),
-                Text(sub,
-                    style: TextStyle(
-                        fontSize: 11,
-                        height: 1.5,
-                        color: scheme.onSurfaceVariant)),
-              ],
+  Widget build(BuildContext context) => Padding(
+        padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 24),
+        child: Row(
+          children: [
+            Expanded(
+              child: Text(label, style: const TextStyle(fontSize: 15)),
             ),
-          ),
-          const SizedBox(width: 14),
-          Switch(value: value, onChanged: onChanged),
-        ],
-      ),
-    );
-  }
+            const SizedBox(width: 14),
+            Switch(value: value, onChanged: onChanged),
+          ],
+        ),
+      );
 }
 
 /// トークンが切れているときだけ出る。押すとセッション更新へ。

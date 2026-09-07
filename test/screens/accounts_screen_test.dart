@@ -212,7 +212,7 @@ void main() {
     /// 触る前にそこまで送る
     Future<void> scrollToDelete(WidgetTester tester) async {
       await tester.scrollUntilVisible(
-        find.text('アカウントを削除'),
+        find.text('アカウント一覧から削除'),
         200,
         scrollable: find.byType(Scrollable).last,
       );
@@ -295,10 +295,7 @@ void main() {
       );
 
       expect(find.text('タイムライン取得'), findsOneWidget);
-      expect(
-        find.text('このアカウントの投稿をフィードに表示する'),
-        findsOneWidget,
-      );
+      expect(find.text('フォロー先の RT を非表示'), findsOneWidget);
       // 設定は 2 行。面を持たない自作の行なので Switch で数える
       expect(find.byType(Switch), findsNWidgets(2));
     });
@@ -334,7 +331,7 @@ void main() {
       await scrollToDelete(tester);
 
       expect(find.byIcon(Icons.delete_outline), findsOneWidget);
-      expect(find.text('保存済みのデータもすべて消えます'), findsOneWidget);
+      expect(find.text('アカウント一覧から削除'), findsOneWidget);
     });
 
     testWidgets('delete icon shows confirmation dialog', (tester) async {
@@ -355,9 +352,14 @@ void main() {
       await tester.pumpAndSettle();
 
       // Should show confirmation dialog
-      expect(find.text('アカウント削除'), findsOneWidget);
+      // ダイアログのタイトルと行のラベルが同じ文言になったので、
+      // ダイアログが出たことは本文で確かめる
       expect(
-        find.text('ConfirmUser (@confirmuser) を削除しますか？'),
+        find.textContaining('ConfirmUser (@confirmuser) をアプリから削除します'),
+        findsOneWidget,
+      );
+      expect(
+        find.textContaining('X / Bluesky 側のアカウントはそのままです'),
         findsOneWidget,
       );
       expect(find.text('キャンセル'), findsOneWidget);
@@ -386,8 +388,8 @@ void main() {
       await tester.pumpAndSettle();
 
       // Should still be on detail page
-      expect(find.text('アカウント削除'), findsNothing);
-      expect(find.text('アカウントを削除'), findsOneWidget);
+      expect(find.textContaining('をアプリから削除します'), findsNothing);
+      expect(find.text('アカウント一覧から削除'), findsOneWidget);
     });
 
     testWidgets('tapping account name navigates to detail page', (tester) async {

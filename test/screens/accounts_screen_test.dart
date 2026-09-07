@@ -208,6 +208,16 @@ void main() {
       TimelineFetchScheduler.instance.stop();
     }
 
+    /// 削除はページ最下部（フォールドの下）に移したので、
+    /// 触る前にそこまで送る
+    Future<void> scrollToDelete(WidgetTester tester) async {
+      await tester.scrollUntilVisible(
+        find.text('アカウントを削除'),
+        200,
+        scrollable: find.byType(Scrollable).last,
+      );
+    }
+
     testWidgets('tapping account tile navigates to detail page', (tester) async {
       final account = makeXAccount(
         displayName: 'DetailUser',
@@ -263,7 +273,7 @@ void main() {
       expect(find.byType(SnsBadge), findsAtLeastNWidgets(1));
     });
 
-    testWidgets('detail page shows SwitchListTile for timeline fetching',
+    testWidgets('detail page shows switches for timeline fetching',
         (tester) async {
       final account = makeXAccount(
         displayName: 'SwitchUser',
@@ -289,8 +299,8 @@ void main() {
         find.text('このアカウントの投稿をフィードに表示する'),
         findsOneWidget,
       );
-      // Two SwitchListTiles: timeline + hide RT
-      expect(find.byType(SwitchListTile), findsNWidgets(2));
+      // 設定は 2 行。面を持たない自作の行なので Switch で数える
+      expect(find.byType(Switch), findsNWidgets(2));
     });
 
     testWidgets('detail page shows SnsBadge for X service', (tester) async {
@@ -309,7 +319,7 @@ void main() {
       expect(find.byType(SnsBadge), findsAtLeastNWidgets(1));
     });
 
-    testWidgets('detail page shows delete icon in AppBar', (tester) async {
+    testWidgets('detail page shows delete row at the bottom', (tester) async {
       final account = makeXAccount(
         displayName: 'DeleteUser',
         handle: '@deleteuser',
@@ -321,8 +331,10 @@ void main() {
       await tester.pump();
 
       await navigateToDetail(tester, 'DeleteUser');
+      await scrollToDelete(tester);
 
       expect(find.byIcon(Icons.delete_outline), findsOneWidget);
+      expect(find.text('保存済みのデータもすべて消えます'), findsOneWidget);
     });
 
     testWidgets('delete icon shows confirmation dialog', (tester) async {
@@ -337,8 +349,8 @@ void main() {
       await tester.pump();
 
       await navigateToDetail(tester, 'ConfirmUser');
+      await scrollToDelete(tester);
 
-      // Tap the delete icon button in AppBar
       await tester.tap(find.byIcon(Icons.delete_outline));
       await tester.pumpAndSettle();
 
@@ -364,6 +376,7 @@ void main() {
       await tester.pump();
 
       await navigateToDetail(tester, 'CancelUser');
+      await scrollToDelete(tester);
 
       await tester.tap(find.byIcon(Icons.delete_outline));
       await tester.pumpAndSettle();
@@ -374,7 +387,7 @@ void main() {
 
       // Should still be on detail page
       expect(find.text('アカウント削除'), findsNothing);
-      expect(find.text('CancelUser'), findsAtLeastNWidgets(1));
+      expect(find.text('アカウントを削除'), findsOneWidget);
     });
 
     testWidgets('tapping account name navigates to detail page', (tester) async {
@@ -393,7 +406,7 @@ void main() {
 
       // Should navigate to detail page
       expect(find.text('タイムライン取得'), findsOneWidget);
-      expect(find.byIcon(Icons.delete_outline), findsOneWidget);
+      expect(find.text('つながりを調べる'), findsOneWidget);
     });
 
     testWidgets('toggling switch changes account enabled state', (tester) async {
@@ -433,8 +446,8 @@ void main() {
 
       // Navigate to detail page
       await navigateToDetail(tester, 'DeleteMe');
+      await scrollToDelete(tester);
 
-      // Tap delete icon in AppBar
       await tester.tap(find.byIcon(Icons.delete_outline));
       await tester.pumpAndSettle();
 
@@ -460,7 +473,7 @@ void main() {
       expect(find.text('@bskydetail'), findsAtLeastNWidgets(1));
     });
 
-    testWidgets('detail page toggle SwitchListTile changes enabled state',
+    testWidgets('detail page toggling a setting switch keeps both rows',
         (tester) async {
       final account = makeXAccount(
         displayName: 'ToggleDetail',
@@ -482,17 +495,16 @@ void main() {
         scrollable: find.byType(Scrollable).last,
       );
 
-      // Two SwitchListTiles: timeline + hide RT
-      final switchTiles = find.byType(SwitchListTile);
-      expect(switchTiles, findsNWidgets(2));
+      // 設定は 2 行。面を持たない自作の行なので Switch で数える
+      final switches = find.byType(Switch);
+      expect(switches, findsNWidgets(2));
 
-      // Toggle the first SwitchListTile (timeline)
-      await tester.tap(switchTiles.first);
+      // 1 つ目（タイムライン取得）を切り替える
+      await tester.tap(switches.first);
       await tester.pump();
       await tester.pump();
 
-      // SwitchListTiles should still be present
-      expect(find.byType(SwitchListTile), findsNWidgets(2));
+      expect(find.byType(Switch), findsNWidgets(2));
     });
   });
 }

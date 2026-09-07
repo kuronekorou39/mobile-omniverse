@@ -22,8 +22,12 @@ class TimelineFetchScheduler {
   /// アカウント別のカーソル管理
   final Map<String, String?> _cursors = {};
 
-  /// トークン期限切れ通知済みアカウント（重複通知防止）
-  final Set<String> _expiredAccountIds = {};
+  /// トークンが切れていると分かっているアカウント。
+  ///
+  /// 通知の重複を防ぐのと、画面に「要再ログイン」を出すのに使う。以前は
+  /// 起動時に 1 回スナックバーを出すだけだったので、見逃すとそのまま
+  /// 気づけず、取得が全部失敗し続けていることに気づけなかった。
+  final expiredAccountIds = ValueNotifier<Set<String>>(const {});
 
   /// 新しい投稿が取得されたときのコールバック
   void Function(List<Post> posts)? onPostsFetched;
@@ -46,7 +50,8 @@ class TimelineFetchScheduler {
 
   /// トークン期限切れ状態をクリア（セッション更新後に呼ぶ）
   void clearExpiredState(String accountId) {
-    _expiredAccountIds.remove(accountId);
+    if (!expiredAccountIds.value.contains(accountId)) return;
+    expiredAccountIds.value = {...expiredAccountIds.value}..remove(accountId);
   }
 
   void setInterval(Duration interval) {
@@ -198,8 +203,8 @@ class TimelineFetchScheduler {
       debugPrint('[Scheduler] Token fully expired for ${account.handle}');
       onTokenRefresh?.call(account.handle, false);
       // 重複通知を防止
-      if (!_expiredAccountIds.contains(account.id)) {
-        _expiredAccountIds.add(account.id);
+      if (!expiredAccountIds.value.contains(account.id)) {
+        expiredAccountIds.value = {...expiredAccountIds.value, account.id};
         onTokenExpired?.call(account.id, account.handle);
       }
       rethrow;

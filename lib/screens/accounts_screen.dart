@@ -368,31 +368,35 @@ class _AccountDetailScreen extends ConsumerWidget {
       );
     }
 
+    final scheme = Theme.of(context).colorScheme;
+
     return Scaffold(
       appBar: AppBar(
-        title: Text(account.displayName),
+        // 更新と削除はここから外した。更新は期限切れチップから、削除は
+        // 破壊的操作なので最下部に置く
         actions: [
-          IconButton(
-            icon: const Icon(Icons.refresh),
-            tooltip: 'セッション更新',
-            onPressed: () => _openSessionRefresh(context, ref, account),
-          ),
-          IconButton(
-            icon: const Icon(Icons.delete_outline, color: Colors.red),
-            tooltip: 'アカウント削除',
-            onPressed: () => _confirmDelete(context, ref, account),
+          PopupMenuButton<String>(
+            onSelected: (v) {
+              if (v == 'refresh') _openSessionRefresh(context, ref, account);
+            },
+            itemBuilder: (_) => const [
+              PopupMenuItem(value: 'refresh', child: Text('セッションを更新')),
+            ],
           ),
         ],
       ),
       body: ListView(
         children: [
-          // プロフィールヘッダー
+          // プロフィールヘッダー。中央揃えで縦に積むと 80dp 以上使うので、
+          // 横 1 行にして情報の密度を上げる
           Padding(
-            padding: const EdgeInsets.all(24),
-            child: Column(
+            padding: const EdgeInsets.fromLTRB(20, 4, 20, 18),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 CircleAvatar(
-                  radius: 40,
+                  radius: 28,
+                  backgroundColor: scheme.primaryContainer,
                   backgroundImage: account.avatarUrl != null
                       ? NetworkImage(account.avatarUrl!)
                       : null,
@@ -401,125 +405,254 @@ class _AccountDetailScreen extends ConsumerWidget {
                           account.displayName.isNotEmpty
                               ? account.displayName[0].toUpperCase()
                               : '?',
-                          style: const TextStyle(fontSize: 32),
+                          style: TextStyle(
+                            fontSize: 24,
+                            fontWeight: FontWeight.bold,
+                            color: scheme.onPrimaryContainer,
+                          ),
                         )
                       : null,
                 ),
-                const SizedBox(height: 12),
-                Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(
-                      account.displayName,
-                      style: const TextStyle(
-                          fontSize: 20, fontWeight: FontWeight.bold),
-                    ),
-                    if (account.isProtected) ...[
-                      const SizedBox(width: 6),
-                      Icon(Icons.lock, size: 16, color: Colors.grey[500]),
+                const SizedBox(width: 14),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Flexible(
+                            child: Text(
+                              account.displayName,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                  fontSize: 22, fontWeight: FontWeight.bold),
+                            ),
+                          ),
+                          if (account.isProtected) ...[
+                            const SizedBox(width: 6),
+                            Icon(Icons.lock,
+                                size: 16, color: scheme.onSurfaceVariant),
+                          ],
+                        ],
+                      ),
+                      const SizedBox(height: 6),
+                      Row(
+                        children: [
+                          SnsBadge(service: account.service),
+                          const SizedBox(width: 8),
+                          Flexible(
+                            child: Text(
+                              account.handle,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                  fontSize: 14,
+                                  color: scheme.onSurfaceVariant),
+                            ),
+                          ),
+                        ],
+                      ),
+                      _SessionChip(
+                        accountId: account.id,
+                        onTap: () =>
+                            _openSessionRefresh(context, ref, account),
+                      ),
                     ],
-                  ],
-                ),
-                const SizedBox(height: 4),
-                Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    SnsBadge(service: account.service),
-                    const SizedBox(width: 8),
-                    Text(
-                      account.handle,
-                      style: TextStyle(color: Colors.grey[600], fontSize: 16),
-                    ),
-                  ],
+                  ),
                 ),
               ],
             ),
           ),
-          const Divider(),
-          ListTile(
-            leading: const Icon(Icons.person_outline),
-            title: const Text('プロフィール'),
-            trailing: const Icon(Icons.chevron_right, size: 20),
-            onTap: () => Navigator.of(context).push(
-              MaterialPageRoute(
-                builder: (_) => UserProfileScreen(
-                  username: account.displayName,
-                  handle: account.handle,
-                  service: account.service,
-                  avatarUrl: account.avatarUrl,
-                  accountId: account.id,
+          // 「見るもの」はひとつの面にまとめる。同じ重さの行が並ぶので
+          // カード 1 枚に収め、区切り線だけで分ける
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: Container(
+              decoration: BoxDecoration(
+                color: scheme.surfaceContainer,
+                borderRadius: BorderRadius.circular(16),
+              ),
+              padding: const EdgeInsets.symmetric(vertical: 2, horizontal: 8),
+              child: Column(
+                children: [
+                  _NavRow(
+                    icon: Icons.person_outline,
+                    label: 'プロフィール',
+                    onTap: () => Navigator.of(context).push(
+                      MaterialPageRoute(
+                        builder: (_) => UserProfileScreen(
+                          username: account.displayName,
+                          handle: account.handle,
+                          service: account.service,
+                          avatarUrl: account.avatarUrl,
+                          accountId: account.id,
+                        ),
+                      ),
+                    ),
+                  ),
+                  const _NavDivider(),
+                  _NavRow(
+                    icon: Icons.favorite_border,
+                    label: 'ふぁぼ',
+                    onTap: () => Navigator.of(context).push(
+                      MaterialPageRoute(
+                        builder: (_) => LikesBookmarksScreen(
+                            account: account, initialIndex: 0),
+                      ),
+                    ),
+                  ),
+                  const _NavDivider(),
+                  _NavRow(
+                    icon: Icons.bookmark_border,
+                    label: 'ブックマーク',
+                    onTap: () => Navigator.of(context).push(
+                      MaterialPageRoute(
+                        builder: (_) => LikesBookmarksScreen(
+                            account: account, initialIndex: 1),
+                      ),
+                    ),
+                  ),
+                  const _NavDivider(),
+                  _NavRow(
+                    icon: Icons.mail_outline,
+                    label: 'DM（見る専）',
+                    sub: '既読をつけずに読む・送信なし',
+                    onTap: () => Navigator.of(context).push(
+                      MaterialPageRoute(
+                        builder: (_) => DmScreen(account: account),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 22),
+          // 収集を伴う重い機能なので、面と枠を変えて 1 段持ち上げる。
+          // 遷移先の「つながり調査」と語がぶつからないよう動詞にした
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: Material(
+              color: scheme.surfaceContainerLowest,
+              borderRadius: BorderRadius.circular(18),
+              child: InkWell(
+                borderRadius: BorderRadius.circular(18),
+                onTap: () => Navigator.of(context).push(
+                  MaterialPageRoute(
+                    builder: (_) => FollowTargetScreen(
+                      service: account.service,
+                      handle:
+                          account.handle.replaceFirst('@', '').toLowerCase(),
+                    ),
+                  ),
+                ),
+                child: Container(
+                  decoration: BoxDecoration(
+                    border: Border.all(color: scheme.primary, width: 1.5),
+                    borderRadius: BorderRadius.circular(18),
+                  ),
+                  padding:
+                      const EdgeInsets.symmetric(vertical: 18, horizontal: 16),
+                  child: Row(
+                    children: [
+                      Icon(Icons.groups_outlined,
+                          size: 28, color: scheme.primary),
+                      const SizedBox(width: 14),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text('つながりを調べる',
+                                style: TextStyle(
+                                    fontSize: 17,
+                                    fontWeight: FontWeight.bold)),
+                            const SizedBox(height: 4),
+                            Text(
+                              'フォロー / フォロワーの一覧・相互の判定・差分\n'
+                              '収集には時間がかかります',
+                              style: TextStyle(
+                                fontSize: 12,
+                                height: 1.6,
+                                color: scheme.onSurfaceVariant,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      Icon(Icons.chevron_right,
+                          size: 22, color: scheme.primary),
+                    ],
+                  ),
                 ),
               ),
             ),
           ),
-          ListTile(
-            leading: const Icon(Icons.favorite_border),
-            title: const Text('ふぁぼ'),
-            trailing: const Icon(Icons.chevron_right, size: 20),
-            onTap: () => Navigator.of(context).push(
-              MaterialPageRoute(
-                builder: (_) =>
-                    LikesBookmarksScreen(account: account, initialIndex: 0),
+          const SizedBox(height: 22),
+          // 設定は面を持たせず、入口より一段軽くする
+          Padding(
+            padding: const EdgeInsets.fromLTRB(24, 0, 24, 8),
+            child: Text(
+              'このアカウントの設定',
+              style: TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.bold,
+                letterSpacing: 1.1,
+                color: scheme.onSurfaceVariant,
               ),
             ),
           ),
-          ListTile(
-            leading: const Icon(Icons.bookmark_border),
-            title: const Text('ブックマーク'),
-            trailing: const Icon(Icons.chevron_right, size: 20),
-            onTap: () => Navigator.of(context).push(
-              MaterialPageRoute(
-                builder: (_) =>
-                    LikesBookmarksScreen(account: account, initialIndex: 1),
-              ),
-            ),
-          ),
-          ListTile(
-            leading: const Icon(Icons.mail_outline),
-            title: const Text('DM（見る専）'),
-            subtitle: const Text('既読をつけずに読む・送信なし',
-                style: TextStyle(fontSize: 11)),
-            trailing: const Icon(Icons.chevron_right, size: 20),
-            onTap: () => Navigator.of(context).push(
-              MaterialPageRoute(
-                builder: (_) => DmScreen(account: account),
-              ),
-            ),
-          ),
-          ListTile(
-            leading: const Icon(Icons.groups_outlined),
-            title: const Text('フォロー / フォロワー'),
-            subtitle: const Text('一覧の取得・相互の判定・差分',
-                style: TextStyle(fontSize: 11)),
-            trailing: const Icon(Icons.chevron_right, size: 20),
-            onTap: () => Navigator.of(context).push(
-              MaterialPageRoute(
-                builder: (_) => FollowTargetScreen(
-                  service: account.service,
-                  handle: account.handle.replaceFirst('@', '').toLowerCase(),
-                ),
-              ),
-            ),
-          ),
-          const Divider(),
-          // 有効/無効
-          SwitchListTile(
-            title: const Text('タイムライン取得'),
-            subtitle: const Text('このアカウントの投稿をフィードに表示する'),
+          _SettingRow(
+            label: 'タイムライン取得',
+            sub: 'このアカウントの投稿をフィードに表示する',
             value: account.isEnabled,
-            onChanged: (_) {
-              ref.read(accountProvider.notifier).toggleAccount(account.id);
-            },
+            onChanged: (_) =>
+                ref.read(accountProvider.notifier).toggleAccount(account.id),
           ),
-          // RT/リポスト非表示
-          SwitchListTile(
-            title: const Text('フォロー先の RT を非表示'),
-            subtitle: const Text('このアカウントのフィードから他ユーザーの RT/リポストを除外する'),
-            value: ref.watch(settingsProvider).hideRetweetsAccountIds.contains(account.id),
-            onChanged: (_) {
-              ref.read(settingsProvider.notifier).toggleHideRetweets(account.id);
-            },
+          _SettingRow(
+            label: 'フォロー先の RT を非表示',
+            sub: '他ユーザーの RT / リポストを除外する',
+            value: ref
+                .watch(settingsProvider)
+                .hideRetweetsAccountIds
+                .contains(account.id),
+            onChanged: (_) => ref
+                .read(settingsProvider.notifier)
+                .toggleHideRetweets(account.id),
           ),
+          // 破壊的操作はフォールドの下へ
+          Padding(
+            padding: const EdgeInsets.fromLTRB(24, 22, 24, 12),
+            child: Divider(height: 1, color: scheme.outlineVariant),
+          ),
+          InkWell(
+            onTap: () => _confirmDelete(context, ref, account),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 24),
+              child: Row(
+                children: [
+                  Icon(Icons.delete_outline, size: 22, color: scheme.error),
+                  const SizedBox(width: 14),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text('アカウントを削除',
+                            style: TextStyle(
+                                fontSize: 15,
+                                fontWeight: FontWeight.bold,
+                                color: scheme.error)),
+                        const SizedBox(height: 3),
+                        Text('保存済みのデータもすべて消えます',
+                            style: TextStyle(
+                                fontSize: 11,
+                                color: scheme.onSurfaceVariant)),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 32),
         ],
       ),
     );
@@ -586,6 +719,164 @@ class _AccountDetailScreen extends ConsumerWidget {
           ),
         ],
       ),
+    );
+  }
+}
+
+/// 入口リストの 1 行。すべて同じ重さで並ぶので、面はまとめて親が持つ
+class _NavRow extends StatelessWidget {
+  const _NavRow({
+    required this.icon,
+    required this.label,
+    required this.onTap,
+    this.sub,
+  });
+
+  final IconData icon;
+  final String label;
+  final String? sub;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return InkWell(
+      onTap: onTap,
+      child: Padding(
+        padding: EdgeInsets.symmetric(
+            vertical: sub == null ? 13 : 11, horizontal: 8),
+        child: Row(
+          children: [
+            Icon(icon, size: 22, color: scheme.primary),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(label,
+                      style: const TextStyle(
+                          fontSize: 16, fontWeight: FontWeight.w500)),
+                  if (sub != null) ...[
+                    const SizedBox(height: 2),
+                    Text(sub!,
+                        style: TextStyle(
+                            fontSize: 11, color: scheme.onSurfaceVariant)),
+                  ],
+                ],
+              ),
+            ),
+            Icon(Icons.chevron_right,
+                size: 20, color: scheme.onSurfaceVariant),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// 行間の区切り。アイコンぶんだけ左を空けて、テキストの頭に揃える
+class _NavDivider extends StatelessWidget {
+  const _NavDivider();
+
+  @override
+  Widget build(BuildContext context) => Container(
+        height: 1,
+        margin: const EdgeInsets.only(left: 44),
+        color: Theme.of(context).colorScheme.outlineVariant,
+      );
+}
+
+/// 設定の 1 行。面を持たせず、入口リストより軽く見せる
+class _SettingRow extends StatelessWidget {
+  const _SettingRow({
+    required this.label,
+    required this.sub,
+    required this.value,
+    required this.onChanged,
+  });
+
+  final String label;
+  final String sub;
+  final bool value;
+  final ValueChanged<bool> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 24),
+      child: Row(
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(label, style: const TextStyle(fontSize: 15)),
+                const SizedBox(height: 3),
+                Text(sub,
+                    style: TextStyle(
+                        fontSize: 11,
+                        height: 1.5,
+                        color: scheme.onSurfaceVariant)),
+              ],
+            ),
+          ),
+          const SizedBox(width: 14),
+          Switch(value: value, onChanged: onChanged),
+        ],
+      ),
+    );
+  }
+}
+
+/// トークンが切れているときだけ出る。押すとセッション更新へ。
+///
+/// 以前は起動時のスナックバー 1 回きりで、見逃すと取得が全部失敗して
+/// いることに気づけなかった。切れている間はここに出し続ける。
+class _SessionChip extends StatelessWidget {
+  const _SessionChip({required this.accountId, required this.onTap});
+
+  final String accountId;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return ValueListenableBuilder<Set<String>>(
+      valueListenable: TimelineFetchScheduler.instance.expiredAccountIds,
+      builder: (context, expired, _) {
+        if (!expired.contains(accountId)) return const SizedBox.shrink();
+        return Padding(
+          padding: const EdgeInsets.only(top: 8),
+          child: Material(
+            color: scheme.errorContainer,
+            borderRadius: BorderRadius.circular(9),
+            child: InkWell(
+              onTap: onTap,
+              borderRadius: BorderRadius.circular(9),
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(10, 7, 12, 7),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.refresh,
+                        size: 17, color: scheme.onErrorContainer),
+                    const SizedBox(width: 6),
+                    Text(
+                      '要再ログイン・セッションを更新',
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.bold,
+                        color: scheme.onErrorContainer,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        );
+      },
     );
   }
 }

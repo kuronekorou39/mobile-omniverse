@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -11,6 +13,7 @@ import '../services/debug_log_service.dart';
 import '../services/x_api_service.dart';
 import '../services/x_dm_parser.dart';
 import '../utils/image_headers.dart';
+import '../utils/json_shape.dart';
 import 'dm_thread_screen.dart';
 import 'user_profile_screen.dart';
 
@@ -92,6 +95,7 @@ class _DmScreenState extends ConsumerState<DmScreen> {
     DebugLogService.instance.log('DmParse',
         'inbox: convos=${page.conversations.length} '
         'types=${XDmParser.entryTypeHistogram(res.data!)}');
+    unawaited(_probeXChatShape());
     setState(() {
       _convos.clear();
       _convoIds.clear();
@@ -99,6 +103,30 @@ class _DmScreenState extends ConsumerState<DmScreen> {
       _nextCursor = page.trustedNextMaxId;
       _selfUserId = page.selfUserId;
     });
+  }
+
+  /// XChat（新しい DM）の応答の形をログに残す。
+  ///
+  /// 1.1 の dm API には移行前のメッセージしか残っておらず、公式は
+  /// api.x.com の GraphQL を使っている。そちらに移すためにキー構造が
+  /// 要るが、応答をそのまま残すと本文がログに残る。形だけを書き出す。
+  /// 表示には使わないので、失敗しても画面には出さない。
+  Future<void> _probeXChatShape() async {
+    if (!DebugLogService.instance.enabled) return;
+    try {
+      final res = await XApiService.instance.getXChatInbox(_account.xCredentials);
+      DebugLogService.instance.log('XChatShape',
+          'inbox status=${res.statusCode} shape=${jsonShape(res.data)}');
+      // 会話が取れたら、1 本だけスレッドの形も見る
+      final convoId = _convos.isEmpty ? null : _convos.first.id;
+      if (convoId == null) return;
+      final thread = await XApiService.instance
+          .getXChatConversation(_account.xCredentials, convoId);
+      DebugLogService.instance.log('XChatShape',
+          'thread status=${thread.statusCode} shape=${jsonShape(thread.data)}');
+    } catch (e) {
+      DebugLogService.instance.log('XChatShape', '失敗: $e');
+    }
   }
 
   Future<void> _loadBluesky() async {

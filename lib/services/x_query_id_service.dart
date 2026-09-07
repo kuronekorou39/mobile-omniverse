@@ -43,6 +43,9 @@ class XQueryIdService {
     'Bookmarks',
     'Following',
     'Followers',
+    // XChat（新しい DM）。会話一覧とスレッドで別のオペレーション
+    'GetInitialXChatPageQuery',
+    'GetConversationPageQuery',
   };
 
   /// グローバルキャッシュ (旧形式・マイグレーション用)

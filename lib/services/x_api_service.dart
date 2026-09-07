@@ -1919,6 +1919,101 @@ class XApiService {
     );
   }
 
+  // ─────────── XChat（新しい DM） ───────────
+  //
+  // 1.1 の dm/*.json には移行前のメッセージしか残っていない。公式は
+  // スレッドを開くとき api.x.com の GraphQL を叩いている。ホストが
+  // 他の GraphQL と違う点と、conversation_id が **コロン区切り** で
+  // ある点（1.1 はハイフン）に注意。
+
+  /// XChat が使う問い合わせの粒度。公式クライアントと同じ値
+  static const _xchatQuerySettings = {
+    'conversation_event_limit': 200,
+    'inbox_conversation_event_limit': 5,
+    'inbox_conversation_limit': 20,
+    'user_event_limit': 500,
+  };
+
+  /// 1.1 のハイフン区切りの会話 ID を XChat のコロン区切りに直す
+  static String toXChatConversationId(String id) => id.replaceFirst('-', ':');
+
+  /// 受信箱（会話一覧 + 各会話の直近イベント）
+  Future<({int statusCode, Map<String, dynamic>? data})> getXChatInbox(
+    XCredentials creds,
+  ) {
+    return _withTargetedQueryIdRetry(creds, 'GetInitialXChatPageQuery',
+        (queryId) async {
+      final variables = json.encode({
+        'query_settings': _xchatQuerySettings,
+      });
+      return _xchatGet(
+        creds,
+        label: 'XChatInbox',
+        url: '${XEndpoints.xchatGraphqlBase}/$queryId/GetInitialXChatPageQuery'
+            '?variables=${Uri.encodeComponent(variables)}',
+      );
+    });
+  }
+
+  /// 会話のイベント。[conversationId] はハイフン区切りでもよい
+  Future<({int statusCode, Map<String, dynamic>? data})> getXChatConversation(
+    XCredentials creds,
+    String conversationId, {
+    String? maxSequenceId,
+  }) {
+    return _withTargetedQueryIdRetry(creds, 'GetConversationPageQuery',
+        (queryId) async {
+      final variables = json.encode({
+        'conversation_id': toXChatConversationId(conversationId),
+        // 上限値を渡すと最新から返る。続きを読むときだけ絞る
+        'min_local_sequence_id': maxSequenceId ?? '9223372036854775807',
+        'query_settings': _xchatQuerySettings,
+      });
+      return _xchatGet(
+        creds,
+        label: 'XChatConversation',
+        url: '${XEndpoints.xchatGraphqlBase}/$queryId/GetConversationPageQuery'
+            '?variables=${Uri.encodeComponent(variables)}',
+      );
+    });
+  }
+
+  Future<({int statusCode, Map<String, dynamic>? data})> _xchatGet(
+    XCredentials creds, {
+    required String label,
+    required String url,
+  }) async {
+    final uri = Uri.parse(url);
+    final hdrs = _buildHeaders(creds);
+    final sw = Stopwatch()..start();
+    final response = await _withRateLimitRetry(
+      () => _client.get(uri, headers: hdrs),
+    );
+    sw.stop();
+    _updateCt0FromResponse(creds, response);
+    _logResponse(label, 'GET', uri, hdrs, null, response, sw);
+
+    if (response.statusCode != 200) {
+      debugPrint('[XApi] $label failed: ${response.statusCode}');
+      // queryId 失効の 404 を拾わせる
+      if (response.statusCode == 404) {
+        throw XApiException('$label failed', statusCode: 404);
+      }
+      return (statusCode: response.statusCode, data: null);
+    }
+    try {
+      final body = json.decode(response.body) as Map<String, dynamic>;
+      final data = body['data'];
+      return (
+        statusCode: 200,
+        data: data is Map<String, dynamic> ? data : null,
+      );
+    } catch (e) {
+      debugPrint('[XApi] $label decode failed: $e');
+      return (statusCode: response.statusCode, data: null);
+    }
+  }
+
   Future<({int statusCode, Map<String, dynamic>? data})> _dmGet(
     XCredentials creds, {
     required String label,

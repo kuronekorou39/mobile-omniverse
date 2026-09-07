@@ -1983,6 +1983,13 @@ class XApiService {
     required String label,
     required String url,
   }) async {
+    // queryId が空のまま投げると graphql//Operation という URL になり、
+    // 中身の無い 200 が返ってきて原因が分からなくなる
+    if (url.contains('/graphql//')) {
+      DebugLogService.instance.log(label, 'queryId が取れていないので中止');
+      debugPrint('[XApi] $label: queryId 未取得');
+      return (statusCode: 0, data: null);
+    }
     final uri = Uri.parse(url);
     final hdrs = _buildHeaders(creds);
     final sw = Stopwatch()..start();
@@ -2004,12 +2011,20 @@ class XApiService {
     try {
       final body = json.decode(response.body) as Map<String, dynamic>;
       final data = body['data'];
-      return (
-        statusCode: 200,
-        data: data is Map<String, dynamic> ? data : null,
-      );
+      if (data is! Map<String, dynamic>) {
+        // GraphQL は 200 でも errors を返す。原因を追えるよう、
+        // エラーの本文だけは残す（DM の中身は data 側なので出ない）
+        final errors = body['errors'];
+        DebugLogService.instance
+            .log(label, 'data なし errors=${json.encode(errors)}');
+        debugPrint('[XApi] $label: data なし errors=$errors');
+        return (statusCode: 200, data: null);
+      }
+      return (statusCode: 200, data: data);
     } catch (e) {
       debugPrint('[XApi] $label decode failed: $e');
+      DebugLogService.instance.log(
+          label, 'decode 失敗: $e body先頭=${response.body.length}bytes');
       return (statusCode: response.statusCode, data: null);
     }
   }

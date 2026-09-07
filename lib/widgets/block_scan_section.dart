@@ -82,7 +82,12 @@ class _BlockScanSectionState extends State<BlockScanSection> {
     if (widget.service != SnsService.x) return const SizedBox.shrink();
 
     final running = _scan.progress.value;
-    final isMine = running != null;
+    // 調査は 1 本しか走らないので、別の対象を調べている間もここに
+    // 進捗が届く。自分の対象でなければ、進捗ではなく「塞がっている」
+    // ことを示す。同じグルグルを出すと自分が動いているように見える
+    final isMine = running != null && running.targetHandle == widget.handle;
+    final otherRunning =
+        running != null && running.targetHandle != widget.handle;
 
     final scheme = Theme.of(context).colorScheme;
     // フォロー/フォロワー取得とは別の機能なので、面を変えて隔離する
@@ -119,6 +124,7 @@ class _BlockScanSectionState extends State<BlockScanSection> {
           ),
           const SizedBox(height: 12),
           if (isMine) _runningCard(running),
+          if (otherRunning) _otherRunningNote(running),
           if (_loading)
             const Padding(
               padding: EdgeInsets.all(16),
@@ -135,30 +141,76 @@ class _BlockScanSectionState extends State<BlockScanSection> {
             ],
           if (!isMine) ...[
             const SizedBox(height: 12),
-            _startButton(),
+            _startButton(blocked: otherRunning),
           ],
         ],
       ),
     );
   }
 
-  Widget _startButton() => SizedBox(
-        width: double.infinity,
-        child: OutlinedButton(
-          onPressed: widget.account == null ? null : _pickOrigin,
-          style: OutlinedButton.styleFrom(
-            padding: const EdgeInsets.symmetric(vertical: 12),
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(22),
+  /// 別の対象を調べている間は、この対象の様子ではないことをはっきり出す。
+  /// 走査は 1 本ずつなので、終わるまでここでは始められない
+  Widget _otherRunningNote(BlockScanProgress p) {
+    final scheme = Theme.of(context).colorScheme;
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      decoration: BoxDecoration(
+        color: scheme.surface,
+        borderRadius: BorderRadius.circular(14),
+      ),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 13),
+      child: Row(
+        children: [
+          Icon(Icons.hourglass_empty, size: 20, color: scheme.onSurfaceVariant),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  '@${p.targetHandle} を調査中',
+                  style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.bold,
+                      color: scheme.onSurfaceVariant),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  'この対象ではありません。終わるまで始められません',
+                  style: TextStyle(
+                      fontSize: 11, color: scheme.onSurfaceVariant),
+                ),
+              ],
             ),
-            side: BorderSide(
-                color: Theme.of(context).colorScheme.primary, width: 1.5),
-            textStyle:
-                const TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
           ),
-          child: const Text('調査を開始'),
+        ],
+      ),
+    );
+  }
+
+  Widget _startButton({bool blocked = false}) {
+    final scheme = Theme.of(context).colorScheme;
+    final enabled = widget.account != null && !blocked;
+    return SizedBox(
+      width: double.infinity,
+      child: OutlinedButton(
+        onPressed: enabled ? _pickOrigin : null,
+        style: OutlinedButton.styleFrom(
+          padding: const EdgeInsets.symmetric(vertical: 12),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(22),
+          ),
+          side: BorderSide(
+            color: enabled ? scheme.primary : scheme.outlineVariant,
+            width: 1.5,
+          ),
+          textStyle:
+              const TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
         ),
-      );
+        child: Text(blocked ? '他の調査が終わるまで待機' : '調査を開始'),
+      ),
+    );
+  }
 
   Widget _runningCard(BlockScanProgress p) => Card(
         margin: const EdgeInsets.fromLTRB(12, 0, 12, 8),
@@ -389,7 +441,10 @@ class _BlockScanSectionState extends State<BlockScanSection> {
     final account = widget.account;
     if (account == null) return;
     try {
-      await _scan.resume(account: account, runId: run.id);
+      await _scan.resume(
+          account: account,
+          runId: run.id,
+          targetHandle: run.targetHandle);
     } catch (e) {
       if (mounted) showAppSnackBar(context, '$e', type: SnackType.error);
     }

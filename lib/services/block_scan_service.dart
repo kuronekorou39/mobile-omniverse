@@ -123,7 +123,7 @@ class BlockScanService {
     ScanLogService.instance.log(
         '=== 調査を開始 runId=$runId 対象=@$handle 起点=$origin '
         '${sources.length}人 実行=@${account.handle} ===');
-    await resume(account: account, runId: runId);
+    await resume(account: account, runId: runId, targetHandle: handle);
     return runId;
   }
 
@@ -165,7 +165,13 @@ class BlockScanService {
   }
 
   /// 中断した調査を続きから走らせる
-  Future<void> resume({required Account account, required int runId}) async {
+  /// [targetHandle] は進捗に載せる。どの対象の調査かが分からないと、
+  /// 別の対象の画面でも「調査中」に見えてしまう
+  Future<void> resume({
+    required Account account,
+    required int runId,
+    required String targetHandle,
+  }) async {
     if (isRunning) throw StateError('別の調査が実行中です');
     final job = FollowCaptureJobService.instance;
     if (job.isRunning) throw StateError('フォロー/フォロワーの取得が実行中です');
@@ -185,7 +191,7 @@ class BlockScanService {
     final stats = await db.blockRunProgress(runId);
     progress.value = BlockScanProgress(
       runId: runId,
-      targetHandle: '',
+      targetHandle: targetHandle,
       startedAt: DateTime.now(),
       done: stats.doneSources,
       total: stats.totalSources,

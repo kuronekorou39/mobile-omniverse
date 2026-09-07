@@ -416,25 +416,6 @@ class _FollowTargetScreenState extends State<FollowTargetScreen> {
               ],
             ],
           ),
-          // 定期取得の設定は別画面。ここに出すのは次回の予定日だけ
-          if (_dueSummary(t) case final due?)
-            Padding(
-              padding: const EdgeInsets.only(top: 4),
-              child: Row(
-                children: [
-                  Icon(Icons.schedule,
-                      size: 14, color: scheme.onSurfaceVariant),
-                  const SizedBox(width: 6),
-                  Expanded(
-                    child: Text(
-                      due,
-                      style: TextStyle(
-                          fontSize: 11, color: scheme.onSurfaceVariant),
-                    ),
-                  ),
-                ],
-              ),
-            ),
           // 中断した続きは、埋もれると気づかれないので面を持たせる
           for (final s in resumable)
             Padding(
@@ -487,24 +468,19 @@ class _FollowTargetScreenState extends State<FollowTargetScreen> {
 
   // ─── 定期取得 ───
 
-  /// 定期取得と履歴。どちらも「開くと別画面」なので 1 枚にまとめる
-  Widget _settingsCard(FollowTarget t) {
-    final scheme = Theme.of(context).colorScheme;
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16),
-      child: Container(
-        decoration: BoxDecoration(
-          color: scheme.surfaceContainerLowest,
-          border: Border.all(color: scheme.outlineVariant),
-          borderRadius: BorderRadius.circular(16),
-        ),
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 2),
-        child: Column(
-          children: [
-            _linkRow(
+  /// 定期取得と履歴。どちらも「開くと別画面」なので横に並べる。
+  /// 間隔そのものは設定画面で見られるので、ここには次回だけ出す
+  Widget _settingsCard(FollowTarget t) => Padding(
+    padding: const EdgeInsets.symmetric(horizontal: 16),
+    child: IntrinsicHeight(
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Expanded(
+            child: _linkCard(
               icon: Icons.autorenew,
               label: '定期取得',
-              value: _scheduleSummary(t),
+              value: _scheduleValue(t),
               onTap: () async {
                 await Navigator.of(context).push(
                   MaterialPageRoute(
@@ -513,74 +489,87 @@ class _FollowTargetScreenState extends State<FollowTargetScreen> {
                 await _load();
               },
             ),
-            Container(height: 1, color: scheme.outlineVariant),
-            _linkRow(
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: _linkCard(
               icon: Icons.history,
               label: '履歴',
               value: _history.isEmpty ? 'なし' : '${_history.length}件',
               onTap: _history.isEmpty ? null : _openHistory,
             ),
-          ],
-        ),
+          ),
+        ],
       ),
-    );
+    ),
+  );
+
+  /// 定期取得の状態。間隔は出さず、次に動く日だけ示す
+  String _scheduleValue(FollowTarget t) {
+    final dues = <DateTime>[];
+    var scheduled = false;
+    for (final kind in const ['followers', 'following']) {
+      if (t.intervalFor(kind) <= 0) continue;
+      scheduled = true;
+      final due = _nextDue[kind];
+      if (due != null) dues.add(due);
+    }
+    if (!scheduled) return 'なし';
+    if (dues.isEmpty) return '未定';
+    dues.sort();
+    final next = dues.first;
+    return next.isAfter(DateTime.now()) ? dateLabel(next) : '次の起動時';
   }
 
-  Widget _linkRow({
+  Widget _linkCard({
     required IconData icon,
     required String label,
     required String value,
     VoidCallback? onTap,
   }) {
     final scheme = Theme.of(context).colorScheme;
-    return InkWell(
-      onTap: onTap,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 15),
-        child: Row(
-          children: [
-            Icon(icon, size: 20, color: scheme.onSurfaceVariant),
-            const SizedBox(width: 14),
-            Expanded(
-              child: Text(label,
-                  style: const TextStyle(
-                      fontSize: 15, fontWeight: FontWeight.w500)),
-            ),
-            Text(value,
-                style:
-                    TextStyle(fontSize: 13, color: scheme.onSurfaceVariant)),
-            const SizedBox(width: 6),
-            Icon(Icons.chevron_right,
-                size: 20, color: scheme.onSurfaceVariant),
-          ],
+    return Material(
+      color: scheme.surfaceContainerLowest,
+      borderRadius: BorderRadius.circular(16),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(16),
+        child: Container(
+          decoration: BoxDecoration(
+            border: Border.all(color: scheme.outlineVariant),
+            borderRadius: BorderRadius.circular(16),
+          ),
+          padding: const EdgeInsets.fromLTRB(14, 12, 8, 12),
+          child: Row(
+            children: [
+              Icon(icon, size: 20, color: scheme.onSurfaceVariant),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Text(label,
+                        style: const TextStyle(
+                            fontSize: 14, fontWeight: FontWeight.w500)),
+                    const SizedBox(height: 2),
+                    Text(
+                      value,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                          fontSize: 12, color: scheme.onSurfaceVariant),
+                    ),
+                  ],
+                ),
+              ),
+              Icon(Icons.chevron_right,
+                  size: 18, color: scheme.onSurfaceVariant),
+            ],
+          ),
         ),
       ),
     );
-  }
-
-  String _scheduleSummary(FollowTarget t) {
-    final parts = <String>[];
-    if (t.followersIntervalDays > 0) {
-      parts.add('フォロワー ${t.followersIntervalDays}日おき');
-    }
-    if (t.followingIntervalDays > 0) {
-      parts.add('フォロー ${t.followingIntervalDays}日おき');
-    }
-    return parts.isEmpty ? 'なし' : parts.join(' / ');
-  }
-
-  /// 取得ボタンのそばに出す次回予定。設定していなければ出さない
-  String? _dueSummary(FollowTarget t) {
-    String at(String kind) =>
-        nextDueLabel(_nextDue[kind]).replaceFirst('次回: ', '');
-    final parts = <String>[];
-    if (t.followersIntervalDays > 0) {
-      parts.add('フォロワー ${at('followers')}');
-    }
-    if (t.followingIntervalDays > 0) {
-      parts.add('フォロー ${at('following')}');
-    }
-    return parts.isEmpty ? null : '次回  ${parts.join('  /  ')}';
   }
 
   // ─── 履歴（一覧は履歴画面にまとめる） ───

@@ -14,6 +14,7 @@ import '../services/x_api_service.dart';
 import '../services/x_dm_parser.dart';
 import '../utils/image_headers.dart';
 import '../utils/json_shape.dart';
+import '../utils/thrift_shape.dart';
 import 'dm_thread_screen.dart';
 import 'user_profile_screen.dart';
 
@@ -127,8 +128,50 @@ class _DmScreenState extends ConsumerState<DmScreen> {
           .getXChatConversation(_account.xCredentials, ids.first);
       DebugLogService.instance.log('XChatShape',
           'thread status=${thread.statusCode} shape=${jsonShape(thread.data)}');
+      _logEventShapes(thread.data);
     } catch (e) {
       DebugLogService.instance.log('XChatShape', '失敗: $e');
+    }
+  }
+
+  /// メッセージ本体（Thrift）の形を集計する。
+  ///
+  /// 応答をそのままログに落とすと 2048 バイトで切れて先頭数件しか
+  /// 残らない。しかも先頭が画像だと本文フィールドが分からない。
+  /// 端末側で全件走査して、**どのフィールドに何が入っていたか**の
+  /// 集計だけを残す（文字列の中身は種類と長さに置き換わる）。
+  void _logEventShapes(Map<String, dynamic>? data) {
+    final page = data?['get_conversation_page'];
+    if (page is! Map<String, dynamic>) return;
+    final events = page['encoded_message_events'];
+    if (events is! List) return;
+
+    // パス（1.7.100.1 のようなフィールド番号の連なり）ごとの出現数
+    final counts = <String, int>{};
+    var withText = 0;
+    String? sample;
+    for (final e in events.whereType<String>()) {
+      final lines = ThriftShape.describeBase64(e);
+      var hasText = false;
+      for (final line in lines) {
+        final t = line.trim();
+        counts[t] = (counts[t] ?? 0) + 1;
+        if (t.contains('TEXT(')) hasText = true;
+      }
+      if (hasText) {
+        withText++;
+        // 本文を含むイベントの形を 1 件だけ残す。これが読めれば
+        // 送信者・本文・時刻の対応が分かる
+        sample ??= lines.join(' / ');
+      }
+    }
+    final top = counts.entries.toList()
+      ..sort((a, b) => b.value.compareTo(a.value));
+    DebugLogService.instance.log('XChatEvents',
+        '${events.length}件中 本文あり=$withText / 形の内訳(上位30): '
+        '${top.take(30).map((e) => '${e.key}×${e.value}').join(', ')}');
+    if (sample != null) {
+      DebugLogService.instance.log('XChatEvents', '本文ありの形: $sample');
     }
   }
 

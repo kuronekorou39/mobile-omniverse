@@ -277,7 +277,13 @@ void main() {
       await run(pool: AccountPool(['acc1'], cooldown: Duration.zero));
 
       expect(sleeps, isNotEmpty);
-      expect(sleeps.first, AccountPool.criticalFloor);
+      // reset 時刻からの逆算が実時刻を挟むので、待ち時間はミリ秒単位で
+      // ぶれる（29.998秒 になることがある）。丸めても切り捨てで 29 秒に
+      // なるだけなので、1 秒の幅で見る
+      expect(
+        sleeps.first.inMilliseconds,
+        closeTo(AccountPool.criticalFloor.inMilliseconds, 1000),
+      );
     });
   });
 

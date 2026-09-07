@@ -70,7 +70,7 @@ class _BlockScanSectionState extends State<BlockScanSection> {
     for (final r in runs) {
       stats[r.id] = await db.blockRunProgress(r.id);
     }
-    final rate = await db.measuredRatePerMinute();
+    final rate = await _scan.savedRatePerMinute();
     if (!mounted) return;
     setState(() {
       _rate = rate;
@@ -240,7 +240,9 @@ class _BlockScanSectionState extends State<BlockScanSection> {
     if (p.remainingItems <= 0) return null;
     final e = ScanEstimate(
       items: p.remainingItems,
-      ratePerMinute: _rate ?? ScanEstimate.defaultRatePerMinute,
+      // 走行中の実測 > 前回の実測 > 既定値
+      ratePerMinute:
+          p.ratePerMinute ?? _rate ?? ScanEstimate.defaultRatePerMinute,
     );
     final label = e.label;
     return label == '—' ? null : label;
@@ -392,7 +394,7 @@ class _BlockScanSectionState extends State<BlockScanSection> {
 
     // 何時間かかるかは選ぶ前に知りたい。起点の人たちのフォロー数を
     // 足した延べ件数と、過去の取得実績から見積もる
-    final rate = await db.measuredRatePerMinute() ??
+    final rate = await _scan.savedRatePerMinute() ??
         ScanEstimate.defaultRatePerMinute;
 
     // 起点は取得済みの一覧をそのまま使う。無いものは選ばせない

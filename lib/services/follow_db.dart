@@ -1198,28 +1198,6 @@ class FollowDb {
     return rows.map(BlockRun.fromRow).toList();
   }
 
-  /// 過去の取得実績から「1 分あたり何件取れたか」を出す。
-  ///
-  /// 1 ページの件数は X が返すリクエストをそのまま再送しているので
-  /// コードからは分からない。待ち時間もレート制限で伸び縮みする。
-  /// なので理論値ではなく、この端末・このアカウントでの実測を使う。
-  /// 完了した取得だけを見る（中断は途中で止まった時間が混ざるため）。
-  Future<double?> measuredRatePerMinute() async {
-    final db = await _database;
-    final rows = await db.rawQuery(
-      'SELECT SUM(collectedCount) AS items, '
-      'SUM(completedAt - startedAt) AS ms '
-      'FROM snapshots '
-      "WHERE status = 'completed' AND completedAt IS NOT NULL "
-      'AND collectedCount > 0',
-    );
-    if (rows.isEmpty) return null;
-    final items = (rows.first['items'] as num?)?.toDouble() ?? 0;
-    final ms = (rows.first['ms'] as num?)?.toDouble() ?? 0;
-    if (items <= 0 || ms <= 0) return null;
-    return items / (ms / 60000);
-  }
-
   /// 起点にしたときに、たどることになる延べ件数。
   ///
   /// 各起点のフォロー数を足したもの。上限を超える相手は走査前に外すので

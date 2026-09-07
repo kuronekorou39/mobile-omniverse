@@ -1934,8 +1934,33 @@ class XApiService {
     'user_event_limit': 500,
   };
 
-  /// 1.1 のハイフン区切りの会話 ID を XChat のコロン区切りに直す
-  static String toXChatConversationId(String id) => id.replaceFirst('-', ':');
+  /// 「これ以上は無い」を表す上限値。最新から取るときに渡す
+  static const _xchatMaxSequence = '9223372036854775807';
+
+  /// 1.1 のハイフン区切りの会話 ID を XChat のコロン区切りに直す。
+  ///
+  /// ただし XChat が返す会話 ID は 1 対 1 でも別体系のことがあるので、
+  /// **受信箱から得た ID をそのまま使うのが基本**。これは 1.1 の ID しか
+  /// 手元に無いときの繋ぎ
+  static String toXChatConversationId(String id) =>
+      id.contains(':') ? id : id.replaceFirst('-', ':');
+
+  /// 受信箱の応答から会話 ID を取り出す。
+  /// items[].conversation_detail.conversation_id に入っている
+  static List<String> xchatConversationIds(Map<String, dynamic> data) {
+    final page = data['get_initial_chat_page'];
+    if (page is! Map<String, dynamic>) return const [];
+    final items = page['items'];
+    if (items is! List) return const [];
+    final ids = <String>[];
+    for (final item in items.whereType<Map<String, dynamic>>()) {
+      final detail = item['conversation_detail'];
+      if (detail is! Map<String, dynamic>) continue;
+      final id = detail['conversation_id'];
+      if (id is String && id.isNotEmpty) ids.add(id);
+    }
+    return ids;
+  }
 
   /// 受信箱（会話一覧 + 各会話の直近イベント）
   Future<({int statusCode, Map<String, dynamic>? data})> getXChatInbox(
@@ -1966,7 +1991,9 @@ class XApiService {
       final variables = json.encode({
         'conversation_id': toXChatConversationId(conversationId),
         // 上限値を渡すと最新から返る。続きを読むときだけ絞る
-        'min_local_sequence_id': maxSequenceId ?? '9223372036854775807',
+        'min_local_sequence_id': maxSequenceId ?? _xchatMaxSequence,
+        // これが無いと 422 になる。公式も必ず両方渡している
+        'min_conversation_key_version': _xchatMaxSequence,
         'query_settings': _xchatQuerySettings,
       });
       return _xchatGet(

@@ -117,11 +117,14 @@ class _DmScreenState extends ConsumerState<DmScreen> {
       final res = await XApiService.instance.getXChatInbox(_account.xCredentials);
       DebugLogService.instance.log('XChatShape',
           'inbox status=${res.statusCode} shape=${jsonShape(res.data)}');
-      // 会話が取れたら、1 本だけスレッドの形も見る
-      final convoId = _convos.isEmpty ? null : _convos.first.id;
-      if (convoId == null) return;
+      if (res.data == null) return;
+      // 会話 ID は XChat 側の体系。1.1 の ID とは別物なので受信箱から取る
+      final ids = XApiService.xchatConversationIds(res.data!);
+      DebugLogService.instance
+          .log('XChatShape', '会話ID ${ids.length}件 先頭の長さ=${ids.isEmpty ? 0 : ids.first.length}');
+      if (ids.isEmpty) return;
       final thread = await XApiService.instance
-          .getXChatConversation(_account.xCredentials, convoId);
+          .getXChatConversation(_account.xCredentials, ids.first);
       DebugLogService.instance.log('XChatShape',
           'thread status=${thread.statusCode} shape=${jsonShape(thread.data)}');
     } catch (e) {

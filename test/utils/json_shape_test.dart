@@ -38,6 +38,26 @@ void main() {
     });
   });
 
+  // XChat はメッセージを JSON 文字列として値に埋めている
+  group('埋め込み JSON', () {
+    test('JSON 文字列なら中の形まで出す', () {
+      final s = jsonShape({
+        'latest_message_events': ['{"id":123,"text":"やあ"}']
+      });
+      expect(s, contains('json{'));
+      expect(s, contains('text: str(2)'));
+      expect(s.contains('やあ'), isFalse);
+    });
+
+    test('ただの文字列は長さだけ', () {
+      expect(jsonShape({'a': 'not json'}), '{a: str(8)}');
+    });
+
+    test('壊れた JSON は文字列として扱う', () {
+      expect(jsonShape({'a': '{壊れてる'}), '{a: str(5)}');
+    });
+  });
+
   // ここが崩れると DM の本文がログに残る。必ず守る
   group('本文を漏らさない', () {
     test('文字列の中身は出さない', () {

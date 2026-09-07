@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 /// JSON の「形」だけを取り出す。
 ///
 /// 新しい API に合わせてパーサーを書くには、どのキーに何が入っているかを
@@ -21,6 +23,21 @@ void _write(StringBuffer buf, Object? node, int depth, int maxDepth,
   if (node == null) {
     buf.write('null');
   } else if (node is String) {
+    // 値として JSON 文字列が埋まっていることがある（XChat のメッセージは
+    // これ）。中の形も見たいので、JSON として読めたら展開する。
+    // 中身は再帰で str(n) になるので本文は出ない
+    final t = node.trim();
+    if ((t.startsWith('{') && t.endsWith('}')) ||
+        (t.startsWith('[') && t.endsWith(']'))) {
+      try {
+        final inner = jsonDecode(t);
+        buf.write('json');
+        _write(buf, inner, depth + 1, maxDepth, maxKeys);
+        return;
+      } catch (_) {
+        // ただの文字列だった
+      }
+    }
     buf.write('str(${node.length})');
   } else if (node is bool) {
     buf.write('bool');

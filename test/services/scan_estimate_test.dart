@@ -2,23 +2,29 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:mobile_omniverse/services/scan_estimate.dart';
 
 void main() {
+  group('速さの理論値', () {
+    // 2 秒ごとに 50 件 → 毎分 1500 件
+    test('送信間隔と 1 ページの件数から出す', () {
+      expect(ScanEstimate.itemsPerPage, 50);
+      expect(ScanEstimate.pageIntervalSeconds, 2);
+      expect(ScanEstimate.ratePerMinute, 1500);
+    });
+  });
+
   group('所要時間の計算', () {
-    test('件数とレートから時間を出す', () {
-      // 3000件を1分1500件で取れば2分
-      const e = ScanEstimate(items: 3000, ratePerMinute: 1500);
-      expect(e.duration, const Duration(minutes: 2));
+    test('件数を理論値で割る', () {
+      // 3000件 ÷ 毎分1500件 = 2分
+      expect(const ScanEstimate(items: 3000).duration,
+          const Duration(minutes: 2));
+      // 90000件 = 1時間
+      expect(const ScanEstimate(items: 90000).duration,
+          const Duration(hours: 1));
     });
 
     test('件数が分からなければ 0', () {
-      const e = ScanEstimate(items: 0, ratePerMinute: 1500);
+      const e = ScanEstimate(items: 0);
       expect(e.duration, Duration.zero);
       expect(e.label, '—');
-    });
-
-    // 実績が取れないうちにゼロ割りしない
-    test('レートが 0 でも落ちない', () {
-      const e = ScanEstimate(items: 1000, ratePerMinute: 0);
-      expect(e.duration, Duration.zero);
     });
   });
 

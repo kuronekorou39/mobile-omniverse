@@ -1,5 +1,4 @@
 import 'package:flutter/foundation.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/account.dart';
 import '../models/follow_user.dart';
@@ -25,7 +24,6 @@ class BlockScanProgress {
     this.total = 0,
     this.cancelling = false,
     this.remainingItems = 0,
-    this.ratePerMinute,
   });
 
   final int runId;
@@ -44,9 +42,6 @@ class BlockScanProgress {
   /// まだ手をつけていない起点のフォロー数の合計。残り時間の見積もりに使う
   final int remainingItems;
 
-  /// この走行での実測（1 分あたりの件数）。走り始めは null
-  final double? ratePerMinute;
-
   BlockScanProgress copyWith({
     String? currentHandle,
     int? currentCollected,
@@ -54,7 +49,6 @@ class BlockScanProgress {
     int? total,
     bool? cancelling,
     int? remainingItems,
-    double? ratePerMinute,
   }) =>
       BlockScanProgress(
         runId: runId,
@@ -66,7 +60,6 @@ class BlockScanProgress {
         total: total ?? this.total,
         cancelling: cancelling ?? this.cancelling,
         remainingItems: remainingItems ?? this.remainingItems,
-        ratePerMinute: ratePerMinute ?? this.ratePerMinute,
       );
 }
 
@@ -94,30 +87,6 @@ class BlockScanService {
   static const _perSourceLimit = FollowDb.blockScanFriendLimit;
 
   final progress = ValueNotifier<BlockScanProgress?>(null);
-
-  static const _ratePrefsKey = 'block_scan_rate_per_minute';
-
-  /// 直近の走行で実測した 1 分あたりの件数。開始前の見積もりに使う。
-  ///
-  /// 取得の履歴 (snapshots) の開始〜完了の差は**使えない**。中断して
-  /// 放置した時間が丸ごと入るので、数日放置しただけで毎分数件という
-  /// 値になり、見積もりが数百日に飛ぶ。実際に走っている間の実測だけを使う。
-  double? _savedRate;
-
-  Future<double?> savedRatePerMinute() async {
-    if (_savedRate != null) return _savedRate;
-    final prefs = await SharedPreferences.getInstance();
-    final v = prefs.getDouble(_ratePrefsKey);
-    if (v != null && v > 0) _savedRate = v;
-    return _savedRate;
-  }
-
-  Future<void> _saveRate(double rate) async {
-    if (rate <= 0) return;
-    _savedRate = rate;
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setDouble(_ratePrefsKey, rate);
-  }
 
   CaptureCancelToken? _cancelToken;
   bool get isRunning => progress.value != null;
@@ -235,8 +204,6 @@ class BlockScanService {
       remainingItems: await db.remainingItems(runId),
     );
     final startedAt = DateTime.now();
-    // 実測の基準。この走行で増えた件数と経過時間だけを見る
-    final baseScanned = stats.scanned;
     ScanLogService.instance.log(
         '--- 走査を開始 runId=$runId ${stats.doneSources}/${stats.totalSources}人 '
         '済み（残り ${stats.totalSources - stats.doneSources}人）---');
@@ -260,19 +227,10 @@ class BlockScanService {
         await _scanOne(account: account, runId: runId, source: source);
 
         final s = await db.blockRunProgress(runId);
-        // 走り始めは件数も時間も少なく、値が乱高下する。1 分は待つ
-        final elapsed = DateTime.now().difference(startedAt);
-        final gained = s.scanned - baseScanned;
-        double? rate;
-        if (elapsed.inMinutes >= 1 && gained > 0) {
-          rate = gained / (elapsed.inMilliseconds / 60000);
-          await _saveRate(rate);
-        }
         progress.value = progress.value?.copyWith(
           done: s.doneSources,
           total: s.totalSources,
           remainingItems: await db.remainingItems(runId),
-          ratePerMinute: rate,
         );
       }
     } finally {

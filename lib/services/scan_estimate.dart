@@ -1,26 +1,31 @@
 import 'package:flutter/foundation.dart';
 
-/// つながり調査の所要時間の見積もり。
+/// つながり調査の所要時間の目安。
 ///
-/// 1 ページの件数は X が返したリクエストをそのまま再送しているので
-/// コードからは分からず、待ち時間もレート制限で伸び縮みする。だから
-/// 理論値ではなく、**この端末での過去の取得実績**（何件を何分で取れたか）
-/// を使う。実績が無いうちは、実測から得られた控えめな既定値を置く。
+/// 走査は 1 ページごとに間隔を空けて投げるので、速さは送信間隔と 1 ページの
+/// 件数で決まる。実績から測る手もあるが、取得は中断・再開ができるため
+/// 記録に残る時間には放置ぶんが混ざり、あてにならない。素直に理論値で出す。
+///
+/// 実際はレート制限の待機や、非公開で取れない相手のぶん遅くなるので、
+/// これは**下限**（最短でこれくらい）として読む。
 class ScanEstimate {
-  const ScanEstimate({required this.items, required this.ratePerMinute});
+  const ScanEstimate({required this.items});
 
   /// たどる延べ件数（起点の人たちのフォロー数の合計）
   final int items;
 
-  /// 1 分あたりに取れる件数
-  final double ratePerMinute;
+  /// 1 ページで返る件数。X のフォロー一覧の実測
+  static const int itemsPerPage = 50;
 
-  /// 実績が無いときの既定値。1 ページ 2 秒の間隔と、実測で多い
-  /// 1 ページ 50 件前後から置いた控えめな値
-  static const double defaultRatePerMinute = 1500;
+  /// 1 ページごとの送信間隔（秒）。BlockScanService の走査間隔と同じ
+  static const int pageIntervalSeconds = 2;
+
+  /// 2 秒ごとに 50 件 = 毎分 1500 件
+  static const double ratePerMinute =
+      itemsPerPage * 60 / pageIntervalSeconds;
 
   Duration get duration {
-    if (items <= 0 || ratePerMinute <= 0) return Duration.zero;
+    if (items <= 0) return Duration.zero;
     return Duration(seconds: (items / ratePerMinute * 60).round());
   }
 

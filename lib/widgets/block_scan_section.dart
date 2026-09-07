@@ -42,9 +42,6 @@ class _BlockScanSectionState extends State<BlockScanSection> {
   final Map<int, BlockRunProgress> _stats = {};
   bool _loading = true;
 
-  /// 過去の取得実績から出した 1 分あたりの件数。残り時間の見積もりに使う
-  double? _rate;
-
   @override
   void initState() {
     super.initState();
@@ -70,10 +67,8 @@ class _BlockScanSectionState extends State<BlockScanSection> {
     for (final r in runs) {
       stats[r.id] = await db.blockRunProgress(r.id);
     }
-    final rate = await _scan.savedRatePerMinute();
     if (!mounted) return;
     setState(() {
-      _rate = rate;
       _runs = runs;
       _stats
         ..clear()
@@ -238,12 +233,7 @@ class _BlockScanSectionState extends State<BlockScanSection> {
   /// 残りの延べ件数と実測の速さから、あとどれくらいかを出す
   String? _remainingLabel(BlockScanProgress p) {
     if (p.remainingItems <= 0) return null;
-    final e = ScanEstimate(
-      items: p.remainingItems,
-      // 走行中の実測 > 前回の実測 > 既定値
-      ratePerMinute:
-          p.ratePerMinute ?? _rate ?? ScanEstimate.defaultRatePerMinute,
-    );
+    final e = ScanEstimate(items: p.remainingItems);
     final label = e.label;
     return label == '—' ? null : label;
   }
@@ -393,10 +383,7 @@ class _BlockScanSectionState extends State<BlockScanSection> {
     if (!mounted) return;
 
     // 何時間かかるかは選ぶ前に知りたい。起点の人たちのフォロー数を
-    // 足した延べ件数と、過去の取得実績から見積もる
-    final rate = await _scan.savedRatePerMinute() ??
-        ScanEstimate.defaultRatePerMinute;
-
+    // 足した延べ件数から見積もる
     // 起点は取得済みの一覧をそのまま使う。無いものは選ばせない
     final choices = <({String origin, String label, int? count, int items})>[
       (
@@ -458,8 +445,7 @@ class _BlockScanSectionState extends State<BlockScanSection> {
                 // かかる時間が選ぶ基準になるので、右端に出す
                 trailing: c.items > 0
                     ? Text(
-                        ScanEstimate(items: c.items, ratePerMinute: rate)
-                            .label,
+                        ScanEstimate(items: c.items).label,
                         style: const TextStyle(
                             fontSize: 12, fontWeight: FontWeight.bold),
                       )
@@ -475,8 +461,7 @@ class _BlockScanSectionState extends State<BlockScanSection> {
 
     final chosen = choices.firstWhere((c) => c.origin == picked);
     final count = chosen.count ?? 0;
-    final estimate =
-        ScanEstimate(items: chosen.items, ratePerMinute: rate);
+    final estimate = ScanEstimate(items: chosen.items);
     // 十数時間かかることがあるので、規模と目安を見せてから始める
     final ok = await confirmDialog(
       context,

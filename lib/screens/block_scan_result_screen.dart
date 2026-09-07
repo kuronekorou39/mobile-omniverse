@@ -24,12 +24,12 @@ class BlockScanResultScreen extends StatefulWidget {
 /// タブと、対応する block_findings の列
 const _tabs = <({String label, String? relation, String empty})>[
   (
-    label: 'ブロックされてる',
+    label: '被ブロック',
     relation: 'blockedBy',
     empty: 'ブロックされている相手は見つかっていません'
   ),
-  (label: 'ブロックしてる', relation: 'blocking', empty: 'ブロックしている相手は居ません'),
-  (label: 'ミュート', relation: 'muting', empty: 'ミュートしている相手は居ません'),
+  (label: 'ブロック中', relation: 'blocking', empty: 'ブロックしている相手は居ません'),
+  (label: 'ミュート中', relation: 'muting', empty: 'ミュートしている相手は居ません'),
   // relation なしは「人気」。関係ではなく被フォロー数で並べる
   (label: '人気', relation: null, empty: 'まだ集まっていません'),
 ];

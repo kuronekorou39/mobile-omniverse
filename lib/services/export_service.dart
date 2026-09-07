@@ -79,9 +79,9 @@ class ExportService {
         'sources',
       ]);
       const relations = {
-        'blockedBy': 'ブロックされてる',
-        'blocking': 'ブロックしてる',
-        'muting': 'ミュートしてる',
+        'blockedBy': '被ブロック',
+        'blocking': 'ブロック中',
+        'muting': 'ミュート中',
       };
       for (final entry in relations.entries) {
         for (var offset = 0;; offset += _page) {

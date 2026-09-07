@@ -23,6 +23,7 @@ class BlockScanProgress {
     this.done = 0,
     this.total = 0,
     this.cancelling = false,
+    this.remainingItems = 0,
   });
 
   final int runId;
@@ -38,12 +39,16 @@ class BlockScanProgress {
   final int total;
   final bool cancelling;
 
+  /// まだ手をつけていない起点のフォロー数の合計。残り時間の見積もりに使う
+  final int remainingItems;
+
   BlockScanProgress copyWith({
     String? currentHandle,
     int? currentCollected,
     int? done,
     int? total,
     bool? cancelling,
+    int? remainingItems,
   }) =>
       BlockScanProgress(
         runId: runId,
@@ -54,6 +59,7 @@ class BlockScanProgress {
         done: done ?? this.done,
         total: total ?? this.total,
         cancelling: cancelling ?? this.cancelling,
+        remainingItems: remainingItems ?? this.remainingItems,
       );
 }
 
@@ -195,6 +201,7 @@ class BlockScanService {
       startedAt: DateTime.now(),
       done: stats.doneSources,
       total: stats.totalSources,
+      remainingItems: await db.remainingItems(runId),
     );
     final startedAt = DateTime.now();
     ScanLogService.instance.log(
@@ -220,8 +227,11 @@ class BlockScanService {
         await _scanOne(account: account, runId: runId, source: source);
 
         final s = await db.blockRunProgress(runId);
-        progress.value = progress.value
-            ?.copyWith(done: s.doneSources, total: s.totalSources);
+        progress.value = progress.value?.copyWith(
+          done: s.doneSources,
+          total: s.totalSources,
+          remainingItems: await db.remainingItems(runId),
+        );
       }
     } finally {
       await db.finishBlockRun(runId, completed: completed);

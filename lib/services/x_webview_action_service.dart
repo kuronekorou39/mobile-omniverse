@@ -821,9 +821,11 @@ class XWebViewActionService {
   /// 会話一覧。`dm-conversation-item-<id>` から拾う
   Future<List<Map<String, dynamic>>> readDmInbox(XCredentials creds) async {
     final ok = await _openDm(creds, 'https://x.com/messages',
-        waitFor: '[data-testid^="dm-conversation-item-"], '
-            '[data-testid="dm-conversation-scroller"]');
-    if (!ok) return const [];
+        waitFor: '[data-testid^="dm-conversation-item-"]');
+    if (!ok) {
+      await _restoreSize();
+      return const [];
+    }
     final raw = await _controller!.evaluateJavascript(source: r'''
       (() => {
         const out = [];
@@ -844,6 +846,7 @@ class XWebViewActionService {
         return JSON.stringify(out);
       })()
     ''');
+    await _restoreSize();
     return _decodeList(raw);
   }
 
@@ -855,9 +858,11 @@ class XWebViewActionService {
     // 会話 ID はコロン区切り。URL ではハイフンで渡す
     final urlId = conversationId.replaceFirst(':', '-');
     final ok = await _openDm(creds, 'https://x.com/i/chat/$urlId',
-        waitFor: '[data-testid^="message-"], [data-testid="dm-message-list"], '
-            '[data-testid="dm-message-scroller"]');
-    if (!ok) return const [];
+        waitFor: '[data-testid^="message-"]');
+    if (!ok) {
+      await _restoreSize();
+      return const [];
+    }
     final raw = await _controller!.evaluateJavascript(source: r'''
       (() => {
         const scroller = document.querySelector('[data-testid="dm-message-scroller"]')
@@ -922,6 +927,7 @@ class XWebViewActionService {
       ''');
       DebugLogService.instance.log('XWebView', 'DM の本文が拾えない: $dump');
     }
+    await _restoreSize();
     return rows;
   }
 
@@ -933,6 +939,15 @@ class XWebViewActionService {
     }
     if (_controller == null) return false;
     try {
+      // Android の既定サイズ (-1, -1) はビューポートが 0 になる。DM の
+      // 一覧は画面に入るぶんしか描かない作りなので、それだと器だけできて
+      // 中身が空のままになる（実機のログで bodyLen=71）。読む間だけ実寸を
+      // 与える。投稿側は既定のまま動いているので、終わったら戻す
+      if (Platform.isAndroid) {
+        try {
+          await _webView?.setSize(const Size(412, 915));
+        } catch (_) {}
+      }
       _isReady = false;
       _readyCompleter = Completer<void>();
       await _controller!.loadUrl(urlRequest: URLRequest(url: WebUri(url)));
@@ -941,8 +956,10 @@ class XWebViewActionService {
       final arrived = await _waitForUrl(url, timeoutSeconds: 25);
       DebugLogService.instance
           .log('XWebView', 'DM を開いた: $url arrived=$arrived');
-      // 中身は非同期に描かれるので、要素が出るまで待つ。DM は重い
-      final ok = await _waitForElement(waitFor, timeoutSeconds: 30);
+      // 中身は非同期に描かれるので、要素が出るまで待つ。DM は重い。
+      // 器（dm-message-list など）は先に出るので、目印は実際の吹き出しに
+      // している。読み込み中はスピナーだけが置かれ、本文は空のまま
+      final ok = await _waitForElement(waitFor, timeoutSeconds: 40);
       DebugLogService.instance.log('XWebView', 'DM の目印: found=$ok');
       if (!ok) {
         // WebView はモバイルの UA で動くので、こちらで見た DOM と構造が
@@ -969,6 +986,15 @@ class XWebViewActionService {
       DebugLogService.instance.log('XWebView', 'DM を開けなかった: $e');
       return false;
     }
+  }
+
+  /// 読み終わったら既定サイズに戻す。投稿はそちらで調整済み。
+  /// 読み取りの途中で戻すと、再レイアウトで DOM が空になる
+  Future<void> _restoreSize() async {
+    if (!Platform.isAndroid) return;
+    try {
+      await _webView?.setSize(const Size(-1, -1));
+    } catch (_) {}
   }
 
   List<Map<String, dynamic>> _decodeList(Object? raw) {

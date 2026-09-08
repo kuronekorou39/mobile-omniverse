@@ -316,46 +316,6 @@ void main() {
       expect(find.byType(SnsBadge), findsAtLeastNWidgets(1));
     });
 
-    // X の DM は XChat に移り、復号に PIN が要る。入口は残すが押せない
-    testWidgets('X の DM は理由つきで押せない', (tester) async {
-      final account = makeXAccount(
-        displayName: 'DmX',
-        handle: '@dmx',
-      );
-      AccountStorageService.instance.setAccountsForTest([account]);
-
-      await tester.pumpWidget(buildAccountsScreen());
-      await tester.pump();
-      await tester.pump();
-
-      await navigateToDetail(tester, 'DmX');
-
-      expect(find.text('DM（見る専）'), findsOneWidget);
-      expect(find.text('X は暗号化されたため読めません'), findsOneWidget);
-
-      // 押しても画面は変わらない
-      await tester.tap(find.text('DM（見る専）'));
-      await tester.pumpAndSettle();
-      expect(find.text('X は暗号化されたため読めません'), findsOneWidget);
-    });
-
-    testWidgets('Bluesky の DM は押せる', (tester) async {
-      final account = makeBlueskyAccount(
-        id: 'bsky_dm',
-        displayName: 'DmBsky',
-        handle: '@dmbsky',
-      );
-      AccountStorageService.instance.setAccountsForTest([account]);
-
-      await tester.pumpWidget(buildAccountsScreen());
-      await tester.pump();
-      await tester.pump();
-
-      await navigateToDetail(tester, 'DmBsky');
-
-      expect(find.text('既読をつけずに読む・送信なし'), findsOneWidget);
-    });
-
     testWidgets('detail page shows delete row at the bottom', (tester) async {
       final account = makeXAccount(
         displayName: 'DeleteUser',

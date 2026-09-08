@@ -12,7 +12,6 @@ import '../widgets/empty_state.dart';
 import '../widgets/sns_badge.dart';
 import 'follow_capture_screen.dart';
 import 'follow_target_screen.dart';
-import 'dm_screen.dart';
 import 'likes_bookmarks_screen.dart';
 import 'login_webview_screen.dart';
 import 'session_refresh_screen.dart';
@@ -512,22 +511,6 @@ class _AccountDetailScreen extends ConsumerWidget {
                     ),
                   ),
                   const _NavDivider(),
-                  // X の DM は XChat に移り、本文が端末の鍵で暗号化された。
-                  // 復号には PIN の入力が要るので、読み取り専用では扱えない
-                  _NavRow(
-                    icon: Icons.mail_outline,
-                    label: 'DM（見る専）',
-                    sub: account.service == SnsService.x
-                        ? 'X は暗号化されたため読めません'
-                        : '既読をつけずに読む・送信なし',
-                    onTap: account.service == SnsService.x
-                        ? null
-                        : () => Navigator.of(context).push(
-                              MaterialPageRoute(
-                                builder: (_) => DmScreen(account: account),
-                              ),
-                            ),
-                  ),
                 ],
               ),
             ),
@@ -714,53 +697,30 @@ class _NavRow extends StatelessWidget {
     required this.icon,
     required this.label,
     required this.onTap,
-    this.sub,
   });
 
   final IconData icon;
   final String label;
-  final String? sub;
-
-  /// null なら非活性。理由は sub に書く
-  final VoidCallback? onTap;
+  final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    final enabled = onTap != null;
-    // 押せない行は、色を落として理由だけ読ませる
-    final fg = enabled ? scheme.primary : scheme.onSurfaceVariant;
-    final labelColor = enabled ? null : scheme.onSurfaceVariant;
     return InkWell(
       onTap: onTap,
       child: Padding(
-        padding: EdgeInsets.symmetric(
-            vertical: sub == null ? 13 : 11, horizontal: 8),
+        padding: const EdgeInsets.symmetric(vertical: 13, horizontal: 8),
         child: Row(
           children: [
-            Icon(icon, size: 22, color: fg),
+            Icon(icon, size: 22, color: scheme.primary),
             const SizedBox(width: 14),
             Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(label,
-                      style: TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.w500,
-                          color: labelColor)),
-                  if (sub != null) ...[
-                    const SizedBox(height: 2),
-                    Text(sub!,
-                        style: TextStyle(
-                            fontSize: 11, color: scheme.onSurfaceVariant)),
-                  ],
-                ],
-              ),
+              child: Text(label,
+                  style: const TextStyle(
+                      fontSize: 16, fontWeight: FontWeight.w500)),
             ),
-            if (enabled)
-              Icon(Icons.chevron_right,
-                  size: 20, color: scheme.onSurfaceVariant),
+            Icon(Icons.chevron_right,
+                size: 20, color: scheme.onSurfaceVariant),
           ],
         ),
       ),

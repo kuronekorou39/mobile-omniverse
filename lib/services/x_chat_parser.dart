@@ -15,8 +15,9 @@ import 'thrift_reader.dart';
 ///   4  会話 ID（`自分:相手` の形）
 ///   5  権限を表す JWT（本文ではない）
 ///   6  送信時刻（ミリ秒）
-///   7 → 1 → 100  ペイロード。**さらに入れ子の Thrift** で、
-///                その中の 1 → 1 → 1 が本文
+///   7 → (種類ごとの番号) → 100  ペイロード。**さらに入れ子の Thrift**
+///       で、その中の 1 → 1 → 1 が本文。7 の直下の番号はイベントの種類で
+///       変わる（実測で 1 / 3 / 12）ので決め打ちしない
 ///   9  暗号化の鍵交換（ECDSA P-256 の公開鍵など。本文ではない）
 class XChatParser {
   XChatParser._();
@@ -26,7 +27,6 @@ class XChatParser {
   static const _fSenderId = 3;
   static const _fSentAt = 6;
   static const _fPayload = 7;
-  static const _fPayloadInner = 1;
   static const _fBody = 100;
 
   /// 本文までの道のり。100 の中身を Thrift として読み直したあと、
@@ -99,7 +99,7 @@ class XChatParser {
     return messages;
   }
 
-  /// メッセージ 1 件。本文も添付も無ければ null（参加・既読などのイベント）
+  /// メッセージ 1 件。ID・送信者・時刻が欠けていれば null
   static DmMessage? parseEvent(String base64Event, {String? selfUserId}) {
     Map<int, dynamic> root;
     try {
@@ -113,23 +113,35 @@ class XChatParser {
     final sentAtRaw = ThriftReader.asText(root[_fSentAt]);
     final sentAt = _toDate(sentAtRaw);
 
-    // 7 → 1 → 100 のバイト列を、もう一度 Thrift として読み直す。
-    // その中の 1 → 1 → 1 が本文で、添付なら別の枝に URL が入る
+    // ID・送信者・時刻がそろっていればメッセージとみなす。本文が読めな
+    // かったからといって落とすと、やり取りの数も時系列も狂う
+    if (id == null || senderId.isEmpty || sentAt == null) return null;
+
+    // 本文は 7 → (種類ごとの番号) → 100 のバイト列を、もう一度 Thrift と
+    // して読み直した先にある。7 の下の番号はイベントの種類で変わる
+    // （1 のことも 12 のこともある）ので、決め打ちせず全部見る
+    String? text;
+    String? mediaUrl;
     final payload = root[_fPayload];
-    if (payload is! Map<int, dynamic>) return null;
-    final inner = payload[_fPayloadInner];
-    if (inner is! Map<int, dynamic>) return null;
-    final body = ThriftReader.asStruct(inner[_fBody]);
-    if (body == null) return null;
+    if (payload is Map<int, dynamic>) {
+      for (final v in payload.values) {
+        final inner = v is Map<int, dynamic> ? v : ThriftReader.asStruct(v);
+        if (inner == null) continue;
+        final body = ThriftReader.asStruct(inner[_fBody]);
+        if (body == null) continue;
+        mediaUrl ??= _findUrl(body);
+        // 添付のときは同じ枝にファイル名が入っている。本文と取り違えると
+        // 「i9ica_Q9.jpg」のような文字列が吹き出しに出る
+        if (mediaUrl == null) text ??= _textOf(body);
+      }
+    }
 
-    final text = _textOf(body);
-    final mediaUrl = _findUrl(body);
-
-    if ((text == null || text.isEmpty) && mediaUrl == null) return null;
-    final attachmentLabel = mediaUrl == null ? null : '画像';
+    final hasText = text != null && text.isNotEmpty;
+    final attachmentLabel =
+        hasText ? null : (mediaUrl != null ? '画像' : '添付');
 
     return DmMessage(
-      id: id ?? '',
+      id: id,
       senderId: senderId,
       text: text ?? '',
       sentAt: sentAt,
@@ -139,18 +151,57 @@ class XChatParser {
     );
   }
 
-  /// ペイロードから本文を取り出す。1 → 1 → 1 の位置にある
+  /// ペイロードから本文を取り出す。
+  ///
+  /// 実測では 1 → 1 → 1 に入っているが、種類によって階層が違うことが
+  /// あるので、見つからなければ中を探しに行く
   static String? _textOf(Map<int, dynamic> body) {
     Object? node = body;
     for (final fid in _bodyPath) {
-      if (node is! Map<int, dynamic>) return null;
+      if (node is! Map<int, dynamic>) {
+        node = null;
+        break;
+      }
       final next = node[fid];
-      // 最後の 1 段は文字列。途中は構造体
       final asText = ThriftReader.asText(next);
-      if (fid == _bodyPath.last && asText != null) return asText;
+      if (fid == _bodyPath.last && _looksLikeBody(asText)) return asText;
       node = next is Map<int, dynamic> ? next : ThriftReader.asStruct(next);
     }
+    return _searchText(body);
+  }
+
+  /// 本文らしい文字列を探す。ID・URL・JWT は本文ではない
+  static String? _searchText(Map<int, dynamic> node, {int depth = 0}) {
+    if (depth > 6) return null;
+    for (final v in node.values) {
+      final s = ThriftReader.asText(v);
+      if (_looksLikeBody(s)) return s;
+      final sub = v is Map<int, dynamic> ? v : ThriftReader.asStruct(v);
+      if (sub != null) {
+        final found = _searchText(sub, depth: depth + 1);
+        if (found != null) return found;
+      } else if (v is List) {
+        for (final e in v) {
+          final m = e is Map<int, dynamic> ? e : ThriftReader.asStruct(e);
+          if (m == null) continue;
+          final found = _searchText(m, depth: depth + 1);
+          if (found != null) return found;
+        }
+      }
+    }
     return null;
+  }
+
+  static bool _looksLikeBody(String? s) {
+    if (s == null || s.isEmpty) return false;
+    // 権限トークン。画面に出すと base64 の羅列に見える
+    if (s.startsWith('eyJ')) return false;
+    if (s.startsWith('http')) return false;
+    // ID や時刻
+    if (RegExp(r'^\d+$').hasMatch(s)) return false;
+    if (RegExp(r'^\d+:\d+$').hasMatch(s)) return false;
+    if (RegExp(r'^[0-9a-fA-F-]{36}$').hasMatch(s)) return false;
+    return true;
   }
 
   /// 添付の入れ子から URL を探す。階層が読めない形もあるので浅く走査する

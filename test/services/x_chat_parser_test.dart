@@ -124,14 +124,73 @@ void main() {
       expect(m.attachmentLabel, '画像');
     });
 
-    // 既読や参加のイベントには本文が無い
-    test('本文も添付も無いイベントは捨てる', () {
+    // ID・送信者・時刻が欠けているものはメッセージではない
+    test('体裁が整っていないイベントは捨てる', () {
+      final e = _Event()
+        ..str(1, '1')
+        ..str(3, '2')
+        ..stop(); // 時刻なし
+      expect(XChatParser.parseEvent(e.b64), isNull);
+    });
+
+    // ここを落とすと、やり取りの数も時系列も狂う
+    test('本文が読めなくてもメッセージは残す', () {
+      final e = _Event()
+        ..str(1, '1007833643987812356')
+        ..str(3, '742212954')
+        ..str(6, '1787041992489')
+        ..stop();
+      final m = XChatParser.parseEvent(e.b64);
+      expect(m, isNotNull);
+      expect(m!.attachmentLabel, '添付');
+      expect(m.sentAt, isNotNull);
+    });
+
+    // 7 の下の番号はイベントの種類で変わる。決め打ちすると丸ごと落ちる
+    test('7 の下が 1 以外でも本文を拾う', () {
+      final body = _Event()
+        ..structStart(1)
+        ..structStart(1)
+        ..str(1, 'そっかー')
+        ..stop()
+        ..stop()
+        ..stop();
       final e = _Event()
         ..str(1, '1')
         ..str(3, '2')
         ..str(6, '1787041992489')
+        ..structStart(7)
+        ..structStart(12)
+        ..raw(100, body.bytes)
+        ..stop()
+        ..stop()
         ..stop();
-      expect(XChatParser.parseEvent(e.b64), isNull);
+      final m = XChatParser.parseEvent(e.b64);
+      expect(m, isNotNull);
+      expect(m!.text, 'そっかー');
+    });
+
+    // JWT を本文と取り違えると base64 の羅列が画面に出る
+    test('JWT は本文にしない', () {
+      final body = _Event()
+        ..structStart(1)
+        ..structStart(1)
+        ..str(1, 'eyJhbGciOiJIUzI1NiJ9.eyJhIjoxfQ.sig')
+        ..stop()
+        ..stop()
+        ..stop();
+      final e = _Event()
+        ..str(1, '1')
+        ..str(3, '2')
+        ..str(6, '1787041992489')
+        ..structStart(7)
+        ..structStart(1)
+        ..raw(100, body.bytes)
+        ..stop()
+        ..stop()
+        ..stop();
+      final m = XChatParser.parseEvent(e.b64);
+      expect(m!.text, isEmpty);
     });
 
     test('壊れた入力でも落ちない', () {

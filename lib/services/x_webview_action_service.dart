@@ -864,26 +864,65 @@ class XWebViewActionService {
           || document.querySelector('[data-testid="dm-message-list"]');
         const box = scroller ? scroller.getBoundingClientRect() : null;
         const out = [];
-        document.querySelectorAll('[data-testid^="message-text-"]').forEach(n => {
-          const id = n.getAttribute('data-testid').replace('message-text-', '');
-          const r = n.getBoundingClientRect();
+        const seen = new Set();
+        const push = (id, el, textEl) => {
+          if (!el || seen.has(id)) return;
+          const text = ((textEl || el).innerText || '').trim();
+          if (!text) return;
+          seen.add(id);
+          const r = el.getBoundingClientRect();
           // 自分の発言は右に寄る。中心の位置で見分ける
           const center = box ? ((r.left + r.right) / 2 - box.left) / box.width : 0.5;
-          const wrap = document.querySelector('[data-testid="message-' + id + '"]');
-          const t = wrap ? (wrap.innerText || '') : '';
-          // 吹き出しの末尾に時刻が入る
-          const lines = t.split('\n').map(s => s.trim()).filter(Boolean);
+          const lines = ((el.innerText || '')).split('\n')
+            .map(s => s.trim()).filter(Boolean);
           out.push({
             id: id,
-            text: n.innerText || '',
+            text: text,
             mine: center > 0.55,
             time: lines.length ? lines[lines.length - 1] : '',
           });
+        };
+
+        // 本文の要素があればそれを使う
+        document.querySelectorAll('[data-testid^="message-text-"]').forEach(n => {
+          const id = n.getAttribute('data-testid').replace('message-text-', '');
+          push(id, document.querySelector('[data-testid="message-' + id + '"]') || n, n);
         });
+
+        // 無ければ吹き出しの枠から直に読む。モバイルでは本文用の
+        // data-testid が付かないことがある
+        if (out.length === 0) {
+          document.querySelectorAll('[data-testid^="message-"]').forEach(n => {
+            const k = n.getAttribute('data-testid');
+            if (k.startsWith('message-text-')) return;
+            push(k.replace('message-', ''), n, null);
+          });
+        }
         return JSON.stringify(out);
       })()
     ''');
-    return _decodeList(raw);
+    final rows = _decodeList(raw);
+    if (rows.isEmpty) {
+      // 目印は出たのに本文が拾えない＝モバイルの DOM が違う。
+      // 何が並んでいるのかを残す
+      final dump = await _controller!.evaluateJavascript(source: r'''
+        (() => {
+          const ids = [];
+          document.querySelectorAll('[data-testid]').forEach(e => {
+            const k = e.getAttribute('data-testid');
+            const base = k.replace(/[0-9A-F-]{8,}$/i, '<id>');
+            if (!ids.includes(base)) ids.push(base);
+          });
+          return JSON.stringify({
+            url: location.href,
+            bodyLen: document.body ? document.body.innerText.length : 0,
+            testids: ids.slice(0, 60),
+          });
+        })()
+      ''');
+      DebugLogService.instance.log('XWebView', 'DM の本文が拾えない: $dump');
+    }
+    return rows;
   }
 
   /// DM のページを開いて、目印の要素が出るまで待つ

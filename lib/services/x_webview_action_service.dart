@@ -821,7 +821,8 @@ class XWebViewActionService {
   /// 会話一覧。`dm-conversation-item-<id>` から拾う
   Future<List<Map<String, dynamic>>> readDmInbox(XCredentials creds) async {
     final ok = await _openDm(creds, 'https://x.com/messages',
-        waitFor: '[data-testid="dm-conversation-scroller"]');
+        waitFor: '[data-testid^="dm-conversation-item-"], '
+            '[data-testid="dm-conversation-scroller"]');
     if (!ok) return const [];
     final raw = await _controller!.evaluateJavascript(source: r'''
       (() => {
@@ -854,7 +855,8 @@ class XWebViewActionService {
     // 会話 ID はコロン区切り。URL ではハイフンで渡す
     final urlId = conversationId.replaceFirst(':', '-');
     final ok = await _openDm(creds, 'https://x.com/i/chat/$urlId',
-        waitFor: '[data-testid^="message-text-"]');
+        waitFor: '[data-testid^="message-"], [data-testid="dm-message-list"], '
+            '[data-testid="dm-message-scroller"]');
     if (!ok) return const [];
     final raw = await _controller!.evaluateJavascript(source: r'''
       (() => {
@@ -896,9 +898,30 @@ class XWebViewActionService {
       _readyCompleter = Completer<void>();
       await _controller!.loadUrl(urlRequest: URLRequest(url: WebUri(url)));
       await _readyCompleter!.future
-          .timeout(const Duration(seconds: 20), onTimeout: () {});
-      // 中身は非同期に描かれるので、要素が出るまで待つ
-      return await _waitForElement(waitFor, timeoutSeconds: 20);
+          .timeout(const Duration(seconds: 25), onTimeout: () {});
+      // 中身は非同期に描かれるので、要素が出るまで待つ。DM は重い
+      final ok = await _waitForElement(waitFor, timeoutSeconds: 30);
+      if (!ok) {
+        // WebView はモバイルの UA で動くので、こちらで見た DOM と構造が
+        // 違うことがある。何が出ているのかを残す
+        final dump = await _controller!.evaluateJavascript(source: r'''
+          (() => {
+            const ids = [];
+            document.querySelectorAll('[data-testid]').forEach(e => {
+              const k = e.getAttribute('data-testid');
+              if (!ids.includes(k)) ids.push(k);
+            });
+            return JSON.stringify({
+              url: location.href,
+              title: document.title,
+              bodyLen: document.body ? document.body.innerText.length : 0,
+              testids: ids.slice(0, 60),
+            });
+          })()
+        ''');
+        DebugLogService.instance.log('XWebView', 'DM の要素が出ない: $dump');
+      }
+      return ok;
     } catch (e) {
       DebugLogService.instance.log('XWebView', 'DM を開けなかった: $e');
       return false;

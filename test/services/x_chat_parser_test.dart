@@ -38,25 +38,42 @@ String textEvent({
   required String sentAtMillis,
   required String text,
 }) {
+  // 本文は入れ子の Thrift の 1 → 1 → 1
+  final body = _Event()
+    ..structStart(1)
+    ..structStart(1)
+    ..str(1, text)
+    ..stop()
+    ..stop()
+    ..stop();
   final e = _Event()
     ..str(1, id)
     ..str(3, senderId)
     ..str(4, '742212954:2001557530871468032')
-    ..str(5, text)
     ..str(6, sentAtMillis)
+    ..structStart(7)
+    ..structStart(1)
+    ..raw(100, body.bytes)
+    ..stop()
+    ..stop()
     ..stop();
   return e.b64;
 }
 
 /// 添付（入れ子の Thrift が本文の位置に入る）
 String mediaEvent({required String id, required String senderId}) {
+  final body = _Event()
+    ..str(6, 'i9ica_Q9.jpg')
+    ..str(8, 'https://ton.x.com/i/ton/data/dm/1/2/i9ica_Q9.jpg')
+    ..stop();
   final e = _Event()
     ..str(1, id)
     ..str(3, senderId)
     ..str(6, '1787041992489')
-    ..structStart(9)
-    ..str(1, 'i9ica_Q9.jpg')
-    ..str(8, 'https://ton.x.com/i/ton/data/dm/1/2/i9ica_Q9.jpg')
+    ..structStart(7)
+    ..structStart(1)
+    ..raw(100, body.bytes)
+    ..stop()
     ..stop()
     ..stop();
   return e.b64;

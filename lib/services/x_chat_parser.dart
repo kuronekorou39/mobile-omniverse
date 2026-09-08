@@ -13,19 +13,25 @@ import 'thrift_reader.dart';
 ///   2  リクエスト UUID
 ///   3  送信者のユーザー ID
 ///   4  会話 ID（`自分:相手` の形）
-///   5  **本文**
+///   5  権限を表す JWT（本文ではない）
 ///   6  送信時刻（ミリ秒）
-///   7  イベントの種類ごとのペイロード（番号は種類で変わる）
-///   9  添付・引用（URL はこの中）
+///   7 → 1 → 100  ペイロード。**さらに入れ子の Thrift** で、
+///                その中の 1 → 1 → 1 が本文
+///   9  暗号化の鍵交換（ECDSA P-256 の公開鍵など。本文ではない）
 class XChatParser {
   XChatParser._();
 
   // ─── フィールド番号 ───
   static const _fMessageId = 1;
   static const _fSenderId = 3;
-  static const _fText = 5;
   static const _fSentAt = 6;
-  static const _fAttachment = 9;
+  static const _fPayload = 7;
+  static const _fPayloadInner = 1;
+  static const _fBody = 100;
+
+  /// 本文までの道のり。100 の中身を Thrift として読み直したあと、
+  /// この順にたどる
+  static const _bodyPath = [1, 1, 1];
 
   /// 添付の入れ子に入っている、表示に使える URL
   static const _fAttachmentUrl = 8;
@@ -107,24 +113,20 @@ class XChatParser {
     final sentAtRaw = ThriftReader.asText(root[_fSentAt]);
     final sentAt = _toDate(sentAtRaw);
 
-    // 本文はトップレベルに素の文字列で入っている。既読や参加などの
-    // イベントには無いので、本文も添付も無ければメッセージではない
-    final text = ThriftReader.asText(root[_fText]);
+    // 7 → 1 → 100 のバイト列を、もう一度 Thrift として読み直す。
+    // その中の 1 → 1 → 1 が本文で、添付なら別の枝に URL が入る
+    final payload = root[_fPayload];
+    if (payload is! Map<int, dynamic>) return null;
+    final inner = payload[_fPayloadInner];
+    if (inner is! Map<int, dynamic>) return null;
+    final body = ThriftReader.asStruct(inner[_fBody]);
+    if (body == null) return null;
 
-    String? mediaUrl;
-    String? attachmentLabel;
-    final attachment = root[_fAttachment];
-    if (attachment != null) {
-      final nested = attachment is Map<int, dynamic>
-          ? attachment
-          : ThriftReader.asStruct(attachment);
-      if (nested != null) {
-        mediaUrl = _findUrl(nested);
-        if (mediaUrl != null) attachmentLabel = '画像';
-      }
-    }
+    final text = _textOf(body);
+    final mediaUrl = _findUrl(body);
 
     if ((text == null || text.isEmpty) && mediaUrl == null) return null;
+    final attachmentLabel = mediaUrl == null ? null : '画像';
 
     return DmMessage(
       id: id ?? '',
@@ -135,6 +137,20 @@ class XChatParser {
       mediaUrl: mediaUrl,
       attachmentLabel: attachmentLabel,
     );
+  }
+
+  /// ペイロードから本文を取り出す。1 → 1 → 1 の位置にある
+  static String? _textOf(Map<int, dynamic> body) {
+    Object? node = body;
+    for (final fid in _bodyPath) {
+      if (node is! Map<int, dynamic>) return null;
+      final next = node[fid];
+      // 最後の 1 段は文字列。途中は構造体
+      final asText = ThriftReader.asText(next);
+      if (fid == _bodyPath.last && asText != null) return asText;
+      node = next is Map<int, dynamic> ? next : ThriftReader.asStruct(next);
+    }
+    return null;
   }
 
   /// 添付の入れ子から URL を探す。階層が読めない形もあるので浅く走査する

@@ -33,6 +33,14 @@ class XChatParser {
   /// この順にたどる
   static const _bodyPath = [1, 1, 1];
 
+  /// 7 の直下がこれだけなら、吹き出しにしない内部イベント。
+  /// 12 は既読の位置更新で、中身は数値だけ
+  static const _systemEventKinds = {12, 3};
+
+  /// 暗号化された本文が入る枝。108.1 が 32 バイトの鍵、108.2 が暗号文で、
+  /// XChat の end-to-end 暗号にあたる。鍵は端末側にあり復号できない
+  static const _fEncrypted = 108;
+
   /// 添付の入れ子に入っている、表示に使える URL
   static const _fAttachmentUrl = 8;
 
@@ -117,16 +125,26 @@ class XChatParser {
     // かったからといって落とすと、やり取りの数も時系列も狂う
     if (id == null || senderId.isEmpty || sentAt == null) return null;
 
+    // 7 の直下の番号はイベントの種類。12 は既読などの内部イベントで、
+    // 中身は数値だけ。吹き出しとして出すものではない
+    final payloadKinds = root[_fPayload];
+    if (payloadKinds is Map<int, dynamic> &&
+        payloadKinds.keys.every((k) => _systemEventKinds.contains(k))) {
+      return null;
+    }
+
     // 本文は 7 → (種類ごとの番号) → 100 のバイト列を、もう一度 Thrift と
     // して読み直した先にある。7 の下の番号はイベントの種類で変わる
     // （1 のことも 12 のこともある）ので、決め打ちせず全部見る
     String? text;
     String? mediaUrl;
+    var encrypted = false;
     final payload = root[_fPayload];
     if (payload is Map<int, dynamic>) {
       for (final v in payload.values) {
         final inner = v is Map<int, dynamic> ? v : ThriftReader.asStruct(v);
         if (inner == null) continue;
+        if (inner[_fEncrypted] != null) encrypted = true;
         final body = ThriftReader.asStruct(inner[_fBody]);
         if (body == null) continue;
         mediaUrl ??= _findUrl(body);
@@ -137,8 +155,12 @@ class XChatParser {
     }
 
     final hasText = text != null && text.isNotEmpty;
-    final attachmentLabel =
-        hasText ? null : (mediaUrl != null ? '画像' : '添付');
+    // 復号できないものを「添付」と書くと、画像が来たように見えて紛らわしい
+    final attachmentLabel = hasText
+        ? null
+        : (mediaUrl != null
+            ? '画像'
+            : (encrypted ? '暗号化されたメッセージ' : '不明な形式'));
 
     return DmMessage(
       id: id,

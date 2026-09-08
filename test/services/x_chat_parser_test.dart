@@ -142,12 +142,12 @@ void main() {
         ..stop();
       final m = XChatParser.parseEvent(e.b64);
       expect(m, isNotNull);
-      expect(m!.attachmentLabel, '添付');
+      expect(m!.attachmentLabel, '不明な形式');
       expect(m.sentAt, isNotNull);
     });
 
     // 7 の下の番号はイベントの種類で変わる。決め打ちすると丸ごと落ちる
-    test('7 の下が 1 以外でも本文を拾う', () {
+    test('7 の下が 1 以外でも本文があれば拾う', () {
       final body = _Event()
         ..structStart(1)
         ..structStart(1)
@@ -160,7 +160,7 @@ void main() {
         ..str(3, '2')
         ..str(6, '1787041992489')
         ..structStart(7)
-        ..structStart(12)
+        ..structStart(5)
         ..raw(100, body.bytes)
         ..stop()
         ..stop()
@@ -168,6 +168,42 @@ void main() {
       final m = XChatParser.parseEvent(e.b64);
       expect(m, isNotNull);
       expect(m!.text, 'そっかー');
+    });
+
+    // 既読の位置更新など。吹き出しにするものではない
+    test('7 の直下が 12 だけなら内部イベントとして捨てる', () {
+      final e = _Event()
+        ..str(1, '1')
+        ..str(3, '2')
+        ..str(6, '1787041992489')
+        ..structStart(7)
+        ..structStart(12)
+        ..str(1, '1007833643987812356')
+        ..stop()
+        ..stop()
+        ..stop();
+      expect(XChatParser.parseEvent(e.b64), isNull);
+    });
+
+    // XChat は本文を暗号化することがある。鍵は端末側にあり復号できない
+    test('暗号化された本文はそれと分かる形にする', () {
+      final e = _Event()
+        ..str(1, '1')
+        ..str(3, '2')
+        ..str(6, '1787041992489')
+        ..structStart(7)
+        ..structStart(1)
+        ..structStart(108)
+        ..raw(1, List<int>.filled(32, 7))
+        ..raw(2, List<int>.filled(72, 9))
+        ..stop()
+        ..stop()
+        ..stop()
+        ..stop();
+      final m = XChatParser.parseEvent(e.b64);
+      expect(m, isNotNull);
+      expect(m!.text, isEmpty);
+      expect(m.attachmentLabel, '暗号化されたメッセージ');
     });
 
     // JWT を本文と取り違えると base64 の羅列が画面に出る

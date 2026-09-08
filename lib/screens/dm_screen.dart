@@ -11,10 +11,9 @@ import '../providers/account_provider.dart';
 import '../services/bluesky_api_service.dart';
 import '../services/debug_log_service.dart';
 import '../services/x_api_service.dart';
+import '../services/x_chat_parser.dart';
 import '../services/x_dm_parser.dart';
 import '../utils/image_headers.dart';
-import '../utils/json_shape.dart';
-import '../utils/thrift_shape.dart';
 import 'dm_thread_screen.dart';
 import 'user_profile_screen.dart';
 
@@ -84,95 +83,33 @@ class _DmScreenState extends ConsumerState<DmScreen> {
   }
 
   Future<void> _loadX() async {
-    final res = await XApiService.instance.getDmInbox(_account.xCredentials);
+    // 1.1 の dm API には移行前のメッセージしか残っていないので、
+    // 一覧は XChat から取る。自分の user_id だけは 1.1 の users から
+    // 引くのが手っ取り早いので、そこは従来どおり使う
+    final legacy = await XApiService.instance.getDmInbox(_account.xCredentials);
+    if (legacy.data != null) {
+      _selfUserId =
+          XDmParser.parseInbox(legacy.data!, selfHandle: _account.handle)
+              .selfUserId;
+    }
+
+    final res = await XApiService.instance.getXChatInbox(_account.xCredentials);
     if (res.data == null) {
       setState(() =>
           _error = 'DM を取得できませんでした（コード ${res.statusCode}）');
       return;
     }
-    final page =
-        XDmParser.parseInbox(res.data!, selfHandle: _account.handle);
-    // 取得漏れの調査用: 応答に入っていた entry の種類を残す
-    DebugLogService.instance.log('DmParse',
-        'inbox: convos=${page.conversations.length} '
-        'types=${XDmParser.entryTypeHistogram(res.data!)}');
-    unawaited(_probeXChatShape());
+    final convos =
+        XChatParser.parseInbox(res.data!, selfUserId: _selfUserId);
+    DebugLogService.instance
+        .log('XChat', 'inbox: convos=${convos.length} self=$_selfUserId');
     setState(() {
       _convos.clear();
       _convoIds.clear();
-      _appendConvos(page.conversations);
-      _nextCursor = page.trustedNextMaxId;
-      _selfUserId = page.selfUserId;
+      _appendConvos(convos);
+      // XChat の続き読みは未対応。1 ページで 20 会話ぶん返る
+      _nextCursor = null;
     });
-  }
-
-  /// XChat（新しい DM）の応答の形をログに残す。
-  ///
-  /// 1.1 の dm API には移行前のメッセージしか残っておらず、公式は
-  /// api.x.com の GraphQL を使っている。そちらに移すためにキー構造が
-  /// 要るが、応答をそのまま残すと本文がログに残る。形だけを書き出す。
-  /// 表示には使わないので、失敗しても画面には出さない。
-  Future<void> _probeXChatShape() async {
-    if (!DebugLogService.instance.enabled) return;
-    try {
-      final res = await XApiService.instance.getXChatInbox(_account.xCredentials);
-      DebugLogService.instance.log('XChatShape',
-          'inbox status=${res.statusCode} shape=${jsonShape(res.data)}');
-      if (res.data == null) return;
-      // 会話 ID は XChat 側の体系。1.1 の ID とは別物なので受信箱から取る
-      final ids = XApiService.xchatConversationIds(res.data!);
-      DebugLogService.instance
-          .log('XChatShape', '会話ID ${ids.length}件 先頭の長さ=${ids.isEmpty ? 0 : ids.first.length}');
-      if (ids.isEmpty) return;
-      final thread = await XApiService.instance
-          .getXChatConversation(_account.xCredentials, ids.first);
-      DebugLogService.instance.log('XChatShape',
-          'thread status=${thread.statusCode} shape=${jsonShape(thread.data)}');
-      _logEventShapes(thread.data);
-    } catch (e) {
-      DebugLogService.instance.log('XChatShape', '失敗: $e');
-    }
-  }
-
-  /// メッセージ本体（Thrift）の形を集計する。
-  ///
-  /// 応答をそのままログに落とすと 2048 バイトで切れて先頭数件しか
-  /// 残らない。しかも先頭が画像だと本文フィールドが分からない。
-  /// 端末側で全件走査して、**どのフィールドに何が入っていたか**の
-  /// 集計だけを残す（文字列の中身は種類と長さに置き換わる）。
-  void _logEventShapes(Map<String, dynamic>? data) {
-    final page = data?['get_conversation_page'];
-    if (page is! Map<String, dynamic>) return;
-    final events = page['encoded_message_events'];
-    if (events is! List) return;
-
-    // パス（1.7.100.1 のようなフィールド番号の連なり）ごとの出現数
-    final counts = <String, int>{};
-    var withText = 0;
-    String? sample;
-    for (final e in events.whereType<String>()) {
-      final lines = ThriftShape.describeBase64(e);
-      var hasText = false;
-      for (final line in lines) {
-        final t = line.trim();
-        counts[t] = (counts[t] ?? 0) + 1;
-        if (t.contains('TEXT(')) hasText = true;
-      }
-      if (hasText) {
-        withText++;
-        // 本文を含むイベントの形を 1 件だけ残す。これが読めれば
-        // 送信者・本文・時刻の対応が分かる
-        sample ??= lines.join(' / ');
-      }
-    }
-    final top = counts.entries.toList()
-      ..sort((a, b) => b.value.compareTo(a.value));
-    DebugLogService.instance.log('XChatEvents',
-        '${events.length}件中 本文あり=$withText / 形の内訳(上位30): '
-        '${top.take(30).map((e) => '${e.key}×${e.value}').join(', ')}');
-    if (sample != null) {
-      DebugLogService.instance.log('XChatEvents', '本文ありの形: $sample');
-    }
   }
 
   Future<void> _loadBluesky() async {

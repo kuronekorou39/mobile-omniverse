@@ -12,8 +12,11 @@ class ThriftShape {
   ThriftShape._();
 
   static const _stop = 0;
-  static const _boolTrue = 1;
-  static const _boolFalse = 2;
+
+  /// Binary Protocol の bool。**値が 1 バイト続く**。
+  /// Compact Protocol のように型で真偽を表すわけではないので、
+  /// 読み飛ばさないと以降の型とフィールド番号が全部ずれる
+  static const _bool = 2;
   static const _byte = 3;
   static const _double = 4;
   static const _i16 = 6;
@@ -89,8 +92,8 @@ class ThriftShape {
         case _byte:
           i += 1;
           out.add('$pad$fid: byte');
-        case _boolTrue:
-        case _boolFalse:
+        case _bool:
+          i += 1;
           out.add('$pad$fid: bool');
         case _struct:
           out.add('$pad$fid: {');

@@ -10,7 +10,7 @@ import '../providers/account_provider.dart';
 import '../services/bluesky_api_service.dart';
 import '../services/debug_log_service.dart';
 import '../services/x_api_service.dart';
-import '../services/x_dm_parser.dart';
+import '../services/x_chat_parser.dart';
 import '../utils/image_headers.dart';
 import 'user_profile_screen.dart';
 
@@ -60,25 +60,23 @@ class _DmThreadScreenState extends ConsumerState<DmThreadScreen> {
     });
     try {
       if (_account.service == SnsService.x) {
+        // 1.1 の dm API は移行前のぶんしか返さない。XChat から取る
         final res = await XApiService.instance
-            .getDmConversation(_account.xCredentials, widget.conversation.id);
+            .getXChatConversation(_account.xCredentials, widget.conversation.id);
         if (res.data == null) {
           setState(() =>
               _error = 'DM を取得できませんでした（コード ${res.statusCode}）');
         } else {
-          final page = XDmParser.parseThread(res.data!,
-              selfUserId: widget.selfUserId, selfHandle: _account.handle);
-          // 取得漏れの調査用: 応答に入っていた entry の種類を残す
-          DebugLogService.instance.log('DmParse',
-              'thread ${widget.conversation.id}: '
-              'messages=${page.messages.length} '
-              'status=${res.data!['status']} '
-              'types=${XDmParser.entryTypeHistogram(res.data!)}');
+          final messages = XChatParser.parseConversation(res.data!,
+              selfUserId: widget.selfUserId);
+          DebugLogService.instance.log('XChat',
+              'thread ${widget.conversation.id}: messages=${messages.length}');
           setState(() {
             _messages.clear();
             _messageIds.clear();
-            _append(page.messages);
-            _nextCursor = page.nextMaxId;
+            _append(messages);
+            // XChat の続き読みは未対応。1 回で 200 件ぶん返る
+            _nextCursor = null;
           });
         }
       } else {
@@ -106,17 +104,9 @@ class _DmThreadScreenState extends ConsumerState<DmThreadScreen> {
     setState(() => _loadingMore = true);
     try {
       if (_account.service == SnsService.x) {
-        final res = await XApiService.instance.getDmConversation(
-            _account.xCredentials, widget.conversation.id,
-            maxId: cursor);
-        if (res.data != null) {
-          final page = XDmParser.parseThread(res.data!,
-              selfUserId: widget.selfUserId, selfHandle: _account.handle);
-          setState(() {
-            _append(page.messages);
-            _nextCursor = page.messages.isEmpty ? null : page.nextMaxId;
-          });
-        }
+        // XChat は 1 回で 200 件返るので、いまは続きを読む導線を出して
+        // いない。ここに来るのは Bluesky だけ
+        setState(() => _nextCursor = null);
       } else {
         final res = await BlueskyApiService.instance.getConvoMessagesWithRefresh(
             _account.blueskyCredentials, widget.conversation.id,

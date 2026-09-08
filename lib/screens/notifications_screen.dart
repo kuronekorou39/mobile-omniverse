@@ -149,7 +149,10 @@ String _typeLabel(NotificationType type) => switch (type) {
 
 /// 通知タイプフィルタ行（共通ウィジェット）
 /// [hiddenTypes] に含まれるタイプは非表示。空=全表示。
-class _NotificationTypeFilter extends StatelessWidget {
+///
+/// 既定は畳んだ状態。タイプ別アイコンを常時出すと通知リストの頭が
+/// 色だらけになって本文が読みにくいので、開くのはフィルタを触るときだけ。
+class _NotificationTypeFilter extends StatefulWidget {
   const _NotificationTypeFilter({
     required this.availableTypes,
     required this.hiddenTypes,
@@ -163,64 +166,123 @@ class _NotificationTypeFilter extends StatelessWidget {
   final void Function(bool showAll) onToggleAll;
 
   @override
+  State<_NotificationTypeFilter> createState() =>
+      _NotificationTypeFilterState();
+}
+
+class _NotificationTypeFilterState extends State<_NotificationTypeFilter> {
+  bool _expanded = false;
+
+  @override
   Widget build(BuildContext context) {
-    if (availableTypes.length <= 1) return const SizedBox.shrink();
+    if (widget.availableTypes.length <= 1) return const SizedBox.shrink();
 
-    final allVisible = hiddenTypes.isEmpty;
+    final scheme = Theme.of(context).colorScheme;
+    final hiddenCount = widget.hiddenTypes.length;
+    final filtering = hiddenCount > 0;
 
-    return SizedBox(
-      height: 44,
-      child: Row(
-        children: [
-          // 全ON/OFF ボタン（通知タイルのテキスト開始位置に揃える）
-          Padding(
-            padding: const EdgeInsets.only(left: 76),
-            child: InkWell(
-              onTap: () => onToggleAll(!allVisible),
-              borderRadius: BorderRadius.circular(12),
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
-                child: Icon(
-                  allVisible ? Icons.visibility : Icons.visibility_off,
-                  size: 18,
-                  color: allVisible ? Theme.of(context).colorScheme.primary : Colors.grey[400],
-                ),
+    // 畳んでいる間もフィルタが効いていることは分かるようにする
+    final handleColor =
+        filtering || _expanded ? scheme.primary : scheme.onSurfaceVariant;
+
+    final handle = InkWell(
+      onTap: () => setState(() => _expanded = !_expanded),
+      borderRadius: BorderRadius.circular(12),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 6),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.filter_list, size: 18, color: handleColor),
+            if (filtering && !_expanded) ...[
+              const SizedBox(width: 6),
+              Text('$hiddenCount 種類を非表示',
+                  style: TextStyle(fontSize: 11, color: handleColor)),
+            ],
+          ],
+        ),
+      ),
+    );
+
+    return AnimatedSize(
+      duration: const Duration(milliseconds: 150),
+      alignment: Alignment.topCenter,
+      child: SizedBox(
+        height: _expanded ? 44 : 32,
+        child: Row(
+          children: [
+            // 通知タイルのテキスト開始位置に揃える
+            Padding(padding: const EdgeInsets.only(left: 76), child: handle),
+            if (_expanded) ...[
+              Container(
+                width: 1,
+                height: 20,
+                color: scheme.outlineVariant,
+                margin: const EdgeInsets.symmetric(horizontal: 4),
               ),
-            ),
-          ),
-          Container(
-            width: 1, height: 20, color: Colors.grey.withValues(alpha: 0.2),
-            margin: const EdgeInsets.symmetric(horizontal: 4),
-          ),
-          // タイプ別アイコン
-          Expanded(
-            child: ListView(
-              scrollDirection: Axis.horizontal,
-              padding: const EdgeInsets.symmetric(horizontal: 4),
-              children: availableTypes.map((type) {
-                final isVisible = !hiddenTypes.contains(type);
-                return Padding(
+              _AllTypesToggle(
+                allVisible: !filtering,
+                onTap: () => widget.onToggleAll(filtering),
+              ),
+              Expanded(
+                child: ListView(
+                  scrollDirection: Axis.horizontal,
                   padding: const EdgeInsets.symmetric(horizontal: 4),
-                  child: InkWell(
-                    onTap: () => onToggle(type),
-                    borderRadius: BorderRadius.circular(12),
-                    child: Tooltip(
-                      message: _typeLabel(type),
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 8),
-                        child: Icon(
-                          _typeIcon(type),
-                          size: 20,
-                          color: isVisible ? _typeColor(type) : Colors.grey[400]?.withValues(alpha: 0.4),
+                  children: widget.availableTypes.map((type) {
+                    final isVisible = !widget.hiddenTypes.contains(type);
+                    return Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 4),
+                      child: InkWell(
+                        onTap: () => widget.onToggle(type),
+                        borderRadius: BorderRadius.circular(12),
+                        child: Tooltip(
+                          message: _typeLabel(type),
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 6, vertical: 8),
+                            child: Icon(
+                              _typeIcon(type),
+                              size: 20,
+                              color: isVisible
+                                  ? _typeColor(type)
+                                  : scheme.onSurfaceVariant
+                                      .withValues(alpha: 0.4),
+                            ),
+                          ),
                         ),
                       ),
-                    ),
-                  ),
-                );
-              }).toList(),
-            ),
-          ),
-        ],
+                    );
+                  }).toList(),
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// 全タイプの一括 ON/OFF
+class _AllTypesToggle extends StatelessWidget {
+  const _AllTypesToggle({required this.allVisible, required this.onTap});
+
+  final bool allVisible;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(12),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+        child: Icon(
+          allVisible ? Icons.visibility : Icons.visibility_off,
+          size: 18,
+          color: allVisible ? scheme.primary : scheme.onSurfaceVariant,
+        ),
       ),
     );
   }

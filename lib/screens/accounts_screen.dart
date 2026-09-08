@@ -17,6 +17,7 @@ import 'login_webview_screen.dart';
 import 'session_refresh_screen.dart';
 import 'settings_screen.dart';
 import 'user_profile_screen.dart';
+import 'user_search_screen.dart';
 
 class AccountsScreen extends ConsumerStatefulWidget {
   const AccountsScreen({super.key});
@@ -51,7 +52,7 @@ class _AccountsScreenState extends ConsumerState<AccountsScreen> {
                   Row(
                     children: [
                       // アカウントが無いうちは走査対象も無いので出さない
-                      if (accounts.isNotEmpty)
+                      if (accounts.isNotEmpty) ...[
                         IconButton(
                           icon: const Icon(Icons.groups_outlined, size: 20),
                           tooltip: 'フォロー / フォロワー',
@@ -63,6 +64,18 @@ class _AccountsScreenState extends ConsumerState<AccountsScreen> {
                               const BoxConstraints(minWidth: 40, minHeight: 40),
                           padding: EdgeInsets.zero,
                         ),
+                        IconButton(
+                          icon: const Icon(Icons.person_search, size: 20),
+                          tooltip: 'ユーザー検索',
+                          onPressed: () => Navigator.of(context).push(
+                            MaterialPageRoute(
+                                builder: (_) => const UserSearchScreen()),
+                          ),
+                          constraints:
+                              const BoxConstraints(minWidth: 40, minHeight: 40),
+                          padding: EdgeInsets.zero,
+                        ),
+                      ],
                       const Spacer(),
                       IconButton(
                         icon: const Icon(Icons.settings_outlined, size: 20),

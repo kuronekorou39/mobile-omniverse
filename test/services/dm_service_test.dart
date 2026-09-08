@@ -3,84 +3,23 @@ import 'dart:convert';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mobile_omniverse/models/account.dart';
 import 'package:mobile_omniverse/services/bluesky_api_service.dart';
-import 'package:mobile_omniverse/services/x_api_service.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../helpers/mock_http_client.dart';
 
-/// DM（見る専）のサービス層。
+/// DM（見る専）のサービス層。Bluesky のみ。
 ///
 /// この機能の柱は「読み取り専用＝既読をつける API を呼ばない」なので、
 /// パースだけでなく **一切 POST しない** ことも検証する。
+///
+/// X は対象外。DM が XChat に移り、本文が端末の鍵で暗号化された。
 void main() {
   setUp(() {
     registerHttpFallbacks();
     SharedPreferences.setMockInitialValues({});
   });
 
-  group('XApiService DM', () {
-    final service = XApiService.instance;
-    const creds = XCredentials(authToken: 'a', ct0: 'c');
-
-    tearDown(() {
-      service.httpClientOverride = null;
-    });
-
-    test('受信箱は GET だけで取り、封筒から中身を出す', () async {
-      final client = createUriAwareClient((uri) {
-        expect(uri.path, '/i/api/1.1/dm/inbox_initial_state.json');
-        return (200, jsonEncode({'inbox_initial_state': {'entries': []}}));
-      });
-      service.httpClientOverride = client;
-
-      final res = await service.getDmInbox(creds);
-      expect(res.statusCode, 200);
-      expect(res.data, {'entries': []});
-
-      // 見る専の保証: 既読をつける mark_read などの POST を一切呼ばない
-      verifyNever(() => client.post(any(),
-          headers: any(named: 'headers'),
-          body: any(named: 'body'),
-          encoding: any(named: 'encoding')));
-    });
-
-    test('品質フィルタを無効化して全メッセージを受け取る', () async {
-      Uri? seen;
-      service.httpClientOverride = createUriAwareClient((uri) {
-        seen = uri;
-        return (200, jsonEncode({'inbox_initial_state': {}}));
-      });
-      await service.getDmInbox(creds);
-
-      // これらを省くと低品質判定のメッセージ・会話が黙って間引かれる
-      final q = seen!.queryParameters;
-      expect(q['filter_low_quality'], 'false');
-      expect(q['include_quality'], 'all');
-      expect(q['nsfw_filtering_enabled'], 'false');
-    });
-
-    test('会話は id と max_id が URL に乗る', () async {
-      Uri? seen;
-      service.httpClientOverride = createUriAwareClient((uri) {
-        seen = uri;
-        return (200, jsonEncode({'conversation_timeline': {'status': 'AT_END'}}));
-      });
-
-      final res =
-          await service.getDmConversation(creds, '11-22', maxId: '500');
-      expect(res.data, {'status': 'AT_END'});
-      expect(seen!.path, '/i/api/1.1/dm/conversation/11-22.json');
-      expect(seen!.queryParameters['max_id'], '500');
-    });
-
-    test('失敗したらコードを返す（transaction-id 拒否の切り分け用）', () async {
-      service.httpClientOverride = createMockClient(statusCode: 404, body: '{}');
-      final res = await service.getDmInbox(creds);
-      expect(res.statusCode, 404);
-      expect(res.data, isNull);
-    });
-  });
 
   group('BlueskyApiService DM', () {
     final service = BlueskyApiService.instance;

@@ -5,32 +5,24 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../models/account.dart';
 import '../models/dm_models.dart';
-import '../models/sns_service.dart';
 import '../providers/account_provider.dart';
 import '../services/bluesky_api_service.dart';
-import '../services/debug_log_service.dart';
-import '../services/x_dm_webview_parser.dart';
-import '../services/x_webview_action_service.dart';
 import '../utils/image_headers.dart';
 import 'user_profile_screen.dart';
 
-/// DM のスレッド表示（見る専）。
+/// DM のスレッド表示（見る専・Bluesky のみ）。
 ///
 /// 送信欄はなく、既読をつける API も呼ばない。開いても相手からは
-/// 未読のままに見える。
+/// 未読のままに見える。X が対象外な理由は DmScreen に書いた。
 class DmThreadScreen extends ConsumerStatefulWidget {
   const DmThreadScreen({
     super.key,
     required this.account,
     required this.conversation,
-    this.selfUserId,
   });
 
   final Account account;
   final DmConversation conversation;
-
-  /// X: 一覧側で解決した自分の user_id
-  final String? selfUserId;
 
   @override
   ConsumerState<DmThreadScreen> createState() => _DmThreadScreenState();
@@ -59,39 +51,16 @@ class _DmThreadScreenState extends ConsumerState<DmThreadScreen> {
       _error = null;
     });
     try {
-      if (_account.service == SnsService.x) {
-        // XChat のメッセージは API 越しだと暗号化されていて復号できない。
-        // ブラウザでは復号済みの本文が DOM にあるので、WebView から読む
-        final rows = await XWebViewActionService.instance
-            .readDmConversation(_account.xCredentials, widget.conversation.id);
-        final messages = XDmWebViewParser.parseConversation(rows,
-            selfUserId: widget.selfUserId);
-        DebugLogService.instance.log('XChat',
-            'thread ${widget.conversation.id}: dom=${rows.length} '
-            'messages=${messages.length}');
-        if (messages.isEmpty) {
-          setState(() => _error = 'DM を読み取れませんでした');
-        } else {
-          setState(() {
-            _messages.clear();
-            _messageIds.clear();
-            _append(messages);
-            // 画面に出ているぶんだけ。さかのぼりは未対応
-            _nextCursor = null;
-          });
-        }
-      } else {
-        final res = await BlueskyApiService.instance.getConvoMessagesWithRefresh(
-            _account.blueskyCredentials, widget.conversation.id);
-        _persistRefreshedCreds(res.updatedCreds);
-        if (mounted) {
-          setState(() {
-            _messages.clear();
-            _messageIds.clear();
-            _append(res.messages);
-            _nextCursor = res.messages.isEmpty ? null : res.cursor;
-          });
-        }
+      final res = await BlueskyApiService.instance.getConvoMessagesWithRefresh(
+          _account.blueskyCredentials, widget.conversation.id);
+      _persistRefreshedCreds(res.updatedCreds);
+      if (mounted) {
+        setState(() {
+          _messages.clear();
+          _messageIds.clear();
+          _append(res.messages);
+          _nextCursor = res.messages.isEmpty ? null : res.cursor;
+        });
       }
     } catch (e) {
       if (mounted) setState(() => _error = '$e');
@@ -104,21 +73,15 @@ class _DmThreadScreenState extends ConsumerState<DmThreadScreen> {
     if (cursor == null || _loadingMore) return;
     setState(() => _loadingMore = true);
     try {
-      if (_account.service == SnsService.x) {
-        // XChat は 1 回で 200 件返るので、いまは続きを読む導線を出して
-        // いない。ここに来るのは Bluesky だけ
-        setState(() => _nextCursor = null);
-      } else {
-        final res = await BlueskyApiService.instance.getConvoMessagesWithRefresh(
-            _account.blueskyCredentials, widget.conversation.id,
-            cursor: cursor);
-        _persistRefreshedCreds(res.updatedCreds);
-        if (mounted) {
-          setState(() {
-            _append(res.messages);
-            _nextCursor = res.messages.isEmpty ? null : res.cursor;
-          });
-        }
+      final res = await BlueskyApiService.instance.getConvoMessagesWithRefresh(
+          _account.blueskyCredentials, widget.conversation.id,
+          cursor: cursor);
+      _persistRefreshedCreds(res.updatedCreds);
+      if (mounted) {
+        setState(() {
+          _append(res.messages);
+          _nextCursor = res.messages.isEmpty ? null : res.cursor;
+        });
       }
     } catch (e) {
       debugPrint('[DmThread] loadMore failed: $e');
@@ -323,9 +286,7 @@ class _DmThreadScreenState extends ConsumerState<DmThreadScreen> {
 
   Widget _media(DmMessage m) {
     // X の DM 画像 (ton.x.com) はログイン Cookie がないと 404 になる
-    final headers = _account.service == SnsService.x
-        ? {...kImageHeaders, 'Cookie': _account.xCredentials.cookieHeader}
-        : kImageHeaders;
+    const headers = kImageHeaders;
     return Padding(
       padding: const EdgeInsets.only(bottom: 4),
       child: ClipRRect(

@@ -1,27 +1,23 @@
-import 'dart:async';
-
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../models/account.dart';
 import '../models/dm_models.dart';
-import '../models/sns_service.dart';
 import '../providers/account_provider.dart';
 import '../services/bluesky_api_service.dart';
-import '../services/debug_log_service.dart';
-import '../services/x_api_service.dart';
-import '../services/x_chat_parser.dart';
-import '../services/x_dm_parser.dart';
 import '../utils/image_headers.dart';
 import 'dm_thread_screen.dart';
 import 'user_profile_screen.dart';
 
-/// DM の会話一覧（見る専）。
+/// DM の会話一覧（見る専・Bluesky のみ）。
 ///
-/// 読み取り専用で、送信欄はない。既読をつける API（X: mark_read /
-/// Bluesky: updateRead）はこの機能のどこからも呼ばないので、開いても
-/// 相手に既読はつかず、自分の未読も未読のまま残る。
+/// 読み取り専用で、送信欄はない。既読をつける API (updateRead) は
+/// このどこからも呼ばないので、開いても相手に既読はつかない。
+///
+/// X は対象外。DM が XChat に移り、本文が端末の鍵で暗号化された。
+/// 復号には PIN の入力が要る（WebView で開くと pin/recovery に飛ばされる）
+/// ため、読み取り専用の作りでは扱えない。
 class DmScreen extends ConsumerStatefulWidget {
   const DmScreen({super.key, required this.account});
 
@@ -45,11 +41,7 @@ class _DmScreenState extends ConsumerState<DmScreen> {
   bool _requestOnly = false;
   bool _groupOnly = false;
 
-  /// X: 受信箱の続きを読む max_id / Bluesky: cursor
   String? _nextCursor;
-
-  /// X: users マップから解決した自分の user_id（スレッド画面に引き継ぐ）
-  String? _selfUserId;
 
   Account get _account => widget.account;
 
@@ -71,45 +63,11 @@ class _DmScreenState extends ConsumerState<DmScreen> {
       _error = null;
     });
     try {
-      if (_account.service == SnsService.x) {
-        await _loadX();
-      } else {
-        await _loadBluesky();
-      }
+      await _loadBluesky();
     } catch (e) {
       if (mounted) setState(() => _error = '$e');
     }
     if (mounted) setState(() => _loading = false);
-  }
-
-  Future<void> _loadX() async {
-    // 1.1 の dm API には移行前のメッセージしか残っていないので、
-    // 一覧は XChat から取る。自分の user_id だけは 1.1 の users から
-    // 引くのが手っ取り早いので、そこは従来どおり使う
-    final legacy = await XApiService.instance.getDmInbox(_account.xCredentials);
-    if (legacy.data != null) {
-      _selfUserId =
-          XDmParser.parseInbox(legacy.data!, selfHandle: _account.handle)
-              .selfUserId;
-    }
-
-    final res = await XApiService.instance.getXChatInbox(_account.xCredentials);
-    if (res.data == null) {
-      setState(() =>
-          _error = 'DM を取得できませんでした（コード ${res.statusCode}）');
-      return;
-    }
-    final convos =
-        XChatParser.parseInbox(res.data!, selfUserId: _selfUserId);
-    DebugLogService.instance
-        .log('XChat', 'inbox: convos=${convos.length} self=$_selfUserId');
-    setState(() {
-      _convos.clear();
-      _convoIds.clear();
-      _appendConvos(convos);
-      // XChat の続き読みは未対応。1 ページで 20 会話ぶん返る
-      _nextCursor = null;
-    });
   }
 
   Future<void> _loadBluesky() async {
@@ -130,28 +88,14 @@ class _DmScreenState extends ConsumerState<DmScreen> {
     if (cursor == null || _loadingMore) return;
     setState(() => _loadingMore = true);
     try {
-      if (_account.service == SnsService.x) {
-        final res = await XApiService.instance
-            .getDmInboxTimeline(_account.xCredentials, maxId: cursor);
-        if (res.data != null) {
-          final page = XDmParser.parseInbox(res.data!,
-              selfUserId: _selfUserId, selfHandle: _account.handle);
-          setState(() {
-            _appendConvos(page.conversations);
-            _nextCursor = page.nextMaxId;
-          });
-        }
-      } else {
-        final res = await BlueskyApiService.instance.listConvosWithRefresh(
-            _account.blueskyCredentials,
-            cursor: cursor);
-        _persistRefreshedCreds(res.updatedCreds);
-        if (mounted) {
-          setState(() {
-            _appendConvos(res.convos);
-            _nextCursor = res.convos.isEmpty ? null : res.cursor;
-          });
-        }
+      final res = await BlueskyApiService.instance
+          .listConvosWithRefresh(_account.blueskyCredentials, cursor: cursor);
+      _persistRefreshedCreds(res.updatedCreds);
+      if (mounted) {
+        setState(() {
+          _appendConvos(res.convos);
+          _nextCursor = res.convos.isEmpty ? null : res.cursor;
+        });
       }
     } catch (e) {
       debugPrint('[DmScreen] loadMore failed: $e');
@@ -471,7 +415,6 @@ class _DmScreenState extends ConsumerState<DmScreen> {
           builder: (_) => DmThreadScreen(
             account: _account,
             conversation: c,
-            selfUserId: _selfUserId,
           ),
         ),
       ),

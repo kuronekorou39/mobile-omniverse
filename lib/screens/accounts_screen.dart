@@ -512,15 +512,21 @@ class _AccountDetailScreen extends ConsumerWidget {
                     ),
                   ),
                   const _NavDivider(),
+                  // X の DM は XChat に移り、本文が端末の鍵で暗号化された。
+                  // 復号には PIN の入力が要るので、読み取り専用では扱えない
                   _NavRow(
                     icon: Icons.mail_outline,
                     label: 'DM（見る専）',
-                    sub: '既読をつけずに読む・送信なし',
-                    onTap: () => Navigator.of(context).push(
-                      MaterialPageRoute(
-                        builder: (_) => DmScreen(account: account),
-                      ),
-                    ),
+                    sub: account.service == SnsService.x
+                        ? 'X は暗号化されたため読めません'
+                        : '既読をつけずに読む・送信なし',
+                    onTap: account.service == SnsService.x
+                        ? null
+                        : () => Navigator.of(context).push(
+                              MaterialPageRoute(
+                                builder: (_) => DmScreen(account: account),
+                              ),
+                            ),
                   ),
                 ],
               ),
@@ -714,11 +720,17 @@ class _NavRow extends StatelessWidget {
   final IconData icon;
   final String label;
   final String? sub;
-  final VoidCallback onTap;
+
+  /// null なら非活性。理由は sub に書く
+  final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
+    final enabled = onTap != null;
+    // 押せない行は、色を落として理由だけ読ませる
+    final fg = enabled ? scheme.primary : scheme.onSurfaceVariant;
+    final labelColor = enabled ? null : scheme.onSurfaceVariant;
     return InkWell(
       onTap: onTap,
       child: Padding(
@@ -726,15 +738,17 @@ class _NavRow extends StatelessWidget {
             vertical: sub == null ? 13 : 11, horizontal: 8),
         child: Row(
           children: [
-            Icon(icon, size: 22, color: scheme.primary),
+            Icon(icon, size: 22, color: fg),
             const SizedBox(width: 14),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(label,
-                      style: const TextStyle(
-                          fontSize: 16, fontWeight: FontWeight.w500)),
+                      style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w500,
+                          color: labelColor)),
                   if (sub != null) ...[
                     const SizedBox(height: 2),
                     Text(sub!,
@@ -744,8 +758,9 @@ class _NavRow extends StatelessWidget {
                 ],
               ),
             ),
-            Icon(Icons.chevron_right,
-                size: 20, color: scheme.onSurfaceVariant),
+            if (enabled)
+              Icon(Icons.chevron_right,
+                  size: 20, color: scheme.onSurfaceVariant),
           ],
         ),
       ),

@@ -9,8 +9,8 @@ import '../models/sns_service.dart';
 import '../providers/account_provider.dart';
 import '../services/bluesky_api_service.dart';
 import '../services/debug_log_service.dart';
-import '../services/x_api_service.dart';
-import '../services/x_chat_parser.dart';
+import '../services/x_dm_webview_parser.dart';
+import '../services/x_webview_action_service.dart';
 import '../utils/image_headers.dart';
 import 'user_profile_screen.dart';
 
@@ -60,22 +60,23 @@ class _DmThreadScreenState extends ConsumerState<DmThreadScreen> {
     });
     try {
       if (_account.service == SnsService.x) {
-        // 1.1 の dm API は移行前のぶんしか返さない。XChat から取る
-        final res = await XApiService.instance
-            .getXChatConversation(_account.xCredentials, widget.conversation.id);
-        if (res.data == null) {
-          setState(() =>
-              _error = 'DM を取得できませんでした（コード ${res.statusCode}）');
+        // XChat のメッセージは API 越しだと暗号化されていて復号できない。
+        // ブラウザでは復号済みの本文が DOM にあるので、WebView から読む
+        final rows = await XWebViewActionService.instance
+            .readDmConversation(_account.xCredentials, widget.conversation.id);
+        final messages = XDmWebViewParser.parseConversation(rows,
+            selfUserId: widget.selfUserId);
+        DebugLogService.instance.log('XChat',
+            'thread ${widget.conversation.id}: dom=${rows.length} '
+            'messages=${messages.length}');
+        if (messages.isEmpty) {
+          setState(() => _error = 'DM を読み取れませんでした');
         } else {
-          final messages = XChatParser.parseConversation(res.data!,
-              selfUserId: widget.selfUserId);
-          DebugLogService.instance.log('XChat',
-              'thread ${widget.conversation.id}: messages=${messages.length}');
           setState(() {
             _messages.clear();
             _messageIds.clear();
             _append(messages);
-            // XChat の続き読みは未対応。1 回で 200 件ぶん返る
+            // 画面に出ているぶんだけ。さかのぼりは未対応
             _nextCursor = null;
           });
         }

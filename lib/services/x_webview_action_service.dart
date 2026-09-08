@@ -812,6 +812,111 @@ class XWebViewActionService {
   }
 
   /// 指定セレクタの要素が出現するまでポーリング
+  // ─────────── DM（見る専・WebView から読む） ───────────
+  //
+  // XChat のメッセージは API 越しだと暗号化されていて復号できない。
+  // ブラウザでは復号済みの本文が DOM に出ているので、そこから読む。
+  // 読むだけで、既読をつける操作はしない。
+
+  /// 会話一覧。`dm-conversation-item-<id>` から拾う
+  Future<List<Map<String, dynamic>>> readDmInbox(XCredentials creds) async {
+    final ok = await _openDm(creds, 'https://x.com/messages',
+        waitFor: '[data-testid="dm-conversation-scroller"]');
+    if (!ok) return const [];
+    final raw = await _controller!.evaluateJavascript(source: r'''
+      (() => {
+        const out = [];
+        document.querySelectorAll('[data-testid^="dm-conversation-item-"]')
+          .forEach(el => {
+            const id = el.getAttribute('data-testid')
+              .replace('dm-conversation-item-', '');
+            // 表示名・最終メッセージ・時刻が縦に並んでいる
+            const lines = (el.innerText || '').split('\n')
+              .map(s => s.trim()).filter(Boolean);
+            out.push({
+              id: id,
+              title: lines[0] || '',
+              time: lines[1] || '',
+              last: lines.slice(2).join(' '),
+            });
+          });
+        return JSON.stringify(out);
+      })()
+    ''');
+    return _decodeList(raw);
+  }
+
+  /// 1 つの会話のメッセージ。`message-text-<id>` に復号済みの本文がある
+  Future<List<Map<String, dynamic>>> readDmConversation(
+    XCredentials creds,
+    String conversationId,
+  ) async {
+    // 会話 ID はコロン区切り。URL ではハイフンで渡す
+    final urlId = conversationId.replaceFirst(':', '-');
+    final ok = await _openDm(creds, 'https://x.com/i/chat/$urlId',
+        waitFor: '[data-testid^="message-text-"]');
+    if (!ok) return const [];
+    final raw = await _controller!.evaluateJavascript(source: r'''
+      (() => {
+        const scroller = document.querySelector('[data-testid="dm-message-scroller"]')
+          || document.querySelector('[data-testid="dm-message-list"]');
+        const box = scroller ? scroller.getBoundingClientRect() : null;
+        const out = [];
+        document.querySelectorAll('[data-testid^="message-text-"]').forEach(n => {
+          const id = n.getAttribute('data-testid').replace('message-text-', '');
+          const r = n.getBoundingClientRect();
+          // 自分の発言は右に寄る。中心の位置で見分ける
+          const center = box ? ((r.left + r.right) / 2 - box.left) / box.width : 0.5;
+          const wrap = document.querySelector('[data-testid="message-' + id + '"]');
+          const t = wrap ? (wrap.innerText || '') : '';
+          // 吹き出しの末尾に時刻が入る
+          const lines = t.split('\n').map(s => s.trim()).filter(Boolean);
+          out.push({
+            id: id,
+            text: n.innerText || '',
+            mine: center > 0.55,
+            time: lines.length ? lines[lines.length - 1] : '',
+          });
+        });
+        return JSON.stringify(out);
+      })()
+    ''');
+    return _decodeList(raw);
+  }
+
+  /// DM のページを開いて、目印の要素が出るまで待つ
+  Future<bool> _openDm(XCredentials creds, String url,
+      {required String waitFor}) async {
+    if (!_isReady || _currentAuthToken != creds.authToken) {
+      await init(creds);
+    }
+    if (_controller == null) return false;
+    try {
+      _isReady = false;
+      _readyCompleter = Completer<void>();
+      await _controller!.loadUrl(urlRequest: URLRequest(url: WebUri(url)));
+      await _readyCompleter!.future
+          .timeout(const Duration(seconds: 20), onTimeout: () {});
+      // 中身は非同期に描かれるので、要素が出るまで待つ
+      return await _waitForElement(waitFor, timeoutSeconds: 20);
+    } catch (e) {
+      DebugLogService.instance.log('XWebView', 'DM を開けなかった: $e');
+      return false;
+    }
+  }
+
+  List<Map<String, dynamic>> _decodeList(Object? raw) {
+    if (raw is! String || raw.isEmpty) return const [];
+    try {
+      final list = json.decode(raw);
+      if (list is! List) return const [];
+      return list.whereType<Map>().map((e) => e.cast<String, dynamic>()).toList();
+    } catch (e) {
+      DebugLogService.instance.log('XWebView', 'DM の読み取りに失敗: $e');
+      return const [];
+    }
+  }
+
   Future<bool> _waitForElement(String selector, {int timeoutSeconds = 10}) async {
     final deadline = DateTime.now().add(Duration(seconds: timeoutSeconds));
     while (DateTime.now().isBefore(deadline)) {

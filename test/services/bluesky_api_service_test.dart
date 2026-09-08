@@ -1247,6 +1247,93 @@ void main() {
     });
   });
 
+  group('searchActors (HTTP)', () {
+    Map<String, dynamic> actor(String did, String handle, String name) => {
+          'did': did,
+          'handle': handle,
+          'displayName': name,
+          'description': 'bio of $name',
+          'avatar': 'https://cdn.example/$handle.jpg',
+        };
+
+    test('returns users on 200', () async {
+      final client = createMockClient(
+        statusCode: 200,
+        body: jsonEncode({
+          'actors': [
+            actor('did:plc:a', 'alice.bsky.social', 'アリス'),
+            actor('did:plc:b', 'bob.bsky.social', 'Bob'),
+          ],
+        }),
+      );
+      service.httpClientOverride = client;
+
+      final users = await service.searchActors(makeBskyCreds(), 'ali');
+
+      expect(users, hasLength(2));
+      expect(users.first.restId, 'did:plc:a');
+      expect(users.first.screenName, 'alice.bsky.social');
+      expect(users.first.name, 'アリス');
+    });
+
+    test('query and limit go into the URL', () async {
+      Uri? seen;
+      service.httpClientOverride = createUriAwareClient((uri) {
+        seen = uri;
+        return (200, jsonEncode({'actors': []}));
+      });
+
+      await service.searchActors(makeBskyCreds(), 'に ほん', limit: 5);
+
+      expect(seen!.path, contains('app.bsky.actor.searchActors'));
+      expect(seen!.queryParameters['q'], 'に ほん');
+      expect(seen!.queryParameters['limit'], '5');
+    });
+
+    test('missing actors key yields an empty list', () async {
+      service.httpClientOverride = createMockClient(
+        statusCode: 200,
+        body: jsonEncode({}),
+      );
+
+      expect(await service.searchActors(makeBskyCreds(), 'x'), isEmpty);
+    });
+
+    test('entries without did or handle are dropped', () async {
+      service.httpClientOverride = createMockClient(
+        statusCode: 200,
+        body: jsonEncode({
+          'actors': [
+            {'handle': 'no-did.bsky.social'},
+            actor('did:plc:ok', 'ok.bsky.social', 'OK'),
+          ],
+        }),
+      );
+
+      final users = await service.searchActors(makeBskyCreds(), 'x');
+      expect(users, hasLength(1));
+      expect(users.single.restId, 'did:plc:ok');
+    });
+
+    test('throws BlueskyAuthException on 401', () async {
+      service.httpClientOverride = createMockClient(statusCode: 401, body: '{}');
+
+      expect(
+        () => service.searchActors(makeBskyCreds(), 'x'),
+        throwsA(isA<BlueskyAuthException>()),
+      );
+    });
+
+    test('throws BlueskyApiException on 500', () async {
+      service.httpClientOverride = createMockClient(statusCode: 500, body: '{}');
+
+      expect(
+        () => service.searchActors(makeBskyCreds(), 'x'),
+        throwsA(isA<BlueskyApiException>()),
+      );
+    });
+  });
+
   group('BlueskyApiException', () {
     test('toString includes message', () {
       final e = BlueskyApiException('test error');

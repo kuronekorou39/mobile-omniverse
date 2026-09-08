@@ -443,6 +443,45 @@ class BlueskyApiService {
     return json.decode(response.body) as Map<String, dynamic>;
   }
 
+  /// ユーザー検索。ハンドル・表示名・プロフィール文が対象
+  ///
+  /// 返ってくるのは profileView なので、フォロワー数などの件数は入らない。
+  /// 件数まで要るときは呼び出し側で [getProfiles] で取り直す。
+  Future<List<FollowUser>> searchActors(
+    BlueskyCredentials creds,
+    String query, {
+    int limit = 25,
+  }) async {
+    final uri = Uri.parse(
+      '${creds.pdsUrl}/xrpc/app.bsky.actor.searchActors'
+      '?q=${Uri.encodeComponent(query)}&limit=$limit',
+    );
+    final hdrs = {
+      'Authorization': 'Bearer ${creds.accessJwt}',
+      'Accept': 'application/json',
+    };
+    final sw = Stopwatch()..start();
+    final response = await _client.get(uri, headers: hdrs);
+    sw.stop();
+    _logResponse('searchActors', 'GET', uri, hdrs, null, response, sw);
+
+    if (response.statusCode == 401) {
+      throw BlueskyAuthException('Token expired');
+    }
+    if (response.statusCode != 200) {
+      throw BlueskyApiException(
+        'searchActors failed: ${response.statusCode}',
+      );
+    }
+
+    final body = json.decode(response.body) as Map<String, dynamic>;
+    final actors = body['actors'] as List<dynamic>? ?? const [];
+    return actors
+        .map((a) => FollowUser.fromBlueskyProfile(a as Map<String, dynamic>?))
+        .whereType<FollowUser>()
+        .toList();
+  }
+
   /// ユーザーのタイムラインを取得
   /// ユーザーの投稿一覧取得
   /// Returns: ({posts, cursor}) — cursor は次ページ取得用

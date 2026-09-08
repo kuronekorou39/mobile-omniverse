@@ -479,6 +479,24 @@ class XApiService {
     XCredentials creds,
     String screenName,
   ) async {
+    final userResult = await getUserResult(creds, screenName);
+    if (userResult == null) return null;
+    return _profileMap(
+      userResult,
+      userResult['rest_id'] as String?,
+      userResult['legacy'] as Map<String, dynamic>?,
+    );
+  }
+
+  /// UserByScreenName の生の user result をそのまま返す。
+  ///
+  /// [getUserProfile] は画面が使う項目だけに絞ってしまうので、
+  /// `possibly_sensitive` や `has_graduated_access` のような
+  /// 可視性まわりのフラグを見たいときはこちらを使う。
+  Future<Map<String, dynamic>?> getUserResult(
+    XCredentials creds,
+    String screenName,
+  ) async {
     await _ensureBearerToken(creds);
     return _withTargetedQueryIdRetry(creds, 'UserByScreenName', (queryId) async {
       final variables = json.encode({
@@ -528,7 +546,6 @@ class XApiService {
         if (userResult == null) return null;
       }
 
-      final restId = userResult['rest_id'] as String?;
       final legacy = userResult['legacy'] as Map<String, dynamic>?;
 
       // ブロック調査の設計材料。個別取得でも関係の項目が返るかを、一覧側の
@@ -546,7 +563,7 @@ class XApiService {
             'legacy(relation keys)=$blockKeys');
       }
 
-      return _profileMap(userResult, restId, legacy);
+      return userResult;
     });
   }
 

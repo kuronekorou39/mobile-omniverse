@@ -24,6 +24,7 @@ import '../widgets/post_card.dart';
 import '../widgets/sns_badge.dart';
 import 'compose_screen.dart';
 import 'post_detail_screen.dart';
+import 'shadowban_check_screen.dart';
 
 class UserProfileScreen extends ConsumerStatefulWidget {
   const UserProfileScreen({
@@ -390,6 +391,19 @@ class _UserProfileScreenState extends ConsumerState<UserProfileScreen>
                 tooltip: _hideRetweets ? 'RTを表示' : 'RTを非表示',
                 onPressed: () => setState(() => _hideRetweets = !_hideRetweets),
               ),
+              // 表示制限のフラグは X にしかない概念
+              if (widget.service == SnsService.x)
+                IconButton(
+                  icon: const Icon(Icons.visibility_outlined, size: 20),
+                  tooltip: '表示制限の確認',
+                  onPressed: () => Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (_) => ShadowbanCheckScreen(
+                        screenName: widget.handle.replaceFirst('@', ''),
+                      ),
+                    ),
+                  ),
+                ),
               IconButton(
                 icon: const Icon(Icons.open_in_new, size: 20),
                 tooltip: '公式アプリで開く',

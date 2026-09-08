@@ -42,30 +42,21 @@ String textEvent({
     ..str(1, id)
     ..str(3, senderId)
     ..str(4, '742212954:2001557530871468032')
+    ..str(5, text)
     ..str(6, sentAtMillis)
-    ..structStart(7)
-    ..structStart(1)
-    ..str(100, text)
-    ..stop()
-    ..stop()
     ..stop();
   return e.b64;
 }
 
 /// 添付（入れ子の Thrift が本文の位置に入る）
 String mediaEvent({required String id, required String senderId}) {
-  final inner = _Event()
-    ..str(6, 'i9ica_Q9.jpg')
-    ..str(8, 'https://ton.x.com/i/ton/data/dm/1/2/i9ica_Q9.jpg')
-    ..stop();
   final e = _Event()
     ..str(1, id)
     ..str(3, senderId)
     ..str(6, '1787041992489')
-    ..structStart(7)
-    ..structStart(1)
-    ..raw(100, inner.bytes)
-    ..stop()
+    ..structStart(9)
+    ..str(1, 'i9ica_Q9.jpg')
+    ..str(8, 'https://ton.x.com/i/ton/data/dm/1/2/i9ica_Q9.jpg')
     ..stop()
     ..stop();
   return e.b64;
@@ -116,10 +107,12 @@ void main() {
       expect(m.attachmentLabel, '画像');
     });
 
+    // 既読や参加のイベントには本文が無い
     test('本文も添付も無いイベントは捨てる', () {
       final e = _Event()
         ..str(1, '1')
         ..str(3, '2')
+        ..str(6, '1787041992489')
         ..stop();
       expect(XChatParser.parseEvent(e.b64), isNull);
     });

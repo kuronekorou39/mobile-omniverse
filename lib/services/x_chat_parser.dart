@@ -10,21 +10,22 @@ import 'thrift_reader.dart';
 /// 対応は実機の応答から割り出した:
 ///
 ///   1  メッセージ ID
-///   2  直前のメッセージ ID（並びの前後関係）
+///   2  リクエスト UUID
 ///   3  送信者のユーザー ID
 ///   4  会話 ID（`自分:相手` の形）
+///   5  **本文**
 ///   6  送信時刻（ミリ秒）
-///   7 → 1 → 100  本文。テキストならそのまま、添付なら入れ子の Thrift
+///   7  イベントの種類ごとのペイロード（番号は種類で変わる）
+///   9  添付・引用（URL はこの中）
 class XChatParser {
   XChatParser._();
 
   // ─── フィールド番号 ───
   static const _fMessageId = 1;
   static const _fSenderId = 3;
+  static const _fText = 5;
   static const _fSentAt = 6;
-  static const _fPayload = 7;
-  static const _fPayloadInner = 1;
-  static const _fBody = 100;
+  static const _fAttachment = 9;
 
   /// 添付の入れ子に入っている、表示に使える URL
   static const _fAttachmentUrl = 8;
@@ -106,29 +107,24 @@ class XChatParser {
     final sentAtRaw = ThriftReader.asText(root[_fSentAt]);
     final sentAt = _toDate(sentAtRaw);
 
-    final payload = root[_fPayload];
-    if (payload is! Map<int, dynamic>) return null;
-    final inner = payload[_fPayloadInner];
-    if (inner is! Map<int, dynamic>) return null;
+    // 本文はトップレベルに素の文字列で入っている。既読や参加などの
+    // イベントには無いので、本文も添付も無ければメッセージではない
+    final text = ThriftReader.asText(root[_fText]);
 
-    final body = inner[_fBody];
-    if (body == null) return null;
-
-    // 本文はテキストのことも、添付を表す入れ子の Thrift のこともある
-    final text = ThriftReader.asText(body);
     String? mediaUrl;
     String? attachmentLabel;
-    if (text == null) {
-      final nested = ThriftReader.asStruct(body);
-      if (nested == null) return null;
-      mediaUrl = _findUrl(nested);
-      attachmentLabel = mediaUrl == null ? '添付' : '画像';
+    final attachment = root[_fAttachment];
+    if (attachment != null) {
+      final nested = attachment is Map<int, dynamic>
+          ? attachment
+          : ThriftReader.asStruct(attachment);
+      if (nested != null) {
+        mediaUrl = _findUrl(nested);
+        if (mediaUrl != null) attachmentLabel = '画像';
+      }
     }
 
-    if ((text == null || text.isEmpty) && mediaUrl == null &&
-        attachmentLabel == null) {
-      return null;
-    }
+    if ((text == null || text.isEmpty) && mediaUrl == null) return null;
 
     return DmMessage(
       id: id ?? '',

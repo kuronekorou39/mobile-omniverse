@@ -897,10 +897,14 @@ class XWebViewActionService {
       _isReady = false;
       _readyCompleter = Completer<void>();
       await _controller!.loadUrl(urlRequest: URLRequest(url: WebUri(url)));
-      await _readyCompleter!.future
-          .timeout(const Duration(seconds: 25), onTimeout: () {});
+      // X は SPA なので、画面が切り替わっても onLoadStop が来ないことが
+      // ある。URL が目的のものになるまで見て、そのあと中身を待つ
+      final arrived = await _waitForUrl(url, timeoutSeconds: 25);
+      DebugLogService.instance
+          .log('XWebView', 'DM を開いた: $url arrived=$arrived');
       // 中身は非同期に描かれるので、要素が出るまで待つ。DM は重い
       final ok = await _waitForElement(waitFor, timeoutSeconds: 30);
+      DebugLogService.instance.log('XWebView', 'DM の目印: found=$ok');
       if (!ok) {
         // WebView はモバイルの UA で動くので、こちらで見た DOM と構造が
         // 違うことがある。何が出ているのかを残す
@@ -940,11 +944,32 @@ class XWebViewActionService {
     }
   }
 
+  /// 目的の URL に着くまで待つ。
+  ///
+  /// X は SPA なので、画面が切り替わっても onLoadStop が来ないことがある。
+  /// loadUrl 直後に _readyCompleter を待つだけだと、直前の遷移で完了済み
+  /// になっていて素通りしてしまう
+  Future<bool> _waitForUrl(String url, {int timeoutSeconds = 20}) async {
+    final want = Uri.parse(url).path;
+    final deadline = DateTime.now().add(Duration(seconds: timeoutSeconds));
+    while (DateTime.now().isBefore(deadline)) {
+      final now = await _controller!.evaluateJavascript(
+        source: 'location.pathname',
+      );
+      if (now is String && now.contains(want)) return true;
+      await Future.delayed(const Duration(milliseconds: 300));
+    }
+    return false;
+  }
+
   Future<bool> _waitForElement(String selector, {int timeoutSeconds = 10}) async {
     final deadline = DateTime.now().add(Duration(seconds: timeoutSeconds));
     while (DateTime.now().isBefore(deadline)) {
+      // セレクタには " が入る（[data-testid^="message-"] など）。
+      // シングルクォートで囲むだけだと、"' を含む値で JS の構文が壊れて
+      // 常に false になる。JSON 文字列として埋める
       final found = await _controller!.evaluateJavascript(
-        source: 'document.querySelector(\'${selector.replaceAll("'", "\\'")}\') !== null',
+        source: 'document.querySelector(${json.encode(selector)}) !== null',
       );
       if (found == true || found == 'true') return true;
       await Future.delayed(const Duration(milliseconds: 300));

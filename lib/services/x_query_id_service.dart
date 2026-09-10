@@ -23,6 +23,7 @@ class XQueryIdService {
   static const _prefsKey = 'x_query_ids';
   static const _perAccountPrefsKey = 'x_query_ids_per_account';
   static const _lastRefreshKey = 'x_query_ids_last_refresh';
+  static const _seedVersionKey = 'x_query_ids_seed_version';
   static const _minRefreshInterval = Duration(hours: 24);
 
   /// 管理対象のオペレーション名一覧（JSバンドルからこれらのqueryIdを取得する）
@@ -43,6 +44,16 @@ class XQueryIdService {
     'Bookmarks',
     'Following',
     'Followers',
+  };
+
+  /// mutation 系のオペレーション（GET 系と違い、失敗しても画面表示には
+  /// 影響しないぶん、古い queryId が残っていることに気付きにくい）
+  static const _mutationOperations = <String>{
+    'FavoriteTweet',
+    'UnfavoriteTweet',
+    'CreateRetweet',
+    'DeleteRetweet',
+    'CreateTweet',
   };
 
   /// グローバルキャッシュ (旧形式・マイグレーション用)
@@ -91,21 +102,46 @@ class XQueryIdService {
     // 既存ユーザー（キャッシュ済み）でも、新機能で追加された未知のオペレーション
     // (Likes / Bookmarks 等) の seed を埋めるため、起動毎にチェックする。
     // 既にキャッシュ済みのキー（リフレッシュ済みの最新値）は上書きしない。
+    //
+    // ただし seed_version が上がったリリースでは、キャッシュ済みのキーも
+    // デフォルト値で上書きする。mutation 系（CreateRetweet 等）は 404 でも
+    // 自動リフレッシュが走らない時期があり、古い queryId がキャッシュに
+    // 居座ったまま 404 を返し続けるため、リリース時の値で仕切り直す。
+    // アカウント別キャッシュも同じ理由で mutation 系だけ捨てる（GET 系は
+    // 404 で自動更新されるので、アカウント固有の値を残しておく）。
     try {
       final jsonStr = await rootBundle.loadString('assets/x_defaults.json');
       final defaults = json.decode(jsonStr) as Map<String, dynamic>;
       final queryIds = defaults['query_ids'] as Map<String, dynamic>?;
+      final seedVersion = defaults['seed_version'] as int? ?? 0;
+      final storedSeed = prefs.getInt(_seedVersionKey) ?? 0;
       if (queryIds != null) {
-        var filled = 0;
+        final reseed = seedVersion > storedSeed;
+        var changed = 0;
         for (final entry in queryIds.entries) {
-          if (!_cached.containsKey(entry.key)) {
-            _cached[entry.key] = entry.value as String;
-            filled++;
+          final value = entry.value as String;
+          if (reseed) {
+            if (_mutationOperations.contains(entry.key)) {
+              // アカウント別キャッシュの古い値が優先されないよう取り除く
+              for (final acct in _perAccount.values) {
+                acct.remove(entry.key);
+              }
+            }
+            if (_cached[entry.key] != value) changed++;
+            _cached[entry.key] = value;
+          } else if (!_cached.containsKey(entry.key)) {
+            _cached[entry.key] = value;
+            changed++;
           }
         }
-        if (filled > 0) {
+        if (reseed) {
+          await prefs.setInt(_seedVersionKey, seedVersion);
+        }
+        if (changed > 0 || reseed) {
           await _saveToPrefs();
-          debugPrint('[XQueryId] Filled $filled missing queryIds from defaults');
+          debugPrint(reseed
+              ? '[XQueryId] Reseeded queryIds to v$seedVersion ($changed changed)'
+              : '[XQueryId] Filled $changed missing queryIds from defaults');
         }
       }
     } catch (e) {
@@ -177,13 +213,21 @@ class XQueryIdService {
 
       if (bundleUrls.isEmpty) return 0;
 
-      // 3. 各バンドルから queryId を抽出（メモリ節約のため最大5つ）
-      final limitedUrls = bundleUrls.take(5).toList();
+      // 3. 各バンドルから queryId を抽出（メモリ節約のため上限あり）
+      // i18n バンドルは翻訳文字列だけで queryId を持たないので枠を使わせない。
+      // mutation を含む main を先に見る（ログイン後の HTML はスクリプトが
+      // 多く、素朴に先頭から 5 つ取ると main に届かないことがある）。
+      final candidates = bundleUrls.where((u) => !u.contains('/i18n/')).toList()
+        ..sort((a, b) => _bundlePriority(a).compareTo(_bundlePriority(b)));
+      final limitedUrls = candidates.take(12).toList();
       final found = <String, String>{};
       final targetOps = _targetOperations;
+      // onlyUpdate 指定時は目的の operation が採れた時点で打ち切る。
+      // （404 リトライはこの経路なので、無駄なバンドルを落とさない）
+      final wanted = onlyUpdate ?? targetOps;
 
       for (final url in limitedUrls) {
-        if (found.length >= targetOps.length) break;
+        if (wanted.every(found.containsKey)) break;
 
         try {
           final jsResponse = await client.get(
@@ -263,6 +307,14 @@ class XQueryIdService {
       debugPrint('[XQueryId] Refresh error: $e');
       return 0;
     }
+  }
+
+  /// queryId が入っている可能性が高い順に並べるための優先度
+  static int _bundlePriority(String url) {
+    if (url.contains('/main.')) return 0;
+    if (url.contains('/api.')) return 1;
+    if (url.contains('/bundle.')) return 2;
+    return 3;
   }
 
   /// キャッシュを SharedPreferences に保存

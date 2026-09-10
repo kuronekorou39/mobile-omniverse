@@ -29,7 +29,29 @@ class XFeatures {
     'rweb_video_timestamps_enabled': true,
     'longform_notetweets_rich_text_read_enabled': true,
     'longform_notetweets_inline_media_enabled': true,
-    'responsive_web_enhance_cards_enabled': false,
+    'responsive_web_enhance_cards_enabled': false,
+    // 2026-09-09 に main.js の featureSwitches と突き合わせて追加
+    'premium_content_api_read_enabled': false,
+    'profile_label_improvements_pcf_label_in_post_enabled': true,
+    'responsive_web_profile_redirect_enabled': false,
+    'rweb_video_screen_enabled': false,
+    'rweb_cashtags_enabled': true,
+    'rweb_cashtags_composer_attachment_enabled': true,
+    'rweb_conversational_replies_downvote_enabled': false,
+    'rweb_sports_post_context_enabled': false,
+    'content_disclosure_indicator_enabled': true,
+    'content_disclosure_ai_generated_indicator_enabled': true,
+    'post_ctas_fetch_enabled': true,
+    'responsive_web_jetfuel_frame': true,
+    'responsive_web_grok_analyze_button_fetch_trends_enabled': false,
+    'responsive_web_grok_analyze_post_followups_enabled': true,
+    'responsive_web_grok_share_attachment_enabled': true,
+    'responsive_web_grok_annotations_enabled': true,
+    'responsive_web_grok_analysis_button_from_backend': true,
+    'responsive_web_grok_image_annotation_enabled': true,
+    'responsive_web_grok_imagine_annotation_enabled': true,
+    'responsive_web_grok_show_grok_translated_post': false,
+    'responsive_web_grok_community_note_auto_translation_is_enabled': false,
   };
 
   /// ユーザープロフィール系 (UserByScreenName)
@@ -45,7 +67,10 @@ class XFeatures {
     'subscriptions_feature_can_gift_premium': true,
     'creator_subscriptions_tweet_preview_api_enabled': true,
     'responsive_web_graphql_skip_user_profile_image_extensions_enabled': false,
-    'responsive_web_graphql_timeline_navigation_enabled': true,
+    'responsive_web_graphql_timeline_navigation_enabled': true,
+    // 2026-09-09 に main.js の featureSwitches と突き合わせて追加
+    'profile_label_improvements_pcf_label_in_post_enabled': true,
+    'responsive_web_profile_redirect_enabled': false,
   };
 
   /// CreateTweet 用 (2026-03-11 ブラウザキャプチャと完全一致)
@@ -85,7 +110,12 @@ class XFeatures {
     'responsive_web_grok_image_annotation_enabled': true,
     'responsive_web_grok_imagine_annotation_enabled': true,
     'responsive_web_graphql_timeline_navigation_enabled': true,
-    'responsive_web_enhance_cards_enabled': false,
+    'responsive_web_enhance_cards_enabled': false,
+    // 2026-09-09 に main.js の featureSwitches と突き合わせて追加
+    'rweb_cashtags_enabled': true,
+    'rweb_cashtags_composer_attachment_enabled': true,
+    'rweb_conversational_replies_downvote_enabled': false,
+    'rweb_sports_post_context_enabled': false,
   };
 
   /// フォロー/フォロワー一覧用 (Following, Followers)
@@ -132,7 +162,9 @@ class XFeatures {
     'responsive_web_grok_image_annotation_enabled': true,
     'responsive_web_grok_imagine_annotation_enabled': true,
     'responsive_web_grok_community_note_auto_translation_is_enabled': false,
-    'responsive_web_enhance_cards_enabled': false,
+    'responsive_web_enhance_cards_enabled': false,
+    // 2026-09-09 に main.js の featureSwitches と突き合わせて追加
+    'rweb_sports_post_context_enabled': false,
   };
 
   /// フォロー/フォロワー一覧用 fieldToggles (main.js の metadata.fieldToggles)

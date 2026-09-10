@@ -1,21 +1,22 @@
 {
+  "seed_version": 2,
   "bearer_token": "AAAAAAAAAAAAAAAAAAAAANRILgAAAAAAnNwIzUejRCOuH5E6I8xnZz4puTs%3D1Zv7ttfk8LF81IUq16cHjhLTvJu4FA33AGWWjCpTnA",
   "query_ids": {
     "HomeLatestTimeline": "BKB7oi212Fi7kQtCBGE4zA",
-    "TweetDetail": "nBS-WpgA6ZG0CyNHD517JQ",
+    "TweetDetail": "FyR-GrebyjdkRoW1z6uCgQ",
     "FavoriteTweet": "lI07N6Otwv1PhnEgXILM7A",
     "UnfavoriteTweet": "ZYKSe-w7KEslx3JhSIk5LA",
-    "CreateRetweet": "ojPdsZsimiJrUGLR1sjUtA",
-    "DeleteRetweet": "iQtK4dl5hBmXewYZuEOKVw",
-    "UserByRestId": "tD8zKvQzwY3kdx5yz6YmOw",
-    "UserByScreenName": "xmU_MTpREJBz1I14LU744A",
-    "UserTweets": "E3opETHurmVJflFsUBVuUQ",
-    "UserMedia": "dexO_2tohK86JDlXOGVk-w",
-    "CreateTweet": "RXKQMYyEqEjGgWpcSP6LBw",
+    "CreateRetweet": "mbRO74GrOvSfRcJnlMapnQ",
+    "DeleteRetweet": "ZyZigVsNiFO6v1dEks1eWg",
+    "UserByRestId": "IdmRdjYxIGI39Hdwkwo5cQ",
+    "UserByScreenName": "KybxDj9RrADIITXlGG8kpw",
+    "UserTweets": "OeFjWKHutsuyWXZGmLr02A",
+    "UserMedia": "atLYUUmER14HCLFnNUKJgA",
+    "CreateTweet": "CUWCG7oBfrG71ZUXUtpwbw",
     "NotificationsTimeline": "8bj3MP0KXWKlpfC1yvGfbQ",
-    "Likes": "XHTMjDbiTGLQ9cP1em-aqQ",
+    "Likes": "o000A_Cp4JPOihhbeEgi0g",
     "Bookmarks": "tUVliYsHyxrQIT4HXUWNdA",
-    "Following": "b8XpwALENnJdFSHchkK6rw",
-    "Followers": "vJijlO_CM7dyGFNjDd7iqQ"
+    "Following": "4EQGMEhtdVw8NeVBDQHESQ",
+    "Followers": "sF7aRC2fRq7OGOOp_qHntA"
   }
 }

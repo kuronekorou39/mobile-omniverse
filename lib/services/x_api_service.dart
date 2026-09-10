@@ -14,6 +14,7 @@ import 'x_bearer_token_service.dart';
 import 'x_endpoints.dart';
 import 'x_features.dart';
 import 'x_query_id_service.dart';
+import 'x_rate_limit_guard.dart';
 
 /// HTML参照文字をデコード（&amp; &lt; &gt; &quot; &#39; &#数値;）
 String _decodeHtmlEntities(String text) {
@@ -59,18 +60,48 @@ class XApiService {
   }
 
   /// 429 レートリミット対応: retry-after を尊重した exponential backoff
+  /// 429 を受けたら少し待って数回だけ再試行する。
+  ///
+  /// [operation] と [creds] を渡すと、リトライしても駄目だったときに
+  /// XRateLimitGuard へクールダウンを登録し、その間の呼び出しは
+  /// リクエストを送らず [XRateLimitException] で弾く。X のレート制限は
+  /// 15 分窓なので、掛かった直後に叩き続けても窓が明けるのを遠ざけるだけ。
   Future<http.Response> _withRateLimitRetry(
     Future<http.Response> Function() request, {
     int maxRetries = 2,
+    String? operation,
+    XCredentials? creds,
   }) async {
+    final key = (operation != null && creds != null)
+        ? XRateLimitGuard.keyFor(creds, operation)
+        : null;
+    if (key != null) {
+      final left = XRateLimitGuard.instance.remaining(key);
+      if (left != null) {
+        throw XRateLimitException(operation!, left);
+      }
+    }
+
     for (int attempt = 0; attempt <= maxRetries; attempt++) {
       final response = await request();
-      if (response.statusCode != 429 || attempt == maxRetries) {
+      final retryAfterHeader = response.headers['retry-after'];
+      if (response.statusCode != 429) {
+        if (key != null) XRateLimitGuard.instance.recordSuccess(key);
         return response;
       }
-      final retryAfter = response.headers['retry-after'];
-      final seconds = retryAfter != null
-          ? (int.tryParse(retryAfter) ?? (2 << attempt))
+      if (attempt == maxRetries) {
+        if (key != null) {
+          final parsed = int.tryParse(retryAfterHeader ?? '');
+          final wait = XRateLimitGuard.instance.recordRateLimited(
+            key,
+            retryAfter: parsed != null ? Duration(seconds: parsed) : null,
+          );
+          throw XRateLimitException(operation!, wait);
+        }
+        return response;
+      }
+      final seconds = retryAfterHeader != null
+          ? (int.tryParse(retryAfterHeader) ?? (2 << attempt))
           : (2 << attempt);
       final wait = Duration(seconds: seconds.clamp(1, 60));
       debugPrint('[XApi] 429 Rate limited, retry in ${wait.inSeconds}s (${attempt + 1}/$maxRetries)');
@@ -228,10 +259,46 @@ class XApiService {
     }
   }
 
-  /// Mutation 系は queryId を動的に取得するだけ (404 リトライしない)
-  /// mutation の 404 はアカウント制限や削除済みツイート等が多いため
+  /// Mutation 系の queryId を取得する
   String _getMutationQueryId(String operationName, XCredentials creds) =>
       XQueryIdService.instance.getQueryId(operationName, creds: creds);
+
+  /// mutation の queryId リフレッシュ間隔 (404 連発で x.com を叩き続けない)
+  static const _mutationRefreshCooldown = Duration(minutes: 5);
+  final Map<String, DateTime> _lastMutationRefresh = {};
+
+  /// Mutation 系の 404 リトライ (対象 operation の queryId のみ更新)
+  ///
+  /// アカウント制限や削除済みツイートは HTTP 200 + errors で返ってくるので、
+  /// 「HTTP 404 が返った」= GraphQL のパスが存在しない = queryId が古い、
+  /// と切り分けられる。更新するのは対象 operation の queryId だけなので、
+  /// 仮に誤検知しても HomeLatestTimeline 等を巻き込むことはない。
+  Future<XApiResult> _withMutationQueryIdRetry(
+    XCredentials creds,
+    String operationName,
+    Future<XApiResult> Function(String queryId) action,
+  ) async {
+    final queryId = _getMutationQueryId(operationName, creds);
+    final result = await action(queryId);
+    if (result.statusCode != 404) return result;
+
+    final last = _lastMutationRefresh[operationName];
+    if (last != null &&
+        DateTime.now().difference(last) < _mutationRefreshCooldown) {
+      return result;
+    }
+    _lastMutationRefresh[operationName] = DateTime.now();
+
+    await XQueryIdService.instance
+        .forceRefresh(creds, onlyUpdate: {operationName});
+    final newQueryId = _getMutationQueryId(operationName, creds);
+    if (newQueryId.isEmpty || newQueryId == queryId) return result;
+
+    debugPrint('[XApi] 404→targeted refresh for $operationName');
+    DebugLogService.instance
+        .log('XApi', '$operationName 404 → queryId 更新して再試行');
+    return action(newQueryId);
+  }
 
   /// タイムラインを取得
   Future<({List<Post> posts, String? cursor})> getTimeline(
@@ -261,6 +328,8 @@ class XApiService {
       final sw = Stopwatch()..start();
       final response = await _withRateLimitRetry(
         () => _client.get(uri, headers: hdrs),
+        operation: 'HomeLatestTimeline',
+        creds: creds,
       );
       sw.stop();
       _updateCt0FromResponse(creds, response);
@@ -326,6 +395,8 @@ class XApiService {
       final sw = Stopwatch()..start();
       final response = await _withRateLimitRetry(
         () => _client.get(uri, headers: hdrs),
+        operation: 'TweetDetail',
+        creds: creds,
       );
       sw.stop();
       _updateCt0FromResponse(creds, response);
@@ -387,23 +458,26 @@ class XApiService {
 
   Future<XApiResult> likeTweetWithDetail(
       XCredentials creds, String tweetId) async {
-    final queryId = _getMutationQueryId('FavoriteTweet', creds);
-    final warmedCookies = await _warmCookies(creds);
-    final uri =
-        Uri.parse('${XEndpoints.graphqlBase}/$queryId/FavoriteTweet');
-    final hdrs = _buildHeaders(creds, cookieOverride: warmedCookies);
-    final reqBody = json.encode({
-      'variables': {'tweet_id': tweetId},
-      'queryId': queryId,
+    return _withMutationQueryIdRetry(creds, 'FavoriteTweet', (queryId) async {
+      final warmedCookies = await _warmCookies(creds);
+      final uri =
+          Uri.parse('${XEndpoints.graphqlBase}/$queryId/FavoriteTweet');
+      final hdrs = _buildHeaders(creds, cookieOverride: warmedCookies);
+      final reqBody = json.encode({
+        'variables': {'tweet_id': tweetId},
+        'queryId': queryId,
+      });
+      final sw = Stopwatch()..start();
+      final response = await _withRateLimitRetry(
+        () => _client.post(uri, headers: hdrs, body: reqBody),
+        maxRetries: 1,
+        operation: 'FavoriteTweet',
+        creds: creds,
+      );
+      sw.stop();
+      _logResponse('FavoriteTweet', 'POST', uri, hdrs, reqBody, response, sw);
+      return _parseMutationResult(response);
     });
-    final sw = Stopwatch()..start();
-    final response = await _withRateLimitRetry(
-      () => _client.post(uri, headers: hdrs, body: reqBody),
-      maxRetries: 1,
-    );
-    sw.stop();
-    _logResponse('FavoriteTweet', 'POST', uri, hdrs, reqBody, response, sw);
-    return _parseMutationResult(response);
   }
 
   /// いいね解除
@@ -412,65 +486,74 @@ class XApiService {
 
   Future<XApiResult> unlikeTweetWithDetail(
       XCredentials creds, String tweetId) async {
-    final queryId = _getMutationQueryId('UnfavoriteTweet', creds);
-    final warmedCookies = await _warmCookies(creds);
-    final uri =
-        Uri.parse('${XEndpoints.graphqlBase}/$queryId/UnfavoriteTweet');
-    final hdrs = _buildHeaders(creds, cookieOverride: warmedCookies);
-    final reqBody = json.encode({
-      'variables': {'tweet_id': tweetId},
-      'queryId': queryId,
+    return _withMutationQueryIdRetry(creds, 'UnfavoriteTweet', (queryId) async {
+      final warmedCookies = await _warmCookies(creds);
+      final uri =
+          Uri.parse('${XEndpoints.graphqlBase}/$queryId/UnfavoriteTweet');
+      final hdrs = _buildHeaders(creds, cookieOverride: warmedCookies);
+      final reqBody = json.encode({
+        'variables': {'tweet_id': tweetId},
+        'queryId': queryId,
+      });
+      final sw = Stopwatch()..start();
+      final response = await _withRateLimitRetry(
+        () => _client.post(uri, headers: hdrs, body: reqBody),
+        maxRetries: 1,
+        operation: 'UnfavoriteTweet',
+        creds: creds,
+      );
+      sw.stop();
+      _logResponse('UnfavoriteTweet', 'POST', uri, hdrs, reqBody, response, sw);
+      return _parseMutationResult(response);
     });
-    final sw = Stopwatch()..start();
-    final response = await _withRateLimitRetry(
-      () => _client.post(uri, headers: hdrs, body: reqBody),
-      maxRetries: 1,
-    );
-    sw.stop();
-    _logResponse('UnfavoriteTweet', 'POST', uri, hdrs, reqBody, response, sw);
-    return _parseMutationResult(response);
   }
 
   Future<XApiResult> retweetWithDetail(
       XCredentials creds, String tweetId) async {
-    final queryId = _getMutationQueryId('CreateRetweet', creds);
-    final warmedCookies = await _warmCookies(creds);
-    final uri =
-        Uri.parse('${XEndpoints.graphqlBase}/$queryId/CreateRetweet');
-    final hdrs = _buildHeaders(creds, cookieOverride: warmedCookies);
-    final reqBody = json.encode({
-      'variables': {'tweet_id': tweetId},
-      'queryId': queryId,
+    return _withMutationQueryIdRetry(creds, 'CreateRetweet', (queryId) async {
+      final warmedCookies = await _warmCookies(creds);
+      final uri =
+          Uri.parse('${XEndpoints.graphqlBase}/$queryId/CreateRetweet');
+      final hdrs = _buildHeaders(creds, cookieOverride: warmedCookies);
+      final reqBody = json.encode({
+        'variables': {'tweet_id': tweetId, 'dark_request': false},
+        'queryId': queryId,
+      });
+      final sw = Stopwatch()..start();
+      final response = await _withRateLimitRetry(
+        () => _client.post(uri, headers: hdrs, body: reqBody),
+        maxRetries: 1,
+        operation: 'CreateRetweet',
+        creds: creds,
+      );
+      sw.stop();
+      _logResponse('CreateRetweet', 'POST', uri, hdrs, reqBody, response, sw);
+      return _parseMutationResult(response);
     });
-    final sw = Stopwatch()..start();
-    final response = await _withRateLimitRetry(
-      () => _client.post(uri, headers: hdrs, body: reqBody),
-      maxRetries: 1,
-    );
-    sw.stop();
-    _logResponse('CreateRetweet', 'POST', uri, hdrs, reqBody, response, sw);
-    return _parseMutationResult(response);
   }
 
   Future<XApiResult> unretweetWithDetail(
       XCredentials creds, String tweetId) async {
-    final queryId = _getMutationQueryId('DeleteRetweet', creds);
-    final warmedCookies = await _warmCookies(creds);
-    final uri =
-        Uri.parse('${XEndpoints.graphqlBase}/$queryId/DeleteRetweet');
-    final hdrs = _buildHeaders(creds, cookieOverride: warmedCookies);
-    final reqBody = json.encode({
-      'variables': {'source_tweet_id': tweetId},
-      'queryId': queryId,
+    return _withMutationQueryIdRetry(creds, 'DeleteRetweet', (queryId) async {
+      final warmedCookies = await _warmCookies(creds);
+      final uri =
+          Uri.parse('${XEndpoints.graphqlBase}/$queryId/DeleteRetweet');
+      final hdrs = _buildHeaders(creds, cookieOverride: warmedCookies);
+      final reqBody = json.encode({
+        'variables': {'source_tweet_id': tweetId, 'dark_request': false},
+        'queryId': queryId,
+      });
+      final sw = Stopwatch()..start();
+      final response = await _withRateLimitRetry(
+        () => _client.post(uri, headers: hdrs, body: reqBody),
+        maxRetries: 1,
+        operation: 'DeleteRetweet',
+        creds: creds,
+      );
+      sw.stop();
+      _logResponse('DeleteRetweet', 'POST', uri, hdrs, reqBody, response, sw);
+      return _parseMutationResult(response);
     });
-    final sw = Stopwatch()..start();
-    final response = await _withRateLimitRetry(
-      () => _client.post(uri, headers: hdrs, body: reqBody),
-      maxRetries: 1,
-    );
-    sw.stop();
-    _logResponse('DeleteRetweet', 'POST', uri, hdrs, reqBody, response, sw);
-    return _parseMutationResult(response);
   }
 
   /// ユーザープロフィール取得 (UserByScreenName)
@@ -516,6 +599,8 @@ class XApiService {
       final sw = Stopwatch()..start();
       final response = await _withRateLimitRetry(
         () => _client.get(uri, headers: hdrs),
+        operation: 'UserByScreenName',
+        creds: creds,
       );
       sw.stop();
       _updateCt0FromResponse(creds, response);
@@ -661,6 +746,8 @@ class XApiService {
       final sw = Stopwatch()..start();
       final response = await _withRateLimitRetry(
         () => _client.get(uri, headers: hdrs),
+        operation: 'UserTweets',
+        creds: creds,
       );
       sw.stop();
       _updateCt0FromResponse(creds, response);
@@ -717,6 +804,8 @@ class XApiService {
       final sw = Stopwatch()..start();
       final response = await _withRateLimitRetry(
         () => _client.get(uri, headers: hdrs),
+        operation: 'Likes',
+        creds: creds,
       );
       sw.stop();
       _updateCt0FromResponse(creds, response);
@@ -766,6 +855,8 @@ class XApiService {
       final sw = Stopwatch()..start();
       final response = await _withRateLimitRetry(
         () => _client.get(uri, headers: hdrs),
+        operation: 'Bookmarks',
+        creds: creds,
       );
       sw.stop();
       _updateCt0FromResponse(creds, response);
@@ -919,6 +1010,8 @@ class XApiService {
     final response = await _withRateLimitRetry(
       () => _client.post(uri, headers: hdrs, body: 'user_id=$userId'),
       maxRetries: 1,
+      operation: 'followUser',
+      creds: creds,
     );
     sw.stop();
     _logResponse('followUser', 'POST', uri, hdrs, '$reqBody$userId', response, sw);
@@ -934,6 +1027,8 @@ class XApiService {
     final response = await _withRateLimitRetry(
       () => _client.post(uri, headers: hdrs, body: 'user_id=$userId'),
       maxRetries: 1,
+      operation: 'unfollowUser',
+      creds: creds,
     );
     sw.stop();
     _logResponse('unfollowUser', 'POST', uri, hdrs, 'user_id=$userId', response, sw);
@@ -975,6 +1070,8 @@ class XApiService {
     final sw = Stopwatch()..start();
     final response = await _withRateLimitRetry(
       () => _client.get(uri, headers: hdrs),
+      operation: 'Mentions',
+      creds: creds,
     );
     sw.stop();
     _updateCt0FromResponse(creds, response);
@@ -1268,6 +1365,8 @@ class XApiService {
     final sw = Stopwatch()..start();
     final response = await _withRateLimitRetry(
       () => _client.get(uri, headers: hdrs),
+      operation: 'Notifications',
+      creds: creds,
     );
     sw.stop();
     _updateCt0FromResponse(creds, response);
@@ -1893,6 +1992,22 @@ class XApiException implements Exception {
   final int? statusCode;
   @override
   String toString() => 'XApiException: $message';
+}
+
+/// レート制限で待機中。[retryAfter] が明けるまでリクエストを送らない。
+///
+/// XApiException を継承しているので、429 を特別扱いしない既存の
+/// catch はこれまで通り動く。
+class XRateLimitException extends XApiException {
+  XRateLimitException(this.operation, this.retryAfter)
+      : super('レート制限中 ($operation) — あと${_label(retryAfter)}',
+            statusCode: 429);
+
+  final String operation;
+  final Duration retryAfter;
+
+  static String _label(Duration d) =>
+      d.inMinutes >= 1 ? '${d.inMinutes}分' : '${d.inSeconds}秒';
 }
 
 class XAuthException implements Exception {

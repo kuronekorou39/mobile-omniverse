@@ -1,10 +1,13 @@
 import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:http/http.dart' as http;
+import 'package:mocktail/mocktail.dart';
 import 'package:mobile_omniverse/models/account.dart';
 import 'package:mobile_omniverse/models/sns_service.dart';
 import 'package:mobile_omniverse/services/x_api_service.dart';
 import 'package:mobile_omniverse/services/x_query_id_service.dart';
+import 'package:mobile_omniverse/services/x_rate_limit_guard.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../helpers/mock_http_client.dart';
@@ -1214,6 +1217,94 @@ void main() {
     });
   });
 
+  group('mutation queryId 404 retry', () {
+    setUp(() async {
+      await XQueryIdService.instance.clearCache();
+    });
+
+    tearDown(() async {
+      XQueryIdService.instance.httpClientOverride = null;
+      await XQueryIdService.instance.clearCache();
+    });
+
+    test('404 のとき queryId を取り直して 1 回だけ再試行する', () async {
+      final creds = XCredentials(authToken: 'retry_a', ct0: 'c');
+      await XQueryIdService.instance
+          .updateQueryIds(creds, {'CreateRetweet': 'OLD_ID'});
+
+      // queryId リフレッシュ用: HTML → JS バンドルの順で返す
+      const htmlBody =
+          '<script src="https://abs.twimg.com/responsive-web/client-web/main.abc.js"></script>';
+      const jsBody =
+          'x{queryId:"NEW_ID",operationName:"CreateRetweet"}';
+      final queryIdClient = MockHttpClient();
+      var getCount = 0;
+      when(() => queryIdClient.get(any(), headers: any(named: 'headers')))
+          .thenAnswer((_) async {
+        getCount++;
+        return http.Response(getCount == 1 ? htmlBody : jsBody, 200);
+      });
+      XQueryIdService.instance.httpClientOverride = queryIdClient;
+
+      // 1 回目の POST は 404、2 回目は成功させる
+      final client = MockHttpClient();
+      final postedUrls = <String>[];
+      when(() => client.get(any(), headers: any(named: 'headers')))
+          .thenAnswer((_) async => http.Response('{}', 200));
+      when(() => client.post(any(),
+              headers: any(named: 'headers'),
+              body: any(named: 'body'),
+              encoding: any(named: 'encoding')))
+          .thenAnswer((invocation) async {
+        final uri = invocation.positionalArguments[0] as Uri;
+        postedUrls.add(uri.toString());
+        return http.Response(
+            '{}', postedUrls.length == 1 ? 404 : 200);
+      });
+      service.httpClientOverride = client;
+
+      final result = await service.retweetWithDetail(creds, 'tweet_1');
+
+      expect(result.success, isTrue);
+      expect(postedUrls.length, 2);
+      expect(postedUrls[0], contains('OLD_ID'));
+      expect(postedUrls[1], contains('NEW_ID'));
+    });
+
+    test('queryId が変わらなければ再試行しない', () async {
+      // クールダウンが前のテストと干渉しないよう別の operation を使う
+      final creds = XCredentials(authToken: 'retry_b', ct0: 'c');
+      await XQueryIdService.instance
+          .updateQueryIds(creds, {'DeleteRetweet': 'OLD_ID'});
+
+      // リフレッシュは失敗させる（queryId は変わらない）
+      final queryIdClient = MockHttpClient();
+      when(() => queryIdClient.get(any(), headers: any(named: 'headers')))
+          .thenAnswer((_) async => http.Response('', 500));
+      XQueryIdService.instance.httpClientOverride = queryIdClient;
+
+      final client = MockHttpClient();
+      var postCount = 0;
+      when(() => client.get(any(), headers: any(named: 'headers')))
+          .thenAnswer((_) async => http.Response('{}', 200));
+      when(() => client.post(any(),
+              headers: any(named: 'headers'),
+              body: any(named: 'body'),
+              encoding: any(named: 'encoding')))
+          .thenAnswer((_) async {
+        postCount++;
+        return http.Response('{}', 404);
+      });
+      service.httpClientOverride = client;
+
+      final result = await service.unretweetWithDetail(creds, 'tweet_1');
+
+      expect(result.success, isFalse);
+      expect(result.statusCode, 404);
+      expect(postCount, 1);
+    });
+  });
+
   group('unretweetWithDetail (HTTP)', () {
     test('returns XApiResult with correct data', () async {
       final creds = XCredentials(authToken: 'a', ct0: 'c');
@@ -1223,6 +1314,59 @@ void main() {
       final result = await service.unretweetWithDetail(creds, 'tweet_1');
       expect(result.success, isTrue);
       expect(result.statusCode, 200);
+    });
+  });
+
+  group('レート制限のクールダウン', () {
+    setUp(XRateLimitGuard.instance.clear);
+    tearDown(XRateLimitGuard.instance.clear);
+
+    test('429 が続いたら次の呼び出しはリクエストを送らずに弾く', () async {
+      final creds = XCredentials(authToken: 'rate_limited_a', ct0: 'c');
+
+      final client = MockHttpClient();
+      var getCount = 0;
+      when(() => client.get(any(), headers: any(named: 'headers')))
+          .thenAnswer((_) async {
+        getCount++;
+        return http.Response('{}', 429);
+      });
+      service.httpClientOverride = client;
+
+      // 1 回目: 429 → リトライ 2 回まで（待ちが入るので retry-after を短くする）
+      await expectLater(
+        service.getNotifications(creds),
+        throwsA(isA<XRateLimitException>()),
+      );
+      final afterFirst = getCount;
+      expect(afterFirst, greaterThan(0));
+
+      // 2 回目: クールダウン中なので HTTP は 1 回も飛ばない
+      await expectLater(
+        service.getNotifications(creds),
+        throwsA(isA<XRateLimitException>()),
+      );
+      expect(getCount, afterFirst);
+    }, timeout: const Timeout(Duration(seconds: 30)));
+
+    test('別アカウントは巻き込まれない', () async {
+      final limited = XCredentials(authToken: 'rate_limited_b', ct0: 'c');
+      final other = XCredentials(authToken: 'healthy_b', ct0: 'c');
+
+      XRateLimitGuard.instance
+          .recordRateLimited(XRateLimitGuard.keyFor(limited, 'Notifications'));
+
+      final client = MockHttpClient();
+      when(() => client.get(any(), headers: any(named: 'headers')))
+          .thenAnswer((_) async => http.Response('{}', 200));
+      service.httpClientOverride = client;
+
+      await expectLater(
+        service.getNotifications(limited),
+        throwsA(isA<XRateLimitException>()),
+      );
+      // 待たされていないアカウントは通る
+      await service.getNotifications(other);
     });
   });
 

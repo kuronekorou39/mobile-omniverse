@@ -33,6 +33,8 @@ flutter build apk --release
 
 ## queryId 自動更新の注意点
 
-- mutation（いいね/RT等）の 404 で queryId リフレッシュを発動しない（アカウント制限等の誤検知防止）
-- GET 系（タイムライン/ツイート詳細）の 404 のみリトライ対象
+- 404 は「その operation の queryId だけ」更新して 1 回リトライする。全体リフレッシュはしない（タイムライン系の queryId を巻き込むため）
+- mutation（いいね/RT等）も 404 リトライの対象。アカウント制限や削除済みツイートは 200 + errors で返るので、HTTP 404 は queryId 切れとみなせる
+- 同じ operation のリフレッシュは 5 分に 1 回まで（404 連発で x.com を叩き続けない）
 - リフレッシュ後にユーザー情報が欠けた投稿で既存データを上書きしない
+- queryId の初期値は `assets/x_defaults.json`。値を入れ替えたら `seed_version` も上げる（上げないと既存ユーザーのキャッシュに古い値が残り続ける）

@@ -5,6 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'package:mobile_omniverse/models/sns_service.dart';
 import 'package:mobile_omniverse/widgets/post_card.dart';
+import 'package:mobile_omniverse/utils/sensitive_reveal_store.dart';
 import 'package:mobile_omniverse/widgets/sns_badge.dart';
 
 import '../helpers/test_data.dart';
@@ -543,5 +544,71 @@ void main() {
         findsNothing,
       );
     });
+  });
+
+  group('センシティブ画像の解除', () {
+    tearDown(SensitiveRevealStore.clear);
+
+    testWidgets('「表示」を押した投稿は、作り直しても隠れ直さない', (tester) async {
+      final post = makePost(
+        id: 'x_sensitive_1',
+        imageUrls: const ['https://example.com/a.jpg'],
+        isSensitive: true,
+      );
+
+      await tester.pumpWidget(buildPostCard(post: post));
+      expect(find.text('センシティブな内容を含む可能性があります'), findsOneWidget);
+
+      await tester.tap(find.text('表示'));
+      await tester.pump();
+      expect(find.text('センシティブな内容を含む可能性があります'), findsNothing);
+
+      // スクロールで State が捨てられた状況を、別ウィジェットを挟んで再現する
+      await tester.pumpWidget(const MaterialApp(home: Scaffold(body: SizedBox())));
+      await tester.pumpWidget(buildPostCard(post: post));
+
+      expect(find.text('センシティブな内容を含む可能性があります'), findsNothing);
+    });
+
+    testWidgets('隠し直した投稿は、作り直すとまた隠れている', (tester) async {
+      final post = makePost(
+        id: 'x_sensitive_2',
+        imageUrls: const ['https://example.com/b.jpg'],
+        isSensitive: true,
+      );
+
+      await tester.pumpWidget(buildPostCard(post: post));
+      await tester.tap(find.text('表示'));
+      await tester.pump();
+      // 右上の目隠しアイコンで戻す
+      await tester.tap(find.byIcon(Icons.visibility_off));
+      await tester.pump();
+
+      await tester.pumpWidget(const MaterialApp(home: Scaffold(body: SizedBox())));
+      await tester.pumpWidget(buildPostCard(post: post));
+
+      expect(find.text('センシティブな内容を含む可能性があります'), findsOneWidget);
+    });
+
+    testWidgets('解除は投稿ごとに独立している', (tester) async {
+      final revealed = makePost(
+        id: 'x_sensitive_3',
+        imageUrls: const ['https://example.com/c.jpg'],
+        isSensitive: true,
+      );
+      final other = makePost(
+        id: 'x_sensitive_4',
+        imageUrls: const ['https://example.com/d.jpg'],
+        isSensitive: true,
+      );
+
+      await tester.pumpWidget(buildPostCard(post: revealed));
+      await tester.tap(find.text('表示'));
+      await tester.pump();
+
+      await tester.pumpWidget(buildPostCard(post: other));
+      expect(find.text('センシティブな内容を含む可能性があります'), findsOneWidget);
+    });
   });
+
 }

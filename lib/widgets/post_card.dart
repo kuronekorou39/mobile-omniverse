@@ -9,6 +9,7 @@ import '../screens/user_profile_screen.dart';
 import '../services/account_storage_service.dart';
 import '../providers/settings_provider.dart';
 import '../utils/image_headers.dart';
+import '../utils/sensitive_reveal_store.dart';
 import 'post_media.dart';
 import 'sns_badge.dart';
 
@@ -185,6 +186,7 @@ class PostCard extends StatelessWidget {
                           _SensitiveOverlay(
                             isSensitive: (sensitiveMode == SensitiveMode.hideAll ||
                                 (sensitiveMode == SensitiveMode.hide && post.isSensitive)),
+                            revealKey: post.id,
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
@@ -371,6 +373,7 @@ class PostCard extends StatelessWidget {
             _SensitiveOverlay(
               isSensitive: sensitiveMode == SensitiveMode.hideAll ||
                   (sensitiveMode == SensitiveMode.hide && quoted.isSensitive),
+              revealKey: quoted.id,
               child: ClipRRect(
                 borderRadius: BorderRadius.circular(6),
                 child: ConstrainedBox(
@@ -785,10 +788,14 @@ class _EngagementButtonState extends State<_EngagementButton>
 class _SensitiveOverlay extends StatefulWidget {
   const _SensitiveOverlay({
     required this.isSensitive,
+    required this.revealKey,
     required this.child,
   });
 
   final bool isSensitive;
+
+  /// 解除状態を覚えておくキー（投稿 ID）
+  final String revealKey;
   final Widget child;
 
   @override
@@ -796,7 +803,25 @@ class _SensitiveOverlay extends StatefulWidget {
 }
 
 class _SensitiveOverlayState extends State<_SensitiveOverlay> {
-  bool _revealed = false;
+  late bool _revealed = SensitiveRevealStore.isRevealed(widget.revealKey);
+
+  @override
+  void didUpdateWidget(covariant _SensitiveOverlay oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // リストの要素が使い回されて別の投稿が入ってきたら覚え直す
+    if (oldWidget.revealKey != widget.revealKey) {
+      _revealed = SensitiveRevealStore.isRevealed(widget.revealKey);
+    }
+  }
+
+  void _setRevealed(bool value) {
+    setState(() => _revealed = value);
+    if (value) {
+      SensitiveRevealStore.reveal(widget.revealKey);
+    } else {
+      SensitiveRevealStore.hide(widget.revealKey);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -810,7 +835,7 @@ class _SensitiveOverlayState extends State<_SensitiveOverlay> {
               top: 4,
               right: 4,
               child: GestureDetector(
-                onTap: () => setState(() => _revealed = false),
+                onTap: () => _setRevealed(false),
                 child: Container(
                   padding: const EdgeInsets.all(4),
                   decoration: BoxDecoration(
@@ -860,7 +885,7 @@ class _SensitiveOverlayState extends State<_SensitiveOverlay> {
                     ),
                     const SizedBox(height: 8),
                     TextButton(
-                      onPressed: () => setState(() => _revealed = true),
+                      onPressed: () => _setRevealed(true),
                       style: TextButton.styleFrom(
                         foregroundColor: Colors.white,
                         backgroundColor: Colors.white.withValues(alpha: 0.2),

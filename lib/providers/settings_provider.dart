@@ -5,6 +5,7 @@ import 'package:wakelock_plus/wakelock_plus.dart';
 
 import '../services/debug_log_service.dart';
 import '../services/timeline_fetch_scheduler.dart';
+import '../utils/sensitive_reveal_store.dart';
 
 /// 画像プレビューサイズ
 enum ImagePreviewSize {
@@ -319,6 +320,9 @@ class SettingsNotifier extends StateNotifier<SettingsState> {
 
   void setSensitiveMode(SensitiveMode mode) {
     state = state.copyWith(sensitiveMode: mode);
+    // 個別に「表示」した投稿の解除は、モードを切り替えたら捨てる
+    // （「全て隠す」にしたのに解除済みが残っていると意図に反する）
+    SensitiveRevealStore.clear();
     _saveToPrefs();
   }
 

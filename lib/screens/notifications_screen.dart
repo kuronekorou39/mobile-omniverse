@@ -859,8 +859,11 @@ class _NotificationListState extends ConsumerState<_NotificationList>
           _error = errorStr;
           _isLoading = false;
         });
-        // 429(レート制限)以外なら自動リトライ
-        if (!errorStr.contains('429')) {
+        // レート制限中は待つ。叩き直しても窓が明けるのを遠ざけるだけなので、
+        // クールダウンが明けてからの手動更新に任せる。
+        final isRateLimited =
+            (e is XApiException && e.statusCode == 429) || errorStr.contains('429');
+        if (!isRateLimited) {
           Future.delayed(const Duration(seconds: 30), () {
             if (mounted && _error != null) _fetch();
           });

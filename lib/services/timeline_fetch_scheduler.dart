@@ -146,6 +146,13 @@ class TimelineFetchScheduler {
       onFetchLog?.call(
           account.id, account.handle, account.service, true, posts.length, null);
       return posts;
+    } on XRateLimitException catch (e) {
+      // クールダウン中はリクエスト自体が飛んでいない。次の周期も明けるまで
+      // 同じように弾かれるので、失敗としては数えるが静かに流す。
+      debugPrint('[Scheduler] ${account.handle}: ${e.message}');
+      onFetchLog?.call(
+          account.id, account.handle, account.service, false, 0, e.message);
+      return [];
     } catch (e) {
       debugPrint('[Scheduler] Error fetching for ${account.handle}: $e');
       onFetchLog?.call(account.id, account.handle, account.service, false, 0, '$e');

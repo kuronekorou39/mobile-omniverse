@@ -278,14 +278,21 @@ class XWebViewActionService {
 
     try {
       // 1. 投稿画面をロード（すべて intent URL を使用）
+      // 本文も intent の text= で渡す。引用RT (url=) では X 側が本文欄に
+      // URL を非同期で流し込むため、こちらが先に DOM 入力すると
+      // その流し込みで上書きされ「本文が空の引用RT」になっていた。
+      // text= に載せておけば X 自身が本文と URL をまとめてセットする。
+      final textParam =
+          text.isEmpty ? '' : '&text=${Uri.encodeComponent(text)}';
       String composeUrl;
       if (inReplyToId != null) {
         // リプライ
-        composeUrl = 'https://x.com/intent/post?in_reply_to=$inReplyToId';
+        composeUrl =
+            'https://x.com/intent/post?in_reply_to=$inReplyToId$textParam';
       } else if (attachmentUrl != null) {
         // 引用RT: 元ツイートのURLを添付
         final encodedUrl = Uri.encodeComponent(attachmentUrl);
-        composeUrl = 'https://x.com/intent/post?url=$encodedUrl';
+        composeUrl = 'https://x.com/intent/post?url=$encodedUrl$textParam';
       } else {
         // 通常投稿
         composeUrl = 'https://x.com/compose/post';
@@ -414,26 +421,39 @@ class XWebViewActionService {
         return (success: false, statusCode: 0, body: msg);
       }
 
-      // 3. テキストを入力
-      final textEscaped = json.encode(text);
-      // iOS のソフトキーボードがバックグラウンドで出てくるのを抑制するため、
-      // 入力直後に blur する（iOS 限定。Android はヘッドレス WebView で不要）。
-      // React は input イベントで内部 state を取り込み済みなので、blur しても
-      // 入力テキストは保持される。
-      final iosBlur = Platform.isIOS
-          ? r'''
-          try { editor.blur(); } catch(e) {}
-          try { if (document.activeElement && document.activeElement.blur) document.activeElement.blur(); } catch(e) {}'''
-          : '';
-      await _controller!.evaluateJavascript(source: '''
-        (function() {
-          var editor = document.querySelector('[data-testid="tweetTextarea_0"]')
-                    || document.querySelector('[role="textbox"][contenteditable="true"]');
-          if (!editor) return;
-          editor.focus();
-          document.execCommand('insertText', false, $textEscaped);$iosBlur
-        })()
-      ''');
+      // 3. 本文を用意する
+      // intent の text= で渡した本文が反映されるのを待ち、反映されなければ
+      // 自前で入力する。フォールバック入力では引用RTの URL も一緒に入れて
+      // おかないと、全選択→置換で URL を消してしまう。
+      // リプライは in_reply_to だけで成立するので URL は足さない
+      // （compose URL の分岐と同じく inReplyToId を優先する）
+      final fallbackBody = attachmentUrl != null && inReplyToId == null
+          ? '$text\n\n$attachmentUrl'
+          : text;
+
+      final usedIntentText =
+          textParam.isNotEmpty && (inReplyToId != null || attachmentUrl != null);
+
+      if (text.isNotEmpty) {
+        var filled = false;
+        if (usedIntentText) {
+          filled = await _waitForEditorText(text, timeoutSeconds: 4);
+          if (!filled) {
+            DebugLogService.instance.log('XWebView',
+                'createTweet: intent text 未反映 → DOM 入力にフォールバック');
+          }
+        }
+        if (!filled) {
+          await _setEditorText(fallbackBody);
+          await Future.delayed(const Duration(milliseconds: 500));
+          filled = await _waitForEditorText(text, timeoutSeconds: 3);
+          if (!filled) {
+            // X 側の初期化と競合したケース。もう一度だけ入れ直す。
+            await _setEditorText(fallbackBody);
+            await Future.delayed(const Duration(milliseconds: 800));
+          }
+        }
+      }
 
       await Future.delayed(const Duration(milliseconds: 500));
 
@@ -454,6 +474,21 @@ class XWebViewActionService {
           const msg = 'Image upload did not complete';
           debugPrint('[XWebView] createTweet: $msg');
           DebugLogService.instance.log('XWebView', 'createTweet FAIL: $msg (${sw.elapsedMilliseconds}ms)');
+          return (success: false, statusCode: 0, body: msg);
+        }
+      }
+
+      // 3.9 投稿直前に本文が入っているか確認する
+      // ここで弾かないと「本文なしの引用RT」がそのまま投稿されてしまう。
+      if (text.isNotEmpty) {
+        final editorText = await _readEditorText();
+        if (!_editorContains(editorText, text)) {
+          sw.stop();
+          const msg = 'Body text missing in editor (aborted before posting)';
+          debugPrint('[XWebView] createTweet: $msg');
+          DebugLogService.instance.log('XWebView',
+              'createTweet FAIL: 本文がエディタに入っていないため投稿中止 '
+              '(editor=${editorText.length}文字 / expected=${text.length}文字)');
           return (success: false, statusCode: 0, body: msg);
         }
       }
@@ -809,6 +844,79 @@ class XWebViewActionService {
           'プレビュー $count/$expected ・ 進行中バー $progress ・ ボタン有効 $btn');
     }
     return ok;
+  }
+
+  /// 本文エディタの現在のテキストを読む
+  Future<String> _readEditorText() async {
+    try {
+      final result = await _controller?.evaluateJavascript(source: '''
+        (function() {
+          var editor = document.querySelector('[data-testid="tweetTextarea_0"]')
+                    || document.querySelector('[role="textbox"][contenteditable="true"]');
+          if (!editor) return '';
+          return editor.innerText || editor.textContent || '';
+        })()
+      ''');
+      return result?.toString() ?? '';
+    } catch (e) {
+      debugPrint('[XWebView] readEditorText failed: $e');
+      return '';
+    }
+  }
+
+  /// エディタの内容と入力したかった本文を突き合わせる。
+  /// X は改行やゼロ幅文字を挟むことがあるので、空白類を落として比較する。
+  /// 長文はすべて一致させる必要がないので先頭 40 文字で判定する。
+  static bool _editorContains(String editorText, String expected) {
+    String strip(String s) =>
+        s.replaceAll(RegExp(r'[\s\u200B-\u200D\uFEFF]'), '');
+    final want = strip(expected);
+    if (want.isEmpty) return true;
+    final key = want.length > 40 ? want.substring(0, 40) : want;
+    return strip(editorText).contains(key);
+  }
+
+  /// エディタに本文が入るまで待つ（intent の text= 反映待ち）
+  Future<bool> _waitForEditorText(String expected,
+      {int timeoutSeconds = 4}) async {
+    final deadline = DateTime.now().add(Duration(seconds: timeoutSeconds));
+    while (DateTime.now().isBefore(deadline)) {
+      if (_editorContains(await _readEditorText(), expected)) return true;
+      await Future.delayed(const Duration(milliseconds: 200));
+    }
+    return false;
+  }
+
+  /// エディタの内容を [body] で置き換える。
+  /// intent が入れた URL ごと選択して差し替えるので、引用RTでは呼び出し側が
+  /// URL を含めた本文を渡すこと。
+  Future<void> _setEditorText(String body) async {
+    // iOS のソフトキーボードがバックグラウンドで出てくるのを抑制するため、
+    // 入力直後に blur する（iOS 限定。Android はヘッドレス WebView で不要）。
+    // React は input イベントで内部 state を取り込み済みなので、blur しても
+    // 入力テキストは保持される。
+    final iosBlur = Platform.isIOS
+        ? r'''
+        try { editor.blur(); } catch(e) {}
+        try { if (document.activeElement && document.activeElement.blur) document.activeElement.blur(); } catch(e) {}'''
+        : '';
+    final bodyEscaped = json.encode(body);
+    await _controller?.evaluateJavascript(source: '''
+      (function() {
+        var editor = document.querySelector('[data-testid="tweetTextarea_0"]')
+                  || document.querySelector('[role="textbox"][contenteditable="true"]');
+        if (!editor) return;
+        editor.focus();
+        try {
+          var range = document.createRange();
+          range.selectNodeContents(editor);
+          var sel = window.getSelection();
+          sel.removeAllRanges();
+          sel.addRange(range);
+        } catch (e) {}
+        document.execCommand('insertText', false, $bodyEscaped);$iosBlur
+      })()
+    ''');
   }
 
   /// 指定セレクタの要素が出現するまでポーリング

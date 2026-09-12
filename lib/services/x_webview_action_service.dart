@@ -480,16 +480,23 @@ class XWebViewActionService {
 
       // 3.9 投稿直前に本文が入っているか確認する
       // ここで弾かないと「本文なしの引用RT」がそのまま投稿されてしまう。
+      // 投稿を止めるのは引用RTだけ。URL だけでも投稿ボタンが有効になるのは
+      // 引用RTだけで、通常投稿とリプライは本文が空なら X 側でボタンが
+      // 無効のまま。読み取りの取りこぼしで投稿を止めないよう、警告に留める。
       if (text.isNotEmpty) {
         final editorText = await _readEditorText();
         if (!_editorContains(editorText, text)) {
-          sw.stop();
-          const msg = 'Body text missing in editor (aborted before posting)';
-          debugPrint('[XWebView] createTweet: $msg');
+          final isQuote = attachmentUrl != null && inReplyToId == null;
           DebugLogService.instance.log('XWebView',
-              'createTweet FAIL: 本文がエディタに入っていないため投稿中止 '
-              '(editor=${editorText.length}文字 / expected=${text.length}文字)');
-          return (success: false, statusCode: 0, body: msg);
+              'createTweet: 本文がエディタから読めない '
+              '(editor=${editorText.length}文字 / expected=${text.length}文字)'
+              '${isQuote ? ' → 引用RTなので投稿中止' : ' → 続行'}');
+          if (isQuote) {
+            sw.stop();
+            const msg = 'Body text missing in editor (aborted before posting)';
+            debugPrint('[XWebView] createTweet: $msg');
+            return (success: false, statusCode: 0, body: msg);
+          }
         }
       }
 
@@ -851,8 +858,10 @@ class XWebViewActionService {
     try {
       final result = await _controller?.evaluateJavascript(source: '''
         (function() {
-          var editor = document.querySelector('[data-testid="tweetTextarea_0"]')
-                    || document.querySelector('[role="textbox"][contenteditable="true"]');
+          // プレースホルダの文言を拾わないよう contenteditable 本体を読む
+          var editor = document.querySelector('[data-testid="tweetTextarea_0"] [contenteditable="true"]')
+                    || document.querySelector('[role="textbox"][contenteditable="true"]')
+                    || document.querySelector('[data-testid="tweetTextarea_0"]');
           if (!editor) return '';
           return editor.innerText || editor.textContent || '';
         })()
@@ -887,9 +896,9 @@ class XWebViewActionService {
     return false;
   }
 
-  /// エディタの内容を [body] で置き換える。
-  /// intent が入れた URL ごと選択して差し替えるので、引用RTでは呼び出し側が
-  /// URL を含めた本文を渡すこと。
+  /// エディタに [body] を入れる。既に何か入っていれば（intent が入れた
+  /// URL 等）全選択して差し替えるので、引用RTでは呼び出し側が URL を
+  /// 含めた本文を渡すこと。空のエディタには選択を触らずそのまま入れる。
   Future<void> _setEditorText(String body) async {
     // iOS のソフトキーボードがバックグラウンドで出てくるのを抑制するため、
     // 入力直後に blur する（iOS 限定。Android はヘッドレス WebView で不要）。
@@ -903,17 +912,20 @@ class XWebViewActionService {
     final bodyEscaped = json.encode(body);
     await _controller?.evaluateJavascript(source: '''
       (function() {
-        var editor = document.querySelector('[data-testid="tweetTextarea_0"]')
-                  || document.querySelector('[role="textbox"][contenteditable="true"]');
+        // tweetTextarea_0 は DraftJS のルートで、中にプレースホルダ（編集不可）
+        // と contenteditable 本体が並んでいる。ルートごと選択すると編集不可
+        // ノードを跨いだ選択になって insertText が無視されるので、
+        // 必ず contenteditable 本体を掴む。
+        var editor = document.querySelector('[data-testid="tweetTextarea_0"] [contenteditable="true"]')
+                  || document.querySelector('[role="textbox"][contenteditable="true"]')
+                  || document.querySelector('[data-testid="tweetTextarea_0"]');
         if (!editor) return;
         editor.focus();
-        try {
-          var range = document.createRange();
-          range.selectNodeContents(editor);
-          var sel = window.getSelection();
-          sel.removeAllRanges();
-          sel.addRange(range);
-        } catch (e) {}
+        // 中身があるときだけ全選択して差し替える。Range を自前で組まず
+        // selectAll に任せると DraftJS 側の選択状態とも食い違わない。
+        if ((editor.textContent || '').trim().length > 0) {
+          try { document.execCommand('selectAll', false, null); } catch (e) {}
+        }
         document.execCommand('insertText', false, $bodyEscaped);$iosBlur
       })()
     ''');

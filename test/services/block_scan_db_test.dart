@@ -274,6 +274,27 @@ void main() {
       expect(rows.map((r) => r.user.restId), containsAll(['10', '11', '12']));
     });
 
+    test('ページをまたいでも重複も欠けも出ない', () async {
+      final runId = await startRun([user('1'), user('2')]);
+      // 10〜14 は 2 人から、15〜19 は 1 人から見つかる
+      await db.addBlockFindings(runId: runId, sourceRestId: '1', users: [
+        for (var i = 10; i < 20; i++) user('$i', blockedBy: false),
+      ]);
+      await db.addBlockFindings(runId: runId, sourceRestId: '2', users: [
+        for (var i = 10; i < 15; i++) user('$i', blockedBy: false),
+      ]);
+
+      final paged = <BlockFinding>[
+        for (var offset = 0; offset < 12; offset += 4)
+          ...await db.popularAmongSources(
+              runId: runId, limit: 4, offset: offset),
+      ];
+      expect(paged.map((r) => r.user.restId),
+          [for (var i = 10; i < 20; i++) '$i']);
+      expect(paged.map((r) => r.sourceCount), [2, 2, 2, 2, 2, 1, 1, 1, 1, 1]);
+      expect(paged.first.user.screenName, 'user10', reason: 'users を引けている');
+    });
+
     test('自分がフォローしている相手を外せる', () async {
       // 起点に居る = 自分がフォローしている
       final runId = await startRun([user('1'), user('2')]);
@@ -288,6 +309,33 @@ void main() {
       final unfollowed =
           await db.popularAmongSources(runId: runId, onlyNotFollowed: true);
       expect(unfollowed.map((r) => r.user.restId), ['10']);
+    });
+  });
+
+  group('索引', () {
+    /// 実行計画の detail を 1 本につなげたもの
+    Future<String> plan(String sql, List<Object?> args) async {
+      final raw = await db.debugDatabase();
+      final rows = await raw.rawQuery('EXPLAIN QUERY PLAN $sql', args);
+      return rows.map((r) => r['detail']).join(' / ');
+    }
+
+    test('関係ごとの件数は部分索引で数える', () async {
+      final runId = await startRun([user('1')]);
+      for (final relation in ['blockedBy', 'blocking', 'muting']) {
+        final detail =
+            await plan(FollowDb.blockRelationCountSql(relation), [runId]);
+        // 全行をなめると数百万行の調査で画面が開かなくなる
+        expect(detail, contains('idx_block_findings_$relation'));
+      }
+    });
+
+    test('人気の集計は block_findings の本体を読まない', () async {
+      final runId = await startRun([user('1')]);
+      final detail = await plan(
+          FollowDb.popularAmongSourcesSql(onlyNotFollowed: false),
+          [runId, 100, 0]);
+      expect(detail, contains('COVERING INDEX idx_block_findings_user'));
     });
   });
 

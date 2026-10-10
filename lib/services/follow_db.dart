@@ -37,7 +37,9 @@ class FollowDb {
   ///     (service, handle) にした
   /// v7: ブロック調査。つながっている人のフォロー先をたどり、
   ///     実行アカウントとの関係 (blocked_by / blocking) を集める
-  static const _version = 7;
+  /// v8: 調査結果の一覧と件数が全行をなめていたので、関係が立っている行だけの
+  ///     索引を足す
+  static const _version = 8;
 
   Database? _db;
 
@@ -81,6 +83,7 @@ class FollowDb {
           await _upgradeToV4(db);
           await _upgradeToV6(db);
           await _upgradeToV7(db);
+          await _upgradeToV8(db);
         },
         onUpgrade: (db, from, to) async {
           if (from < 2) await _upgradeToV2(db);
@@ -89,6 +92,7 @@ class FollowDb {
           if (from < 5) await _upgradeToV5(db);
           if (from < 6) await _upgradeToV6(db);
           if (from < 7) await _upgradeToV7(db);
+          if (from < 8) await _upgradeToV8(db);
         },
         onConfigure: (db) async => db.execute('PRAGMA foreign_keys = ON'),
       ),
@@ -322,6 +326,26 @@ class FollowDb {
     await db.execute('CREATE INDEX IF NOT EXISTS idx_block_findings_user '
         'ON block_findings(runId, restId)');
   }
+
+  /// 関係が立っている行だけの索引。
+  ///
+  /// block_findings は延べ数百万行になるが、ブロックやミュートが立っている
+  /// 行はそのごく一部。idx_block_findings_user は関係の列を持たないので、
+  /// 「被ブロックだけ」を引くにも全行の本体を読みに行っていた。
+  /// 部分索引なら該当行しか載らないので、一覧もタブの件数も索引だけで済む。
+  ///
+  /// クエリ側は `列 = 1` をリテラルで書くこと。引数で渡すと
+  /// 部分索引の条件と突き合わせられず、使われない。
+  static Future<void> _upgradeToV8(Database db) async {
+    for (final relation in _blockRelations) {
+      await db.execute(
+          'CREATE INDEX IF NOT EXISTS idx_block_findings_$relation '
+          'ON block_findings(runId, restId) WHERE $relation = 1');
+    }
+  }
+
+  /// block_findings が持つ関係の列
+  static const _blockRelations = ['blockedBy', 'blocking', 'muting'];
 
   Future<void> setTotalExpected(int snapshotId, int? total) async {
     if (total == null) return;
@@ -1256,13 +1280,19 @@ class FollowDb {
       skippedSources: await count(
           "SELECT COUNT(*) FROM block_sources WHERE runId = ? AND status = 'skipped'"),
       scanned: await count('SELECT COUNT(*) FROM block_findings WHERE runId = ?'),
-      blockedBy: await count(
-          'SELECT COUNT(DISTINCT restId) FROM block_findings WHERE runId = ? AND blockedBy = 1'),
-      blocking: await count(
-          'SELECT COUNT(DISTINCT restId) FROM block_findings WHERE runId = ? AND blocking = 1'),
-      muting: await count(
-          'SELECT COUNT(DISTINCT restId) FROM block_findings WHERE runId = ? AND muting = 1'),
+      blockedBy: await count(blockRelationCountSql('blockedBy')),
+      blocking: await count(blockRelationCountSql('blocking')),
+      muting: await count(blockRelationCountSql('muting')),
     );
+  }
+
+  /// 関係が立っている相手の人数。引数は runId。
+  /// 実行計画をテストで確かめられるよう、SQL を外から見えるようにしてある
+  @visibleForTesting
+  static String blockRelationCountSql(String relation) {
+    assert(_blockRelations.contains(relation));
+    return 'SELECT COUNT(DISTINCT restId) FROM block_findings '
+        'WHERE runId = ? AND $relation = 1';
   }
 
   /// 見つかった相手を、発見元の人数つきで返す。
@@ -1274,7 +1304,7 @@ class FollowDb {
     int limit = 100,
     int offset = 0,
   }) async {
-    assert(const ['blockedBy', 'blocking', 'muting'].contains(relation));
+    assert(_blockRelations.contains(relation));
     final db = await _database;
     final f = filter.clause;
     final rows = await db.rawQuery(
@@ -1303,7 +1333,15 @@ class FollowDb {
   }
 
   /// つながっている人たちの間で、何人からフォローされているか。
-  /// 走査結果の集計だけで出せるので追加の通信は要らない
+  /// 走査結果の集計だけで出せるので追加の通信は要らない。
+  ///
+  /// 関係で絞れないので調査の全行が対象になる。先に block_findings だけで
+  /// 数えて 1 ページぶんに絞り、users はその分だけ引く。全行を users と
+  /// 突き合わせてから数えると、1 ページ出すたびに数百万回の引き直しになる。
+  /// 同じ理由で、同数のときの並びは users を見ずに済む restId にしてある。
+  ///
+  /// 発見元の @ID ([BlockFinding.sourceNames]) は入れない。ほぼ全員が
+  /// 該当するので、並べても読めない長さになる
   Future<List<BlockFinding>> popularAmongSources({
     required int runId,
     bool onlyNotFollowed = false,
@@ -1311,32 +1349,39 @@ class FollowDb {
     int offset = 0,
   }) async {
     final db = await _database;
-    // 起点の一覧に居る相手 = 自分がフォローしている相手とみなす
-    const notFollowed = ' AND b.restId NOT IN '
-        '(SELECT restId FROM block_sources WHERE runId = b.runId)';
     final rows = await db.rawQuery(
-      'SELECT u.*, '
-      'u.followersCount AS snapFollowers, u.friendsCount AS snapFriends, '
-      'u.statusesCount AS snapStatuses, '
-      'COUNT(*) AS sourceCount, '
-      "GROUP_CONCAT(s.screenName, ', ') AS sourceNames "
-      'FROM block_findings b '
-      'JOIN users u ON u.restId = b.restId '
-      'LEFT JOIN block_sources s '
-      '  ON s.runId = b.runId AND s.restId = b.sourceRestId '
-      'WHERE b.runId = ?${onlyNotFollowed ? notFollowed : ''} '
-      'GROUP BY b.restId '
-      'ORDER BY sourceCount DESC, u.followersCount DESC, u.restId '
-      'LIMIT ? OFFSET ?',
-      [runId, limit, offset],
+      popularAmongSourcesSql(onlyNotFollowed: onlyNotFollowed),
+      [runId, if (onlyNotFollowed) runId, limit, offset],
     );
     return rows
         .map((r) => BlockFinding(
               user: _userFromSnapshotRow(r),
               sourceCount: (r['sourceCount'] as int?) ?? 0,
-              sourceNames: (r['sourceNames'] as String?) ?? '',
+              sourceNames: '',
             ))
         .toList();
+  }
+
+  /// [popularAmongSources] の SQL。引数は runId、([onlyNotFollowed] なら
+  /// もう一度 runId、) limit、offset の順
+  @visibleForTesting
+  static String popularAmongSourcesSql({required bool onlyNotFollowed}) {
+    // 起点の一覧に居る相手 = 自分がフォローしている相手とみなす
+    const notFollowed = ' AND b.restId NOT IN '
+        '(SELECT restId FROM block_sources WHERE runId = ?)';
+    return 'SELECT u.*, '
+        'u.followersCount AS snapFollowers, u.friendsCount AS snapFriends, '
+        'u.statusesCount AS snapStatuses, '
+        'a.sourceCount AS sourceCount '
+        'FROM ('
+        '  SELECT b.restId AS restId, COUNT(*) AS sourceCount '
+        '  FROM block_findings b '
+        '  WHERE b.runId = ?${onlyNotFollowed ? notFollowed : ''} '
+        '  GROUP BY b.restId '
+        '  ORDER BY sourceCount DESC, b.restId '
+        '  LIMIT ? OFFSET ?'
+        ') a JOIN users u ON u.restId = a.restId '
+        'ORDER BY a.sourceCount DESC, a.restId';
   }
 
   /// 参照されなくなった users を掃除する。
@@ -1801,6 +1846,6 @@ class BlockFinding {
   /// 何人のフォロー先に現れたか
   final int sourceCount;
 
-  /// 発見元の @ID をカンマで並べたもの (表示用)
+  /// 発見元の @ID をカンマで並べたもの (表示用)。人気の集計では空
   final String sourceNames;
 }

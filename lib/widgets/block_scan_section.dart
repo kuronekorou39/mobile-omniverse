@@ -3,11 +3,13 @@ import 'package:flutter/material.dart';
 import '../models/account.dart';
 import '../models/sns_service.dart';
 import '../screens/block_scan_result_screen.dart';
+import '../services/account_storage_service.dart';
 import '../services/block_scan_service.dart';
 import '../services/follow_db.dart';
 import '../services/scan_estimate.dart';
 import '../utils/app_snackbar.dart';
 import '../utils/confirm_dialog.dart';
+import 'follow_section_header.dart';
 
 /// 対象画面に置く「ブロック調査」のひとかたまり。
 ///
@@ -25,7 +27,8 @@ class BlockScanSection extends StatefulWidget {
   final SnsService service;
   final String handle;
 
-  /// 走査に使うアカウント。null なら開始できない
+  /// 新しく始める調査に使うアカウント。null なら開始できない。
+  /// 再開は調査を始めたときのアカウントで走らせるので、これは使わない
   final Account? account;
 
   /// 調査の開始・終了で対象画面を読み直してもらう
@@ -90,40 +93,20 @@ class _BlockScanSectionState extends State<BlockScanSection> {
     final otherRunning =
         running != null && running.targetHandle != widget.handle;
 
-    final scheme = Theme.of(context).colorScheme;
-    // フォロー/フォロワー取得とは別の機能なので、面を変えて隔離する
-    return Container(
-      margin: const EdgeInsets.fromLTRB(8, 22, 8, 0),
-      decoration: BoxDecoration(
-        color: scheme.surfaceContainerHigh,
-        borderRadius: BorderRadius.circular(20),
-      ),
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 16),
+    return Padding(
+      // 下に続くまとまりとの間隔。Bluesky では丸ごと出さないので内側に持つ
+      padding: const EdgeInsets.only(bottom: FollowSectionHeader.sectionGap),
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Row(
-            children: [
-              const Icon(Icons.hub, size: 20),
-              const SizedBox(width: 8),
-              const Expanded(
-                child: Text('つながり調査',
-                    style: TextStyle(
-                        fontSize: 16, fontWeight: FontWeight.bold)),
-              ),
-              // 3 行の説明は毎回読むものではないので畳む
-              Tooltip(
-                triggerMode: TooltipTriggerMode.tap,
-                message: 'つながっている人のフォロー先をたどって、'
-                    'ブロック・ミュートの有無を調べます。\n'
-                    '数時間かかりますが、途中で止めても続きから再開でき、'
-                    'その時点までの結果を見られます。',
-                child: Icon(Icons.info_outline,
-                    size: 18, color: scheme.onSurfaceVariant),
-              ),
-            ],
+          // 3 行の説明は毎回読むものではないので畳む
+          const FollowSectionHeader(
+            'つながり調査',
+            info: 'つながっている人のフォロー先をたどって、'
+                'ブロック・ミュートの有無を調べます。\n'
+                '数時間かかりますが、途中で止めても続きから再開でき、'
+                'その時点までの結果を見られます。',
           ),
-          const SizedBox(height: 12),
           if (isMine) _runningCard(running),
           if (otherRunning) _otherRunningNote(running),
           if (_loading)
@@ -135,19 +118,16 @@ class _BlockScanSectionState extends State<BlockScanSection> {
                       height: 18,
                       child: CircularProgressIndicator(strokeWidth: 2))),
             )
-          else
-            for (final r in _runs) ...[
-              _runTile(r),
-              const SizedBox(height: 8),
-            ],
-          if (!isMine) ...[
+          else if (_runs.isNotEmpty) ...[
+            _runList(),
             const SizedBox(height: 12),
+          ],
+          if (!isMine)
             _startButton(
               blocked: otherRunning,
               // 続きがあるうちは、そちらが主。新規は控えめに出す
               hasResumable: _runs.any((r) => !r.isCompleted),
             ),
-          ],
         ],
       ),
     );
@@ -160,8 +140,8 @@ class _BlockScanSectionState extends State<BlockScanSection> {
     return Container(
       margin: const EdgeInsets.only(bottom: 8),
       decoration: BoxDecoration(
-        color: scheme.surface,
-        borderRadius: BorderRadius.circular(14),
+        color: scheme.surfaceContainer,
+        borderRadius: BorderRadius.circular(16),
       ),
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 13),
       child: Row(
@@ -238,10 +218,14 @@ class _BlockScanSectionState extends State<BlockScanSection> {
     return label == '—' ? null : label;
   }
 
-  Widget _runningCard(BlockScanProgress p) => Card(
-        margin: const EdgeInsets.fromLTRB(12, 0, 12, 8),
+  Widget _runningCard(BlockScanProgress p) => Container(
+        margin: const EdgeInsets.only(bottom: 8),
+        decoration: BoxDecoration(
+          color: Theme.of(context).colorScheme.surfaceContainer,
+          borderRadius: BorderRadius.circular(16),
+        ),
         child: Padding(
-          padding: const EdgeInsets.all(12),
+          padding: const EdgeInsets.fromLTRB(14, 6, 6, 12),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -300,49 +284,87 @@ class _BlockScanSectionState extends State<BlockScanSection> {
         ),
       );
 
-  Widget _runTile(BlockRun r) {
+  /// 調査の記録はどれも同じ性質の行なので、ひとつの面にまとめる
+  Widget _runList() {
+    final scheme = Theme.of(context).colorScheme;
+    return Material(
+      color: scheme.surfaceContainer,
+      borderRadius: BorderRadius.circular(16),
+      clipBehavior: Clip.antiAlias,
+      child: Column(
+        children: [
+          for (final (i, r) in _runs.indexed) ...[
+            if (i > 0)
+              Divider(
+                  height: 1,
+                  indent: 14,
+                  endIndent: 14,
+                  color: scheme.outlineVariant),
+            _runRow(r),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Account? _accountOf(String id) => AccountStorageService.instance.accounts
+      .where((a) => a.id == id)
+      .firstOrNull;
+
+  /// 行の中で押せるのは「再開」だけにする。削除は結果画面のメニューに置く
+  Widget _runRow(BlockRun r) {
     final s = _stats[r.id];
     final resumable = !r.isCompleted && !_scan.isRunning;
     final scheme = Theme.of(context).colorScheme;
-    return ListTile(
-      dense: true,
-      contentPadding: EdgeInsets.zero,
-      // カードの面に載るので、行ごとに面を持たせて沈ませる
-      tileColor: scheme.surface,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(14),
-      ),
-      leading: Padding(
-        padding: const EdgeInsets.only(left: 12),
-        child: Icon(
-          r.isCompleted
-              ? Icons.check_circle_outline
-              : Icons.pause_circle_outline,
-          size: 20,
-          color: r.isCompleted ? scheme.primary : scheme.tertiary,
-        ),
-      ),
-      title: Text(
-        '${r.originLabel}起点'
-        '${s == null ? '' : ' ・ 被ブロック ${s.blockedBy}'}',
-        style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold),
-      ),
-      subtitle: Text(
-        s == null
-            ? ''
-            : '${s.doneSources}/${s.totalSources}人'
-                '${r.isCompleted ? '' : ' ・ 未完了'}',
-        style: TextStyle(fontSize: 11, color: scheme.onSurfaceVariant),
-      ),
-      trailing: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          // 下に「調査を開始」の大きなボタンがあるので、テキストのままだと
-          // 見劣りして、続きがあるのに新しく始めてしまう
-          if (resumable)
-            Padding(
-              padding: const EdgeInsets.only(right: 4),
-              child: FilledButton.tonalIcon(
+    final ranBy =
+        r.sessionAccountId == null ? null : _accountOf(r.sessionAccountId!);
+    return InkWell(
+      onTap: () async {
+        await Navigator.of(context).push(
+            MaterialPageRoute(builder: (_) => BlockScanResultScreen(run: r)));
+        await _load();
+        // 結果画面で調査を消すと、未完了かどうかが変わる
+        widget.onChanged();
+      },
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(14, 12, 10, 12),
+        child: Row(
+          children: [
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('${r.originLabel}起点',
+                      style: const TextStyle(
+                          fontSize: 14, fontWeight: FontWeight.bold)),
+                  const SizedBox(height: 2),
+                  Text(
+                    s == null
+                        ? '集計中…'
+                        : '被ブロック ${s.blockedBy} ・ '
+                            '${s.doneSources}/${s.totalSources}人',
+                    style: TextStyle(
+                        fontSize: 12, color: scheme.onSurfaceVariant),
+                  ),
+                  // 結果は「このアカウントから見た関係」なので、誰で調べたかを残す
+                  Text(
+                    [
+                      if (ranBy != null) '${ranBy.handle} で調査',
+                      r.isCompleted ? '完了' : '未完了',
+                    ].join(' ・ '),
+                    style: TextStyle(
+                        fontSize: 11,
+                        color: r.isCompleted
+                            ? scheme.onSurfaceVariant
+                            : scheme.tertiary),
+                  ),
+                ],
+              ),
+            ),
+            // 下に「調査を開始」の大きなボタンがあるので、テキストのままだと
+            // 見劣りして、続きがあるのに新しく始めてしまう
+            if (resumable)
+              FilledButton.tonalIcon(
                 onPressed: () => _resume(r),
                 icon: const Icon(Icons.play_arrow, size: 16),
                 label: const Text('再開'),
@@ -352,22 +374,13 @@ class _BlockScanSectionState extends State<BlockScanSection> {
                   textStyle: const TextStyle(
                       fontSize: 12, fontWeight: FontWeight.bold),
                 ),
-              ),
-            ),
-          // 調査は GB 単位になるので、消す手段は必ず出しておく
-          IconButton(
-            icon: const Icon(Icons.delete_outline, size: 20),
-            tooltip: 'この調査を削除',
-            visualDensity: VisualDensity.compact,
-            onPressed: _scan.isRunning ? null : () => _confirmDelete(r, s),
-          ),
-        ],
+              )
+            else
+              Icon(Icons.chevron_right,
+                  size: 18, color: scheme.onSurfaceVariant),
+          ],
+        ),
       ),
-      onTap: () async {
-        await Navigator.of(context)
-            .push(MaterialPageRoute(builder: (_) => BlockScanResultScreen(run: r)));
-        await _load();
-      },
     );
   }
 
@@ -494,33 +507,21 @@ class _BlockScanSectionState extends State<BlockScanSection> {
     widget.onChanged();
   }
 
-  Future<void> _confirmDelete(BlockRun run, BlockRunProgress? s) async {
-    final ok = await confirmDialog(
-      context,
-      title: 'この調査を削除',
-      message: '${run.originLabel}起点の調査'
-          '${s == null ? '' : '（${s.doneSources}/${s.totalSources}人ぶん）'}'
-          'を削除します。\n\n'
-          '集めた結果はすべて失われ、元に戻せません。'
-          '走らせ直す場合は最初からになります。',
-      confirmLabel: '削除',
-      destructive: true,
-    );
-    if (!ok) return;
-    try {
-      await FollowDb.instance.deleteBlockRun(run.id);
-    } catch (e) {
-      if (mounted) showAppSnackBar(context, '削除に失敗しました: $e', type: SnackType.error);
+  Future<void> _resume(BlockRun run) async {
+    // 結果は「調査を始めたアカウントから見た関係」。今選ばれている
+    // アカウントで続けると、別の視点の結果が同じ調査に混ざる。
+    // 実行アカウントを記録していなかった頃の調査だけ、今のもので走らせる
+    final startedBy = run.sessionAccountId;
+    final account =
+        startedBy == null ? widget.account : _accountOf(startedBy);
+    if (account == null) {
+      showAppSnackBar(
+          context,
+          '調査を始めたアカウントが見つかりません。'
+          'ログインし直すか、新しく調査を始めてください',
+          type: SnackType.error);
       return;
     }
-    if (mounted) showAppSnackBar(context, '調査を削除しました');
-    await _load();
-    widget.onChanged();
-  }
-
-  Future<void> _resume(BlockRun run) async {
-    final account = widget.account;
-    if (account == null) return;
     try {
       await _scan.resume(
           account: account,

@@ -2,9 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:share_plus/share_plus.dart';
 
 import '../models/sns_service.dart';
+import '../services/block_scan_service.dart';
 import '../services/export_service.dart';
 import '../services/follow_db.dart';
 import '../utils/app_snackbar.dart';
+import '../utils/confirm_dialog.dart';
 import '../widgets/follow_list_controls.dart';
 import 'follow_snapshot_screen.dart';
 
@@ -77,6 +79,34 @@ class _BlockScanResultScreenState extends State<BlockScanResultScreen> {
     }
   }
 
+  Future<void> _confirmDelete() async {
+    final run = widget.run;
+    final s = _stats;
+    final ok = await confirmDialog(
+      context,
+      title: 'この調査を削除',
+      message: '${run.originLabel}起点の調査'
+          '${s == null ? '' : '（${s.doneSources}/${s.totalSources}人ぶん）'}'
+          'を削除します。\n\n'
+          '集めた結果はすべて失われ、元に戻せません。'
+          '走らせ直す場合は最初からになります。',
+      confirmLabel: '削除',
+      destructive: true,
+    );
+    if (!ok) return;
+    try {
+      await FollowDb.instance.deleteBlockRun(run.id);
+    } catch (e) {
+      if (mounted) {
+        showAppSnackBar(context, '削除に失敗しました: $e', type: SnackType.error);
+      }
+      return;
+    }
+    if (!mounted) return;
+    showAppSnackBar(context, '調査を削除しました');
+    Navigator.of(context).pop();
+  }
+
   @override
   Widget build(BuildContext context) {
     final run = widget.run;
@@ -97,6 +127,18 @@ class _BlockScanResultScreenState extends State<BlockScanResultScreen> {
               icon: const Icon(Icons.refresh),
               tooltip: '数え直す',
               onPressed: _load,
+            ),
+            // 調査は GB 単位になるので、消す手段は必ず出しておく。
+            // 押し間違えないよう、アイコンでは並べずメニューに畳む
+            PopupMenuButton<void>(
+              itemBuilder: (_) => [
+                PopupMenuItem(
+                  // 走っている最中に消すと、走査が書き込み先を失う
+                  enabled: !BlockScanService.instance.isRunning,
+                  onTap: _confirmDelete,
+                  child: const Text('この調査を削除'),
+                ),
+              ],
             ),
           ],
           bottom: TabBar(

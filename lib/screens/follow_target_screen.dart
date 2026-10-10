@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import '../models/account.dart';
 import '../models/sns_service.dart';
 import '../services/account_storage_service.dart';
+import '../services/block_scan_service.dart';
 import '../services/follow_capture_engine.dart';
 import '../services/follow_capture_job_service.dart';
 import '../services/follow_db.dart';
@@ -11,6 +12,7 @@ import '../utils/app_snackbar.dart';
 import '../utils/confirm_dialog.dart';
 import '../utils/image_headers.dart';
 import '../widgets/block_scan_section.dart';
+import '../widgets/follow_section_header.dart';
 import 'follow_history_screen.dart';
 import 'follow_relation_screen.dart';
 import 'follow_schedule_screen.dart';
@@ -36,6 +38,7 @@ class FollowTargetScreen extends StatefulWidget {
 
 class _FollowTargetScreenState extends State<FollowTargetScreen> {
   final _job = FollowCaptureJobService.instance;
+  final _scan = BlockScanService.instance;
 
   FollowTarget? _target;
   FollowSnapshot? _latestFollowers;
@@ -46,21 +49,36 @@ class _FollowTargetScreenState extends State<FollowTargetScreen> {
   final Map<String, DateTime?> _nextDue = {};
   bool _loading = true;
 
+  /// 終わっていないつながり調査が残っているか
+  bool _hasUnfinishedScan = false;
+
   @override
   void initState() {
     super.initState();
     _job.progress.addListener(_onProgress);
+    _scan.progress.addListener(_onScanProgress);
     _load();
   }
 
   @override
   void dispose() {
     _job.progress.removeListener(_onProgress);
+    _scan.progress.removeListener(_onScanProgress);
     super.dispose();
   }
 
   void _onProgress() {
     if (mounted) setState(() {});
+  }
+
+  void _onScanProgress() {
+    if (!mounted) return;
+    // 調査が終わったら、未完了が残っているかを読み直す
+    if (_scan.progress.value == null) {
+      _load();
+    } else {
+      setState(() {});
+    }
   }
 
   Future<void> _load() async {
@@ -89,6 +107,11 @@ class _FollowTargetScreenState extends State<FollowTargetScreen> {
       targetHandle: widget.handle,
     );
 
+    final blockRuns = await db.listBlockRuns(
+      service: widget.service,
+      targetHandle: widget.handle,
+    );
+
     final total = await db.databaseSizeBytes();
     final rows = await db.memberRowsByTarget();
     final all = rows.values.fold<int>(0, (a, b) => a + b);
@@ -107,6 +130,7 @@ class _FollowTargetScreenState extends State<FollowTargetScreen> {
       _latestFollowing = g;
       _relation = relation;
       _history = history;
+      _hasUnfinishedScan = blockRuns.any((r) => !r.isCompleted);
       _sizeBytes = all == 0 ? 0 : (total * mine / all).round();
       _loading = false;
     });
@@ -152,6 +176,18 @@ class _FollowTargetScreenState extends State<FollowTargetScreen> {
     return accounts.firstWhere((a) => a.id == id, orElse: () => accounts.first);
   }
 
+  /// 未完了のつながり調査があるあいだは実行アカウントを替えさせない。
+  ///
+  /// 調査の結果は「実行アカウントから見た関係」なので、途中で替えると
+  /// 別のアカウント視点の結果が 1 つの調査に混ざる。
+  ///
+  /// 進行中の調査はサービスを持たない (X でしか走らない) ので、
+  /// ハンドルの一致だけで見ると他サービスの同名の対象まで止めてしまう
+  bool get _scanLocksAccount =>
+      _hasUnfinishedScan ||
+      (widget.service == SnsService.x &&
+          _scan.progress.value?.targetHandle == widget.handle);
+
   @override
   Widget build(BuildContext context) {
     final t = _target;
@@ -162,13 +198,14 @@ class _FollowTargetScreenState extends State<FollowTargetScreen> {
           child: _loading
               ? const CircularProgressIndicator()
               // 回り続けるスピナーで止まらないよう、理由を出して抜けられるようにする
-              : const Padding(
-                  padding: EdgeInsets.all(24),
+              : Padding(
+                  padding: const EdgeInsets.all(24),
                   child: Text(
                     'この対象はまだ登録されていません。\n'
                     'フォロー / フォロワー取得の画面から追加してください。',
                     textAlign: TextAlign.center,
-                    style: TextStyle(color: Colors.grey),
+                    style: TextStyle(
+                        color: Theme.of(context).colorScheme.onSurfaceVariant),
                   ),
                 ),
         ),
@@ -180,17 +217,36 @@ class _FollowTargetScreenState extends State<FollowTargetScreen> {
         running?.targetHandle == widget.handle &&
         running?.service == widget.service;
 
+    final scheme = Theme.of(context).colorScheme;
     return Scaffold(
       appBar: AppBar(
+        // 対象はアイコンと名前で示す。実行アカウントは文字だけにして、
+        // 「調べられる側」と「調べる側」を取り違えないようにする
         title: Row(
           children: [
             _avatar(t),
-            const SizedBox(width: 8),
+            const SizedBox(width: 10),
             Expanded(
-              child: Text(
-                '@${t.handle}',
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(fontSize: 18),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (t.displayName.isNotEmpty)
+                    Text(
+                      t.displayName,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                          fontSize: 15, fontWeight: FontWeight.bold),
+                    ),
+                  Text(
+                    '@${t.handle}',
+                    overflow: TextOverflow.ellipsis,
+                    style: t.displayName.isEmpty
+                        ? const TextStyle(fontSize: 18)
+                        : TextStyle(
+                            fontSize: 12, color: scheme.onSurfaceVariant),
+                  ),
+                ],
               ),
             ),
           ],
@@ -203,19 +259,25 @@ class _FollowTargetScreenState extends State<FollowTargetScreen> {
           RefreshIndicator(
             onRefresh: _load,
             child: ListView(
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
               children: [
+                // 取得にも調査にも効くので、どちらのまとまりにも入れず先頭に置く
+                _accountSelector(t),
+                const SizedBox(height: FollowSectionHeader.sectionGap),
+                const FollowSectionHeader('フォロー / フォロワー'),
                 _dashboard(),
-                const SizedBox(height: 22),
-                _actionSection(t),
-                const SizedBox(height: 22),
-                // 設定と履歴は面と枠でひとまとめにして、操作から切り離す
-                _settingsCard(t),
+                const SizedBox(height: 12),
+                _captureActions(),
+                const SizedBox(height: 12),
+                _linksCard(t),
+                const SizedBox(height: FollowSectionHeader.sectionGap),
                 BlockScanSection(
                   service: widget.service,
                   handle: widget.handle,
                   account: _sessionAccount,
                   onChanged: _load,
                 ),
+                const FollowSectionHeader('データ'),
                 _storageSection(),
                 // 重ねたカードで最後の項目が隠れないよう、その分だけ空ける
                 SizedBox(height: isMine ? _runningCardReserve : 32),
@@ -234,6 +296,72 @@ class _FollowTargetScreenState extends State<FollowTargetScreen> {
     );
   }
 
+  // ─── 実行アカウント ───
+
+  Widget _accountSelector(FollowTarget t) {
+    final scheme = Theme.of(context).colorScheme;
+    final accounts = _usableAccounts;
+    final locked = _scanLocksAccount || _job.isRunning;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        FollowSectionHeader(
+          '実行アカウント',
+          // 常に出しておくほどの情報ではないので畳む
+          info: widget.service == SnsService.x
+              ? 'フォロー/フォロワーの取得と、つながり調査の両方に使います。\n'
+                  'X の鍵アカウントは、つながっているアカウントでないと取得できません'
+              : null,
+        ),
+        Container(
+          width: double.infinity,
+          decoration: BoxDecoration(
+            color: scheme.surfaceContainer,
+            borderRadius: BorderRadius.circular(16),
+          ),
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
+          child: accounts.isEmpty
+              ? Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 10),
+                  child: Text('なし',
+                      style: TextStyle(
+                          fontSize: 15, color: scheme.onSurfaceVariant)),
+                )
+              : DropdownButton<String>(
+                  value: _sessionAccount?.id,
+                  isExpanded: true,
+                  underline: const SizedBox.shrink(),
+                  icon: Icon(
+                      locked ? Icons.lock_outline : Icons.expand_more,
+                      size: 20),
+                  style: TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w500,
+                    color: scheme.onSurface,
+                  ),
+                  items: [
+                    for (final a in accounts)
+                      DropdownMenuItem(value: a.id, child: Text(a.handle)),
+                  ],
+                  onChanged: locked
+                      ? null
+                      : (v) => _updateTarget(t.copyWith(sessionAccountId: v)),
+                ),
+        ),
+        // 取得中は一時的なので黙って止める。調査のほうは数日残りうるので、
+        // なぜ替えられないのかを出しておく
+        if (_scanLocksAccount)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(4, 6, 4, 0),
+            child: Text(
+              '未完了のつながり調査があるあいだは切り替えられません',
+              style: TextStyle(fontSize: 11, color: scheme.onSurfaceVariant),
+            ),
+          ),
+      ],
+    );
+  }
+
   // ─── ダッシュボード ───
 
   /// フォロワー / フォロー / 相互 を横に並べる。
@@ -241,22 +369,19 @@ class _FollowTargetScreenState extends State<FollowTargetScreen> {
   /// 相互だけ取得日時を出さないのは、2 本のスナップショットの突き合わせで
   /// 出しているため「いつ取ったか」が 1 つに定まらないから。実際
   /// フォロワーとフォローの取得日は数日ずれることがある。
-  Widget _dashboard() => Padding(
-    padding: const EdgeInsets.fromLTRB(12, 12, 12, 4),
-    // ListView の中は高さが無制限なので、stretch だけでは
-    // カードが無限の高さになる。IntrinsicHeight で 3 枚のうち
-    // 一番高いものに合わせて確定させる
-    child: IntrinsicHeight(
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Expanded(child: _snapshotCard('フォロワー', _latestFollowers)),
-          const SizedBox(width: 8),
-          Expanded(child: _snapshotCard('フォロー', _latestFollowing)),
-          const SizedBox(width: 8),
-          Expanded(child: _mutualCard()),
-        ],
-      ),
+  // ListView の中は高さが無制限なので、stretch だけでは
+  // カードが無限の高さになる。IntrinsicHeight で 3 枚のうち
+  // 一番高いものに合わせて確定させる
+  Widget _dashboard() => IntrinsicHeight(
+    child: Row(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Expanded(child: _snapshotCard('フォロワー', _latestFollowers)),
+        const SizedBox(width: 8),
+        Expanded(child: _snapshotCard('フォロー', _latestFollowing)),
+        const SizedBox(width: 8),
+        Expanded(child: _mutualCard()),
+      ],
     ),
   );
 
@@ -351,12 +476,10 @@ class _FollowTargetScreenState extends State<FollowTargetScreen> {
 
   // ─── 取得 ───
 
-  Widget _actionSection(FollowTarget t) {
+  Widget _captureActions() {
     final resumable = _history.where((s) => s.isResumable).toList();
     final scheme = Theme.of(context).colorScheme;
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16),
-      child: Column(
+    return Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           FilledButton(
@@ -370,51 +493,6 @@ class _FollowTargetScreenState extends State<FollowTargetScreen> {
             ),
             onPressed: _job.isRunning ? null : _startWithConfirm,
             child: const Text('今すぐ取得'),
-          ),
-          const SizedBox(height: 12),
-          // 実行アカウントは取得ボタンのすぐ下に置く。鍵アカウント相手だと
-          // ここを変えないと取れないので、離れていると
-          // 「取得 → 失敗 → 設定を探す」の往復になる
-          Row(
-            children: [
-              Text('実行アカウント',
-                  style: TextStyle(
-                      fontSize: 12, color: scheme.onSurfaceVariant)),
-              const Spacer(),
-              if (_usableAccounts.isEmpty)
-                Text('なし',
-                    style: TextStyle(
-                        fontSize: 13, color: scheme.onSurfaceVariant))
-              else
-                DropdownButton<String>(
-                  value: _sessionAccount?.id,
-                  underline: const SizedBox.shrink(),
-                  isDense: true,
-                  style: TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w500,
-                    color: scheme.onSurface,
-                  ),
-                  items: [
-                    for (final a in _usableAccounts)
-                      DropdownMenuItem(value: a.id, child: Text(a.handle)),
-                  ],
-                  onChanged: _job.isRunning
-                      ? null
-                      : (v) => _updateTarget(t.copyWith(sessionAccountId: v)),
-                ),
-              // 常に出しておくほどの情報ではないので畳む
-              if (widget.service == SnsService.x) ...[
-                const SizedBox(width: 4),
-                Tooltip(
-                  triggerMode: TooltipTriggerMode.tap,
-                  message:
-                      'X の鍵アカウントは、つながっているアカウントでないと取得できません',
-                  child: Icon(Icons.info_outline,
-                      size: 18, color: scheme.onSurfaceVariant),
-                ),
-              ],
-            ],
           ),
           // 中断した続きは、埋もれると気づかれないので面を持たせる
           for (final s in resumable)
@@ -462,47 +540,49 @@ class _FollowTargetScreenState extends State<FollowTargetScreen> {
               ),
             ),
         ],
-      ),
     );
   }
 
   // ─── 定期取得 ───
 
-  /// 定期取得と履歴。どちらも「開くと別画面」なので横に並べる。
+  /// 定期取得と履歴。どちらも「開くと別画面」という同じ性質の行なので、
+  /// ひとつの面にまとめて区切り線だけで分ける。
   /// 間隔そのものは設定画面で見られるので、ここには次回だけ出す
-  Widget _settingsCard(FollowTarget t) => Padding(
-    padding: const EdgeInsets.symmetric(horizontal: 16),
-    child: IntrinsicHeight(
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
+  Widget _linksCard(FollowTarget t) {
+    final scheme = Theme.of(context).colorScheme;
+    return Material(
+      color: scheme.surfaceContainer,
+      borderRadius: BorderRadius.circular(16),
+      clipBehavior: Clip.antiAlias,
+      child: Column(
         children: [
-          Expanded(
-            child: _linkCard(
-              icon: Icons.autorenew,
-              label: '定期取得',
-              value: _scheduleValue(t),
-              onTap: () async {
-                await Navigator.of(context).push(
-                  MaterialPageRoute(
-                      builder: (_) => FollowScheduleScreen(target: t)),
-                );
-                await _load();
-              },
-            ),
+          _linkRow(
+            icon: Icons.autorenew,
+            label: '定期取得',
+            value: _scheduleValue(t),
+            onTap: () async {
+              await Navigator.of(context).push(
+                MaterialPageRoute(
+                    builder: (_) => FollowScheduleScreen(target: t)),
+              );
+              await _load();
+            },
           ),
-          const SizedBox(width: 8),
-          Expanded(
-            child: _linkCard(
-              icon: Icons.history,
-              label: '履歴',
-              value: _history.isEmpty ? 'なし' : '${_history.length}件',
-              onTap: _history.isEmpty ? null : _openHistory,
-            ),
+          Divider(
+              height: 1,
+              indent: 14,
+              endIndent: 14,
+              color: scheme.outlineVariant),
+          _linkRow(
+            icon: Icons.history,
+            label: '履歴',
+            value: _history.isEmpty ? 'なし' : '${_history.length}件',
+            onTap: _history.isEmpty ? null : _openHistory,
           ),
         ],
       ),
-    ),
-  );
+    );
+  }
 
   /// 定期取得の状態。間隔は出さず、次に動く日だけ示す
   String _scheduleValue(FollowTarget t) {
@@ -521,52 +601,36 @@ class _FollowTargetScreenState extends State<FollowTargetScreen> {
     return next.isAfter(DateTime.now()) ? dateLabel(next) : '次の起動時';
   }
 
-  Widget _linkCard({
+  Widget _linkRow({
     required IconData icon,
     required String label,
     required String value,
     VoidCallback? onTap,
   }) {
     final scheme = Theme.of(context).colorScheme;
-    return Material(
-      color: scheme.surfaceContainerLowest,
-      borderRadius: BorderRadius.circular(16),
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(16),
-        child: Container(
-          decoration: BoxDecoration(
-            border: Border.all(color: scheme.outlineVariant),
-            borderRadius: BorderRadius.circular(16),
-          ),
-          padding: const EdgeInsets.fromLTRB(14, 12, 8, 12),
-          child: Row(
-            children: [
-              Icon(icon, size: 20, color: scheme.onSurfaceVariant),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Text(label,
-                        style: const TextStyle(
-                            fontSize: 14, fontWeight: FontWeight.w500)),
-                    const SizedBox(height: 2),
-                    Text(
-                      value,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                          fontSize: 12, color: scheme.onSurfaceVariant),
-                    ),
-                  ],
-                ),
-              ),
-              Icon(Icons.chevron_right,
-                  size: 18, color: scheme.onSurfaceVariant),
-            ],
-          ),
+    return InkWell(
+      onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(14, 14, 10, 14),
+        child: Row(
+          children: [
+            Icon(icon, size: 20, color: scheme.onSurfaceVariant),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(label,
+                  style: const TextStyle(
+                      fontSize: 14, fontWeight: FontWeight.w500)),
+            ),
+            Text(
+              value,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(fontSize: 13, color: scheme.onSurfaceVariant),
+            ),
+            const SizedBox(width: 4),
+            Icon(Icons.chevron_right,
+                size: 18, color: scheme.onSurfaceVariant),
+          ],
         ),
       ),
     );
@@ -583,7 +647,7 @@ class _FollowTargetScreenState extends State<FollowTargetScreen> {
   Widget _storageSection() {
     final scheme = Theme.of(context).colorScheme;
     return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 20, 16, 0),
+      padding: const EdgeInsets.symmetric(horizontal: 4),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -650,27 +714,30 @@ class _FollowTargetScreenState extends State<FollowTargetScreen> {
 
   // ─── 共通パーツ ───
 
-  Widget _avatar(FollowTarget t) => ClipOval(
-    child: t.avatarUrl.isEmpty
-        ? const SizedBox(width: 28, height: 28, child: Icon(Icons.person))
-        : CachedNetworkImage(
-            imageUrl: t.avatarUrl,
-            httpHeaders: kImageHeaders,
-            width: 28,
-            height: 28,
-            fit: BoxFit.cover,
-            memCacheWidth: 56,
-            errorWidget: (_, __, ___) => const SizedBox(
-              width: 28,
-              height: 28,
-              child: Icon(Icons.person),
+  static const _avatarSize = 32.0;
+
+  Widget _avatar(FollowTarget t) {
+    const fallback = SizedBox(
+        width: _avatarSize, height: _avatarSize, child: Icon(Icons.person));
+    return ClipOval(
+      child: t.avatarUrl.isEmpty
+          ? fallback
+          : CachedNetworkImage(
+              imageUrl: t.avatarUrl,
+              httpHeaders: kImageHeaders,
+              width: _avatarSize,
+              height: _avatarSize,
+              fit: BoxFit.cover,
+              memCacheWidth: 96,
+              errorWidget: (_, __, ___) => fallback,
             ),
-          ),
-  );
+    );
+  }
 
   Widget _runningCard(FollowJobProgress p) {
     final rate = p.rateLimit;
     final waitLeft = p.waitingUntil?.difference(DateTime.now());
+    final scheme = Theme.of(context).colorScheme;
     return Card(
       margin: const EdgeInsets.fromLTRB(12, 0, 12, 12),
       elevation: 6,
@@ -710,7 +777,7 @@ class _FollowTargetScreenState extends State<FollowTargetScreen> {
                   'レート残 ${rate!.remaining}/${rate.limit ?? '?'}',
                 '経過 ${elapsedLabel(DateTime.now().difference(p.startedAt))}',
               ].join(' ・ '),
-              style: const TextStyle(fontSize: 11, color: Colors.grey),
+              style: TextStyle(fontSize: 11, color: scheme.onSurfaceVariant),
             ),
             // 高さを固定して、出入りで下がずれないようにする
             SizedBox(
@@ -723,10 +790,7 @@ class _FollowTargetScreenState extends State<FollowTargetScreen> {
                       '${waitLeft == null || waitLeft.isNegative ? '' : '（あと${waitLeft.inSeconds}秒）'}',
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        fontSize: 11,
-                        color: Colors.orange,
-                      ),
+                      style: TextStyle(fontSize: 11, color: scheme.tertiary),
                     ),
             ),
           ],
@@ -829,7 +893,9 @@ class _FollowTargetScreenState extends State<FollowTargetScreen> {
                 padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
                 child: Text(
                   '実行アカウント ${account.handle}',
-                  style: const TextStyle(fontSize: 11, color: Colors.grey),
+                  style: TextStyle(
+                      fontSize: 11,
+                      color: Theme.of(ctx).colorScheme.onSurfaceVariant),
                 ),
               ),
               const Divider(height: 1),

@@ -114,6 +114,8 @@ class NotificationCacheService {
       }
     }
 
+    _removeSuperseded(existing.notifications, stamped);
+
     // ソート＋保険の重複除去
     existing.notifications.sort((a, b) => b.timestamp.compareTo(a.timestamp));
     _removeDuplicatesInPlace(existing.notifications);
@@ -123,6 +125,33 @@ class NotificationCacheService {
       newCount: newCount,
       updatedCount: updatedCount,
     );
+  }
+
+  /// 最新の 1 ページ [fetched] に載っていない、ID で見分けている通知を落とす。
+  ///
+  /// 対象の投稿を持たない通知 (お知らせ = 鈴マーク、X のフォロー) は ID でしか
+  /// 見分けられない。サーバー側で同じ内容が別の ID で作り直されると、
+  /// 古いほうを上書きできずに同じ文面が積み上がっていく。
+  /// 最新のページが覆っている期間にあるのにそこに居ないものは、
+  /// もうサーバーに無い通知なので消す。
+  ///
+  /// 投稿に紐づく通知は対象にしない。eventKey で上書きできるうえ、
+  /// X のリプライ/メンションは別の API から来るので、このページに
+  /// 居なくても消えたとは言えない。
+  void _removeSuperseded(
+      List<NotificationItem> cached, List<NotificationItem> fetched) {
+    // 時刻が取れなかった通知 (epoch 0) を端にすると、期間が全体に広がる
+    final dated =
+        fetched.where((n) => n.timestamp.millisecondsSinceEpoch > 0);
+    if (dated.isEmpty) return;
+    final oldest = dated
+        .map((n) => n.timestamp)
+        .reduce((a, b) => a.isBefore(b) ? a : b);
+    final fetchedKeys = {for (final n in fetched) _eventKey(n)};
+    cached.removeWhere((n) =>
+        n.targetPostId == null &&
+        n.timestamp.isAfter(oldest) &&
+        !fetchedKeys.contains(_eventKey(n)));
   }
 
   /// loadMore 結果を末尾に追加（eventKey ベースで重複排除、末尾追加後に全体ソート）

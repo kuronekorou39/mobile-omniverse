@@ -7,27 +7,30 @@ import '../services/account_storage_service.dart';
 import '../services/notification_cache_service.dart';
 import 'notification_badge_provider.dart';
 
-/// アカウントタブを開いた瞬間に、そのアカウントの未読通知 id を一斉にスナップ
-/// ショットして state に積む。一定時間後（_holdDuration）にまとめて
-/// cache.markSeen + state クリア + バッジ再計算する。
+/// アカウントの通知リストを見た瞬間に、そのアカウントの未読をまとめて既読にし、
+/// どれが新しかったかを少しのあいだハイライトで示す。state はハイライト中の
+/// 通知 id。
 ///
-/// 「上の通知ハイライトが消えた後、下にスクロールして未表示通知がハイライト
-/// される」という旧挙動を避け、タブを開いた時点での未読を全部まとめて
-/// 同じタイミングでハイライト・既読化する仕様。
+/// 既読化とバッジの数字はすぐ反映する。数字まで [_holdDuration] 待たせると
+/// 「見たのに消えない」になる。待つのはハイライトを消すほうだけ。
+///
+/// ハイライトする対象は見た時点の未読を一斉に取る。行が画面に入るたびに
+/// 光らせると、上が消えたあとスクロールした先でまた光ることになる。
 class NotificationHighlightNotifier extends StateNotifier<Set<String>> {
   NotificationHighlightNotifier(this._ref) : super(const {});
 
   final Ref _ref;
   static const _holdDuration = Duration(seconds: 5);
 
-  /// アカウント単位の遅延既読化タイマー（連打されてもキャンセル＆上書き）
+  /// アカウント単位の、ハイライトを消すタイマー
   final Map<String, Timer> _timers = {};
 
-  /// アカウント単位の対象通知（10 秒経過後にまとめて markSeen するため保持）
-  final Map<String, List<String>> _pendingByAccount = {};
+  /// アカウント単位の、いまハイライトしている通知
+  final Map<String, Set<String>> _highlightedByAccount = {};
 
-  /// 指定アカウントの未読通知をハイライトに登録 → 一定秒後にまとめて既読化。
-  /// 既に同じアカウントのタイマーが走っている場合はリセットして上書きする。
+  /// 指定アカウントの未読を既読にして、ハイライトに登録する。
+  /// ハイライト中にもう一度呼ばれたら、新しいぶんを足して消すまでの時間を
+  /// 取り直す。
   /// システム通知（鈴マーク）はバッジ件数だけでなくハイライトからも除外する。
   void activateForAccount(String accountId) {
     final cache = NotificationCacheService.instance;
@@ -39,32 +42,23 @@ class NotificationHighlightNotifier extends StateNotifier<Set<String>> {
         cache.unseenItemsExcludingSystem(accountId, account.handle);
     if (unread.isEmpty) return;
 
+    for (final n in unread) {
+      cache.markSeen(n);
+    }
     final ids = unread.map((n) => n.id).toSet();
+    (_highlightedByAccount[accountId] ??= {}).addAll(ids);
     state = {...state, ...ids};
-    _pendingByAccount[accountId] = ids.toList();
+    _ref.read(notificationBadgeProvider.notifier).refreshBadge();
+
     _timers[accountId]?.cancel();
-    _timers[accountId] = Timer(_holdDuration, () => _flush(accountId));
+    _timers[accountId] = Timer(_holdDuration, () => _fade(accountId));
   }
 
-  /// タイマー満了時に呼ばれ、対象通知を一括 markSeen → ハイライト解除 → バッジ再計算。
-  void _flush(String accountId) {
-    final pending = _pendingByAccount.remove(accountId);
+  void _fade(String accountId) {
     _timers.remove(accountId);
-    if (pending == null || pending.isEmpty) return;
-    final cache = NotificationCacheService.instance;
-    for (final n in cache.get(accountId)) {
-      if (pending.contains(n.id)) {
-        cache.markSeen(n);
-      }
-    }
-    state = state.where((id) => !pending.contains(id)).toSet();
-
-    // バッジ件数の再計算
-    final accountIds = AccountStorageService.instance.accounts
-        .where((a) => a.isEnabled)
-        .map((a) => a.id)
-        .toList();
-    _ref.read(notificationBadgeProvider.notifier).refreshBadge(accountIds);
+    final ids = _highlightedByAccount.remove(accountId);
+    if (ids == null || ids.isEmpty) return;
+    state = state.difference(ids);
   }
 
   bool isHighlighted(String notificationId) =>
@@ -76,7 +70,7 @@ class NotificationHighlightNotifier extends StateNotifier<Set<String>> {
       t.cancel();
     }
     _timers.clear();
-    _pendingByAccount.clear();
+    _highlightedByAccount.clear();
     super.dispose();
   }
 }

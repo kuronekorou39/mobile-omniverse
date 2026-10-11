@@ -9,6 +9,7 @@ import '../services/account_storage_service.dart';
 import '../services/block_scan_service.dart';
 import '../services/follow_capture_job_service.dart';
 import '../widgets/compose_queue_banner.dart';
+import '../widgets/count_badge.dart';
 import 'accounts_screen.dart';
 import 'notifications_screen.dart';
 import 'omni_feed_screen.dart';
@@ -169,10 +170,17 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         size: 24,
       );
       if (showBadge) {
-        iconWidget = Badge(
-          isLabelVisible: unreadTotal > 0,
-          label: Text(unreadTotal >= 1000 ? '999+' : '$unreadTotal'),
-          child: iconWidget,
+        iconWidget = Stack(
+          clipBehavior: Clip.none,
+          children: [
+            iconWidget,
+            // アイコンの右肩に左端を合わせ、桁が増えたら右へ伸ばす
+            Positioned(
+              left: 13,
+              top: -6,
+              child: CountBadge(count: unreadTotal),
+            ),
+          ],
         );
       }
 

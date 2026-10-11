@@ -14,6 +14,7 @@ NotificationItem makeNotification({
   String actorHandle = '@testuser',
   List<NotificationActor> additionalActors = const [],
   String? targetPostBody,
+  String? targetPostId,
   DateTime? timestamp,
   String? accountId,
 }) {
@@ -25,6 +26,7 @@ NotificationItem makeNotification({
     actorHandle: actorHandle,
     additionalActors: additionalActors,
     targetPostBody: targetPostBody,
+    targetPostId: targetPostId,
     timestamp: timestamp ?? DateTime(2024, 6, 1, 12, 0, 0),
     accountId: accountId,
   );
@@ -191,6 +193,73 @@ void main() {
 
         service.merge('acc_1', [makeNotification(id: 'n2')], cursor: 'c2');
         expect(service.getCursor('acc_1'), 'c2');
+      });
+    });
+
+    group('merge: 作り直された通知', () {
+      DateTime at(int hour) => DateTime(2024, 6, 1, hour);
+
+      test('最新のページに居ないお知らせは消す', () {
+        service.merge('acc_1', [
+          makeNotification(
+              id: 'old_id', type: NotificationType.unknown, timestamp: at(12)),
+          makeNotification(id: 'like', targetPostId: 'p1', timestamp: at(10)),
+        ]);
+        // 同じお知らせが別の ID で作り直されて届く
+        service.merge('acc_1', [
+          makeNotification(
+              id: 'new_id', type: NotificationType.unknown, timestamp: at(13)),
+          makeNotification(id: 'like', targetPostId: 'p1', timestamp: at(10)),
+        ]);
+
+        expect(service.get('acc_1').map((n) => n.id), ['new_id', 'like']);
+      });
+
+      test('ページより古い通知は残す', () {
+        service.merge('acc_1', [
+          makeNotification(
+              id: 'older', type: NotificationType.unknown, timestamp: at(8)),
+        ]);
+        service.merge('acc_1', [
+          makeNotification(id: 'like', targetPostId: 'p1', timestamp: at(10)),
+        ]);
+
+        expect(service.get('acc_1').map((n) => n.id), ['like', 'older']);
+      });
+
+      test('投稿に紐づく通知は、ページに居なくても残す', () {
+        // X のリプライは別の API から来るので、通知一覧だけの取得には載らない
+        service.merge('acc_1', [
+          makeNotification(
+              id: 'reply',
+              type: NotificationType.reply,
+              targetPostId: 'p9',
+              timestamp: at(12)),
+          makeNotification(id: 'like', targetPostId: 'p1', timestamp: at(10)),
+        ]);
+        service.merge('acc_1', [
+          makeNotification(id: 'like', targetPostId: 'p1', timestamp: at(10)),
+          makeNotification(id: 'like2', targetPostId: 'p2', timestamp: at(9)),
+        ]);
+
+        expect(service.get('acc_1').map((n) => n.id),
+            ['reply', 'like', 'like2']);
+      });
+
+      test('時刻が取れない通知を期間の端にしない', () {
+        service.merge('acc_1', [
+          makeNotification(
+              id: 'older', type: NotificationType.unknown, timestamp: at(8)),
+        ]);
+        service.merge('acc_1', [
+          makeNotification(id: 'like', targetPostId: 'p1', timestamp: at(10)),
+          makeNotification(
+              id: 'undated',
+              targetPostId: 'p2',
+              timestamp: DateTime.fromMillisecondsSinceEpoch(0)),
+        ]);
+
+        expect(service.get('acc_1').map((n) => n.id), contains('older'));
       });
     });
 

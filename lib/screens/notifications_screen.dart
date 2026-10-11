@@ -17,6 +17,7 @@ import '../providers/notification_badge_provider.dart';
 import '../providers/notification_fetch_status_provider.dart';
 import '../providers/notification_highlight_provider.dart';
 import '../widgets/appear_once.dart';
+import '../widgets/count_badge.dart';
 import '../providers/settings_provider.dart';
 import '../services/bluesky_api_service.dart';
 import '../services/notification_cache_service.dart';
@@ -309,11 +310,10 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
     if (_selectedIndex > accounts.length) {
       _selectedIndex = 0;
     }
-    // 通知タブが再アクティブ化されたときの「自動再 activate」は意図的にしない。
-    // 再 activate するとバックグラウンドで増えた未読まで自動でハイライトされて
-    // しまい、「上のハイライトが消えた後スクロールしたら下が光る」体験になる
-    // ため。ハイライトはユーザーが明示的にアカウントチップをタップしたときだけ
-    // 発火する（onTap で activateForAccount を呼ぶ）。
+    // 既読化はチップのタップではなく、各アカウントのリストが「見えている」
+    // ことを起点にする (_NotificationListState._markSeenIfVisible)。
+    // タップだけを起点にすると、選んだままタブへ戻ってきたときや、
+    // 見ている最中に届いたぶんの数字が残り続ける。
 
     if (accounts.isEmpty) {
       return Scaffold(
@@ -408,14 +408,7 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
                     account: accounts[i],
                     selected: _selectedIndex == i + 1,
                     unreadCount: badge.countFor(accounts[i].id),
-                    onTap: () {
-                      setState(() => _selectedIndex = i + 1);
-                      // 開いた瞬間にそのアカウントの未読を一斉ハイライト →
-                      // 10 秒後にまとめて既読化する
-                      ref
-                          .read(notificationHighlightProvider.notifier)
-                          .activateForAccount(accounts[i].id);
-                    },
+                    onTap: () => setState(() => _selectedIndex = i + 1),
                   ),
                   if (i < accounts.length - 1) const SizedBox(width: 8),
                 ],
@@ -444,31 +437,44 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
   }
 }
 
-/// 件数バッジ（999+ 対応）
-class _CountBadge extends StatelessWidget {
-  const _CountBadge({required this.count});
-  final int count;
+/// 通知タブ上部に並ぶチップの外枠。
+///
+/// 選んでいるものだけ面と枠で持ち上げる。選んでいないものにまで枠を付けると、
+/// 並んだ箱のほうが目立って、どれを見ているのかが埋もれる。
+class _ChipFrame extends StatelessWidget {
+  const _ChipFrame({
+    required this.selected,
+    required this.onTap,
+    required this.child,
+  });
+
+  final bool selected;
+  final VoidCallback onTap;
+  final Widget child;
 
   @override
   Widget build(BuildContext context) {
-    final label = count >= 1000 ? '999+' : '$count';
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
-      decoration: BoxDecoration(
-        color: Colors.red.shade700,
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: Colors.white, width: 1.5),
-      ),
-      constraints: const BoxConstraints(minWidth: 16, minHeight: 16),
-      child: Text(
-        label,
-        textAlign: TextAlign.center,
-        style: const TextStyle(
-          color: Colors.white,
-          fontSize: 9,
-          fontWeight: FontWeight.bold,
-          height: 1.0,
+    final primary = Theme.of(context).colorScheme.primary;
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(12),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 120),
+        width: 64,
+        height: 64,
+        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
+        decoration: BoxDecoration(
+          color: selected
+              ? primary.withValues(alpha: 0.12)
+              : primary.withValues(alpha: 0),
+          // 太さは変えない。選択で中身の位置がずれる
+          border: Border.all(
+            color: selected ? primary : primary.withValues(alpha: 0),
+            width: 2,
+          ),
+          borderRadius: BorderRadius.circular(12),
         ),
+        child: child,
       ),
     );
   }
@@ -498,97 +504,87 @@ class _NotifAccountChip extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final primary = Theme.of(context).colorScheme.primary;
-    final borderColor =
-        selected ? primary : Theme.of(context).dividerColor;
+    final scheme = Theme.of(context).colorScheme;
     final fetchStatus = ref.watch(notificationFetchStatusProvider);
     final health =
         fetchStatus[account.id]?.health ?? AccountHealth.unknown;
-    return InkWell(
+    return _ChipFrame(
+      selected: selected,
       onTap: onTap,
-      borderRadius: BorderRadius.circular(12),
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 120),
-        width: 64,
-        height: 64,
-        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
-        decoration: BoxDecoration(
-          color: selected ? primary.withValues(alpha: 0.12) : null,
-          border: Border.all(
-            color: borderColor,
-            width: selected ? 2 : 1,
-          ),
-          borderRadius: BorderRadius.circular(12),
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Opacity(
-              opacity: selected ? 1.0 : 0.55,
-              child: Stack(
-                clipBehavior: Clip.none,
-                children: [
-                  CircleAvatar(
-                    radius: 16,
-                    backgroundImage: account.avatarUrl != null
-                        ? NetworkImage(account.avatarUrl!)
-                        : null,
-                    child: account.avatarUrl == null
-                        ? Text(
-                            account.displayName.isNotEmpty
-                                ? account.displayName[0]
-                                : '?',
-                            style: const TextStyle(fontSize: 12),
-                          )
-                        : null,
-                  ),
-                  Positioned(
-                    right: -4,
-                    bottom: -2,
-                    child: SnsBadge(service: account.service, size: 7),
-                  ),
-                  // 正常なときは出さない。異常だけが目に入るようにする
-                  if (_healthColor(health) != null)
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Stack(
+            clipBehavior: Clip.none,
+            children: [
+              // 薄くするのはアイコンだけ。件数まで薄くすると、
+              // 選んでいないアカウントの未読が読みにくい
+              Opacity(
+                opacity: selected ? 1.0 : 0.55,
+                child: Stack(
+                  clipBehavior: Clip.none,
+                  children: [
+                    CircleAvatar(
+                      radius: 16,
+                      backgroundImage: account.avatarUrl != null
+                          ? NetworkImage(account.avatarUrl!)
+                          : null,
+                      child: account.avatarUrl == null
+                          ? Text(
+                              account.displayName.isNotEmpty
+                                  ? account.displayName[0]
+                                  : '?',
+                              style: const TextStyle(fontSize: 12),
+                            )
+                          : null,
+                    ),
                     Positioned(
-                      left: -2,
+                      right: -4,
                       bottom: -2,
-                      child: Container(
-                        width: 10,
-                        height: 10,
-                        decoration: BoxDecoration(
-                          color: _healthColor(health),
-                          shape: BoxShape.circle,
-                          border: Border.all(
-                            color: Theme.of(context).scaffoldBackgroundColor,
-                            width: 1.5,
+                      child: SnsBadge(service: account.service, size: 7),
+                    ),
+                    // 正常なときは出さない。異常だけが目に入るようにする
+                    if (_healthColor(health) != null)
+                      Positioned(
+                        left: -2,
+                        bottom: -2,
+                        child: Container(
+                          width: 10,
+                          height: 10,
+                          decoration: BoxDecoration(
+                            color: _healthColor(health),
+                            shape: BoxShape.circle,
+                            border: Border.all(
+                              color:
+                                  Theme.of(context).scaffoldBackgroundColor,
+                              width: 1.5,
+                            ),
                           ),
                         ),
                       ),
-                    ),
-                  if (unreadCount > 0)
-                    Positioned(
-                      left: -10,
-                      top: -6,
-                      child: _CountBadge(count: unreadCount),
-                    ),
-                ],
+                  ],
+                ),
               ),
-            ),
-            const SizedBox(height: 4),
-            Text(
-              account.handle,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                fontSize: 10,
-                fontWeight:
-                    selected ? FontWeight.bold : FontWeight.normal,
-                color: selected ? null : Colors.grey[600],
+              Positioned(
+                left: -10,
+                top: -6,
+                child: CountBadge(count: unreadCount),
               ),
+            ],
+          ),
+          const SizedBox(height: 4),
+          Text(
+            account.handle,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              fontSize: 10,
+              fontWeight: selected ? FontWeight.bold : FontWeight.normal,
+              color: selected ? null : scheme.onSurfaceVariant,
             ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
@@ -608,57 +604,41 @@ class _AllChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final primary = Theme.of(context).colorScheme.primary;
-    return InkWell(
+    final scheme = Theme.of(context).colorScheme;
+    return _ChipFrame(
+      selected: selected,
       onTap: onTap,
-      borderRadius: BorderRadius.circular(12),
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 120),
-        width: 64,
-        height: 64,
-        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
-        decoration: BoxDecoration(
-          color: selected ? primary.withValues(alpha: 0.12) : null,
-          border: Border.all(
-            color: selected ? primary : Theme.of(context).dividerColor,
-            width: selected ? 2 : 1,
-          ),
-          borderRadius: BorderRadius.circular(12),
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Stack(
-              clipBehavior: Clip.none,
-              children: [
-                Icon(
-                  Icons.all_inbox_outlined,
-                  size: 30,
-                  color: selected ? primary : Colors.grey[600],
-                ),
-                if (totalUnread > 0)
-                  Positioned(
-                    left: -10,
-                    top: -6,
-                    child: _CountBadge(count: totalUnread),
-                  ),
-              ],
-            ),
-            const SizedBox(height: 4),
-            Text(
-              'すべて',
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                fontSize: 10,
-                fontWeight:
-                    selected ? FontWeight.bold : FontWeight.normal,
-                color: selected ? null : Colors.grey[600],
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Stack(
+            clipBehavior: Clip.none,
+            children: [
+              Icon(
+                Icons.all_inbox_outlined,
+                size: 30,
+                color: selected ? scheme.primary : scheme.onSurfaceVariant,
               ),
+              Positioned(
+                left: -10,
+                top: -6,
+                child: CountBadge(count: totalUnread),
+              ),
+            ],
+          ),
+          const SizedBox(height: 4),
+          Text(
+            'すべて',
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              fontSize: 10,
+              fontWeight: selected ? FontWeight.bold : FontWeight.normal,
+              color: selected ? null : scheme.onSurfaceVariant,
             ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
@@ -733,6 +713,12 @@ class _NotificationListState extends ConsumerState<_NotificationList>
     super.didUpdateWidget(oldWidget);
     if (oldWidget.isVisible != widget.isVisible) {
       _scheduleAutoFetch();
+      if (widget.isVisible) {
+        _showLatestFromCache();
+        // build の最中に provider は書き換えられないので、描画のあとに回す
+        WidgetsBinding.instance
+            .addPostFrameCallback((_) => _markSeenIfVisible());
+      }
     }
   }
 
@@ -740,6 +726,26 @@ class _NotificationListState extends ConsumerState<_NotificationList>
   void dispose() {
     _autoFetchTimer?.cancel();
     super.dispose();
+  }
+
+  /// 裏で届いてキャッシュにだけ入っているぶんを、リストに反映する。
+  /// 既読にする通知が画面に出ていないと、数字だけ消えて何が来たのか分からない
+  void _showLatestFromCache() {
+    if (!_cacheService.hasData(widget.account.id)) return;
+    _notifications
+      ..clear()
+      ..addAll(_cacheService.get(widget.account.id));
+    _isLoading = false;
+  }
+
+  /// このリストが見えているなら、未読を既読にしてハイライトする。
+  /// 見えていないあいだは何もしない (IndexedStack の裏でも build は走る)
+  void _markSeenIfVisible() {
+    if (!mounted || !widget.isVisible) return;
+    if (!ref.read(notificationTabActiveProvider)) return;
+    ref
+        .read(notificationHighlightProvider.notifier)
+        .activateForAccount(widget.account.id);
   }
 
   void _scheduleAutoFetch() {
@@ -813,6 +819,8 @@ class _NotificationListState extends ConsumerState<_NotificationList>
         _cursor = _cacheService.getCursor(widget.account.id) ?? newCursor;
         _isLoading = false;
       });
+      // 見ている最中に届いたぶんは、その場で既読にする
+      _markSeenIfVisible();
 
       _isFetching = false;
 
@@ -908,6 +916,11 @@ class _NotificationListState extends ConsumerState<_NotificationList>
     // 通知タブの active 状態が変わったら自動フェッチ Timer を再構成
     ref.listen<bool>(notificationTabActiveProvider, (prev, next) {
       _scheduleAutoFetch();
+      // アカウントを選んだまま通知タブへ戻ってきたときも「見た」ことにする
+      if (next && widget.isVisible) {
+        setState(_showLatestFromCache);
+        _markSeenIfVisible();
+      }
     });
 
     // バックグラウンドフェッチで新着があり、かつ直近フェッチからフェッチ間隔が

@@ -3,6 +3,7 @@ import 'dart:ui';
 
 import 'package:flutter/cupertino.dart' show CupertinoPageTransitionsBuilder;
 import 'package:flutter/material.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
 
@@ -126,6 +127,11 @@ class OmniVerseApp extends ConsumerWidget {
     return MaterialApp(
       title: 'OmniVerse',
       debugShowCheckedModeBanner: false,
+      // 日本語を明示する。未指定だと en_US 扱いになり、
+      // フォントに無い文字の代替で漢字が中国語の字形になることがある
+      locale: const Locale('ja', 'JP'),
+      supportedLocales: const [Locale('ja', 'JP')],
+      localizationsDelegates: GlobalMaterialLocalizations.delegates,
       themeMode: settings.themeMode,
       theme: lightTheme,
       darkTheme: darkTheme,

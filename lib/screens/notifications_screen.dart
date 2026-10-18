@@ -467,11 +467,6 @@ class _ChipFrame extends StatelessWidget {
           color: selected
               ? primary.withValues(alpha: 0.12)
               : primary.withValues(alpha: 0),
-          // 太さは変えない。選択で中身の位置がずれる
-          border: Border.all(
-            color: selected ? primary : primary.withValues(alpha: 0),
-            width: 2,
-          ),
           borderRadius: BorderRadius.circular(12),
         ),
         child: child,
@@ -1057,7 +1052,6 @@ class _NotificationListState extends ConsumerState<_NotificationList>
                     key: ValueKey(n.id),
                     notification: n,
                     account: widget.account,
-                    showSnsBadge: false,
                   ),
                 );
               },
@@ -1075,13 +1069,11 @@ class _NotificationTile extends ConsumerStatefulWidget {
     required this.notification,
     required this.account,
     this.showRecipient = false,
-    this.showSnsBadge = true,
     this.markSeenOnView = true,
   });
   final NotificationItem notification;
   final Account account;
   final bool showRecipient;
-  final bool showSnsBadge;
 
   /// 「すべて」タブのように、表示しただけでは既読化したくない場合は false。
   /// 個別アカウントタブで実際にユーザーが見たときだけ既読化する。
@@ -1143,7 +1135,7 @@ class _NotificationTileState extends ConsumerState<_NotificationTile> {
     return spans;
   }
 
-  Widget _buildAvatar(String? url, String name, {double radius = 14}) {
+  Widget _buildAvatar(String? url, String name, {double radius = 18}) {
     return CircleAvatar(
       radius: radius,
       backgroundImage: url != null ? NetworkImage(url) : null,
@@ -1201,15 +1193,7 @@ class _NotificationTileState extends ConsumerState<_NotificationTile> {
               // 通知種類アイコン（大きめ）
               SizedBox(
                 width: 36,
-                child: Column(
-                  children: [
-                    Icon(_icon, size: 24, color: _iconColor),
-                    if (widget.showSnsBadge) ...[
-                      const SizedBox(height: 4),
-                      SnsBadge(service: notification.source, size: 10),
-                    ],
-                  ],
-                ),
+                child: Icon(_icon, size: 24, color: _iconColor),
               ),
               const SizedBox(width: 10),
               // メインコンテンツ
@@ -1237,7 +1221,7 @@ class _NotificationTileState extends ConsumerState<_NotificationTile> {
                             ),
                             child: _buildAvatar(
                                 actors[i].avatarUrl, actors[i].name,
-                                radius: 12),
+                                radius: 15),
                           ),
                         ],
                         if (actors.length > 4) ...[
@@ -1248,9 +1232,21 @@ class _NotificationTileState extends ConsumerState<_NotificationTile> {
                         Text(timeAgo, style: TextStyle(color: Colors.grey[500], fontSize: 11)),
                         if (showRecipient) ...[
                           const SizedBox(width: 6),
-                          Opacity(
-                            opacity: 0.5,
-                            child: _buildAvatar(account.avatarUrl, account.displayName, radius: 8),
+                          // SNS マークは受け取ったアカウントの属性なので、そのアバターに重ねる。
+                          // 上のアカウントチップと同じ置き方。重ねるだけなので行の高さは変わらない
+                          Stack(
+                            clipBehavior: Clip.none,
+                            children: [
+                              Opacity(
+                                opacity: 0.5,
+                                child: _buildAvatar(account.avatarUrl, account.displayName, radius: 10),
+                              ),
+                              Positioned(
+                                right: -4,
+                                bottom: -2,
+                                child: SnsBadge(service: notification.source, size: 7),
+                              ),
+                            ],
                           ),
                         ],
                       ],

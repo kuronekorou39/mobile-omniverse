@@ -72,6 +72,7 @@ class SettingsState {
     this.imageCacheSize = 50,
     this.imageSaveFolder = 'Pictures/OmniVerse',
     this.hideAllRetweets = false,
+    this.hideEngagement = false,
   });
 
   final int fetchIntervalSeconds;
@@ -116,6 +117,9 @@ class SettingsState {
   /// すべてのRT/リポストを非表示にするか
   final bool hideAllRetweets;
 
+  /// タイムラインの返信/RT/いいねの行を隠す（読むことに集中するモード）
+  final bool hideEngagement;
+
   SettingsState copyWith({
     int? fetchIntervalSeconds,
     bool? isFetchingActive,
@@ -140,6 +144,7 @@ class SettingsState {
     int? imageCacheSize,
     String? imageSaveFolder,
     bool? hideAllRetweets,
+    bool? hideEngagement,
   }) {
     return SettingsState(
       fetchIntervalSeconds: fetchIntervalSeconds ?? this.fetchIntervalSeconds,
@@ -165,6 +170,7 @@ class SettingsState {
       imageCacheSize: imageCacheSize ?? this.imageCacheSize,
       imageSaveFolder: imageSaveFolder ?? this.imageSaveFolder,
       hideAllRetweets: hideAllRetweets ?? this.hideAllRetweets,
+      hideEngagement: hideEngagement ?? this.hideEngagement,
     );
   }
 }
@@ -238,6 +244,7 @@ class SettingsNotifier extends StateNotifier<SettingsState> {
       imageCacheSize: prefs.getInt('settings_image_cache_size') ?? d.imageCacheSize,
       imageSaveFolder: prefs.getString('settings_image_save_folder') ?? d.imageSaveFolder,
       hideAllRetweets: prefs.getBool('settings_hide_all_retweets') ?? d.hideAllRetweets,
+      hideEngagement: prefs.getBool('settings_hide_engagement') ?? d.hideEngagement,
       isFetchingActive: prefs.getBool('settings_fetching_active') ?? d.isFetchingActive,
     );
 
@@ -279,6 +286,7 @@ class SettingsNotifier extends StateNotifier<SettingsState> {
     await prefs.setInt('settings_image_cache_size', state.imageCacheSize);
     await prefs.setString('settings_image_save_folder', state.imageSaveFolder);
     await prefs.setBool('settings_hide_all_retweets', state.hideAllRetweets);
+    await prefs.setBool('settings_hide_engagement', state.hideEngagement);
     await prefs.setBool('settings_fetching_active', state.isFetchingActive);
   }
 
@@ -359,6 +367,11 @@ class SettingsNotifier extends StateNotifier<SettingsState> {
 
   void setHideAllRetweets(bool value) {
     state = state.copyWith(hideAllRetweets: value);
+    _saveToPrefs();
+  }
+
+  void setHideEngagement(bool value) {
+    state = state.copyWith(hideEngagement: value);
     _saveToPrefs();
   }
 

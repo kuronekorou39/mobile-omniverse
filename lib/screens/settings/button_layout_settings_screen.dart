@@ -65,6 +65,16 @@ class ButtonLayoutSettingsScreen extends ConsumerWidget {
               notifier.toggleAppBarButton('retweet');
             },
           ),
+          SwitchListTile(
+            secondary: const Icon(Icons.chat_bubble_outline),
+            title: const Text('アクション非表示切替'),
+            subtitle: const Text('タイムラインの返信・RT・いいねの行を隠す'),
+            value: settings.appBarButtons.contains('engagement'),
+            onChanged: (_) {
+              HapticFeedback.selectionClick();
+              notifier.toggleAppBarButton('engagement');
+            },
+          ),
 
           const SettingsSectionGap(),
 

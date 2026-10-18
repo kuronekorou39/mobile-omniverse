@@ -82,6 +82,16 @@ List<({String key, IconData icon, String tooltip, VoidCallback onPressed})>
     ));
   }
 
+  if (settings.appBarButtons.contains('engagement')) {
+    final isHiding = settings.hideEngagement;
+    items.add((
+      key: 'engagement',
+      icon: isHiding ? Icons.chat_bubble : Icons.chat_bubble_outline,
+      tooltip: isHiding ? 'アクション非表示: ON' : 'アクション非表示: OFF',
+      onPressed: () => notifier.setHideEngagement(!isHiding),
+    ));
+  }
+
   return items;
 }
 
@@ -1082,6 +1092,7 @@ class _OmniFeedScreenState extends ConsumerState<OmniFeedScreen>
               imageGridHeight: settings.imagePreviewSize.gridImageHeight,
               videoHeight: settings.imagePreviewSize.videoHeight,
               hideUserInfo: settings.hideUserInfo,
+              hideEngagement: settings.hideEngagement,
               useSeparatorStyle: settings.postCardStyle == PostCardStyle.separator,
               onQuoteRepost: () {
                 Navigator.of(context).push(

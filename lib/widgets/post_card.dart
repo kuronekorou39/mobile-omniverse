@@ -36,6 +36,7 @@ class PostCard extends StatelessWidget {
     this.imageGridHeight,
     this.videoHeight,
     this.hideUserInfo = false,
+    this.hideEngagement = false,
     this.threadImageUrls,
     this.threadIndexOffset = 0,
     this.useSeparatorStyle = false,
@@ -53,6 +54,7 @@ class PostCard extends StatelessWidget {
   final double? imageGridHeight;
   final double? videoHeight;
   final bool hideUserInfo;
+  final bool hideEngagement;
   final List<String>? threadImageUrls;
   final int threadIndexOffset;
   final bool useSeparatorStyle;
@@ -242,9 +244,11 @@ class PostCard extends StatelessWidget {
                 ],
               ),
 
-              // Engagement row
-              SizedBox(height: compactEngagement ? 8 : 12),
-              _buildEngagementRow(context),
+              // Engagement row（非表示モードでは余白ごと詰める）
+              if (!hideEngagement) ...[
+                SizedBox(height: compactEngagement ? 8 : 12),
+                _buildEngagementRow(context),
+              ],
             ],
           );
   }

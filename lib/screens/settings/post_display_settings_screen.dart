@@ -183,6 +183,7 @@ class PostStylePreview extends StatelessWidget {
     this.body = 'これはプレビュー用の投稿です。設定の変更がリアルタイムに反映されます。',
     this.timeLabel = '3m',
     this.withImage = true,
+    this.bare = false,
   });
 
   final PostCardStyle postCardStyle;
@@ -199,6 +200,9 @@ class PostStylePreview extends StatelessWidget {
   final String body;
   final String timeLabel;
   final bool withImage;
+
+  /// カードや区切り線を付けず中身だけ描く（ほかの枠の中に並べるとき用）
+  final bool bare;
 
   /// ログイン中の X アカウントのアイコン URL。無ければ null
   String? get _accountAvatarUrl {
@@ -354,6 +358,8 @@ class PostStylePreview extends StatelessWidget {
           ),
       ],
     );
+
+    if (bare) return content;
 
     if (isCard) {
       return Card(

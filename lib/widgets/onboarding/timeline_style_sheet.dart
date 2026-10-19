@@ -54,12 +54,6 @@ const timelineStylePresets = [
     hideEngagement: true,
   ),
   TimelineStylePreset(
-    name: '画像を大きく',
-    description: '写真やイラストを大きく表示',
-    icon: Icons.photo_outlined,
-    imagePreviewSize: ImagePreviewSize.large,
-  ),
-  TimelineStylePreset(
     name: '人前で見る',
     description: '名前とアイコンを隠し、画像もすべてぼかす',
     icon: Icons.visibility_off_outlined,
@@ -93,37 +87,23 @@ class _TimelineStyleSheetState extends ConsumerState<_TimelineStyleSheet> {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final preset = timelineStylePresets[_selected];
+    // ナビゲーションバー（ホームボタン等）の分を空ける。useSafeArea は下を見ない
+    final bottomInset = MediaQuery.viewPaddingOf(context).bottom;
 
     return SingleChildScrollView(
-      padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+      padding: EdgeInsets.fromLTRB(16, 0, 16, 16 + bottomInset),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text('タイムラインの見た目を選ぶ',
-              style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
+          const Text(
+            'タイムラインの見た目を選ぶ',
+            style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+          ),
           const SizedBox(height: 4),
-          Text('読み込みが終わりました。好みに近いものを選んでください',
-              style: TextStyle(fontSize: 13, color: scheme.onSurfaceVariant)),
-          const SizedBox(height: 12),
-          // 選んだパターンの見え方をその場で見せる
-          ClipRRect(
-            borderRadius: BorderRadius.circular(12),
-            child: ColoredBox(
-              color: scheme.surfaceContainerLow,
-              child: AnimatedSize(
-                duration: const Duration(milliseconds: 200),
-                alignment: Alignment.topCenter,
-                child: PostStylePreview(
-                  postCardStyle: PostCardStyle.separator,
-                  hideUserInfo: preset.hideUserInfo,
-                  sensitiveMode: preset.sensitiveMode,
-                  imagePreviewSize: preset.imagePreviewSize,
-                  metaEmphasis: preset.metaEmphasis,
-                  hideEngagement: preset.hideEngagement,
-                ),
-              ),
-            ),
+          Text(
+            '読み込みが終わりました。見比べて、好みに近いものを選んでください',
+            style: TextStyle(fontSize: 13, color: scheme.onSurfaceVariant),
           ),
           const SizedBox(height: 12),
           for (var i = 0; i < timelineStylePresets.length; i++)
@@ -137,16 +117,21 @@ class _TimelineStyleSheetState extends ConsumerState<_TimelineStyleSheet> {
           Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Icon(Icons.info_outline, size: 16, color: scheme.onSurfaceVariant),
+              Icon(
+                Icons.info_outline,
+                size: 16,
+                color: scheme.onSurfaceVariant,
+              ),
               const SizedBox(width: 6),
               Expanded(
                 child: Text(
                   'あとから「設定 → 投稿の表示」でいつでも変えられます。'
                   '文字の濃さやフォントなど、パターン以外の細かい調整もできます。',
                   style: TextStyle(
-                      fontSize: 12,
-                      height: 1.5,
-                      color: scheme.onSurfaceVariant),
+                    fontSize: 12,
+                    height: 1.5,
+                    color: scheme.onSurfaceVariant,
+                  ),
                 ),
               ),
             ],
@@ -201,47 +186,89 @@ class _PresetTile extends StatelessWidget {
             ),
             borderRadius: BorderRadius.circular(12),
           ),
-          child: Row(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Icon(preset.icon,
-                  color: selected ? scheme.primary : scheme.onSurfaceVariant),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
+              Row(
+                children: [
+                  Icon(
+                    preset.icon,
+                    color: selected ? scheme.primary : scheme.onSurfaceVariant,
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(preset.name,
-                            style: const TextStyle(
-                                fontSize: 15, fontWeight: FontWeight.bold)),
-                        if (recommended) ...[
-                          const SizedBox(width: 6),
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 6, vertical: 1),
-                            decoration: BoxDecoration(
-                              color: scheme.primaryContainer,
-                              borderRadius: BorderRadius.circular(6),
+                        Row(
+                          children: [
+                            Text(
+                              preset.name,
+                              style: const TextStyle(
+                                fontSize: 15,
+                                fontWeight: FontWeight.bold,
+                              ),
                             ),
-                            child: Text('おすすめ',
-                                style: TextStyle(
+                            if (recommended) ...[
+                              const SizedBox(width: 6),
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 6,
+                                  vertical: 1,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: scheme.primaryContainer,
+                                  borderRadius: BorderRadius.circular(6),
+                                ),
+                                child: Text(
+                                  'おすすめ',
+                                  style: TextStyle(
                                     fontSize: 10,
-                                    color: scheme.onPrimaryContainer)),
+                                    color: scheme.onPrimaryContainer,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ],
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          preset.description,
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: scheme.onSurfaceVariant,
                           ),
-                        ],
+                        ),
                       ],
                     ),
-                    const SizedBox(height: 2),
-                    Text(preset.description,
-                        style: TextStyle(
-                            fontSize: 12, color: scheme.onSurfaceVariant)),
-                  ],
-                ),
+                  ),
+                  Icon(
+                    selected
+                        ? Icons.radio_button_checked
+                        : Icons.radio_button_off,
+                    color: selected ? scheme.primary : scheme.outline,
+                  ),
+                ],
               ),
-              Icon(
-                selected ? Icons.radio_button_checked : Icons.radio_button_off,
-                color: selected ? scheme.primary : scheme.outline,
+              const SizedBox(height: 10),
+              // 選ばなくても見比べられるよう、それぞれにサンプルを付ける
+              Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: scheme.surface,
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: PostStylePreview(
+                  postCardStyle: PostCardStyle.separator,
+                  hideUserInfo: preset.hideUserInfo,
+                  sensitiveMode: preset.sensitiveMode,
+                  imagePreviewSize: preset.imagePreviewSize,
+                  metaEmphasis: preset.metaEmphasis,
+                  hideEngagement: preset.hideEngagement,
+                  withImage: false,
+                  body: 'お昼はカレーにしました。思ったより辛かったけど、おいしかった！',
+                  bare: true,
+                ),
               ),
             ],
           ),

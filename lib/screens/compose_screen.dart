@@ -838,8 +838,13 @@ class _AccountChip extends StatelessWidget {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final primary = scheme.primary;
-    // 枠線は付けない（通知タブのチップと揃える）。選択は背景色・太字・濃さで示し、
-    // 前回失敗したアカウントは左上の ! マークで示す
+    // 未選択には枠線を付けない（全部に枠があると見づらい）。
+    // 投稿先は複数選べるので、選択中は枠線でもはっきり示す
+    final borderColor = failedBefore
+        ? Colors.red.shade700
+        : selected
+            ? primary
+            : primary.withValues(alpha: 0);
     return InkWell(
       onTap: onTap,
       borderRadius: BorderRadius.circular(12),
@@ -851,6 +856,8 @@ class _AccountChip extends StatelessWidget {
         decoration: BoxDecoration(
           // null ではなく透明を渡す。null と色の間は素直に補間されない
           color: primary.withValues(alpha: selected ? 0.12 : 0),
+          // 太さは変えない。選択で中身の位置がずれる
+          border: Border.all(color: borderColor, width: 2),
           borderRadius: BorderRadius.circular(12),
         ),
         child: Column(

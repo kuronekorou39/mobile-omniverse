@@ -47,6 +47,16 @@ enum SensitiveMode {
 enum FabPosition { right, left }
 enum PostCardStyle { card, separator }
 
+/// 投稿の名前・ID・時刻をどれだけ本文から引かせるか
+enum PostMetaEmphasis {
+  normal('ふつう'),
+  subtle('控えめ'),
+  faint('かなり控えめ');
+
+  const PostMetaEmphasis(this.label);
+  final String label;
+}
+
 class SettingsState {
   const SettingsState({
     this.fetchIntervalSeconds = 15,
@@ -63,6 +73,7 @@ class SettingsState {
     this.appBarButtons = const {'sensitive', 'userInfo', 'wakelock'},
     this.fabPosition = FabPosition.right,
     this.postCardStyle = PostCardStyle.separator,
+    this.postMetaEmphasis = PostMetaEmphasis.subtle,
     this.debugPostEnabled = false,
     this.showDripStatus = false,
     this.keepScreenOn = true,
@@ -101,6 +112,7 @@ class SettingsState {
   /// FABの表示位置
   final FabPosition fabPosition;
   final PostCardStyle postCardStyle;
+  final PostMetaEmphasis postMetaEmphasis;
   final bool debugPostEnabled;
   final bool showDripStatus;
   final bool keepScreenOn;
@@ -135,6 +147,7 @@ class SettingsState {
     Set<String>? appBarButtons,
     FabPosition? fabPosition,
     PostCardStyle? postCardStyle,
+    PostMetaEmphasis? postMetaEmphasis,
     bool? debugPostEnabled,
     bool? showDripStatus,
     bool? keepScreenOn,
@@ -161,6 +174,7 @@ class SettingsState {
       appBarButtons: appBarButtons ?? this.appBarButtons,
       fabPosition: fabPosition ?? this.fabPosition,
       postCardStyle: postCardStyle ?? this.postCardStyle,
+      postMetaEmphasis: postMetaEmphasis ?? this.postMetaEmphasis,
       debugPostEnabled: debugPostEnabled ?? this.debugPostEnabled,
       showDripStatus: showDripStatus ?? this.showDripStatus,
       keepScreenOn: keepScreenOn ?? this.keepScreenOn,
@@ -235,6 +249,8 @@ class SettingsNotifier extends StateNotifier<SettingsState> {
       appBarButtons: prefs.getStringList(_keyAppBarButtons)?.toSet() ?? d.appBarButtons,
       fabPosition: FabPosition.values[(prefs.getInt('settings_fab_position') ?? d.fabPosition.index).clamp(0, 1)],
       postCardStyle: PostCardStyle.values[(prefs.getInt('settings_post_card_style') ?? d.postCardStyle.index).clamp(0, 1)],
+      postMetaEmphasis: PostMetaEmphasis.values[(prefs.getInt('settings_post_meta_emphasis') ?? d.postMetaEmphasis.index)
+          .clamp(0, PostMetaEmphasis.values.length - 1)],
       debugPostEnabled: prefs.getBool('settings_debug_post_enabled') ?? d.debugPostEnabled,
       showDripStatus: prefs.getBool('settings_show_drip_status') ?? d.showDripStatus,
       keepScreenOn: prefs.getBool('settings_keep_screen_on') ?? d.keepScreenOn,
@@ -277,6 +293,7 @@ class SettingsNotifier extends StateNotifier<SettingsState> {
     await prefs.setStringList(_keyAppBarButtons, state.appBarButtons.toList());
     await prefs.setInt('settings_fab_position', state.fabPosition.index);
     await prefs.setInt('settings_post_card_style', state.postCardStyle.index);
+    await prefs.setInt('settings_post_meta_emphasis', state.postMetaEmphasis.index);
     await prefs.setBool('settings_debug_post_enabled', state.debugPostEnabled);
     await prefs.setBool('settings_show_drip_status', state.showDripStatus);
     await prefs.setBool('settings_keep_screen_on', state.keepScreenOn);
@@ -442,6 +459,11 @@ class SettingsNotifier extends StateNotifier<SettingsState> {
 
   void setPostCardStyle(PostCardStyle style) {
     state = state.copyWith(postCardStyle: style);
+    _saveToPrefs();
+  }
+
+  void setPostMetaEmphasis(PostMetaEmphasis value) {
+    state = state.copyWith(postMetaEmphasis: value);
     _saveToPrefs();
   }
 

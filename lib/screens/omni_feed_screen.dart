@@ -1094,6 +1094,7 @@ class _OmniFeedScreenState extends ConsumerState<OmniFeedScreen>
               hideUserInfo: settings.hideUserInfo,
               hideEngagement: settings.hideEngagement,
               useSeparatorStyle: settings.postCardStyle == PostCardStyle.separator,
+              metaEmphasis: settings.postMetaEmphasis,
               onQuoteRepost: () {
                 Navigator.of(context).push(
                   MaterialPageRoute(

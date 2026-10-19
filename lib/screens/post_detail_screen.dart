@@ -190,6 +190,7 @@ class _PostDetailScreenState extends ConsumerState<PostDetailScreen> {
                   imageGridHeight: s.imagePreviewSize.gridImageHeight,
                   videoHeight: s.imagePreviewSize.videoHeight,
                   useSeparatorStyle: s.postCardStyle == PostCardStyle.separator,
+                  metaEmphasis: s.postMetaEmphasis,
                   onTap: () {
                     Navigator.of(context).push(
                       MaterialPageRoute(
@@ -263,6 +264,7 @@ class _PostDetailScreenState extends ConsumerState<PostDetailScreen> {
                     threadImageUrls: useThread && reply.imageUrls.isNotEmpty ? threadImages : null,
                     threadIndexOffset: replyOffsets[reply.id] ?? 0,
                     useSeparatorStyle: s.postCardStyle == PostCardStyle.separator,
+                    metaEmphasis: s.postMetaEmphasis,
                     onTap: () {
                       Navigator.of(context).push(
                         MaterialPageRoute(

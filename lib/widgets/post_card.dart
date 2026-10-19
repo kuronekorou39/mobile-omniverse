@@ -21,6 +21,29 @@ const double _engagementRowIndent = 50;
 /// 返信/RT/いいねの位置が行ごとにずれないよう固定する。
 const double _sourceInfoWidth = 50;
 
+/// 名前・ID・時刻の見た目。投稿カードと設定画面のプレビューで共有する
+({Color nameColor, FontWeight nameWeight, Color metaColor}) postMetaStyle(
+    ColorScheme scheme, PostMetaEmphasis emphasis) {
+  return switch (emphasis) {
+    PostMetaEmphasis.normal => (
+        nameColor: scheme.onSurface,
+        nameWeight: FontWeight.w700,
+        metaColor: scheme.onSurfaceVariant,
+      ),
+    // 名前は本文と同じ濃さのまま太字で区別し、ID・時刻だけ一段薄くする
+    PostMetaEmphasis.subtle => (
+        nameColor: scheme.onSurface,
+        nameWeight: FontWeight.w700,
+        metaColor: scheme.outline,
+      ),
+    PostMetaEmphasis.faint => (
+        nameColor: scheme.onSurfaceVariant,
+        nameWeight: FontWeight.w500,
+        metaColor: scheme.outline.withValues(alpha: 0.75),
+      ),
+  };
+}
+
 class PostCard extends StatelessWidget {
   const PostCard({
     super.key,
@@ -37,6 +60,7 @@ class PostCard extends StatelessWidget {
     this.videoHeight,
     this.hideUserInfo = false,
     this.hideEngagement = false,
+    this.metaEmphasis = PostMetaEmphasis.subtle,
     this.threadImageUrls,
     this.threadIndexOffset = 0,
     this.useSeparatorStyle = false,
@@ -55,9 +79,14 @@ class PostCard extends StatelessWidget {
   final double? videoHeight;
   final bool hideUserInfo;
   final bool hideEngagement;
+  final PostMetaEmphasis metaEmphasis;
   final List<String>? threadImageUrls;
   final int threadIndexOffset;
   final bool useSeparatorStyle;
+
+  ({Color nameColor, FontWeight nameWeight, Color metaColor}) _meta(
+          BuildContext context) =>
+      postMetaStyle(Theme.of(context).colorScheme, metaEmphasis);
 
   String _formatTimestamp(DateTime timestamp) {
     final diff = DateTime.now().difference(timestamp);
@@ -239,7 +268,7 @@ class PostCard extends StatelessWidget {
                       padding: const EdgeInsets.only(top: 2, left: 8),
                       child: Text(
                         _formatTimestamp(post.timestamp),
-                        style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant, fontSize: 13),
+                        style: TextStyle(color: _meta(context).metaColor, fontSize: 13),
                       ),
                     ),
                 ],
@@ -259,13 +288,13 @@ class PostCard extends StatelessWidget {
       padding: const EdgeInsets.only(left: 50),
       child: Row(
         children: [
-          Icon(Icons.repeat, size: 14, color: Theme.of(context).colorScheme.onSurfaceVariant),
+          Icon(Icons.repeat, size: 14, color: _meta(context).metaColor),
           const SizedBox(width: 4),
           Flexible(
             child: Text(
               '${post.retweetedByUsername} がリツイート',
               style: TextStyle(
-                color: Theme.of(context).colorScheme.onSurfaceVariant,
+                color: _meta(context).metaColor,
                 fontSize: 12,
                 fontWeight: FontWeight.w500,
               ),
@@ -298,7 +327,7 @@ class PostCard extends StatelessWidget {
                 const SizedBox(width: 6),
                 Text(
                   _formatTimestamp(quoted.timestamp),
-                  style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant, fontSize: 13),
+                  style: TextStyle(color: _meta(context).metaColor, fontSize: 13),
                 ),
               ],
             )
@@ -343,8 +372,9 @@ class PostCard extends StatelessWidget {
                 Flexible(
                   child: Text(
                     quoted.username,
-                    style: const TextStyle(
-                      fontWeight: FontWeight.bold,
+                    style: TextStyle(
+                      color: _meta(context).nameColor,
+                      fontWeight: _meta(context).nameWeight,
                       fontSize: 13,
                     ),
                     overflow: TextOverflow.ellipsis,
@@ -355,7 +385,7 @@ class PostCard extends StatelessWidget {
                   child: Text(
                     quoted.handle,
                     style: TextStyle(
-                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      color: _meta(context).metaColor,
                       fontSize: 12,
                     ),
                     overflow: TextOverflow.ellipsis,
@@ -485,23 +515,25 @@ class PostCard extends StatelessWidget {
               Flexible(
                 child: Text(
                   post.username,
-                  style: const TextStyle(
-                    fontWeight: FontWeight.bold,
-                    fontSize: 15,
+                  style: TextStyle(
+                    color: _meta(context).nameColor,
+                    fontWeight: _meta(context).nameWeight,
+                    // 本文(15)より一段小さく。同じ大きさだと太字の名前が重く見える
+                    fontSize: 14,
                   ),
                   overflow: TextOverflow.ellipsis,
                 ),
               ),
               if (post.isProtected) ...[
                 const SizedBox(width: 3),
-                Icon(Icons.lock, size: 13, color: Theme.of(context).colorScheme.onSurfaceVariant),
+                Icon(Icons.lock, size: 13, color: _meta(context).metaColor),
               ],
               const SizedBox(width: 4),
               Flexible(
                 child: Text(
                   post.handle,
                   style: TextStyle(
-                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    color: _meta(context).metaColor,
                     fontSize: 14,
                   ),
                   overflow: TextOverflow.ellipsis,
@@ -513,7 +545,7 @@ class PostCard extends StatelessWidget {
         const SizedBox(width: 4),
         Text(
           _formatTimestamp(post.timestamp),
-          style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant, fontSize: 13),
+          style: TextStyle(color: _meta(context).metaColor, fontSize: 13),
         ),
       ],
     );

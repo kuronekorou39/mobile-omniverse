@@ -8,6 +8,7 @@ import '../../models/sns_service.dart';
 import '../../providers/settings_provider.dart';
 import '../../services/account_storage_service.dart';
 import '../../utils/image_headers.dart';
+import '../../widgets/post_card.dart' show postMetaStyle;
 import 'settings_common.dart';
 
 /// 投稿の表示設定。プレビューを上部に固定し、変更結果がその場で見えるようにする。
@@ -37,12 +38,14 @@ class PostDisplaySettingsScreen extends ConsumerWidget {
                   hideUserInfo: settings.hideUserInfo,
                   sensitiveMode: settings.sensitiveMode,
                   imagePreviewSize: settings.imagePreviewSize,
+                  metaEmphasis: settings.postMetaEmphasis,
                 ),
                 _PostStylePreview(
                   postCardStyle: settings.postCardStyle,
                   hideUserInfo: settings.hideUserInfo,
                   sensitiveMode: settings.sensitiveMode,
                   imagePreviewSize: settings.imagePreviewSize,
+                  metaEmphasis: settings.postMetaEmphasis,
                   useAccountAvatar: true,
                   userName: 'ろう',
                   handle: '@kuronekorou39',
@@ -74,6 +77,27 @@ class PostDisplaySettingsScreen extends ConsumerWidget {
                         notifier.setPostCardStyle(value.first),
                     style: const ButtonStyle(
                       visualDensity: VisualDensity.compact,
+                    ),
+                  ),
+                ),
+                ListTile(
+                  leading: const Icon(Icons.contrast),
+                  title: const Text('名前・時刻の濃さ'),
+                  // 「かなり控えめ」が長く、右端に並べると狭い画面で収まらないので下に置く
+                  subtitle: Padding(
+                    padding: const EdgeInsets.only(top: 8),
+                    child: SegmentedButton<PostMetaEmphasis>(
+                      showSelectedIcon: false,
+                      segments: [
+                        for (final e in PostMetaEmphasis.values)
+                          ButtonSegment(value: e, label: Text(e.label)),
+                      ],
+                      selected: {settings.postMetaEmphasis},
+                      onSelectionChanged: (value) =>
+                          notifier.setPostMetaEmphasis(value.first),
+                      style: const ButtonStyle(
+                        visualDensity: VisualDensity.compact,
+                      ),
                     ),
                   ),
                 ),
@@ -148,6 +172,7 @@ class _PostStylePreview extends StatelessWidget {
     required this.hideUserInfo,
     required this.sensitiveMode,
     required this.imagePreviewSize,
+    required this.metaEmphasis,
     this.useAccountAvatar = false,
     this.userName = 'ユーザー名',
     this.handle = '@handle',
@@ -160,6 +185,7 @@ class _PostStylePreview extends StatelessWidget {
   final bool hideUserInfo;
   final SensitiveMode sensitiveMode;
   final ImagePreviewSize imagePreviewSize;
+  final PostMetaEmphasis metaEmphasis;
 
   /// ログイン済みアカウントのアイコンを使う（2件目用）
   final bool useAccountAvatar;
@@ -185,6 +211,7 @@ class _PostStylePreview extends StatelessWidget {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
     final isCard = postCardStyle == PostCardStyle.card;
+    final meta = postMetaStyle(colorScheme, metaEmphasis);
     final isSensitive = sensitiveMode != SensitiveMode.show;
     // 実際の singleImageMaxHeight に比例したプレビュー高さ
     final imageHeight = switch (imagePreviewSize) {
@@ -239,14 +266,16 @@ class _PostStylePreview extends StatelessWidget {
                 Row(
                   children: [
                     Text(userName,
-                        style: const TextStyle(
-                            fontWeight: FontWeight.bold, fontSize: 13)),
+                        style: TextStyle(
+                            color: meta.nameColor,
+                            fontWeight: meta.nameWeight,
+                            fontSize: 13)),
                     const SizedBox(width: 4),
                     Text(handle,
-                        style: TextStyle(color: Colors.grey[600], fontSize: 12)),
+                        style: TextStyle(color: meta.metaColor, fontSize: 13)),
                     const Spacer(),
                     Text(timeLabel,
-                        style: TextStyle(color: Colors.grey[500], fontSize: 12)),
+                        style: TextStyle(color: meta.metaColor, fontSize: 12)),
                   ],
                 ),
                 const SizedBox(height: 4),
@@ -254,7 +283,7 @@ class _PostStylePreview extends StatelessWidget {
               // 本文
               Text(
                 body,
-                style: const TextStyle(fontSize: 14, height: 1.4),
+                style: const TextStyle(fontSize: 14, height: 1.35),
                 maxLines: 2,
                 overflow: TextOverflow.ellipsis,
               ),
@@ -301,7 +330,7 @@ class _PostStylePreview extends StatelessWidget {
           Padding(
             padding: const EdgeInsets.only(top: 2, left: 8),
             child: Text(timeLabel,
-                style: TextStyle(color: Colors.grey[500], fontSize: 12)),
+                style: TextStyle(color: meta.metaColor, fontSize: 12)),
           ),
       ],
     );

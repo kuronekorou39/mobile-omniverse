@@ -17,6 +17,7 @@ import 'services/debug_log_service.dart';
 import 'services/draft_service.dart';
 import 'services/memory_guard_service.dart';
 import 'services/notification_cache_service.dart';
+import 'services/onboarding_service.dart';
 import 'services/scan_log_service.dart';
 import 'services/x_bearer_token_service.dart';
 import 'services/x_features_service.dart';
@@ -37,6 +38,8 @@ void main() async {
   runZonedGuarded<Future<void>>(() async {
     WidgetsFlutterBinding.ensureInitialized();
     await AccountStorageService.instance.load();
+    await OnboardingService.instance.init(
+        hasAccounts: AccountStorageService.instance.accounts.isNotEmpty);
     await XBearerTokenService.instance.init();
     await XQueryIdService.instance.init();
     await XFeaturesService.instance.init();

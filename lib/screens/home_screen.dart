@@ -4,10 +4,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../providers/feed_provider.dart';
 import '../providers/notification_badge_provider.dart';
 import '../services/account_storage_service.dart';
 import '../services/block_scan_service.dart';
 import '../services/follow_capture_job_service.dart';
+import '../services/onboarding_service.dart';
+import '../widgets/onboarding/timeline_style_sheet.dart';
 import '../widgets/compose_queue_banner.dart';
 import '../widgets/count_badge.dart';
 import 'accounts_screen.dart';
@@ -37,10 +40,34 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 
   Timer? _followCaptureTimer;
 
+  /// 初めてタイムラインが表示されたあと、見た目の選択を出すまでの待ち
+  Timer? _styleSheetTimer;
+
   @override
   void dispose() {
     _followCaptureTimer?.cancel();
+    _styleSheetTimer?.cancel();
     super.dispose();
+  }
+
+  /// タイムラインに投稿が並んだのを見てもらってから、見た目の選択を出す。
+  /// 別のタブにいるときは出さず、タイムラインに来たときにもう一度試す
+  void _maybeShowTimelineStyle() {
+    if (!OnboardingService.instance.shouldShow(OnboardingStep.timelineStyle)) {
+      return;
+    }
+    if (_currentIndex != 1 || _styleSheetTimer != null) return;
+    if (ref.read(feedProvider).posts.isEmpty) return;
+    _styleSheetTimer = Timer(const Duration(milliseconds: 2500), () {
+      _styleSheetTimer = null;
+      if (!mounted || _currentIndex != 1) return;
+      if (!OnboardingService.instance
+          .shouldShow(OnboardingStep.timelineStyle)) {
+        return;
+      }
+      OnboardingService.instance.markSeen(OnboardingStep.timelineStyle);
+      showTimelineStyleSheet(context);
+    });
   }
 
   @override
@@ -84,6 +111,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   Widget build(BuildContext context) {
     final badge = ref.watch(notificationBadgeProvider);
     final unreadTotal = badge.total;
+    ref.listen(feedProvider.select((s) => s.posts.isNotEmpty), (_, hasPosts) {
+      if (hasPosts) _maybeShowTimelineStyle();
+    });
 
     // 端末の戻るボタンでタブ内のNavigatorを戻す
     return PopScope(
@@ -138,6 +168,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       // タイムラインタブならトップへスクロール
       if (index == 1) {
         onTimelineTap?.call();
+        // 「使い方の説明をもう一度見る」の後、タイムラインにいたまま押されたとき用
+        _maybeShowTimelineStyle();
       }
     } else {
       // 切替元のタブをルートに戻す
@@ -156,6 +188,13 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         ref.read(notificationTabActiveProvider.notifier).state = false;
       }
       setState(() => _currentIndex = index);
+      if (index == 1) {
+        _maybeShowTimelineStyle();
+      } else {
+        // 出す前にタブを離れたら、次にタイムラインへ来たときに出し直す
+        _styleSheetTimer?.cancel();
+        _styleSheetTimer = null;
+      }
     }
   }
 

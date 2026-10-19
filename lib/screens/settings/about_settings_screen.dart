@@ -4,6 +4,7 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../../providers/settings_provider.dart';
 import '../../services/app_update_service.dart';
+import '../../services/onboarding_service.dart';
 import '../../utils/app_snackbar.dart';
 import '../../widgets/update_dialog.dart';
 import 'settings_common.dart';
@@ -60,6 +61,16 @@ class _AboutSettingsScreenState extends ConsumerState<AboutSettingsScreen> {
             leading: const Icon(Icons.system_update),
             title: const Text('アップデート確認'),
             onTap: _checkForUpdate,
+          ),
+          ListTile(
+            leading: const Icon(Icons.school_outlined),
+            title: const Text('使い方の説明をもう一度見る'),
+            subtitle: const Text('最初に出た説明を、各画面を次に開いたときにもう一度出します'),
+            onTap: () async {
+              await OnboardingService.instance.resetAll();
+              if (!mounted) return;
+              showAppSnackBar(context, '次に各画面を開いたときに説明を出します');
+            },
           ),
           ListTile(
             leading: const Icon(Icons.policy_outlined),

@@ -33,19 +33,21 @@ class PostDisplaySettingsScreen extends ConsumerWidget {
               children: [
                 const SettingsSectionHeader(title: 'プレビュー'),
                 // 1 件だけだとカード/セパレートの境目や間隔が分からないので 2 件並べる
-                _PostStylePreview(
+                PostStylePreview(
                   postCardStyle: settings.postCardStyle,
                   hideUserInfo: settings.hideUserInfo,
                   sensitiveMode: settings.sensitiveMode,
                   imagePreviewSize: settings.imagePreviewSize,
                   metaEmphasis: settings.postMetaEmphasis,
+                  hideEngagement: settings.hideEngagement,
                 ),
-                _PostStylePreview(
+                PostStylePreview(
                   postCardStyle: settings.postCardStyle,
                   hideUserInfo: settings.hideUserInfo,
                   sensitiveMode: settings.sensitiveMode,
                   imagePreviewSize: settings.imagePreviewSize,
                   metaEmphasis: settings.postMetaEmphasis,
+                  hideEngagement: settings.hideEngagement,
                   useAccountAvatar: true,
                   userName: 'ろう',
                   handle: '@kuronekorou39',
@@ -166,13 +168,15 @@ class PostDisplaySettingsScreen extends ConsumerWidget {
 
 /// 投稿スタイルのプレビュー（カード/セパレート・匿名・センシティブを1つで表現）
 /// 実際の PostCard のレイアウトに合わせたミニチュア版
-class _PostStylePreview extends StatelessWidget {
-  const _PostStylePreview({
+class PostStylePreview extends StatelessWidget {
+  const PostStylePreview({
+    super.key,
     required this.postCardStyle,
     required this.hideUserInfo,
     required this.sensitiveMode,
     required this.imagePreviewSize,
     required this.metaEmphasis,
+    this.hideEngagement = false,
     this.useAccountAvatar = false,
     this.userName = 'ユーザー名',
     this.handle = '@handle',
@@ -186,6 +190,7 @@ class _PostStylePreview extends StatelessWidget {
   final SensitiveMode sensitiveMode;
   final ImagePreviewSize imagePreviewSize;
   final PostMetaEmphasis metaEmphasis;
+  final bool hideEngagement;
 
   /// ログイン済みアカウントのアイコンを使う（2件目用）
   final bool useAccountAvatar;
@@ -322,6 +327,21 @@ class _PostStylePreview extends StatelessWidget {
                   ),
                 ),
               ),
+              if (!hideEngagement) ...[
+                const SizedBox(height: 8),
+                Row(
+                  children: [
+                    for (final icon in const [
+                      Icons.chat_bubble_outline,
+                      Icons.repeat,
+                      Icons.favorite_border,
+                    ]) ...[
+                      Icon(icon, size: 15, color: colorScheme.onSurfaceVariant),
+                      const Spacer(),
+                    ],
+                  ],
+                ),
+              ],
             ],
           ),
         ),

@@ -6,9 +6,13 @@ import '../models/sns_service.dart';
 import '../providers/account_provider.dart';
 import '../providers/fetch_status_provider.dart';
 import '../providers/settings_provider.dart';
+import '../services/onboarding_service.dart';
 import '../services/timeline_fetch_scheduler.dart';
 import '../utils/app_snackbar.dart';
 import '../widgets/empty_state.dart';
+import '../widgets/onboarding/coach_mark.dart';
+import '../widgets/onboarding/onboarding_dialog.dart';
+import '../widgets/onboarding/onboarding_trigger.dart';
 import '../widgets/sns_badge.dart';
 import 'follow_capture_screen.dart';
 import 'follow_target_screen.dart';
@@ -27,6 +31,45 @@ class AccountsScreen extends ConsumerStatefulWidget {
 }
 
 class _AccountsScreenState extends ConsumerState<AccountsScreen> {
+  final _addButtonKey = GlobalKey();
+
+  /// 初回起動のようこそ。続けて「アカウント追加」ボタンを指して誘導する
+  Future<void> _showWelcome(BuildContext context) async {
+    await showOnboardingDialog(
+      context,
+      icon: Icons.waving_hand_outlined,
+      title: 'OmniVerse へようこそ',
+      lead: 'X と Bluesky を、ひとつのアプリでまとめて使えます。',
+      items: const [
+        (
+          icon: Icons.view_stream_outlined,
+          title: 'タイムラインをひとつに',
+          body: '追加したアカウントのタイムラインを、まとめて 1 本で読めます。',
+        ),
+        (
+          icon: Icons.notifications_outlined,
+          title: '通知もまとめて',
+          body: 'アカウントごとの通知を 1 か所で確認できます。',
+        ),
+        (
+          icon: Icons.edit_outlined,
+          title: '同時に投稿',
+          body: '複数のアカウントに、同じ内容をまとめて投稿できます。',
+        ),
+      ],
+      buttonLabel: 'はじめる',
+    );
+    if (!mounted || !context.mounted) return;
+    await showCoachMark(
+      context,
+      targetKey: _addButtonKey,
+      title: 'まずはアカウントを追加',
+      message: 'ここを押して X か Bluesky を選び、いつものようにログインします。',
+      // 案内の部品はアカウントが増えると消えるので、画面自身の context で進める
+      onTargetTap: () => _showAddAccountDialog(this.context, ref),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final accounts = ref.watch(accountProvider);
@@ -92,14 +135,20 @@ class _AccountsScreenState extends ConsumerState<AccountsScreen> {
               ),
             ),
       body: accounts.isEmpty
-          ? EmptyState(
-              icon: Icons.person_add,
-              title: 'アカウント未登録',
-              subtitle: 'SNS アカウントを追加して\nタイムラインを取得しましょう',
-              action: FilledButton.icon(
-                onPressed: () => _showAddAccountDialog(context, ref),
-                icon: const Icon(Icons.add),
-                label: const Text('アカウント追加'),
+          ? OnboardingTrigger(
+              step: OnboardingStep.welcome,
+              when: () => ref.read(accountProvider).isEmpty,
+              show: _showWelcome,
+              child: EmptyState(
+                icon: Icons.person_add,
+                title: 'アカウント未登録',
+                subtitle: 'SNS アカウントを追加して\nタイムラインを取得しましょう',
+                action: FilledButton.icon(
+                  key: _addButtonKey,
+                  onPressed: () => _showAddAccountDialog(context, ref),
+                  icon: const Icon(Icons.add),
+                  label: const Text('アカウント追加'),
+                ),
               ),
             )
           : Column(
@@ -355,8 +404,39 @@ class _AccountTile extends ConsumerWidget {
   void _openDetail(BuildContext context) {
     Navigator.of(context).push(
       MaterialPageRoute(
-        builder: (_) => _AccountDetailScreen(accountId: account.id),
+        builder: (_) => OnboardingTrigger(
+          step: OnboardingStep.accountDetail,
+          show: _showDetailIntro,
+          child: _AccountDetailScreen(accountId: account.id),
+        ),
       ),
+    );
+  }
+
+  /// アカウント詳細を初めて開いたときの紹介
+  static Future<void> _showDetailIntro(BuildContext context) {
+    return showOnboardingDialog(
+      context,
+      icon: Icons.manage_accounts_outlined,
+      title: 'アカウントごとの機能',
+      lead: 'この画面では、このアカウントについて次のことができます。',
+      items: const [
+        (
+          icon: Icons.person_outline,
+          title: 'プロフィール・ふぁぼ・ブックマーク',
+          body: 'このアカウントのプロフィールや、いいね・ブックマークした投稿の一覧を見られます。',
+        ),
+        (
+          icon: Icons.hub_outlined,
+          title: 'つながりを調べる',
+          body: 'フォロー / フォロワーの一覧を取り込み、相互かどうかや、前回からの増減を確かめられます。',
+        ),
+        (
+          icon: Icons.tune,
+          title: 'タイムラインの設定',
+          body: 'このアカウントのタイムラインを読み込むかどうかや、フォロー先の RT を隠すかを切り替えられます。',
+        ),
+      ],
     );
   }
 

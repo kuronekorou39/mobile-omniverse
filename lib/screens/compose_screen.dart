@@ -23,6 +23,8 @@ import '../utils/image_headers.dart';
 import '../widgets/draft_list_sheet.dart';
 import '../widgets/sns_badge.dart';
 import 'browser_post_debug_screen.dart';
+import '../services/onboarding_service.dart';
+import '../widgets/onboarding/coach_mark.dart';
 
 class ComposeScreen extends ConsumerStatefulWidget {
   const ComposeScreen({
@@ -123,6 +125,31 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
         _selectedAccountIds.add(_accounts.first.id);
       }
     }
+    _maybeShowAccountGuide();
+  }
+
+  final _accountRowKey = GlobalKey();
+
+  /// 初めて投稿画面を開いたときに、複数アカウントへ同時に投稿できることを伝える。
+  /// アカウントが 1 つだと選ぶものがないので、2 つ以上になってから出す
+  void _maybeShowAccountGuide() {
+    const step = OnboardingStep.compose;
+    if (_accounts.length < 2 ||
+        !OnboardingService.instance.shouldShow(step)) {
+      return;
+    }
+    // 画面遷移のアニメーションが終わってから
+    Future.delayed(const Duration(milliseconds: 450), () {
+      if (!mounted || !OnboardingService.instance.shouldShow(step)) return;
+      OnboardingService.instance.markSeen(step);
+      showCoachMark(
+        context,
+        targetKey: _accountRowKey,
+        title: '投稿するアカウントを選ぶ',
+        message: 'タップで選んだアカウントすべてに、同じ内容をまとめて投稿します。'
+            '枠が付いているのが選択中のアカウントです。',
+      );
+    });
   }
 
   /// 戻る時に下書き保存を促すべきか（未保存の変更があるか）。
@@ -463,6 +490,7 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
           // アカウント選択（チップ横並び、複数選択。タップで toggle）
           if (_accounts.isNotEmpty)
             Padding(
+              key: _accountRowKey,
               padding: const EdgeInsets.fromLTRB(8, 8, 8, 0),
               child: SizedBox(
                 height: 72,

@@ -207,6 +207,10 @@ void main() {
       expect(find.text('プレビュー'), findsOneWidget);
       expect(find.text('投稿スタイル'), findsOneWidget);
       expect(find.text('プレビューサイズ'), findsOneWidget);
+      expect(find.text('名前・時刻の濃さ'), findsOneWidget);
+      // 項目が増えてテストの画面サイズでは下が切れるので、スクロールして確かめる
+      await tester.scrollUntilVisible(find.text('センシティブ'), 100,
+          scrollable: find.byType(Scrollable).last);
       expect(find.text('匿名モード'), findsOneWidget);
       expect(find.text('センシティブ'), findsOneWidget);
     });

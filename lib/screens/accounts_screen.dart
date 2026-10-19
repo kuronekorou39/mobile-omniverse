@@ -404,54 +404,71 @@ class _AccountTile extends ConsumerWidget {
   void _openDetail(BuildContext context) {
     Navigator.of(context).push(
       MaterialPageRoute(
-        builder: (_) => OnboardingTrigger(
-          step: OnboardingStep.accountDetail,
-          show: _showDetailIntro,
-          child: _AccountDetailScreen(accountId: account.id),
-        ),
+        builder: (_) => _AccountDetailScreen(accountId: account.id),
       ),
     );
   }
 
-  /// アカウント詳細を初めて開いたときの紹介
-  static Future<void> _showDetailIntro(BuildContext context) {
-    return showOnboardingDialog(
-      context,
-      icon: Icons.manage_accounts_outlined,
-      title: 'アカウントごとの機能',
-      lead: 'この画面では、このアカウントについて次のことができます。',
-      items: const [
-        (
-          icon: Icons.person_outline,
-          title: 'プロフィール・ふぁぼ・ブックマーク',
-          body: 'このアカウントのプロフィールや、いいね・ブックマークした投稿の一覧を見られます。',
-        ),
-        (
-          icon: Icons.hub_outlined,
-          title: 'つながりを調べる',
-          body: 'フォロー / フォロワーの一覧を取り込み、相互かどうかや、前回からの増減を確かめられます。',
-        ),
-        (
-          icon: Icons.tune,
-          title: 'タイムラインの設定',
-          body: 'このアカウントのタイムラインを読み込むかどうかや、フォロー先の RT を隠すかを切り替えられます。',
-        ),
-      ],
-    );
-  }
+
 
 }
 
 /// アカウント詳細画面
-class _AccountDetailScreen extends ConsumerWidget {
+class _AccountDetailScreen extends ConsumerStatefulWidget {
   const _AccountDetailScreen({required this.accountId});
 
   final String accountId;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<_AccountDetailScreen> createState() =>
+      _AccountDetailScreenState();
+}
+
+class _AccountDetailScreenState extends ConsumerState<_AccountDetailScreen> {
+  // 初回の案内で明るくする場所
+  final _viewKey = GlobalKey();
+  final _connectionsKey = GlobalKey();
+  final _settingsKey = GlobalKey();
+
+  @override
+  void initState() {
+    super.initState();
+    _maybeShowTour();
+  }
+
+  /// 初めて開いたときに、この画面でできることを場所を指しながら順に説明する
+  void _maybeShowTour() {
+    const step = OnboardingStep.accountDetail;
+    if (!OnboardingService.instance.shouldShow(step)) return;
+    // 画面遷移のアニメーションが終わってから
+    Future.delayed(const Duration(milliseconds: 450), () {
+      if (!mounted || !OnboardingService.instance.shouldShow(step)) return;
+      OnboardingService.instance.markSeen(step);
+      showCoachMarkTour(context, steps: [
+        CoachMarkStep(
+          targetKey: _viewKey,
+          title: 'このアカウントの投稿を見る',
+          message: 'プロフィールや、いいね・ブックマークした投稿の一覧を開けます。',
+        ),
+        CoachMarkStep(
+          targetKey: _connectionsKey,
+          title: 'つながりを調べる',
+          message: 'フォロー / フォロワーの一覧を取り込んで、相互かどうかや前回からの増減を確かめられます。',
+        ),
+        CoachMarkStep(
+          targetKey: _settingsKey,
+          title: 'このアカウントの設定',
+          message: 'タイムラインに読み込むかどうかと、フォロー先の RT を隠すかを切り替えます。',
+        ),
+      ]);
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final accounts = ref.watch(accountProvider);
-    final account = accounts.where((a) => a.id == accountId).firstOrNull;
+    final account =
+        accounts.where((a) => a.id == widget.accountId).firstOrNull;
 
     if (account == null) {
       return Scaffold(
@@ -557,6 +574,7 @@ class _AccountDetailScreen extends ConsumerWidget {
           // 「見るもの」はひとつの面にまとめる。同じ重さの行が並ぶので
           // カード 1 枚に収め、区切り線だけで分ける
           Padding(
+            key: _viewKey,
             padding: const EdgeInsets.symmetric(horizontal: 16),
             child: Container(
               decoration: BoxDecoration(
@@ -612,6 +630,7 @@ class _AccountDetailScreen extends ConsumerWidget {
           // 収集を伴う重い機能なので、面と枠を変えて 1 段持ち上げる。
           // 遷移先の「つながり調査」と語がぶつからないよう動詞にした
           Padding(
+            key: _connectionsKey,
             padding: const EdgeInsets.symmetric(horizontal: 16),
             child: Material(
               color: scheme.surfaceContainerLowest,
@@ -669,21 +688,27 @@ class _AccountDetailScreen extends ConsumerWidget {
           const SizedBox(height: 18),
           // 設定は面を持たせず、入口より一段軽くする。見出しは付けない
           // （2 行しかなく、面の違いで入口とは区別がつく）
-          _SettingRow(
-            label: 'タイムライン取得',
-            value: account.isEnabled,
-            onChanged: (_) =>
-                ref.read(accountProvider.notifier).toggleAccount(account.id),
-          ),
-          _SettingRow(
-            label: 'フォロー先の RT を非表示',
-            value: ref
-                .watch(settingsProvider)
-                .hideRetweetsAccountIds
-                .contains(account.id),
-            onChanged: (_) => ref
-                .read(settingsProvider.notifier)
-                .toggleHideRetweets(account.id),
+          Column(
+            key: _settingsKey,
+            children: [
+              _SettingRow(
+                label: 'タイムライン取得',
+                value: account.isEnabled,
+                onChanged: (_) => ref
+                    .read(accountProvider.notifier)
+                    .toggleAccount(account.id),
+              ),
+              _SettingRow(
+                label: 'フォロー先の RT を非表示',
+                value: ref
+                    .watch(settingsProvider)
+                    .hideRetweetsAccountIds
+                    .contains(account.id),
+                onChanged: (_) => ref
+                    .read(settingsProvider.notifier)
+                    .toggleHideRetweets(account.id),
+              ),
+            ],
           ),
           // 破壊的操作はフォールドの下へ。消えるのはこのアプリの登録と
           // 保存データで、SNS 側のアカウントではない。何が消えるかは

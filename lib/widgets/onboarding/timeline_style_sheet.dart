@@ -44,6 +44,7 @@ const timelineStylePresets = [
   ),
   TimelineStylePreset(
     name: 'すっきり',
+    fontScale: 0.8, // 表示上の 100%
     metaEmphasis: PostMetaEmphasis.faint,
     hideEngagement: true,
   ),

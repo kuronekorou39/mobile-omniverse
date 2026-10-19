@@ -9,6 +9,7 @@ import '../../providers/settings_provider.dart';
 import '../../services/account_storage_service.dart';
 import '../../utils/image_headers.dart';
 import '../../widgets/post_card.dart' show postMetaStyle;
+import '../../widgets/sns_badge.dart';
 import 'settings_common.dart';
 
 /// 投稿の表示設定。プレビューを上部に固定し、変更結果がその場で見えるようにする。
@@ -256,12 +257,12 @@ class PostStylePreview extends StatelessWidget {
             ),
           const SizedBox(width: 10),
         ] else ...[
-          // 匿名モード: 小さなアイコン
+          // 匿名モード: 実物（PostCard）と同じく SNS バッジを薄く出す
           Padding(
             padding: const EdgeInsets.only(top: 2, right: 8),
             child: Opacity(
               opacity: 0.5,
-              child: Icon(Icons.public, size: 14, color: Colors.grey[500]),
+              child: SnsBadge(service: SnsService.x, size: 14),
             ),
           ),
         ],
@@ -278,13 +279,13 @@ class PostStylePreview extends StatelessWidget {
                         style: TextStyle(
                             color: meta.nameColor,
                             fontWeight: meta.nameWeight,
-                            fontSize: 13)),
+                            fontSize: 14)),
                     const SizedBox(width: 4),
                     Text(handle,
-                        style: TextStyle(color: meta.metaColor, fontSize: 13)),
+                        style: TextStyle(color: meta.metaColor, fontSize: 14)),
                     const Spacer(),
                     Text(timeLabel,
-                        style: TextStyle(color: meta.metaColor, fontSize: 12)),
+                        style: TextStyle(color: meta.metaColor, fontSize: 13)),
                   ],
                 ),
                 const SizedBox(height: 4),
@@ -292,7 +293,7 @@ class PostStylePreview extends StatelessWidget {
               // 本文
               Text(
                 body,
-                style: const TextStyle(fontSize: 14, height: 1.35),
+                style: const TextStyle(fontSize: 15, height: 1.35),
                 maxLines: 2,
                 overflow: TextOverflow.ellipsis,
               ),

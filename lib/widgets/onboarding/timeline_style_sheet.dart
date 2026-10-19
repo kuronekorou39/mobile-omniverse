@@ -1,65 +1,53 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../models/post.dart';
+import '../../models/sns_service.dart';
 import '../../providers/settings_provider.dart';
-import '../../screens/settings/post_display_settings_screen.dart'
-    show PostStylePreview;
+import '../../services/account_storage_service.dart';
+import '../post_card.dart';
 
-/// 初回に選ぶタイムラインの見た目。設定のいくつかをまとめて切り替える
+/// 初回に選ぶタイムラインの見た目。サンプルで見て分かる項目だけを切り替える
 class TimelineStylePreset {
   const TimelineStylePreset({
     required this.name,
-    required this.description,
-    required this.icon,
-    this.imagePreviewSize = ImagePreviewSize.medium,
+    this.postCardStyle = PostCardStyle.separator,
+    this.fontScale = 1.0,
     this.metaEmphasis = PostMetaEmphasis.subtle,
     this.hideEngagement = false,
-    this.hideUserInfo = false,
-    this.sensitiveMode = SensitiveMode.hide,
   });
 
   final String name;
-  final String description;
-  final IconData icon;
-  final ImagePreviewSize imagePreviewSize;
+  final PostCardStyle postCardStyle;
+
+  /// 設定画面のフォントサイズと同じ値（1.0 が表示上の 125%）
+  final double fontScale;
   final PostMetaEmphasis metaEmphasis;
   final bool hideEngagement;
-  final bool hideUserInfo;
-  final SensitiveMode sensitiveMode;
 
   void apply(SettingsNotifier notifier) {
     notifier
-      ..setPostCardStyle(PostCardStyle.separator)
-      ..setImagePreviewSize(imagePreviewSize)
+      ..setPostCardStyle(postCardStyle)
+      ..setFontScale(fontScale)
       ..setPostMetaEmphasis(metaEmphasis)
-      ..setHideEngagement(hideEngagement)
-      ..setHideUserInfo(hideUserInfo)
-      ..setSensitiveMode(sensitiveMode);
+      ..setHideEngagement(hideEngagement);
   }
 }
 
 /// 先頭がおすすめ。最初から選んだ状態で出す
 const timelineStylePresets = [
+  TimelineStylePreset(name: '標準'),
   TimelineStylePreset(
-    name: 'バランス',
-    description: '迷ったらこれ。読みやすさと操作のしやすさのバランス型',
-    icon: Icons.auto_awesome_outlined,
+    name: 'カード',
+    postCardStyle: PostCardStyle.card,
+    metaEmphasis: PostMetaEmphasis.normal,
   ),
   TimelineStylePreset(
-    name: 'すっきり読む',
-    description: 'いいね・RT のボタンを隠して、文章に集中',
-    icon: Icons.menu_book_outlined,
-    imagePreviewSize: ImagePreviewSize.small,
+    name: 'すっきり',
     metaEmphasis: PostMetaEmphasis.faint,
     hideEngagement: true,
   ),
-  TimelineStylePreset(
-    name: '人前で見る',
-    description: '名前とアイコンを隠し、画像もすべてぼかす',
-    icon: Icons.visibility_off_outlined,
-    hideUserInfo: true,
-    sensitiveMode: SensitiveMode.hideAll,
-  ),
+  TimelineStylePreset(name: '大きな文字', fontScale: 1.2),
 ];
 
 Future<void> showTimelineStyleSheet(BuildContext context) {
@@ -86,7 +74,6 @@ class _TimelineStyleSheetState extends ConsumerState<_TimelineStyleSheet> {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    final preset = timelineStylePresets[_selected];
     // ナビゲーションバー（ホームボタン等）の分を空ける。useSafeArea は下を見ない
     final bottomInset = MediaQuery.viewPaddingOf(context).bottom;
 
@@ -96,52 +83,27 @@ class _TimelineStyleSheetState extends ConsumerState<_TimelineStyleSheet> {
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text(
-            'タイムラインの見た目を選ぶ',
-            style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
-          ),
-          const SizedBox(height: 4),
-          Text(
-            '読み込みが終わりました。見比べて、好みに近いものを選んでください',
-            style: TextStyle(fontSize: 13, color: scheme.onSurfaceVariant),
-          ),
+          const Text('タイムラインの見た目を選ぶ',
+              style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
           const SizedBox(height: 12),
           for (var i = 0; i < timelineStylePresets.length; i++)
             _PresetTile(
+              index: i,
               preset: timelineStylePresets[i],
               selected: i == _selected,
               recommended: i == 0,
               onTap: () => setState(() => _selected = i),
             ),
-          const SizedBox(height: 8),
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Icon(
-                Icons.info_outline,
-                size: 16,
-                color: scheme.onSurfaceVariant,
-              ),
-              const SizedBox(width: 6),
-              Expanded(
-                child: Text(
-                  'あとから「設定 → 投稿の表示」でいつでも変えられます。'
-                  '文字の濃さやフォントなど、パターン以外の細かい調整もできます。',
-                  style: TextStyle(
-                    fontSize: 12,
-                    height: 1.5,
-                    color: scheme.onSurfaceVariant,
-                  ),
-                ),
-              ),
-            ],
-          ),
+          const SizedBox(height: 4),
+          Text('あとから「設定」でいつでも変えられます。',
+              style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant)),
           const SizedBox(height: 16),
           SizedBox(
             width: double.infinity,
             child: FilledButton(
               onPressed: () {
-                preset.apply(ref.read(settingsProvider.notifier));
+                timelineStylePresets[_selected]
+                    .apply(ref.read(settingsProvider.notifier));
                 Navigator.of(context).pop();
               },
               child: const Text('これにする'),
@@ -155,12 +117,14 @@ class _TimelineStyleSheetState extends ConsumerState<_TimelineStyleSheet> {
 
 class _PresetTile extends StatelessWidget {
   const _PresetTile({
+    required this.index,
     required this.preset,
     required this.selected,
     required this.recommended,
     required this.onTap,
   });
 
+  final int index;
   final TimelineStylePreset preset;
   final bool selected;
   final bool recommended;
@@ -170,13 +134,13 @@ class _PresetTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     return Padding(
-      padding: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.only(bottom: 10),
       child: InkWell(
         onTap: onTap,
         borderRadius: BorderRadius.circular(12),
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 150),
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+          padding: const EdgeInsets.fromLTRB(12, 8, 12, 10),
           decoration: BoxDecoration(
             color: scheme.primary.withValues(alpha: selected ? 0.12 : 0),
             // 太さは変えない。選択で中身の位置がずれる
@@ -191,57 +155,25 @@ class _PresetTile extends StatelessWidget {
             children: [
               Row(
                 children: [
-                  Icon(
-                    preset.icon,
-                    color: selected ? scheme.primary : scheme.onSurfaceVariant,
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
-                          children: [
-                            Text(
-                              preset.name,
-                              style: const TextStyle(
-                                fontSize: 15,
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
-                            if (recommended) ...[
-                              const SizedBox(width: 6),
-                              Container(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 6,
-                                  vertical: 1,
-                                ),
-                                decoration: BoxDecoration(
-                                  color: scheme.primaryContainer,
-                                  borderRadius: BorderRadius.circular(6),
-                                ),
-                                child: Text(
-                                  'おすすめ',
-                                  style: TextStyle(
-                                    fontSize: 10,
-                                    color: scheme.onPrimaryContainer,
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ],
-                        ),
-                        const SizedBox(height: 2),
-                        Text(
-                          preset.description,
+                  Text(preset.name,
+                      style: const TextStyle(
+                          fontSize: 15, fontWeight: FontWeight.bold)),
+                  if (recommended) ...[
+                    const SizedBox(width: 6),
+                    Container(
+                      padding:
+                          const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+                      decoration: BoxDecoration(
+                        color: scheme.primaryContainer,
+                        borderRadius: BorderRadius.circular(6),
+                      ),
+                      child: Text('おすすめ',
                           style: TextStyle(
-                            fontSize: 12,
-                            color: scheme.onSurfaceVariant,
-                          ),
-                        ),
-                      ],
+                              fontSize: 10,
+                              color: scheme.onPrimaryContainer)),
                     ),
-                  ),
+                  ],
+                  const Spacer(),
                   Icon(
                     selected
                         ? Icons.radio_button_checked
@@ -250,27 +182,60 @@ class _PresetTile extends StatelessWidget {
                   ),
                 ],
               ),
-              const SizedBox(height: 10),
-              // 選ばなくても見比べられるよう、それぞれにサンプルを付ける
-              Container(
-                padding: const EdgeInsets.all(10),
-                decoration: BoxDecoration(
-                  color: scheme.surface,
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: PostStylePreview(
-                  postCardStyle: PostCardStyle.separator,
-                  hideUserInfo: preset.hideUserInfo,
-                  sensitiveMode: preset.sensitiveMode,
-                  imagePreviewSize: preset.imagePreviewSize,
-                  metaEmphasis: preset.metaEmphasis,
-                  hideEngagement: preset.hideEngagement,
-                  withImage: false,
-                  body: 'お昼はカレーにしました。思ったより辛かったけど、おいしかった！',
-                  bare: true,
-                ),
-              ),
+              const SizedBox(height: 8),
+              _Sample(index: index, preset: preset),
             ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// 実際の投稿表示（PostCard）でサンプルを描く。作り物のプレビューだと実物とずれる
+class _Sample extends StatelessWidget {
+  const _Sample({required this.index, required this.preset});
+
+  final int index;
+  final TimelineStylePreset preset;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    // 見本の投稿者は自分のアカウントを借りる（アイコンが無地だと実物らしく見えない）
+    final accounts = AccountStorageService.instance.accounts;
+    final me = accounts.isNotEmpty ? accounts.first : null;
+    final post = Post(
+      // Hero のタグが投稿 ID から作られるので、見本ごとに分ける
+      id: 'onboarding_sample_$index',
+      source: me?.service ?? SnsService.x,
+      username: me?.displayName ?? 'OmniVerse',
+      handle: me?.handle ?? '@omniverse',
+      avatarUrl: me?.avatarUrl,
+      body: 'お昼はカレーにしました。思ったより辛かったけど、おいしかった！',
+      timestamp: DateTime.now().subtract(const Duration(minutes: 3)),
+      replyCount: 2,
+      repostCount: 5,
+      likeCount: 24,
+    );
+
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(8),
+      child: ColoredBox(
+        color: scheme.surface,
+        // 見本の中は押しても何も起きないようにする（プロフィールに飛ぶなど）
+        child: IgnorePointer(
+          child: MediaQuery(
+            data: MediaQuery.of(context).copyWith(
+              textScaler: TextScaler.linear(preset.fontScale),
+            ),
+            child: PostCard(
+              post: post,
+              useSeparatorStyle:
+                  preset.postCardStyle == PostCardStyle.separator,
+              metaEmphasis: preset.metaEmphasis,
+              hideEngagement: preset.hideEngagement,
+            ),
           ),
         ),
       ),

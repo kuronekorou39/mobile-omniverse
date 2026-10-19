@@ -448,7 +448,7 @@ void main() {
       expect(heartIcon.color, Colors.red);
     });
 
-    testWidgets('not liked post shows grey heart color', (tester) async {
+    testWidgets('not liked post shows muted heart color', (tester) async {
       final post = makePost(likeCount: 5);
       await tester.pumpWidget(buildPostCard(post: post));
 
@@ -456,7 +456,8 @@ void main() {
       expect(heartIcons, findsOneWidget);
 
       final heartIcon = tester.widget<Icon>(heartIcons);
-      expect(heartIcon.color, Colors.grey[600]);
+      final scheme = Theme.of(tester.element(heartIcons)).colorScheme;
+      expect(heartIcon.color, scheme.onSurfaceVariant);
     });
 
     testWidgets('Card has InkWell for tap behavior', (tester) async {

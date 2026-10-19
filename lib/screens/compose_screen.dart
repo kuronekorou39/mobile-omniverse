@@ -836,12 +836,10 @@ class _AccountChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final primary = Theme.of(context).colorScheme.primary;
-    final borderColor = failedBefore
-        ? Colors.red.shade700
-        : selected
-            ? primary
-            : Theme.of(context).dividerColor;
+    final scheme = Theme.of(context).colorScheme;
+    final primary = scheme.primary;
+    // 枠線は付けない（通知タブのチップと揃える）。選択は背景色・太字・濃さで示し、
+    // 前回失敗したアカウントは左上の ! マークで示す
     return InkWell(
       onTap: onTap,
       borderRadius: BorderRadius.circular(12),
@@ -851,11 +849,8 @@ class _AccountChip extends StatelessWidget {
         height: 64,
         padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
         decoration: BoxDecoration(
-          color: selected ? primary.withValues(alpha: 0.12) : null,
-          border: Border.all(
-            color: borderColor,
-            width: selected ? 2 : 1,
-          ),
+          // null ではなく透明を渡す。null と色の間は素直に補間されない
+          color: primary.withValues(alpha: selected ? 0.12 : 0),
           borderRadius: BorderRadius.circular(12),
         ),
         child: Column(
@@ -916,7 +911,7 @@ class _AccountChip extends StatelessWidget {
               style: TextStyle(
                 fontSize: 10,
                 fontWeight: selected ? FontWeight.bold : FontWeight.normal,
-                color: selected ? null : Colors.grey[600],
+                color: selected ? null : scheme.onSurfaceVariant,
               ),
             ),
           ],

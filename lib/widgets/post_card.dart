@@ -112,7 +112,7 @@ class PostCard extends StatelessWidget {
               child: _buildContent(context),
             ),
           ),
-          Divider(height: 1, thickness: 0.5, color: Colors.grey.withAlpha(40)),
+          Divider(height: 1, thickness: 0.5, color: colorScheme.outlineVariant.withValues(alpha: 0.5)),
         ],
       );
     }
@@ -179,8 +179,9 @@ class PostCard extends StatelessWidget {
                           LinkedText(
                             text: post.body,
                             style: const TextStyle(
+                              // 名前と同じ大きさ。M PLUS Rounded は字面が大きいので行間は詰め気味
                               fontSize: 15,
-                              height: 1.45,
+                              height: 1.35,
                             ),
                           ),
                         // Images, video（センシティブ時はオーバーレイで隠す）
@@ -238,7 +239,7 @@ class PostCard extends StatelessWidget {
                       padding: const EdgeInsets.only(top: 2, left: 8),
                       child: Text(
                         _formatTimestamp(post.timestamp),
-                        style: TextStyle(color: Colors.grey[500], fontSize: 12),
+                        style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant, fontSize: 13),
                       ),
                     ),
                 ],
@@ -258,13 +259,13 @@ class PostCard extends StatelessWidget {
       padding: const EdgeInsets.only(left: 50),
       child: Row(
         children: [
-          Icon(Icons.repeat, size: 14, color: Colors.grey[500]),
+          Icon(Icons.repeat, size: 14, color: Theme.of(context).colorScheme.onSurfaceVariant),
           const SizedBox(width: 4),
           Flexible(
             child: Text(
               '${post.retweetedByUsername} がリツイート',
               style: TextStyle(
-                color: Colors.grey[500],
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
                 fontSize: 12,
                 fontWeight: FontWeight.w500,
               ),
@@ -297,7 +298,7 @@ class PostCard extends StatelessWidget {
                 const SizedBox(width: 6),
                 Text(
                   _formatTimestamp(quoted.timestamp),
-                  style: TextStyle(color: Colors.grey[500], fontSize: 12),
+                  style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant, fontSize: 13),
                 ),
               ],
             )
@@ -354,7 +355,7 @@ class PostCard extends StatelessWidget {
                   child: Text(
                     quoted.handle,
                     style: TextStyle(
-                      color: Colors.grey[600],
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
                       fontSize: 12,
                     ),
                     overflow: TextOverflow.ellipsis,
@@ -486,22 +487,22 @@ class PostCard extends StatelessWidget {
                   post.username,
                   style: const TextStyle(
                     fontWeight: FontWeight.bold,
-                    fontSize: 14,
+                    fontSize: 15,
                   ),
                   overflow: TextOverflow.ellipsis,
                 ),
               ),
               if (post.isProtected) ...[
                 const SizedBox(width: 3),
-                Icon(Icons.lock, size: 13, color: Colors.grey[500]),
+                Icon(Icons.lock, size: 13, color: Theme.of(context).colorScheme.onSurfaceVariant),
               ],
               const SizedBox(width: 4),
               Flexible(
                 child: Text(
                   post.handle,
                   style: TextStyle(
-                    color: Colors.grey[600],
-                    fontSize: 13,
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    fontSize: 14,
                   ),
                   overflow: TextOverflow.ellipsis,
                 ),
@@ -512,14 +513,14 @@ class PostCard extends StatelessWidget {
         const SizedBox(width: 4),
         Text(
           _formatTimestamp(post.timestamp),
-          style: TextStyle(color: Colors.grey[500], fontSize: 12),
+          style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant, fontSize: 13),
         ),
       ],
     );
   }
 
   Widget _buildEngagementRow(BuildContext context) {
-    final iconColor = Colors.grey[600];
+    final iconColor = Theme.of(context).colorScheme.onSurfaceVariant;
     final compact = compactEngagement;
     final iconSize = compact ? 16.0 : 18.0;
     final fontSize = compact ? 11.0 : 12.0;
@@ -532,7 +533,7 @@ class PostCard extends StatelessWidget {
         _EngagementButton(
           icon: Icons.chat_bubble_outline,
           count: post.replyCount,
-          color: iconColor!,
+          color: iconColor,
           iconSize: iconSize,
           fontSize: fontSize,
           compact: compact,

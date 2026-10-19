@@ -303,6 +303,7 @@ class _PostListTabState extends ConsumerState<_PostListTab>
             sensitiveMode: settings.sensitiveMode,
             hideUserInfo: settings.hideUserInfo,
             compactEngagement: settings.compactEngagement,
+            useSeparatorStyle: settings.postCardStyle == PostCardStyle.separator,
             onTap: () {
               Navigator.of(context).push(
                 MaterialPageRoute(

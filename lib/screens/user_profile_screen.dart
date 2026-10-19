@@ -509,6 +509,7 @@ class _UserProfileScreenState extends ConsumerState<UserProfileScreen>
               imageMaxHeight: s.imagePreviewSize.singleImageMaxHeight,
               imageGridHeight: s.imagePreviewSize.gridImageHeight,
               videoHeight: s.imagePreviewSize.videoHeight,
+              useSeparatorStyle: s.postCardStyle == PostCardStyle.separator,
               onTap: () {
                 Navigator.of(context).push(
                   MaterialPageRoute(

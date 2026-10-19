@@ -189,6 +189,7 @@ class _PostDetailScreenState extends ConsumerState<PostDetailScreen> {
                   imageMaxHeight: s.imagePreviewSize.singleImageMaxHeight,
                   imageGridHeight: s.imagePreviewSize.gridImageHeight,
                   videoHeight: s.imagePreviewSize.videoHeight,
+                  useSeparatorStyle: s.postCardStyle == PostCardStyle.separator,
                   onTap: () {
                     Navigator.of(context).push(
                       MaterialPageRoute(
@@ -253,12 +254,15 @@ class _PostDetailScreenState extends ConsumerState<PostDetailScreen> {
                   final s = ref.watch(settingsProvider);
                   return PostCard(
                     post: reply,
+                    // 親投稿と同じくモザイク設定を渡す（渡さないと「全て隠す」が効かない）
+                    sensitiveMode: s.sensitiveMode,
                     compactEngagement: s.compactEngagement,
                     imageMaxHeight: s.imagePreviewSize.singleImageMaxHeight,
                     imageGridHeight: s.imagePreviewSize.gridImageHeight,
                     videoHeight: s.imagePreviewSize.videoHeight,
                     threadImageUrls: useThread && reply.imageUrls.isNotEmpty ? threadImages : null,
                     threadIndexOffset: replyOffsets[reply.id] ?? 0,
+                    useSeparatorStyle: s.postCardStyle == PostCardStyle.separator,
                     onTap: () {
                       Navigator.of(context).push(
                         MaterialPageRoute(

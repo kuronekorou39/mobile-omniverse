@@ -539,6 +539,40 @@ class FollowDb {
     return deleted;
   }
 
+  /// 対象 1 件の履歴のうち、種別ごとに新しい [keepPerKind] 件だけ残して
+  /// 古いものを消す。消した件数を返す。
+  ///
+  /// 取得中と、続きから再開できるものは数えずに残す（消すと再開できない）
+  Future<int> deleteOldSnapshots(
+    SnsService service,
+    String handle, {
+    required int keepPerKind,
+  }) async {
+    final db = await _database;
+    final victims = await db.rawQuery('''
+      SELECT id FROM (
+        SELECT id, ROW_NUMBER() OVER (
+          PARTITION BY kind ORDER BY startedAt DESC, id DESC
+        ) AS rn FROM snapshots
+        WHERE service = ? AND targetHandle = ? AND status <> 'running'
+          AND NOT (status <> 'completed' AND cursor IS NOT NULL)
+      ) WHERE rn > ?
+    ''', [service.name, _norm(handle), keepPerKind]);
+    if (victims.isEmpty) return 0;
+
+    final ids = [for (final r in victims) r['id'] as int];
+    final marks = List.filled(ids.length, '?').join(',');
+    await db.transaction((txn) async {
+      await txn.delete('snapshot_members',
+          where: 'snapshotId IN ($marks)', whereArgs: ids);
+      await txn.delete('snapshots', where: 'id IN ($marks)', whereArgs: ids);
+    });
+    await pruneOrphanUsers();
+    // VACUUM しないとファイルが縮まず、使用量が減らないように見える
+    await db.execute('VACUUM');
+    return ids.length;
+  }
+
   // ─── 相互判定 ───
   //
   // followers と following を 1 つの run にまとめて記録していた時期があるが、

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/account.dart';
 import '../models/sns_service.dart';
@@ -10,6 +11,7 @@ import '../services/scan_estimate.dart';
 import '../utils/app_snackbar.dart';
 import '../utils/confirm_dialog.dart';
 import 'follow_section_header.dart';
+import 'skeleton.dart';
 
 /// 対象画面に置く「ブロック調査」のひとかたまり。
 ///
@@ -45,6 +47,10 @@ class _BlockScanSectionState extends State<BlockScanSection> {
   final Map<int, BlockRunProgress> _stats = {};
   bool _loading = true;
 
+  /// 開閉を自分で選んだか。null のあいだは、調査中や未完了があるときだけ開く
+  bool? _expanded;
+  static const _prefExpanded = 'block_scan_section_expanded';
+
   @override
   void initState() {
     super.initState();
@@ -70,8 +76,11 @@ class _BlockScanSectionState extends State<BlockScanSection> {
     for (final r in runs) {
       stats[r.id] = await db.blockRunProgress(r.id);
     }
+    final prefs = await SharedPreferences.getInstance();
+    final expanded = prefs.getBool(_prefExpanded);
     if (!mounted) return;
     setState(() {
+      _expanded = expanded;
       _runs = runs;
       _stats
         ..clear()
@@ -92,6 +101,9 @@ class _BlockScanSectionState extends State<BlockScanSection> {
     final isMine = running != null && running.targetHandle == widget.handle;
     final otherRunning =
         running != null && running.targetHandle != widget.handle;
+    final hasUnfinished = _runs.any((r) => !r.isCompleted);
+    // 決めていなければ、気にしておくべきものがあるときだけ開いておく
+    final open = _expanded ?? (isMine || hasUnfinished);
 
     return Padding(
       // 下に続くまとまりとの間隔。Bluesky では丸ごと出さないので内側に持つ
@@ -100,25 +112,44 @@ class _BlockScanSectionState extends State<BlockScanSection> {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           // 3 行の説明は毎回読むものではないので畳む
-          const FollowSectionHeader(
+          FollowSectionHeader(
             'つながり調査',
             info: 'つながっている人のフォロー先をたどって、'
                 'ブロック・ミュートの有無を調べます。\n'
                 '数時間かかりますが、途中で止めても続きから再開でき、'
                 'その時点までの結果を見られます。',
+            expanded: open,
+            onToggle: () => _setExpanded(!open),
+            summary: isMine
+                ? '調査中'
+                : hasUnfinished
+                    ? '未完了あり'
+                    : _runs.isEmpty
+                        ? null
+                        : '${_runs.length}件',
           ),
-          if (isMine) _runningCard(running),
-          if (otherRunning) _otherRunningNote(running),
-          if (_loading)
-            const Padding(
-              padding: EdgeInsets.all(16),
-              child: Center(
-                  child: SizedBox(
-                      width: 18,
-                      height: 18,
-                      child: CircularProgressIndicator(strokeWidth: 2))),
-            )
-          else if (_runs.isNotEmpty) ...[
+          if (open) ..._body(running, isMine, otherRunning, hasUnfinished),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _setExpanded(bool value) async {
+    setState(() => _expanded = value);
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_prefExpanded, value);
+  }
+
+  List<Widget> _body(BlockScanProgress? running, bool isMine,
+          bool otherRunning, bool hasUnfinished) =>
+      [
+          if (isMine) _runningCard(running!),
+          if (otherRunning) _otherRunningNote(running!),
+          if (_loading) ...[
+            // 調査の記録 1 行ぶんの形で待つ
+            const SkeletonBox(height: 72, radius: 16),
+            const SizedBox(height: 12),
+          ] else if (_runs.isNotEmpty) ...[
             _runList(),
             const SizedBox(height: 12),
           ],
@@ -126,12 +157,9 @@ class _BlockScanSectionState extends State<BlockScanSection> {
             _startButton(
               blocked: otherRunning,
               // 続きがあるうちは、そちらが主。新規は控えめに出す
-              hasResumable: _runs.any((r) => !r.isCompleted),
+              hasResumable: hasUnfinished,
             ),
-        ],
-      ),
-    );
-  }
+      ];
 
   /// 別の対象を調べている間は、この対象の様子ではないことをはっきり出す。
   /// 走査は 1 本ずつなので、終わるまでここでは始められない

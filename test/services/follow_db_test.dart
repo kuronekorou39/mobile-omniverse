@@ -971,6 +971,45 @@ void main() {
           [ids[4], ids[3]]);
     });
 
+    test('古い履歴の削除は種別ごとに新しい分を残す', () async {
+      await useTempFile('follow_db_old');
+      final ids = <int>[];
+      for (var i = 0; i < 4; i++) {
+        ids.add(await completedSnapshot('alice', 'followers', [user('$i')],
+            startedAt: 1000 + i));
+        await completedSnapshot('alice', 'following', [user('$i')],
+            startedAt: 1000 + i);
+      }
+      // 別の対象は巻き込まない
+      await completedSnapshot('bob', 'followers', [user('x')], startedAt: 1);
+
+      expect(
+          await db.deleteOldSnapshots(SnsService.x, 'alice', keepPerKind: 2),
+          4);
+      expect(
+          (await db.listSnapshots(targetHandle: 'alice', kind: 'followers'))
+              .map((s) => s.id),
+          [ids[3], ids[2]]);
+      expect((await db.listSnapshots(targetHandle: 'bob')).length, 1);
+    });
+
+    test('古い履歴の削除で、再開できる途中のものは残す', () async {
+      await useTempFile('follow_db_old_resume');
+      final resumable = await db.startSnapshot(
+          service: SnsService.x, targetHandle: 'alice', kind: 'followers');
+      await db.addBatch(snapshotId: resumable, users: [user('9')], cursor: 'c');
+      await db.finishSnapshot(
+          snapshotId: resumable, completed: false, reason: 'cancel', cursor: 'c');
+      for (var i = 0; i < 3; i++) {
+        await completedSnapshot('alice', 'followers', [user('$i')],
+            startedAt: DateTime.now().millisecondsSinceEpoch + i);
+      }
+
+      await db.deleteOldSnapshots(SnsService.x, 'alice', keepPerKind: 1);
+      expect(await db.getSnapshot(resumable), isNotNull);
+      expect((await db.listSnapshots(targetHandle: 'alice')).length, 2);
+    });
+
     test('上限に収まっていれば何もしない', () async {
       await useTempFile('follow_db_size2');
 

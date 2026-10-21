@@ -2,6 +2,9 @@ import 'package:flutter/material.dart';
 
 import '../models/sns_service.dart';
 import '../services/follow_db.dart';
+import '../utils/app_snackbar.dart';
+import '../utils/confirm_dialog.dart';
+import '../widgets/skeleton.dart';
 import 'follow_snapshot_screen.dart';
 
 /// 取得履歴の全件。
@@ -24,6 +27,9 @@ class _FollowHistoryScreenState extends State<FollowHistoryScreen> {
   List<FollowSnapshot> _history = [];
   bool _loading = true;
 
+  /// 「新しい何件を残すか」の選択肢（フォロワー・フォローそれぞれ）
+  static const _keepChoices = [3, 5, 10, 20];
+
   @override
   void initState() {
     super.initState();
@@ -41,25 +47,111 @@ class _FollowHistoryScreenState extends State<FollowHistoryScreen> {
   }
 
   @override
-  Widget build(BuildContext context) => Scaffold(
-        appBar: AppBar(title: Text('@${widget.handle} の履歴')),
-        body: _loading
-            ? const Center(child: CircularProgressIndicator())
-            : _history.isEmpty
-                ? const Center(
-                    child: Text('まだ取得していません',
-                        style: TextStyle(color: Colors.grey)))
-                : RefreshIndicator(
-                    onRefresh: _load,
-                    child: ListView.builder(
-                      itemCount: _history.length,
-                      itemBuilder: (_, i) => followHistoryTile(
-                        _history[i],
-                        onTap: () => _open(_history[i]),
-                      ),
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Scaffold(
+      appBar: AppBar(
+        title: Text('@${widget.handle} の履歴'),
+        actions: [
+          if (_deletableCount(_keepChoices.first) > 0)
+            IconButton(
+              tooltip: '古い履歴を削除',
+              icon: const Icon(Icons.delete_sweep_outlined),
+              onPressed: _pickKeepCount,
+            ),
+        ],
+      ),
+      body: _loading
+          ? ListView(
+              physics: const NeverScrollableScrollPhysics(),
+              children: [for (var i = 0; i < 8; i++) const _SkeletonTile()],
+            )
+          : _history.isEmpty
+              ? Center(
+                  child: Text('まだ取得していません',
+                      style: TextStyle(color: scheme.onSurfaceVariant)))
+              : RefreshIndicator(
+                  onRefresh: _load,
+                  child: ListView.builder(
+                    itemCount: _history.length,
+                    itemBuilder: (_, i) => followHistoryTile(
+                      _history[i],
+                      onTap: () => _open(_history[i]),
                     ),
                   ),
-      );
+                ),
+    );
+  }
+
+  /// 新しい [keep] 件ずつ残したときに消える件数。
+  /// 取得中と、続きから再開できるものは消さない（DB 側と同じ条件）
+  int _deletableCount(int keep) {
+    final counts = <String, int>{};
+    for (final s in _history) {
+      if (s.status == 'running' || s.isResumable) continue;
+      counts[s.kind] = (counts[s.kind] ?? 0) + 1;
+    }
+    return counts.values.fold(0, (sum, c) => sum + (c > keep ? c - keep : 0));
+  }
+
+  Future<void> _pickKeepCount() async {
+    final keep = await showModalBottomSheet<int>(
+      context: context,
+      builder: (ctx) => SafeArea(
+        child: ListView(
+          shrinkWrap: true,
+          children: [
+            const Padding(
+              padding: EdgeInsets.fromLTRB(16, 16, 16, 2),
+              child: Text('古い履歴を削除',
+                  style: TextStyle(fontWeight: FontWeight.bold)),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+              child: Text(
+                'フォロワー・フォローそれぞれ、新しい分を残します',
+                style: TextStyle(
+                    fontSize: 12,
+                    color: Theme.of(ctx).colorScheme.onSurfaceVariant),
+              ),
+            ),
+            for (final n in _keepChoices)
+              if (_deletableCount(n) case final count)
+                ListTile(
+                  dense: true,
+                  enabled: count > 0,
+                  title: Text('新しい $n 件ずつ残す'),
+                  trailing: Text(count > 0 ? '$count 件を削除' : '削除なし',
+                      style: const TextStyle(fontSize: 12)),
+                  onTap: () => Navigator.pop(ctx, n),
+                ),
+            const SizedBox(height: 8),
+          ],
+        ),
+      ),
+    );
+    if (keep == null || !mounted) return;
+
+    final count = _deletableCount(keep);
+    final ok = await confirmDialog(
+      context,
+      title: '古い履歴を削除',
+      message: '$count 件の履歴を削除します。元に戻せません。',
+      confirmLabel: '削除',
+      destructive: true,
+    );
+    if (!ok || !mounted) return;
+    try {
+      final deleted = await FollowDb.instance
+          .deleteOldSnapshots(widget.service, widget.handle, keepPerKind: keep);
+      if (mounted) showAppSnackBar(context, '$deleted 件を削除しました');
+    } catch (e) {
+      if (mounted) {
+        showAppSnackBar(context, '削除に失敗しました: $e', type: SnackType.error);
+      }
+    }
+    await _load();
+  }
 
   Future<void> _open(FollowSnapshot s) async {
     await Navigator.of(context).push(MaterialPageRoute(
@@ -67,6 +159,28 @@ class _FollowHistoryScreenState extends State<FollowHistoryScreen> {
     ));
     await _load();
   }
+}
+
+/// 読み込み中の 1 行。[followHistoryTile] と同じ形にしておく
+class _SkeletonTile extends StatelessWidget {
+  const _SkeletonTile();
+
+  @override
+  Widget build(BuildContext context) => const ListTile(
+        dense: true,
+        leading: SkeletonBox(width: 20, height: 20, radius: 10),
+        title: Align(
+          alignment: Alignment.centerLeft,
+          child: SkeletonBox(width: 140, height: 12),
+        ),
+        subtitle: Padding(
+          padding: EdgeInsets.only(top: 6),
+          child: Align(
+            alignment: Alignment.centerLeft,
+            child: SkeletonBox(width: 90, height: 10),
+          ),
+        ),
+      );
 }
 
 /// 履歴の 1 行。対象の画面（直近だけ）と履歴の全件で同じ見た目にする

@@ -71,9 +71,9 @@ void main() {
   // ───────────────────────── 設定 ─────────────────────────
 
   group('設定', () {
-    test('既定は自動実行あり・上限 200MB', () async {
+    test('既定は自動実行あり・上限 1GB', () async {
       expect(job.autoRunOnLaunch, isTrue);
-      expect(job.sizeLimitBytes, 200 * 1024 * 1024);
+      expect(job.sizeLimitBytes, 1024 * 1024 * 1024);
     });
 
     test('自動実行の切り替えが残る', () async {
@@ -87,7 +87,14 @@ void main() {
       await job.setSizeLimitBytes(FollowCaptureJobService.sizeLimitChoices.first);
       job.sizeLimitBytes = -1;
       await job.loadSettings();
-      expect(job.sizeLimitBytes, 50 * 1024 * 1024);
+      expect(job.sizeLimitBytes, 200 * 1024 * 1024);
+    });
+
+    test('選択肢から外れた古い上限は既定に戻す', () async {
+      SharedPreferences.setMockInitialValues(
+          {'follow_capture_size_limit': 50 * 1024 * 1024});
+      await job.loadSettings();
+      expect(job.sizeLimitBytes, FollowCaptureJobService.defaultSizeLimitBytes);
     });
 
     test('上限の選択肢は昇順で重複が無い', () {

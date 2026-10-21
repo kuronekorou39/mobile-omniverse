@@ -88,18 +88,24 @@ class FollowCaptureJobService {
   static const _prefAutoRegistered = 'follow_capture_auto_registered';
 
   /// 保持サイズの上限。超えたら古い世代から間引く
+  /// 大きい対象は 1 回の取得で数十 MB になるので、数百 MB だと
+  /// 履歴がすぐ間引かれる
   static const sizeLimitChoices = <int>[
-    50 * 1024 * 1024,
-    100 * 1024 * 1024,
-    200 * 1024 * 1024,
-    500 * 1024 * 1024,
+    200 * _mb,
+    500 * _mb,
+    1024 * _mb,
+    2048 * _mb,
+    5120 * _mb,
   ];
+
+  static const _mb = 1024 * 1024;
+  static const defaultSizeLimitBytes = 1024 * _mb;
 
   /// アプリ起動時に「再開 / スケジュール実行」を自動で走らせるか
   bool autoRunOnLaunch = true;
 
-  /// 保持サイズの上限（既定 200MB）
-  int sizeLimitBytes = 200 * 1024 * 1024;
+  /// 保持サイズの上限
+  int sizeLimitBytes = defaultSizeLimitBytes;
 
   /// 走査対象として自動登録済みの自分のアカウント ID。
   ///
@@ -120,8 +126,11 @@ class FollowCaptureJobService {
   Future<void> loadSettings() async {
     final prefs = await SharedPreferences.getInstance();
     autoRunOnLaunch = prefs.getBool(_prefAutoRun) ?? true;
-    sizeLimitBytes =
-        prefs.getInt(_prefSizeLimit) ?? 200 * 1024 * 1024;
+    // 選択肢から外した値（以前の 50MB / 100MB）が残っていたら既定に戻す
+    final saved = prefs.getInt(_prefSizeLimit);
+    sizeLimitBytes = sizeLimitChoices.contains(saved)
+        ? saved!
+        : defaultSizeLimitBytes;
     _autoRegistered
       ..clear()
       ..addAll(prefs.getStringList(_prefAutoRegistered) ?? const []);

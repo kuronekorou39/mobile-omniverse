@@ -13,6 +13,7 @@ import '../utils/confirm_dialog.dart';
 import '../utils/image_headers.dart';
 import '../widgets/block_scan_section.dart';
 import '../widgets/follow_section_header.dart';
+import '../widgets/skeleton.dart';
 import 'follow_history_screen.dart';
 import 'follow_relation_screen.dart';
 import 'follow_schedule_screen.dart';
@@ -191,23 +192,22 @@ class _FollowTargetScreenState extends State<FollowTargetScreen> {
   @override
   Widget build(BuildContext context) {
     final t = _target;
-    if (_loading || t == null) {
+    if (_loading) return _loadingScaffold();
+    if (t == null) {
       return Scaffold(
         appBar: AppBar(title: Text('@${widget.handle}')),
         body: Center(
-          child: _loading
-              ? const CircularProgressIndicator()
-              // 回り続けるスピナーで止まらないよう、理由を出して抜けられるようにする
-              : Padding(
-                  padding: const EdgeInsets.all(24),
-                  child: Text(
-                    'この対象はまだ登録されていません。\n'
-                    'フォロー / フォロワー取得の画面から追加してください。',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(
-                        color: Theme.of(context).colorScheme.onSurfaceVariant),
-                  ),
-                ),
+          // 読み込み表示のまま止まらないよう、理由を出して抜けられるようにする
+          child: Padding(
+            padding: const EdgeInsets.all(24),
+            child: Text(
+              'この対象はまだ登録されていません。\n'
+              'フォロー / フォロワー取得の画面から追加してください。',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                  color: Theme.of(context).colorScheme.onSurfaceVariant),
+            ),
+          ),
         ),
       );
     }
@@ -269,7 +269,7 @@ class _FollowTargetScreenState extends State<FollowTargetScreen> {
                 const SizedBox(height: 12),
                 _captureActions(),
                 const SizedBox(height: 12),
-                _linksCard(t),
+                _links(t),
                 const SizedBox(height: FollowSectionHeader.sectionGap),
                 BlockScanSection(
                   service: widget.service,
@@ -295,6 +295,49 @@ class _FollowTargetScreenState extends State<FollowTargetScreen> {
       ),
     );
   }
+
+  /// 読み込み中も読み込み後と同じ並びで出し、値の部分だけを棒にする。
+  /// 中身が入ったときに画面の形が変わらないので、ちらつかない
+  Widget _loadingScaffold() => Scaffold(
+        appBar: AppBar(
+          title: Row(
+            children: [
+              const SkeletonBox(
+                  width: _avatarSize, height: _avatarSize, radius: 16),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text('@${widget.handle}',
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(fontSize: 18)),
+              ),
+            ],
+          ),
+        ),
+        body: ListView(
+          physics: const NeverScrollableScrollPhysics(),
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+          children: [
+            const FollowSectionHeader('実行アカウント'),
+            Container(
+              height: 48,
+              alignment: Alignment.centerLeft,
+              decoration: BoxDecoration(
+                color: Theme.of(context).colorScheme.surfaceContainer,
+                borderRadius: BorderRadius.circular(16),
+              ),
+              padding: const EdgeInsets.symmetric(horizontal: 14),
+              child: const SkeletonBox(width: 120, height: 14),
+            ),
+            const SizedBox(height: FollowSectionHeader.sectionGap),
+            const FollowSectionHeader('フォロー / フォロワー'),
+            _dashboard(),
+            const SizedBox(height: 12),
+            _captureActions(),
+            const SizedBox(height: 12),
+            _links(null),
+          ],
+        ),
+      );
 
   // ─── 実行アカウント ───
 
@@ -389,7 +432,7 @@ class _FollowTargetScreenState extends State<FollowTargetScreen> {
     final warn = s != null && looksIncomplete(s);
     return _statCard(
       label: label,
-      value: s == null ? '—' : _compact(s.collectedCount),
+      value: _loading ? null : (s == null ? '—' : _compact(s.collectedCount)),
       sub: s == null ? '未取得' : (warn ? '取りこぼしの可能性' : dateLabel(s.startedAt)),
       warn: warn,
       onTap: s == null ? null : () => _openSnapshot(s),
@@ -398,10 +441,12 @@ class _FollowTargetScreenState extends State<FollowTargetScreen> {
 
   Widget _mutualCard() => _statCard(
     label: '相互',
-    value: _relation == null ? '—' : _compact(_relation!.mutual),
+    value: _loading
+        ? null
+        : (_relation == null ? '—' : _compact(_relation!.mutual)),
     // 未取得でも押させる。遷移先が「何が足りないか」を出す
     sub: _relation == null ? '両方が必要' : '内訳を見る',
-    onTap: () async {
+    onTap: _loading ? null : () async {
       await Navigator.of(context).push(
         MaterialPageRoute(
           builder: (_) => FollowRelationScreen(
@@ -414,10 +459,11 @@ class _FollowTargetScreenState extends State<FollowTargetScreen> {
     },
   );
 
-  /// 数値を主役にする。取得日などの補足は詰め込まず、警告だけ点で示す
+  /// 数値を主役にする。取得日などの補足は詰め込まず、警告だけ点で示す。
+  /// [value] が null なら読み込み中
   Widget _statCard({
     required String label,
-    required String value,
+    required String? value,
     required String sub,
     bool warn = false,
     VoidCallback? onTap,
@@ -457,12 +503,19 @@ class _FollowTargetScreenState extends State<FollowTargetScreen> {
                 ],
               ),
               const SizedBox(height: 6),
-              Text(
-                value,
-                maxLines: 1,
-                style: const TextStyle(
-                    fontSize: 26, fontWeight: FontWeight.bold, height: 1),
-              ),
+              if (value == null)
+                // 数字 1 行（26px）と同じ高さにして、入れ替わりで揺れないようにする
+                const Padding(
+                  padding: EdgeInsets.symmetric(vertical: 3),
+                  child: SkeletonBox(width: 56, height: 20),
+                )
+              else
+                Text(
+                  value,
+                  maxLines: 1,
+                  style: const TextStyle(
+                      fontSize: 26, fontWeight: FontWeight.bold, height: 1),
+                ),
             ],
           ),
         ),
@@ -491,7 +544,7 @@ class _FollowTargetScreenState extends State<FollowTargetScreen> {
               textStyle: const TextStyle(
                   fontSize: 16, fontWeight: FontWeight.bold),
             ),
-            onPressed: _job.isRunning ? null : _startWithConfirm,
+            onPressed: _job.isRunning || _loading ? null : _startWithConfirm,
             child: const Text('今すぐ取得'),
           ),
           // 中断した続きは、埋もれると気づかれないので面を持たせる
@@ -545,44 +598,36 @@ class _FollowTargetScreenState extends State<FollowTargetScreen> {
 
   // ─── 定期取得 ───
 
-  /// 定期取得と履歴。どちらも「開くと別画面」という同じ性質の行なので、
-  /// ひとつの面にまとめて区切り線だけで分ける。
-  /// 間隔そのものは設定画面で見られるので、ここには次回だけ出す
-  Widget _linksCard(FollowTarget t) {
-    final scheme = Theme.of(context).colorScheme;
-    return Material(
-      color: scheme.surfaceContainer,
-      borderRadius: BorderRadius.circular(16),
-      clipBehavior: Clip.antiAlias,
-      child: Column(
+  /// 定期取得と履歴。面は付けず行だけ並べる。上の数字のカードと同じ面に
+  /// すると、似た見た目のものが続いて区別がつかない。
+  /// 間隔そのものは設定画面で見られるので、ここには次回だけ出す。
+  /// [t] が null なら読み込み中
+  Widget _links(FollowTarget? t) => Column(
         children: [
           _linkRow(
             icon: Icons.autorenew,
             label: '定期取得',
-            value: _scheduleValue(t),
-            onTap: () async {
-              await Navigator.of(context).push(
-                MaterialPageRoute(
-                    builder: (_) => FollowScheduleScreen(target: t)),
-              );
-              await _load();
-            },
+            value: t == null ? null : _scheduleValue(t),
+            onTap: t == null
+                ? null
+                : () async {
+                    await Navigator.of(context).push(
+                      MaterialPageRoute(
+                          builder: (_) => FollowScheduleScreen(target: t)),
+                    );
+                    await _load();
+                  },
           ),
-          Divider(
-              height: 1,
-              indent: 14,
-              endIndent: 14,
-              color: scheme.outlineVariant),
           _linkRow(
             icon: Icons.history,
             label: '履歴',
-            value: _history.isEmpty ? 'なし' : '${_history.length}件',
-            onTap: _history.isEmpty ? null : _openHistory,
+            value: t == null
+                ? null
+                : (_history.isEmpty ? 'なし' : '${_history.length}件'),
+            onTap: t == null || _history.isEmpty ? null : _openHistory,
           ),
         ],
-      ),
-    );
-  }
+      );
 
   /// 定期取得の状態。間隔は出さず、次に動く日だけ示す
   String _scheduleValue(FollowTarget t) {
@@ -604,14 +649,16 @@ class _FollowTargetScreenState extends State<FollowTargetScreen> {
   Widget _linkRow({
     required IconData icon,
     required String label,
-    required String value,
+    required String? value,
     VoidCallback? onTap,
   }) {
     final scheme = Theme.of(context).colorScheme;
     return InkWell(
       onTap: onTap,
+      borderRadius: BorderRadius.circular(12),
       child: Padding(
-        padding: const EdgeInsets.fromLTRB(14, 14, 10, 14),
+        // 面が無いので、左端を見出しや下の「保存容量」とそろえる
+        padding: const EdgeInsets.fromLTRB(4, 12, 0, 12),
         child: Row(
           children: [
             Icon(icon, size: 20, color: scheme.onSurfaceVariant),
@@ -621,12 +668,16 @@ class _FollowTargetScreenState extends State<FollowTargetScreen> {
                   style: const TextStyle(
                       fontSize: 14, fontWeight: FontWeight.w500)),
             ),
-            Text(
-              value,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(fontSize: 13, color: scheme.onSurfaceVariant),
-            ),
+            if (value == null)
+              const SkeletonBox(width: 48, height: 12)
+            else
+              Text(
+                value,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style:
+                    TextStyle(fontSize: 13, color: scheme.onSurfaceVariant),
+              ),
             const SizedBox(width: 4),
             Icon(Icons.chevron_right,
                 size: 18, color: scheme.onSurfaceVariant),

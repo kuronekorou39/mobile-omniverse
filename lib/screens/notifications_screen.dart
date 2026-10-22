@@ -1108,31 +1108,30 @@ class _NotificationTileState extends ConsumerState<_NotificationTile> {
 
   Color get _iconColor => _typeColor(notification.type);
 
-  List<TextSpan> _buildActorTextSpans() {
-    const bold = TextStyle(fontWeight: FontWeight.bold);
+  /// 「誰が何をした」の行。名前だけを濃くし、「さんが返信しました」などの
+  /// 決まり文句は薄くする。全部同じ濃さだと、名前と本文の区切りが見えない
+  List<TextSpan> _buildActorTextSpans(ColorScheme scheme) {
+    final name = TextStyle(
+        fontWeight: FontWeight.bold, fontSize: 14, color: scheme.onSurface);
+    final fixed = TextStyle(fontSize: 12, color: scheme.outline);
     final actors = notification.additionalActors;
 
     if (actors.isEmpty) {
       return [
-        TextSpan(text: notification.actorName, style: bold),
-        TextSpan(text: ' さんが${notification.typeLabel}しました'),
+        TextSpan(text: notification.actorName, style: name),
+        TextSpan(text: ' さんが${notification.typeLabel}しました', style: fixed),
       ];
     }
 
     final spans = <TextSpan>[
-      TextSpan(text: notification.actorName, style: bold),
+      TextSpan(text: notification.actorName, style: name),
+      TextSpan(text: '、', style: fixed),
+      TextSpan(text: actors[0].name, style: name),
     ];
-
-    if (actors.length == 1) {
-      spans.add(const TextSpan(text: '、'));
-      spans.add(TextSpan(text: actors[0].name, style: bold));
-    } else {
-      spans.add(const TextSpan(text: '、'));
-      spans.add(TextSpan(text: actors[0].name, style: bold));
-      spans.add(TextSpan(text: '、他${actors.length - 1}人'));
+    if (actors.length > 1) {
+      spans.add(TextSpan(text: '、他${actors.length - 1}人', style: fixed));
     }
-
-    spans.add(TextSpan(text: 'が${notification.typeLabel}しました'));
+    spans.add(TextSpan(text: ' が${notification.typeLabel}しました', style: fixed));
     return spans;
   }
 
@@ -1255,10 +1254,11 @@ class _NotificationTileState extends ConsumerState<_NotificationTile> {
                     const SizedBox(height: 6),
                     // 「誰が何をした」
                     Text.rich(
-                      TextSpan(children: _buildActorTextSpans()),
+                      TextSpan(
+                          children: _buildActorTextSpans(
+                              Theme.of(context).colorScheme)),
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(fontSize: 13),
                     ),
                     // 本文。返信・メンション・引用は相手が書いた中身なので、
                     // 読む本文としてふつうの濃さで出す。いいね・リポストは
@@ -1266,16 +1266,7 @@ class _NotificationTileState extends ConsumerState<_NotificationTile> {
                     if (notification.targetPostBody != null) ...[
                       const SizedBox(height: 4),
                       if (_bodyIsTheirs)
-                        Text(
-                          notification.targetPostBody!,
-                          maxLines: 6,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
-                            color: Theme.of(context).colorScheme.onSurface,
-                            fontSize: 14,
-                            height: 1.35,
-                          ),
-                        )
+                        ..._theirBody(context, notification.targetPostBody!)
                       else
                         Text(
                           notification.targetPostBody!,
@@ -1298,6 +1289,37 @@ class _NotificationTileState extends ConsumerState<_NotificationTile> {
         Divider(height: 1, thickness: 0.5, color: Colors.grey.withAlpha(40)),
       ],
     );
+  }
+
+  /// 相手が書いた本文。先頭の @ID（返信先）は本文ではないので、
+  /// 薄い 1 行に分けて、本文が中身から始まるようにする
+  List<Widget> _theirBody(BuildContext context, String body) {
+    final scheme = Theme.of(context).colorScheme;
+    final (:mentions, :rest) = splitLeadingMentions(body);
+    return [
+      if (mentions.isNotEmpty)
+        Text(
+          notification.type == NotificationType.reply
+              ? '返信先 ${mentions.join(' ')}'
+              : mentions.join(' '),
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: TextStyle(fontSize: 12, color: scheme.outline),
+        ),
+      if (rest.isNotEmpty) ...[
+        if (mentions.isNotEmpty) const SizedBox(height: 2),
+        Text(
+          rest,
+          maxLines: 6,
+          overflow: TextOverflow.ellipsis,
+          style: TextStyle(
+            color: scheme.onSurface,
+            fontSize: 14,
+            height: 1.35,
+          ),
+        ),
+      ],
+    ];
   }
 
   /// 本文が相手の書いたものか（返信・メンション・引用）
@@ -1645,4 +1667,18 @@ class _UnifiedNotificationListState
       ],
     );
   }
+}
+
+/// 本文の先頭に並ぶ @ID（X の返信で付く返信先）と、残りの本文に分ける。
+/// Bluesky の ID はドットを含む（@name.bsky.social）
+({List<String> mentions, String rest}) splitLeadingMentions(String body) {
+  final match = RegExp(r'^\s*((?:@[\w.\-]+\s+)+)').firstMatch(body);
+  if (match == null) return (mentions: const [], rest: body);
+  final mentions = match
+      .group(1)!
+      .trim()
+      .split(RegExp(r'\s+'))
+      .where((m) => m.isNotEmpty)
+      .toList();
+  return (mentions: mentions, rest: body.substring(match.end).trim());
 }

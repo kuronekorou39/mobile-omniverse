@@ -542,22 +542,30 @@ class FollowDb {
   /// 対象 1 件の履歴のうち、種別ごとに新しい [keepPerKind] 件だけ残して
   /// 古いものを消す。消した件数を返す。
   ///
-  /// 取得中と、続きから再開できるものは数えずに残す（消すと再開できない）
+  /// 今まさに取得している [runningSnapshotId] と、続きから再開できるものは
+  /// 数えずに残す（消すと再開できない）。
+  ///
+  /// 状態が「取得中」のままでも、実際には動いていないものは消す。アプリが
+  /// 取得の途中で落ちると、1 件も取れていない行が「取得中」のまま残る
   Future<int> deleteOldSnapshots(
     SnsService service,
     String handle, {
     required int keepPerKind,
+    int? runningSnapshotId,
   }) async {
     final db = await _database;
+    // 残す件数は完了したものだけで数える。途中で止まって再開もできない
+    // ものは中身が無いので、新しくても消す（残す枠を取られないように）
     final victims = await db.rawQuery('''
       SELECT id FROM (
-        SELECT id, ROW_NUMBER() OVER (
-          PARTITION BY kind ORDER BY startedAt DESC, id DESC
+        SELECT id, status, cursor, ROW_NUMBER() OVER (
+          PARTITION BY kind, status = 'completed'
+          ORDER BY startedAt DESC, id DESC
         ) AS rn FROM snapshots
-        WHERE service = ? AND targetHandle = ? AND status <> 'running'
-          AND NOT (status <> 'completed' AND cursor IS NOT NULL)
-      ) WHERE rn > ?
-    ''', [service.name, _norm(handle), keepPerKind]);
+        WHERE service = ? AND targetHandle = ? AND id <> ?
+      ) WHERE (status = 'completed' AND rn > ?)
+         OR (status <> 'completed' AND cursor IS NULL)
+    ''', [service.name, _norm(handle), runningSnapshotId ?? -1, keepPerKind]);
     if (victims.isEmpty) return 0;
 
     final ids = [for (final r in victims) r['id'] as int];

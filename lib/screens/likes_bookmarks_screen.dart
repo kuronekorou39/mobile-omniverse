@@ -10,6 +10,7 @@ import '../services/bluesky_api_service.dart';
 import '../services/x_api_service.dart';
 import '../widgets/empty_state.dart';
 import '../widgets/post_card.dart';
+import '../widgets/skeleton.dart';
 import 'post_detail_screen.dart';
 
 enum _ListKind { likes, bookmarks }
@@ -261,7 +262,9 @@ class _PostListTabState extends ConsumerState<_PostListTab>
     final settings = ref.watch(settingsProvider);
 
     if (_isLoading) {
-      return const Center(child: CircularProgressIndicator());
+      final separator = settings.postCardStyle == PostCardStyle.separator;
+      return SkeletonList(
+          itemBuilder: (i) => PostSkeleton(separator: separator, variant: i));
     }
     if (_error != null) {
       return _ErrorView(message: _error!, onRetry: _load);

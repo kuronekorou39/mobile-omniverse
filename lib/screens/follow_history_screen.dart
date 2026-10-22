@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../models/sns_service.dart';
+import '../services/follow_capture_job_service.dart';
 import '../services/follow_db.dart';
 import '../utils/app_snackbar.dart';
 import '../utils/confirm_dialog.dart';
@@ -83,15 +84,25 @@ class _FollowHistoryScreenState extends State<FollowHistoryScreen> {
     );
   }
 
-  /// 新しい [keep] 件ずつ残したときに消える件数。
-  /// 取得中と、続きから再開できるものは消さない（DB 側と同じ条件）
+  int? get _runningSnapshotId =>
+      FollowCaptureJobService.instance.progress.value?.snapshotId;
+
+  /// 新しい [keep] 件ずつ残したときに消える件数（DB 側と同じ条件）。
+  /// 残す件数は完了したものだけで数え、途中で止まって再開もできないものは
+  /// 新しくても消す。今取得しているものと、再開できるものは消さない
   int _deletableCount(int keep) {
-    final counts = <String, int>{};
+    final completed = <String, int>{};
+    var junk = 0;
     for (final s in _history) {
-      if (s.status == 'running' || s.isResumable) continue;
-      counts[s.kind] = (counts[s.kind] ?? 0) + 1;
+      if (s.id == _runningSnapshotId || s.isResumable) continue;
+      if (s.isCompleted) {
+        completed[s.kind] = (completed[s.kind] ?? 0) + 1;
+      } else {
+        junk++;
+      }
     }
-    return counts.values.fold(0, (sum, c) => sum + (c > keep ? c - keep : 0));
+    return junk +
+        completed.values.fold(0, (sum, c) => sum + (c > keep ? c - keep : 0));
   }
 
   Future<void> _pickKeepCount() async {
@@ -141,16 +152,48 @@ class _FollowHistoryScreenState extends State<FollowHistoryScreen> {
       destructive: true,
     );
     if (!ok || !mounted) return;
+
+    // 件数が多いと数十秒かかる。黙って待たせると押せていないように見え、
+    // 途中で画面を出入りすると読み込みが削除の後ろで止まって見える。
+    // 終わるまでここで待ってもらう
+    final navigator = Navigator.of(context, rootNavigator: true);
+    showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      useRootNavigator: true,
+      builder: (_) => const PopScope(
+        canPop: false,
+        child: AlertDialog(
+          content: Row(
+            children: [
+              SizedBox(
+                  width: 20,
+                  height: 20,
+                  child: CircularProgressIndicator(strokeWidth: 2)),
+              SizedBox(width: 16),
+              Expanded(child: Text('削除しています…')),
+            ],
+          ),
+        ),
+      ),
+    );
+    String? error;
+    var deleted = 0;
     try {
-      final deleted = await FollowDb.instance
-          .deleteOldSnapshots(widget.service, widget.handle, keepPerKind: keep);
-      if (mounted) showAppSnackBar(context, '$deleted 件を削除しました');
+      deleted = await FollowDb.instance.deleteOldSnapshots(
+          widget.service, widget.handle,
+          keepPerKind: keep, runningSnapshotId: _runningSnapshotId);
     } catch (e) {
-      if (mounted) {
-        showAppSnackBar(context, '削除に失敗しました: $e', type: SnackType.error);
-      }
+      error = '$e';
     }
+    navigator.pop();
     await _load();
+    if (!mounted) return;
+    if (error != null) {
+      showAppSnackBar(context, '削除に失敗しました: $error', type: SnackType.error);
+    } else {
+      showAppSnackBar(context, '$deleted 件を削除しました');
+    }
   }
 
   Future<void> _open(FollowSnapshot s) async {

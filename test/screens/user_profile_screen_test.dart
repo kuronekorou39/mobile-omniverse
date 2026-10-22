@@ -6,6 +6,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:mobile_omniverse/models/sns_service.dart';
+import 'package:mobile_omniverse/providers/settings_provider.dart';
 import 'package:mobile_omniverse/screens/user_profile_screen.dart';
 import 'package:mobile_omniverse/services/account_storage_service.dart';
 import 'package:mobile_omniverse/services/timeline_fetch_scheduler.dart';
@@ -19,6 +20,13 @@ class _TestHttpOverrides extends HttpOverrides {
   HttpClient createHttpClient(SecurityContext? context) =>
       super.createHttpClient(context)
         ..badCertificateCallback = (cert, host, port) => true;
+}
+
+/// 取得の定期実行を始めない設定。始めるとタイマーが残ってテストが落ちる
+class _TestSettingsNotifier extends SettingsNotifier {
+  _TestSettingsNotifier() : super() {
+    stopFetching();
+  }
 }
 
 void main() {
@@ -44,6 +52,9 @@ void main() {
     String? accountId,
   }) {
     return ProviderScope(
+      overrides: [
+        settingsProvider.overrideWith((ref) => _TestSettingsNotifier()),
+      ],
       child: MaterialApp(
         home: UserProfileScreen(
           username: username,
@@ -353,6 +364,9 @@ void main() {
       );
 
       await tester.pumpWidget(ProviderScope(
+        overrides: [
+          settingsProvider.overrideWith((ref) => _TestSettingsNotifier()),
+        ],
         child: MaterialApp(
           home: Builder(
             builder: (context) {
@@ -383,6 +397,9 @@ void main() {
       );
 
       await tester.pumpWidget(ProviderScope(
+        overrides: [
+          settingsProvider.overrideWith((ref) => _TestSettingsNotifier()),
+        ],
         child: MaterialApp(
           home: Builder(
             builder: (context) {

@@ -4,6 +4,7 @@ import '../models/follow_user.dart';
 import '../models/sns_service.dart';
 import '../services/follow_db.dart';
 import '../widgets/follow_list_controls.dart';
+import '../widgets/skeleton.dart';
 import 'follow_relation_diff_screen.dart';
 import 'follow_snapshot_screen.dart';
 
@@ -167,7 +168,7 @@ class _FollowRelationScreenState extends State<FollowRelationScreen>
     if (_loading) {
       return Scaffold(
         appBar: AppBar(title: Text('@${widget.handle} の関係')),
-        body: const Center(child: CircularProgressIndicator()),
+        body: SkeletonList(itemBuilder: (i) => UserTileSkeleton(variant: i)),
       );
     }
 

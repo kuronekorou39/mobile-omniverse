@@ -24,6 +24,7 @@ import '../services/notification_cache_service.dart';
 import '../services/x_api_service.dart';
 import '../widgets/empty_state.dart';
 import '../widgets/sns_badge.dart';
+import '../widgets/skeleton.dart';
 import 'notification_webview_screen.dart';
 import 'post_detail_screen.dart';
 import 'settings_screen.dart';
@@ -930,7 +931,7 @@ class _NotificationListState extends ConsumerState<_NotificationList>
     }
 
     if (_isLoading) {
-      return const Center(child: CircularProgressIndicator());
+      return SkeletonList(itemBuilder: (i) => NotificationSkeleton(variant: i));
     }
 
     if (_error != null) {
@@ -1557,7 +1558,7 @@ class _UnifiedNotificationListState
     }
 
     if (_isLoading) {
-      return const Center(child: CircularProgressIndicator());
+      return SkeletonList(itemBuilder: (i) => NotificationSkeleton(variant: i));
     }
 
     if (_allNotifications.isEmpty) {

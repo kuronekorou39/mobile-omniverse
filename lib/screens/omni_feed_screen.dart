@@ -26,6 +26,7 @@ import '../widgets/account_picker_modal.dart';
 import '../widgets/empty_state.dart';
 import '../utils/smooth_scroll_physics.dart';
 import '../widgets/post_card.dart';
+import '../widgets/skeleton.dart';
 import '../widgets/update_dialog.dart';
 import 'accounts_screen.dart';
 import 'compose_screen.dart';
@@ -1025,10 +1026,14 @@ class _OmniFeedScreenState extends ConsumerState<OmniFeedScreen>
     }
 
     if (feed.isLoading && feed.posts.isEmpty) {
+      // 投稿と同じ形の棒を並べて待つ。読み込み後に画面の形が変わらない
+      final separator = settings.postCardStyle == PostCardStyle.separator;
       return [
-        const SliverFillRemaining(
-          hasScrollBody: false,
-          child: Center(child: CircularProgressIndicator()),
+        SliverList(
+          delegate: SliverChildBuilderDelegate(
+            (context, i) => PostSkeleton(separator: separator, variant: i),
+            childCount: 8,
+          ),
         ),
       ];
     }

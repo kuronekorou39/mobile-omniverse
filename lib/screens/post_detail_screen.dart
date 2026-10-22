@@ -20,6 +20,7 @@ import '../services/x_api_service.dart';
 import '../widgets/account_picker_modal.dart';
 import '../widgets/empty_state.dart';
 import '../widgets/post_card.dart';
+import '../widgets/skeleton.dart';
 import 'compose_screen.dart';
 import '../widgets/post_media.dart';
 import '../widgets/sns_badge.dart';
@@ -219,10 +220,14 @@ class _PostDetailScreenState extends ConsumerState<PostDetailScreen> {
 
             // Replies section
             if (_isLoading)
-              const Padding(
-                padding: EdgeInsets.all(32),
-                child: Center(child: CircularProgressIndicator()),
-              )
+              Consumer(builder: (context, ref, _) {
+                final separator = ref.watch(settingsProvider).postCardStyle ==
+                    PostCardStyle.separator;
+                return Column(children: [
+                  for (var i = 0; i < 3; i++)
+                    PostSkeleton(separator: separator, variant: i),
+                ]);
+              })
             else if (_error != null)
               Padding(
                 padding: const EdgeInsets.all(16),

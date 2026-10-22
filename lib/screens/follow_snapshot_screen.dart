@@ -9,6 +9,7 @@ import '../models/sns_service.dart';
 import '../services/export_service.dart';
 import '../services/follow_db.dart';
 import '../widgets/follow_list_controls.dart';
+import '../widgets/skeleton.dart';
 import '../utils/image_headers.dart';
 import 'follow_diff_screen.dart';
 import 'user_profile_screen.dart';
@@ -308,7 +309,9 @@ class _PagedFollowListState<T> extends State<PagedFollowList<T>>
   @override
   Widget build(BuildContext context) {
     super.build(context);
-    if (_loading) return const Center(child: CircularProgressIndicator());
+    if (_loading) {
+      return SkeletonList(itemBuilder: (i) => UserTileSkeleton(variant: i));
+    }
     if (_items.isEmpty) {
       return Center(
           child: Text(widget.emptyLabel,

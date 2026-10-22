@@ -22,6 +22,7 @@ import '../widgets/image_viewer.dart';
 import '../widgets/empty_state.dart';
 import '../widgets/post_card.dart';
 import '../widgets/sns_badge.dart';
+import '../widgets/skeleton.dart';
 import 'compose_screen.dart';
 import 'post_detail_screen.dart';
 import 'shadowban_check_screen.dart';
@@ -435,9 +436,14 @@ class _UserProfileScreenState extends ConsumerState<UserProfileScreen>
 
   List<Widget> _buildPostSlivers(List<Post> posts) {
     if (_isLoadingPosts) {
+      final separator =
+          ref.read(settingsProvider).postCardStyle == PostCardStyle.separator;
       return [
-        const SliverFillRemaining(
-          child: Center(child: CircularProgressIndicator()),
+        SliverList(
+          delegate: SliverChildBuilderDelegate(
+            (context, i) => PostSkeleton(separator: separator, variant: i),
+            childCount: 6,
+          ),
         ),
       ];
     }

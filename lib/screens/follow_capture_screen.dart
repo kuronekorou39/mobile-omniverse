@@ -11,6 +11,7 @@ import '../services/x_api_service.dart';
 import '../utils/app_snackbar.dart';
 import '../utils/image_headers.dart';
 import '../widgets/sns_badge.dart';
+import '../widgets/skeleton.dart';
 import 'follow_snapshot_screen.dart' show dateLabel;
 import 'follow_target_screen.dart';
 
@@ -149,7 +150,7 @@ class _FollowCaptureScreenState extends State<FollowCaptureScreen> {
       body: RefreshIndicator(
         onRefresh: _load,
         child: _loading
-            ? const Center(child: CircularProgressIndicator())
+            ? SkeletonList(itemBuilder: (i) => UserTileSkeleton(variant: i))
             : ListView(
                 children: [
                   _storageBar(),

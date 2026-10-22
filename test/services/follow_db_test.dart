@@ -1010,6 +1010,29 @@ void main() {
       expect((await db.listSnapshots(targetHandle: 'alice')).length, 2);
     });
 
+    test('古い履歴の削除で、動いていない「取得中」は新しくても消す', () async {
+      await useTempFile('follow_db_old_stale');
+      for (var i = 0; i < 2; i++) {
+        await completedSnapshot('alice', 'followers', [user('$i')],
+            startedAt: 1000 + i);
+      }
+      // アプリが落ちて 1 件も取れないまま残った行
+      final stale = await db.startSnapshot(
+          service: SnsService.x, targetHandle: 'alice', kind: 'followers');
+      // 今まさに取得している行は残す
+      final live = await db.startSnapshot(
+          service: SnsService.x, targetHandle: 'alice', kind: 'followers');
+
+      expect(
+          await db.deleteOldSnapshots(SnsService.x, 'alice',
+              keepPerKind: 2, runningSnapshotId: live),
+          1);
+      expect(await db.getSnapshot(stale), isNull);
+      expect(await db.getSnapshot(live), isNotNull);
+      // 完了した 2 件は、残す枠を取られずに残る
+      expect((await db.listSnapshots(targetHandle: 'alice')).length, 3);
+    });
+
     test('上限に収まっていれば何もしない', () async {
       await useTempFile('follow_db_size2');
 

@@ -7,6 +7,7 @@ import '../models/sns_service.dart';
 import '../providers/account_provider.dart';
 import '../services/user_search_service.dart';
 import '../widgets/empty_state.dart';
+import '../widgets/skeleton.dart';
 import '../widgets/sns_badge.dart';
 import 'user_profile_screen.dart';
 
@@ -132,7 +133,7 @@ class _UserSearchScreenState extends ConsumerState<UserSearchScreen> {
 
   Widget _buildBody(Account account) {
     if (_isSearching) {
-      return const Center(child: CircularProgressIndicator());
+      return SkeletonList(itemBuilder: (i) => UserTileSkeleton(variant: i));
     }
     if (_error != null) {
       return EmptyState(

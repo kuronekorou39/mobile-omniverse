@@ -8,6 +8,7 @@ import '../services/block_scan_service.dart';
 import '../services/follow_capture_engine.dart';
 import '../services/follow_capture_job_service.dart';
 import '../services/follow_db.dart';
+import '../services/follow_history_cleanup.dart';
 import '../utils/app_snackbar.dart';
 import '../utils/confirm_dialog.dart';
 import '../utils/image_headers.dart';
@@ -40,6 +41,10 @@ class FollowTargetScreen extends StatefulWidget {
 class _FollowTargetScreenState extends State<FollowTargetScreen> {
   final _job = FollowCaptureJobService.instance;
   final _scan = BlockScanService.instance;
+  final _cleanup = FollowHistoryCleanup.instance;
+
+  /// 古い履歴を裏で削除しているあいだは、履歴に触る操作を止める
+  bool get _cleaning => _cleanup.isBusy(widget.service, widget.handle);
 
   FollowTarget? _target;
   FollowSnapshot? _latestFollowers;
@@ -58,6 +63,7 @@ class _FollowTargetScreenState extends State<FollowTargetScreen> {
     super.initState();
     _job.progress.addListener(_onProgress);
     _scan.progress.addListener(_onScanProgress);
+    _cleanup.busy.addListener(_onCleanupChanged);
     _load();
   }
 
@@ -65,7 +71,18 @@ class _FollowTargetScreenState extends State<FollowTargetScreen> {
   void dispose() {
     _job.progress.removeListener(_onProgress);
     _scan.progress.removeListener(_onScanProgress);
+    _cleanup.busy.removeListener(_onCleanupChanged);
     super.dispose();
+  }
+
+  /// 削除が終わったら件数や容量を読み直す
+  void _onCleanupChanged() {
+    if (!mounted) return;
+    if (_cleaning) {
+      setState(() {});
+    } else {
+      _load();
+    }
   }
 
   void _onProgress() {
@@ -544,7 +561,9 @@ class _FollowTargetScreenState extends State<FollowTargetScreen> {
               textStyle: const TextStyle(
                   fontSize: 16, fontWeight: FontWeight.bold),
             ),
-            onPressed: _job.isRunning || _loading ? null : _startWithConfirm,
+            onPressed: _job.isRunning || _loading || _cleaning
+                ? null
+                : _startWithConfirm,
             child: const Text('今すぐ取得'),
           ),
           // 中断した続きは、埋もれると気づかれないので面を持たせる
@@ -623,7 +642,10 @@ class _FollowTargetScreenState extends State<FollowTargetScreen> {
             label: '履歴',
             value: t == null
                 ? null
-                : (_history.isEmpty ? 'なし' : '${_history.length}件'),
+                : _cleaning
+                    ? '削除中…'
+                    : (_history.isEmpty ? 'なし' : '${_history.length}件'),
+            // 削除中も開ける。開いた先で進み具合が分かり、中身は開けない
             onTap: t == null || _history.isEmpty ? null : _openHistory,
           ),
         ],
@@ -697,6 +719,9 @@ class _FollowTargetScreenState extends State<FollowTargetScreen> {
 
   Widget _storageSection() {
     final scheme = Theme.of(context).colorScheme;
+    final deleteColor = _cleaning
+        ? scheme.onSurface.withValues(alpha: 0.38)
+        : scheme.error;
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 4),
       child: Column(
@@ -711,18 +736,19 @@ class _FollowTargetScreenState extends State<FollowTargetScreen> {
           ),
           const SizedBox(height: 14),
           InkWell(
-            onTap: _confirmDelete,
+            // 履歴を消している最中に対象ごと消すと、二重に消しにいく
+            onTap: _cleaning ? null : _confirmDelete,
             child: Padding(
               padding: const EdgeInsets.symmetric(vertical: 6),
               child: Row(
                 children: [
-                  Icon(Icons.delete_outline, size: 20, color: scheme.error),
+                  Icon(Icons.delete_outline, size: 20, color: deleteColor),
                   const SizedBox(width: 10),
                   Text('この対象と履歴を削除',
                       style: TextStyle(
                           fontSize: 14,
                           fontWeight: FontWeight.bold,
-                          color: scheme.error)),
+                          color: deleteColor)),
                 ],
               ),
             ),

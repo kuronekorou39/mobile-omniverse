@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../models/sns_service.dart';
 import '../services/follow_capture_job_service.dart';
 import '../services/follow_db.dart';
+import '../services/follow_history_cleanup.dart';
 import '../utils/app_snackbar.dart';
 import '../utils/confirm_dialog.dart';
 import '../widgets/skeleton.dart';
@@ -31,10 +32,31 @@ class _FollowHistoryScreenState extends State<FollowHistoryScreen> {
   /// 「新しい何件を残すか」の選択肢（フォロワー・フォローそれぞれ）
   static const _keepChoices = [3, 5, 10, 20];
 
+  final _cleanup = FollowHistoryCleanup.instance;
+
+  bool get _cleaning => _cleanup.isBusy(widget.service, widget.handle);
+
   @override
   void initState() {
     super.initState();
+    _cleanup.busy.addListener(_onCleanupChanged);
     _load();
+  }
+
+  @override
+  void dispose() {
+    _cleanup.busy.removeListener(_onCleanupChanged);
+    super.dispose();
+  }
+
+  /// 削除が終わったら、実際に残った分で並べ直す
+  void _onCleanupChanged() {
+    if (!mounted) return;
+    if (_cleaning) {
+      setState(() {});
+    } else {
+      _load();
+    }
   }
 
   Future<void> _load() async {
@@ -54,13 +76,20 @@ class _FollowHistoryScreenState extends State<FollowHistoryScreen> {
       appBar: AppBar(
         title: Text('@${widget.handle} の履歴'),
         actions: [
-          if (_deletableCount(_keepChoices.first) > 0)
+          if (_cleaning || _deletableCount(_keepChoices.first) > 0)
             IconButton(
               tooltip: '古い履歴を削除',
               icon: const Icon(Icons.delete_sweep_outlined),
-              onPressed: _pickKeepCount,
+              onPressed: _cleaning ? null : _pickKeepCount,
             ),
         ],
+        // 削除中であることは上の細い帯だけで示し、画面は止めない
+        bottom: _cleaning
+            ? const PreferredSize(
+                preferredSize: Size.fromHeight(2),
+                child: LinearProgressIndicator(minHeight: 2),
+              )
+            : null,
       ),
       body: _loading
           ? ListView(
@@ -74,15 +103,29 @@ class _FollowHistoryScreenState extends State<FollowHistoryScreen> {
               : RefreshIndicator(
                   onRefresh: _load,
                   child: ListView.builder(
-                    itemCount: _history.length,
-                    itemBuilder: (_, i) => followHistoryTile(
-                      _history[i],
-                      onTap: () => _open(_history[i]),
-                    ),
+                    itemCount: _history.length + (_cleaning ? 1 : 0),
+                    itemBuilder: (_, i) {
+                      if (_cleaning && i == 0) return _cleaningNote(scheme);
+                      final s = _history[_cleaning ? i - 1 : i];
+                      // 消している最中の中身を開くと、途中で消えて壊れて見える
+                      return followHistoryTile(
+                        s,
+                        onTap: _cleaning ? null : () => _open(s),
+                      );
+                    },
                   ),
                 ),
     );
   }
+
+  Widget _cleaningNote(ColorScheme scheme) => Padding(
+        padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+        child: Text(
+          '古い履歴を削除しています。終わるまで履歴は開けません。'
+          'この画面を離れても削除は続きます。',
+          style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant),
+        ),
+      );
 
   int? get _runningSnapshotId =>
       FollowCaptureJobService.instance.progress.value?.snapshotId;
@@ -153,47 +196,37 @@ class _FollowHistoryScreenState extends State<FollowHistoryScreen> {
     );
     if (!ok || !mounted) return;
 
-    // 件数が多いと数十秒かかる。黙って待たせると押せていないように見え、
-    // 途中で画面を出入りすると読み込みが削除の後ろで止まって見える。
-    // 終わるまでここで待ってもらう
-    final navigator = Navigator.of(context, rootNavigator: true);
-    showDialog<void>(
-      context: context,
-      barrierDismissible: false,
-      useRootNavigator: true,
-      builder: (_) => const PopScope(
-        canPop: false,
-        child: AlertDialog(
-          content: Row(
-            children: [
-              SizedBox(
-                  width: 20,
-                  height: 20,
-                  child: CircularProgressIndicator(strokeWidth: 2)),
-              SizedBox(width: 16),
-              Expanded(child: Text('削除しています…')),
-            ],
-          ),
-        ),
-      ),
-    );
-    String? error;
-    var deleted = 0;
+    // 終わるまで待たせない。消える分は先に一覧から外し、削除は裏で進める
+    final runningId = _runningSnapshotId;
+    setState(() => _history = _afterCleanup(keep, runningId));
+    // 終わったときにこの画面を離れていても知らせられるよう、
+    // アプリ全体の画面から通知を出す
+    final rootContext = Navigator.of(context, rootNavigator: true).context;
     try {
-      deleted = await FollowDb.instance.deleteOldSnapshots(
-          widget.service, widget.handle,
-          keepPerKind: keep, runningSnapshotId: _runningSnapshotId);
+      final deleted = await _cleanup.run(widget.service, widget.handle,
+          keepPerKind: keep, runningSnapshotId: runningId);
+      if (deleted != null && rootContext.mounted) {
+        showAppSnackBar(rootContext, '古い履歴を $deleted 件削除しました');
+      }
     } catch (e) {
-      error = '$e';
+      if (rootContext.mounted) {
+        showAppSnackBar(rootContext, '履歴の削除に失敗しました: $e',
+            type: SnackType.error);
+      }
     }
-    navigator.pop();
-    await _load();
-    if (!mounted) return;
-    if (error != null) {
-      showAppSnackBar(context, '削除に失敗しました: $error', type: SnackType.error);
-    } else {
-      showAppSnackBar(context, '$deleted 件を削除しました');
-    }
+  }
+
+  /// 削除が終わったあとに残る履歴（DB 側と同じ条件）
+  List<FollowSnapshot> _afterCleanup(int keep, int? runningId) {
+    final kept = <String, int>{};
+    return [
+      for (final s in _history)
+        if (s.id == runningId || s.isResumable)
+          s
+        else if (s.isCompleted &&
+            (kept[s.kind] = (kept[s.kind] ?? 0) + 1) <= keep)
+          s,
+    ];
   }
 
   Future<void> _open(FollowSnapshot s) async {
@@ -229,6 +262,8 @@ class _SkeletonTile extends StatelessWidget {
 /// 履歴の 1 行。対象の画面（直近だけ）と履歴の全件で同じ見た目にする
 Widget followHistoryTile(FollowSnapshot s, {VoidCallback? onTap}) => ListTile(
       dense: true,
+      // 押せないあいだ（削除中）は薄くして、押せないことを見せる
+      enabled: onTap != null,
       leading: Icon(
         s.kind == 'followers'
             ? Icons.group_outlined

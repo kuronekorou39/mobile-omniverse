@@ -568,13 +568,16 @@ class FollowDb {
     ''', [service.name, _norm(handle), runningSnapshotId ?? -1, keepPerKind]);
     if (victims.isEmpty) return 0;
 
+    // 裏で走らせるので、1 件ずつ区切って消す。まとめて 1 回で消すと、
+    // そのあいだ他の画面の読み込みが全部待たされる
     final ids = [for (final r in victims) r['id'] as int];
-    final marks = List.filled(ids.length, '?').join(',');
-    await db.transaction((txn) async {
-      await txn.delete('snapshot_members',
-          where: 'snapshotId IN ($marks)', whereArgs: ids);
-      await txn.delete('snapshots', where: 'id IN ($marks)', whereArgs: ids);
-    });
+    for (final id in ids) {
+      await db.transaction((txn) async {
+        await txn.delete('snapshot_members',
+            where: 'snapshotId = ?', whereArgs: [id]);
+        await txn.delete('snapshots', where: 'id = ?', whereArgs: [id]);
+      });
+    }
     await pruneOrphanUsers();
     // VACUUM しないとファイルが縮まず、使用量が減らないように見える
     await db.execute('VACUUM');

@@ -1260,15 +1260,32 @@ class _NotificationTileState extends ConsumerState<_NotificationTile> {
                       overflow: TextOverflow.ellipsis,
                       style: const TextStyle(fontSize: 13),
                     ),
-                    // 対象投稿本文
+                    // 本文。返信・メンション・引用は相手が書いた中身なので、
+                    // 読む本文としてふつうの濃さで出す。いいね・リポストは
+                    // 自分の投稿の確認用なので薄く短く
                     if (notification.targetPostBody != null) ...[
                       const SizedBox(height: 4),
-                      Text(
-                        notification.targetPostBody!,
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(color: Colors.grey[600], fontSize: 12),
-                      ),
+                      if (_bodyIsTheirs)
+                        Text(
+                          notification.targetPostBody!,
+                          maxLines: 6,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            color: Theme.of(context).colorScheme.onSurface,
+                            fontSize: 14,
+                            height: 1.35,
+                          ),
+                        )
+                      else
+                        Text(
+                          notification.targetPostBody!,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            color: Theme.of(context).colorScheme.outline,
+                            fontSize: 12,
+                          ),
+                        ),
                     ],
                   ],
                 ),
@@ -1282,6 +1299,15 @@ class _NotificationTileState extends ConsumerState<_NotificationTile> {
       ],
     );
   }
+
+  /// 本文が相手の書いたものか（返信・メンション・引用）
+  bool get _bodyIsTheirs => switch (notification.type) {
+        NotificationType.reply ||
+        NotificationType.mention ||
+        NotificationType.quote =>
+          true,
+        _ => false,
+      };
 
   void _navigateToActorProfile(BuildContext context) => _navigateToProfile(
         context,

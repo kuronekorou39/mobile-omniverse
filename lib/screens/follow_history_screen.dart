@@ -265,16 +265,19 @@ Widget followHistoryTile(FollowSnapshot s, {VoidCallback? onTap}) => ListTile(
       dense: true,
       // 押せないあいだ（削除中）は薄くして、押せないことを見せる
       enabled: onTap != null,
-      leading: Icon(
-        s.kind == 'followers'
-            ? Icons.group_outlined
-            : Icons.person_add_alt_outlined,
-        // 完了 / 再開できる / それ以外 を色で分ける
-        color: s.isCompleted
-            ? Colors.green
-            : (s.isResumable ? Colors.orange : Colors.red),
-        size: 20,
-      ),
+      leading: Builder(builder: (context) {
+        final scheme = Theme.of(context).colorScheme;
+        return Icon(
+          s.kind == 'followers'
+              ? Icons.group_outlined
+              : Icons.person_add_alt_outlined,
+          // 完了 / 再開できる / それ以外 を色で分ける
+          color: s.isCompleted
+              ? scheme.primary
+              : (s.isResumable ? scheme.tertiary : scheme.error),
+          size: 20,
+        );
+      }),
       title: Text('${dateLabel(s.startedAt)}  ${formatNumber(s.collectedCount)}件',
           style: const TextStyle(fontSize: 13)),
       subtitle: Text(

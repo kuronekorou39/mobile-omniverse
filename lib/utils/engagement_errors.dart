@@ -8,21 +8,6 @@ void showEngagementError(BuildContext context, String action, int? statusCode) {
       type: SnackType.error, duration: const Duration(seconds: 4));
 }
 
-/// 後方互換: SnackBar オブジェクトが必要な既存コード用
-SnackBar engagementErrorSnackBar(String action, int? statusCode) {
-  return SnackBar(
-    content: Row(
-      children: [
-        const Icon(Icons.error_outline, color: Colors.redAccent, size: 20),
-        const SizedBox(width: 10),
-        Expanded(child: Text(engagementErrorMessage(action, statusCode))),
-      ],
-    ),
-    duration: const Duration(seconds: 4),
-    behavior: SnackBarBehavior.floating,
-  );
-}
-
 /// X APIのエラーステータスコードからユーザー向けメッセージを生成
 String engagementErrorMessage(String action, int? statusCode) {
   final codeStr = statusCode != null ? ' ($statusCode)' : '';

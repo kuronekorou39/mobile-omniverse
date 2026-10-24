@@ -9,6 +9,7 @@ import '../models/sns_service.dart';
 import '../services/export_service.dart';
 import '../services/follow_db.dart';
 import '../widgets/follow_list_controls.dart';
+import '../utils/app_snackbar.dart';
 import '../utils/number_format.dart';
 import '../widgets/skeleton.dart';
 import '../utils/image_headers.dart';
@@ -51,9 +52,8 @@ class _FollowSnapshotScreenState extends State<FollowSnapshotScreen> {
       );
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('書き出しに失敗しました: $e')),
-        );
+        showAppSnackBar(context, '書き出しに失敗しました: ${shortError(e)}',
+            type: SnackType.error);
       }
     } finally {
       if (mounted) setState(() => _exporting = false);
@@ -71,9 +71,7 @@ class _FollowSnapshotScreenState extends State<FollowSnapshotScreen> {
 
     if (!mounted) return;
     if (candidates.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('比較できる履歴がありません')),
-      );
+      showAppSnackBar(context, '比較できる履歴がありません');
       return;
     }
 
@@ -143,14 +141,18 @@ class _FollowSnapshotScreenState extends State<FollowSnapshotScreen> {
             child: Text(
               '${dateLabel(s.startedAt)} ・ ${formatNumber(s.collectedCount)}件 ・ ${statusLabel(s)}'
               '${durationLabel(s) == null ? '' : ' ・ 所要${durationLabel(s)}'}',
-              style: const TextStyle(fontSize: 11, color: Colors.grey),
+              style: TextStyle(
+                  fontSize: 11,
+                  color: Theme.of(context).colorScheme.onSurfaceVariant),
             ),
           ),
           if (shortfallLabel(s) != null)
             Padding(
               padding: const EdgeInsets.fromLTRB(12, 4, 12, 0),
               child: Text('取りこぼしの可能性 ・ ${shortfallLabel(s)}',
-                  style: const TextStyle(fontSize: 11, color: Colors.orange)),
+                  style: TextStyle(
+                      fontSize: 11,
+                      color: Theme.of(context).colorScheme.tertiary)),
             ),
           FollowListControls(
             filter: _filter,
@@ -324,7 +326,8 @@ class _PagedFollowListState<T> extends State<PagedFollowList<T>>
     if (_items.isEmpty) {
       return Center(
           child: Text(widget.emptyLabel,
-              style: const TextStyle(color: Colors.grey)));
+              style: TextStyle(
+                  color: Theme.of(context).colorScheme.onSurfaceVariant)));
     }
     return ListView.builder(
       controller: _scroll,
@@ -398,9 +401,10 @@ class FollowUserTile extends StatelessWidget {
             child: Icon(Icons.verified, size: 14, color: Colors.blue),
           ),
         if (user.isProtected)
-          const Padding(
-            padding: EdgeInsets.only(left: 4),
-            child: Icon(Icons.lock, size: 12, color: Colors.grey),
+          Padding(
+            padding: const EdgeInsets.only(left: 4),
+            child: Icon(Icons.lock,
+                size: 12, color: Theme.of(context).colorScheme.onSurfaceVariant),
           ),
       ]),
       subtitle: Text(

@@ -14,6 +14,7 @@ import '../services/account_storage_service.dart';
 import '../services/bluesky_api_service.dart';
 import '../services/engagement_service.dart';
 import '../services/x_api_service.dart';
+import '../utils/app_snackbar.dart';
 import '../utils/engagement_errors.dart';
 import '../utils/image_headers.dart';
 import '../providers/settings_provider.dart';
@@ -332,12 +333,8 @@ class _UserProfileScreenState extends ConsumerState<UserProfileScreen>
           _isLoadingMore = false;
           _loadMoreError = true;
         });
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('追加読み込みに失敗しました: $e'),
-            behavior: SnackBarBehavior.floating,
-          ),
-        );
+        showAppSnackBar(context, '追加読み込みに失敗しました: ${shortError(e)}',
+            type: SnackType.error);
       }
     }
   }
@@ -617,9 +614,7 @@ class _UserProfileScreenState extends ConsumerState<UserProfileScreen>
 
     if (!result.success && mounted) {
       _updatePost(post, accountId: account.id, liked: wasLiked, likeCount: post.likeCount);
-      ScaffoldMessenger.of(context).showSnackBar(
-        engagementErrorSnackBar('いいね', result.statusCode),
-      );
+      showEngagementError(context, 'いいね', result.statusCode);
     }
   }
 
@@ -656,9 +651,7 @@ class _UserProfileScreenState extends ConsumerState<UserProfileScreen>
 
     if (!result.success && mounted) {
       _updatePost(post, accountId: account.id, reposted: wasReposted, repostCount: post.repostCount);
-      ScaffoldMessenger.of(context).showSnackBar(
-        engagementErrorSnackBar('リポスト', result.statusCode),
-      );
+      showEngagementError(context, 'リポスト', result.statusCode);
     }
   }
 
@@ -874,9 +867,7 @@ Future<void> _fetchThenNavigate(BuildContext context, Post post) async {
 
   if (account == null) {
     if (context.mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('ユーザー情報を取得できません')),
-      );
+      showAppSnackBar(context, 'ユーザー情報を取得できません', type: SnackType.error);
     }
     return;
   }
@@ -911,16 +902,13 @@ Future<void> _fetchThenNavigate(BuildContext context, Post post) async {
     if (found != null && found.username.isNotEmpty && found.handle != '@') {
       _pushProfileScreen(context, found);
     } else {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('ユーザー情報を取得できません')),
-      );
+      showAppSnackBar(context, 'ユーザー情報を取得できません', type: SnackType.error);
     }
   } catch (e) {
     if (!context.mounted) return;
     Navigator.of(context, rootNavigator: true).pop(); // ローディングを閉じる
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('取得失敗: $e')),
-    );
+    showAppSnackBar(context, '取得に失敗しました: ${shortError(e)}',
+        type: SnackType.error);
   }
 }
 

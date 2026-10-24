@@ -829,62 +829,69 @@ class _FollowTargetScreenState extends State<FollowTargetScreen> {
     final rate = p.rateLimit;
     final waitLeft = p.waitingUntil?.difference(DateTime.now());
     final scheme = Theme.of(context).colorScheme;
-    return Card(
-      margin: const EdgeInsets.fromLTRB(12, 0, 12, 12),
-      elevation: 6,
-      child: Padding(
-        padding: const EdgeInsets.all(12),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                const SizedBox(
-                  width: 16,
-                  height: 16,
-                  child: CircularProgressIndicator(strokeWidth: 2),
-                ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: Text(
-                    '${p.kind == FollowListKind.followers ? 'フォロワー' : 'フォロー'}'
-                    '${p.cancelling ? 'の取得を中断しています…' : 'を取得中'}',
-                    style: const TextStyle(fontWeight: FontWeight.bold),
+    // 一覧の上に重なるので影で浮かせるが、形はつながり調査や詳しい情報の
+    // 「取得中」の面と同じにして、別物に見えないようにする
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+      child: Material(
+        color: scheme.surfaceContainerHigh,
+        elevation: 3,
+        shadowColor: scheme.shadow,
+        borderRadius: BorderRadius.circular(16),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(14, 6, 6, 12),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  const SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(strokeWidth: 2),
                   ),
-                ),
-                TextButton(
-                  onPressed: p.cancelling ? null : _job.cancel,
-                  child: const Text('中断'),
-                ),
-              ],
-            ),
-            Text(
-              '${formatNumber(p.collected)} 件 / ${formatNumber(p.round)} ページ',
-              style: const TextStyle(fontSize: 20),
-            ),
-            Text(
-              [
-                if (rate?.remaining != null)
-                  'レート残 ${rate!.remaining}/${rate.limit ?? '?'}',
-                '経過 ${elapsedLabel(DateTime.now().difference(p.startedAt))}',
-              ].join(' ・ '),
-              style: TextStyle(fontSize: 11, color: scheme.onSurfaceVariant),
-            ),
-            // 高さを固定して、出入りで下がずれないようにする
-            SizedBox(
-              height: 16,
-              width: double.infinity,
-              child: p.waitingReason == null
-                  ? null
-                  : Text(
-                      '待機中: ${p.waitingReason}'
-                      '${waitLeft == null || waitLeft.isNegative ? '' : '（あと${waitLeft.inSeconds}秒）'}',
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(fontSize: 11, color: scheme.tertiary),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      '${p.kind == FollowListKind.followers ? 'フォロワー' : 'フォロー'}'
+                      '${p.cancelling ? 'の取得を中断しています…' : 'を取得中'}',
+                      style: const TextStyle(fontWeight: FontWeight.bold),
                     ),
-            ),
-          ],
+                  ),
+                  TextButton(
+                    onPressed: p.cancelling ? null : _job.cancel,
+                    child: const Text('中断'),
+                  ),
+                ],
+              ),
+              Text(
+                '${formatNumber(p.collected)} 件 / ${formatNumber(p.round)} ページ',
+                style: const TextStyle(fontSize: 20),
+              ),
+              Text(
+                [
+                  if (rate?.remaining != null)
+                    'レート残 ${rate!.remaining}/${rate.limit ?? '?'}',
+                  '経過 ${elapsedLabel(DateTime.now().difference(p.startedAt))}',
+                ].join(' ・ '),
+                style: TextStyle(fontSize: 11, color: scheme.onSurfaceVariant),
+              ),
+              // 高さを固定して、出入りで下がずれないようにする
+              SizedBox(
+                height: 16,
+                width: double.infinity,
+                child: p.waitingReason == null
+                    ? null
+                    : Text(
+                        '待機中: ${p.waitingReason}'
+                        '${waitLeft == null || waitLeft.isNegative ? '' : '（あと${waitLeft.inSeconds}秒）'}',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(fontSize: 11, color: scheme.tertiary),
+                      ),
+              ),
+            ],
+          ),
         ),
       ),
     );

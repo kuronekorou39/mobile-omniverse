@@ -8,8 +8,11 @@ import '../providers/draft_list_provider.dart';
 import '../screens/compose_screen.dart';
 import '../services/draft_service.dart';
 
-/// 投稿キューの進捗を表示する細いバナー。
-/// HomeScreen の bottomNavigationBar の真上に常駐させる前提。
+/// 投稿キューの進み具合。HomeScreen の下のバーの真上に出す。
+///
+/// 画面いっぱいの帯ではなく、下の知らせ（スナックバー）と同じく角の丸い
+/// 面を浮かせる。色は状態ごとに ColorScheme の「〜Container」を使い、
+/// 投稿中は primary、終わったら secondary、失敗は error の面にする
 class ComposeQueueBanner extends ConsumerStatefulWidget {
   const ComposeQueueBanner({super.key});
 
@@ -54,7 +57,10 @@ class _ComposeQueueBannerState extends ConsumerState<ComposeQueueBanner> {
       curve: Curves.easeOut,
       alignment: Alignment.bottomCenter,
       child: state.hasJobs
-          ? _Banner(state: state)
+          ? Padding(
+              padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
+              child: _Banner(state: state),
+            )
           : const SizedBox(width: double.infinity),
     );
   }
@@ -67,31 +73,32 @@ class _Banner extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final theme = Theme.of(context);
+    final scheme = Theme.of(context).colorScheme;
+    final hasFailure = state.isAllDone && state.hasFailure;
 
     final Color bg;
     final Color fg;
     final Widget statusIcon;
     final String message;
 
-    if (state.isAllDone && state.hasFailure) {
+    if (hasFailure) {
       // 失敗は見落とすと困るので、成功・処理中より強く出す
-      bg = Colors.red.shade700;
-      fg = Colors.white;
-      statusIcon = Icon(Icons.error, size: 20, color: fg);
+      bg = scheme.errorContainer;
+      fg = scheme.onErrorContainer;
+      statusIcon = Icon(Icons.error_outline, size: 20, color: fg);
       message = state.totalCount == 1
           ? '投稿に失敗しました'
           : '${state.failureCount}/${state.totalCount} 件失敗';
     } else if (state.isAllDone) {
-      bg = Colors.green.withValues(alpha: 0.15);
-      fg = Colors.green.shade700;
-      statusIcon = Icon(Icons.check_circle_outline, size: 18, color: fg);
+      bg = scheme.secondaryContainer;
+      fg = scheme.onSecondaryContainer;
+      statusIcon = Icon(Icons.check_circle_outline, size: 20, color: fg);
       message = state.totalCount == 1
           ? '投稿しました'
           : '${state.totalCount} 件投稿しました';
     } else {
-      bg = theme.colorScheme.primary.withValues(alpha: 0.10);
-      fg = theme.colorScheme.primary;
+      bg = scheme.primaryContainer;
+      fg = scheme.onPrimaryContainer;
       statusIcon = SizedBox(
         width: 16,
         height: 16,
@@ -100,26 +107,27 @@ class _Banner extends ConsumerWidget {
       final current = state.currentlyPosting;
       final position = state.completedCount + 1;
       String atHandle(String h) => h.startsWith('@') ? h : '@$h';
-      message = current != null
-          ? '${atHandle(current.account.handle)} 投稿中… $position/${state.totalCount}'
-          : '投稿中… ${state.completedCount}/${state.totalCount}';
+      message = state.totalCount == 1
+          ? '投稿しています…'
+          : current != null
+              ? '${atHandle(current.account.handle)} に投稿中 $position/${state.totalCount}'
+              : '投稿しています… ${state.completedCount}/${state.totalCount}';
     }
-
-    final hasFailure = state.isAllDone && state.hasFailure;
 
     return Material(
       color: bg,
+      elevation: 2,
+      shadowColor: scheme.shadow,
+      borderRadius: BorderRadius.circular(16),
+      clipBehavior: Clip.antiAlias,
       child: InkWell(
-        // 失敗時は行全体をタップ領域にしない。閉じようとして押すと
+        // 失敗時は行全体を押せるようにしない。閉じようとして押すと
         // 再投稿画面が開いてしまい、閉じる手段が無かった
-        onTap: hasFailure
-            ? null
-            : state.isAllDone
-                ? () => ref.read(composeQueueProvider.notifier).dismiss()
-                : null,
+        onTap: !hasFailure && state.isAllDone
+            ? () => ref.read(composeQueueProvider.notifier).dismiss()
+            : null,
         child: Padding(
-          padding: EdgeInsets.symmetric(
-              horizontal: 12, vertical: hasFailure ? 10 : 8),
+          padding: const EdgeInsets.fromLTRB(14, 10, 8, 10),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -140,17 +148,17 @@ class _Banner extends ConsumerWidget {
                     ),
                   ),
                   if (hasFailure) ...[
-                    TextButton(
+                    FilledButton(
                       onPressed: () => _retry(context, ref),
-                      style: TextButton.styleFrom(
-                        foregroundColor: fg,
-                        backgroundColor: Colors.white.withValues(alpha: 0.18),
-                        padding: const EdgeInsets.symmetric(horizontal: 12),
+                      style: FilledButton.styleFrom(
+                        backgroundColor: scheme.error,
+                        foregroundColor: scheme.onError,
+                        padding: const EdgeInsets.symmetric(horizontal: 14),
                         visualDensity: VisualDensity.compact,
+                        textStyle: const TextStyle(
+                            fontSize: 12, fontWeight: FontWeight.bold),
                       ),
-                      child: const Text('再投稿',
-                          style: TextStyle(
-                              fontSize: 12, fontWeight: FontWeight.bold)),
+                      child: const Text('再投稿'),
                     ),
                     IconButton(
                       onPressed: () =>
@@ -164,20 +172,25 @@ class _Banner extends ConsumerWidget {
                     ),
                   ] else if (state.isAllDone)
                     Padding(
-                      padding: const EdgeInsets.only(left: 4),
+                      padding: const EdgeInsets.only(left: 4, right: 6),
                       child: Icon(Icons.close, size: 16, color: fg),
-                    ),
+                    )
+                  else
+                    const SizedBox(width: 6),
                 ],
               ),
-              if (state.totalCount > 1) ...[
-                const SizedBox(height: 4),
-                ClipRRect(
-                  borderRadius: BorderRadius.circular(2),
-                  child: LinearProgressIndicator(
-                    minHeight: 3,
-                    value: state.completedCount / state.totalCount,
-                    backgroundColor: fg.withValues(alpha: 0.15),
-                    valueColor: AlwaysStoppedAnimation(fg),
+              if (state.totalCount > 1 && !state.isAllDone) ...[
+                const SizedBox(height: 8),
+                Padding(
+                  padding: const EdgeInsets.only(right: 6),
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(2),
+                    child: LinearProgressIndicator(
+                      minHeight: 3,
+                      value: state.completedCount / state.totalCount,
+                      backgroundColor: fg.withValues(alpha: 0.15),
+                      color: fg,
+                    ),
                   ),
                 ),
               ],

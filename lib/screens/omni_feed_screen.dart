@@ -155,26 +155,26 @@ class _OmniFeedScreenState extends ConsumerState<OmniFeedScreen>
       // トークン期限切れ通知を設定
       ref.read(feedProvider.notifier).onTokenExpired = (accountId, handle) {
         if (!mounted) return;
-        final messenger = ScaffoldMessenger.of(context);
-        messenger.showSnackBar(
-          SnackBar(
-            content: Text('$handle のトークンが期限切れです。再ログインしてください'),
-            duration: const Duration(seconds: 5),
-            action: SnackBarAction(
-              label: 'アカウント',
-              onPressed: () {
-                messenger.hideCurrentSnackBar();
-                _openAccountsScreen(context);
-              },
-            ),
+        showAppSnackBar(
+          context,
+          '$handle のログインが切れました。再ログインしてください',
+          type: SnackType.warning,
+          duration: const Duration(seconds: 6),
+          action: SnackBarAction(
+            label: 'アカウント',
+            onPressed: () {
+              ScaffoldMessenger.of(context).hideCurrentSnackBar();
+              _openAccountsScreen(context);
+            },
           ),
         );
       };
 
-      // ログサイズ警告を設定
+      // ログは利用者が自分で有効にしたときだけ書かれる。整理したことは
+      // 一言伝えるだけにして、容量の数字で驚かせない
       DebugLogService.instance.onLogSizeWarning = (sizeLabel) {
         if (!mounted) return;
-        showAppSnackBar(context, 'デバッグログが上限に達したため自動整理しました（現在 $sizeLabel）', type: SnackType.warning);
+        showAppSnackBar(context, 'ログが上限に達したので、古い分を整理しました');
       };
     });
   }
@@ -367,9 +367,7 @@ class _OmniFeedScreenState extends ConsumerState<OmniFeedScreen>
       ref.read(feedProvider.notifier).updatePostEngagement(
         post.id, accountId: account.id, liked: willUnlike, likeCount: post.likeCount,
       );
-      ScaffoldMessenger.of(context).showSnackBar(
-        engagementErrorSnackBar('いいね', result.statusCode),
-      );
+      showEngagementError(context, 'いいね', result.statusCode);
     }
   }
 
@@ -409,9 +407,7 @@ class _OmniFeedScreenState extends ConsumerState<OmniFeedScreen>
       ref.read(feedProvider.notifier).updatePostEngagement(
         post.id, accountId: account.id, reposted: willUnrepost, repostCount: post.repostCount,
       );
-      ScaffoldMessenger.of(context).showSnackBar(
-        engagementErrorSnackBar('リポスト', result.statusCode),
-      );
+      showEngagementError(context, 'リポスト', result.statusCode);
     }
   }
 
@@ -611,8 +607,6 @@ class _OmniFeedScreenState extends ConsumerState<OmniFeedScreen>
   }
 
   Future<void> _launchOverlay(FeedState feed) async {
-    final messenger = ScaffoldMessenger.of(context);
-
     var granted = Platform.isAndroid ? await FlutterOverlayWindow.isPermissionGranted() : false;
     if (!granted) {
       if (!mounted) return;
@@ -669,9 +663,9 @@ class _OmniFeedScreenState extends ConsumerState<OmniFeedScreen>
         await FlutterOverlayWindow.moveToBackground();
       }
     } catch (e) {
-      messenger.showSnackBar(
-        SnackBar(content: Text('オーバーレイエラー: $e')),
-      );
+      if (!mounted) return;
+      showAppSnackBar(context, 'オーバーレイを開けませんでした: ${shortError(e)}',
+          type: SnackType.error);
     }
   }
 

@@ -4,6 +4,7 @@ import '../models/follow_user.dart';
 import '../models/sns_service.dart';
 import '../services/follow_db.dart';
 import '../widgets/follow_list_controls.dart';
+import '../utils/app_snackbar.dart';
 import '../utils/number_format.dart';
 import '../widgets/skeleton.dart';
 import 'follow_relation_diff_screen.dart';
@@ -110,10 +111,8 @@ class _FollowRelationScreenState extends State<FollowRelationScreen>
 
     // 先頭が今表示している世代。比べる相手はそれより古いもの
     if (generations.length < 2) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-            content: Text('比較するには、フォロワーとフォローの両方を 2 回以上取る必要があります')),
-      );
+      showAppSnackBar(
+          context, '比較するには、フォロワーとフォローの両方を 2 回以上取る必要があります');
       return;
     }
 

@@ -183,6 +183,7 @@ class _BlockScanResultScreenState extends State<BlockScanResultScreen> {
       count == null ? _tabs[i].label : '${_tabs[i].label} ($count)';
 
   Widget _header(BlockRun run, BlockRunProgress? s) {
+    final scheme = Theme.of(context).colorScheme;
     final line = s == null
         ? '集計中…'
         : '起点 ${run.originLabel} ・ '
@@ -206,7 +207,9 @@ class _BlockScanResultScreenState extends State<BlockScanResultScreen> {
             '${run.isCompleted ? '' : ' ・ 未完了（途中までの結果です）'}',
             style: TextStyle(
                 fontSize: 11,
-                color: run.isCompleted ? Colors.grey : Colors.orange),
+                color: run.isCompleted
+                    ? scheme.onSurfaceVariant
+                    : scheme.tertiary),
             textAlign: TextAlign.center,
           ),
         ],
@@ -215,6 +218,7 @@ class _BlockScanResultScreenState extends State<BlockScanResultScreen> {
   }
 
   Widget _list(int index) {
+    final scheme = Theme.of(context).colorScheme;
     final tab = _tabs[index];
     final isPopular = tab.relation == null;
 
@@ -256,8 +260,9 @@ class _BlockScanResultScreenState extends State<BlockScanResultScreen> {
                   Text('${formatNumber(f.sourceCount)}人',
                       style: const TextStyle(
                           fontSize: 13, fontWeight: FontWeight.bold)),
-                  const Text('から',
-                      style: TextStyle(fontSize: 9, color: Colors.grey)),
+                  Text('から',
+                      style: TextStyle(
+                          fontSize: 9, color: scheme.onSurfaceVariant)),
                 ],
               ),
             ),

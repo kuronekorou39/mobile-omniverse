@@ -671,9 +671,7 @@ class _PostDetailScreenState extends ConsumerState<PostDetailScreen> {
 
     if (!result.success && mounted) {
       _updatePost(accountId: account.id, liked: willUnlike, likeCount: post.likeCount);
-      ScaffoldMessenger.of(context).showSnackBar(
-        engagementErrorSnackBar('いいね', result.statusCode),
-      );
+      showEngagementError(context, 'いいね', result.statusCode);
     }
   }
 
@@ -710,9 +708,7 @@ class _PostDetailScreenState extends ConsumerState<PostDetailScreen> {
 
     if (!result.success && mounted) {
       _updatePost(accountId: account.id, reposted: willUnrepost, repostCount: post.repostCount);
-      ScaffoldMessenger.of(context).showSnackBar(
-        engagementErrorSnackBar('リポスト', result.statusCode),
-      );
+      showEngagementError(context, 'リポスト', result.statusCode);
     }
   }
 

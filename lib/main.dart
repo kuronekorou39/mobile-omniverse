@@ -102,16 +102,29 @@ class OmniVerseApp extends ConsumerWidget {
       seedColor: const Color(0xFF6750A4),
       brightness: Brightness.dark,
     ).copyWith(surfaceTint: Colors.transparent);
+    // 画面下の知らせは浮かせて角を丸め、面やカードと同じ言葉で出す。
+    // 色は showAppSnackBar が種類ごとに付けるので、ここでは形だけ
+    const snackBarTheme = SnackBarThemeData(
+      behavior: SnackBarBehavior.floating,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.all(Radius.circular(12)),
+      ),
+      insetPadding: EdgeInsets.fromLTRB(12, 0, 12, 12),
+      elevation: 2,
+    );
+
     final baseLight = ThemeData(
       colorScheme: lightScheme,
       useMaterial3: true,
       appBarTheme: appBarTheme,
+      snackBarTheme: snackBarTheme,
       pageTransitionsTheme: pageTransitions,
     );
     final baseDark = ThemeData(
       colorScheme: darkScheme,
       useMaterial3: true,
       appBarTheme: appBarTheme,
+      snackBarTheme: snackBarTheme,
       pageTransitionsTheme: pageTransitions,
     );
 

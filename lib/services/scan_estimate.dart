@@ -32,6 +32,49 @@ class ScanEstimate {
   /// 「約3時間」「約40分」。細かい端数は当てにならないので丸める
   String get label => roughLabel(duration);
 
+  // ─── 保存容量 ───
+  //
+  // つながり調査は 1 件につき block_findings 1 行と、初めて見た相手なら
+  // users 1 行を書く。SQLite ファイルを実測した値（索引込み、VACUUM 後）
+
+  /// 延べ 1 件ぶんの行と索引
+  static const int bytesPerFinding = 136;
+
+  /// 調査で初めて出てきた相手 1 人ぶんの users 行（自己紹介と場所は捨てている）
+  static const int bytesPerScanUser = 266;
+
+  /// 延べ件数のうち、初めて見る相手の割合。
+  ///
+  /// 同じ界隈の人は同じ相手をフォローしているので、起点の人数が増えるほど
+  /// 重複が増えて下がる。始める前には分からないので、ほどほどの値を置く
+  static const double uniqueShare = 0.3;
+
+  /// 延べ 1 件あたりのおよその容量
+  static const double bytesPerItem =
+      bytesPerFinding + bytesPerScanUser * uniqueShare;
+
+  /// 調査を終えたときに増えるファイルのおよその大きさ
+  int get storageBytes => items <= 0 ? 0 : (items * bytesPerItem).round();
+
+  /// 「約2.8 GB」「約300 MB」。桁が分かればよい
+  String get storageLabel => roughBytesLabel(storageBytes);
+
+  @visibleForTesting
+  static String roughBytesLabel(int bytes) {
+    const mb = 1024 * 1024;
+    const gb = 1024 * mb;
+    if (bytes <= 0) return '—';
+    if (bytes < mb) return '1 MB未満';
+    if (bytes < gb) {
+      final m = bytes / mb;
+      // 100 MB を超えたら 1 MB の差は意味がない
+      final shown = m < 100 ? m.round() : (m / 10).round() * 10;
+      return '約$shown MB';
+    }
+    final g = bytes / gb;
+    return g < 10 ? '約${g.toStringAsFixed(1)} GB' : '約${g.round()} GB';
+  }
+
   /// 見積もりは上振れも下振れもするので、桁が伝わればよい
   @visibleForTesting
   static String roughLabel(Duration d) {

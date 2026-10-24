@@ -123,7 +123,10 @@ class _BlockScanSectionState extends State<BlockScanSection> {
                 '超える相手は飛ばします（1 人で何時間もかかるため）。\n'
                 '「延べ」の件数は、起点の人たちのフォロー数を足したものです。'
                 '同じ人が何度も数えられるので、実際の人数はもっと少なくなります。'
-                '所要時間の目安はこの延べ件数から出しています。',
+                '所要時間と保存容量の目安はこの延べ件数から出しています'
+                '（1 件あたり約 ${ScanEstimate.bytesPerItem.round()} バイト）。\n'
+                '調査の結果は「保存容量」の上限とは別に数えるので、'
+                '上限を超えても取得の履歴は消えません。',
             expanded: open,
             onToggle: () => _setExpanded(!open),
             summary: isMine
@@ -500,7 +503,7 @@ class _BlockScanSectionState extends State<BlockScanSection> {
                   c.count == null
                       ? 'まだ取得していません'
                       : '${formatNumber(c.count!)}人のフォロー先をたどります'
-                          '${c.items > 0 ? '（延べ${formatNumber(c.items)}件）' : ''}',
+                          '${c.items > 0 ? '（延べ${formatNumber(c.items)}件・保存 ${ScanEstimate(items: c.items).storageLabel}）' : ''}',
                   style: const TextStyle(fontSize: 11),
                 ),
                 // かかる時間が選ぶ基準になるので、右端に出す
@@ -529,8 +532,8 @@ class _BlockScanSectionState extends State<BlockScanSection> {
       title: 'つながり調査を開始',
       message: '${formatNumber(count)}人のフォロー先を1人ずつたどります'
           '${chosen.items > 0 ? '（延べ${formatNumber(chosen.items)}件。同じ人が何度も数えられるので、実際の人数はもっと少なくなります）' : ''}。\n'
-          '${chosen.items > 0 ? '目安 ${estimate.label}。これまでの取得の速さから見積もった'
-              'ものなので、通信状況や制限で前後します。\n' : ''}\n'
+          '${chosen.items > 0 ? '目安 ${estimate.label}、保存に ${estimate.storageLabel} ほど使います。'
+              '通信状況や制限、相手の重なり方で前後します。\n' : ''}\n'
           'フォローが ${formatNumber(FollowDb.blockScanFriendLimit)} 人を超える相手は飛ばします。\n'
           '中断しても続きから再開でき、途中までの結果も見られます。',
       confirmLabel: '開始',

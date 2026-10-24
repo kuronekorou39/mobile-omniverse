@@ -6,6 +6,7 @@ import 'package:sqflite/sqflite.dart';
 
 import '../models/follow_user.dart';
 import '../models/sns_service.dart';
+import 'scan_estimate.dart';
 
 /// フォロー/フォロワー走査の保存先。
 ///
@@ -466,15 +467,17 @@ class FollowDb {
             await db.rawQuery('SELECT COUNT(*) FROM $table')) ??
         0;
 
-    // findings 1 行は 5 列の小さな行。users 側は調査でしか出てこない
-    // 相手のぶんを見積もる (実測でおよそ 1 件 350 バイト前後)
+    // findings は行そのものより索引（主キー + 相手別 + 関係別）がかさむ。
+    // users 側は調査でしか出てこない相手のぶんを数える。
+    // 単価は SQLite ファイルの実測から（ScanEstimate に置いてある）
     final findings = await count('block_findings');
     final onlyInScan = Sqflite.firstIntValue(await db.rawQuery(
           'SELECT COUNT(*) FROM users WHERE restId NOT IN '
           '(SELECT restId FROM snapshot_members)',
         )) ??
         0;
-    return findings * 60 + onlyInScan * 350;
+    return findings * ScanEstimate.bytesPerFinding +
+        onlyInScan * ScanEstimate.bytesPerScanUser;
   }
 
   /// フォロー/フォロワーが占めている概算。間引きの判定はこちらで行う

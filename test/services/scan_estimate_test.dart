@@ -28,6 +28,46 @@ void main() {
     });
   });
 
+  group('保存容量の目安', () {
+    const mb = 1024 * 1024;
+
+    test('延べ 1 件の単価は実測の行と、重複を見込んだ相手のぶん', () {
+      expect(ScanEstimate.bytesPerItem,
+          closeTo(136 + 266 * 0.3, 0.001));
+    });
+
+    test('延べ件数に単価を掛ける', () {
+      final e = const ScanEstimate(items: 13000000);
+      expect(e.storageBytes, (13000000 * ScanEstimate.bytesPerItem).round());
+      // 1300 万件で 2.6 GB 台
+      expect(e.storageLabel, '約2.6 GB');
+    });
+
+    test('件数が分からなければ出さない', () {
+      expect(const ScanEstimate(items: 0).storageBytes, 0);
+      expect(const ScanEstimate(items: 0).storageLabel, '—');
+    });
+
+    String label(int bytes) => ScanEstimate.roughBytesLabel(bytes);
+
+    test('1 MB 未満はそう書く', () {
+      expect(label(300 * 1024), '1 MB未満');
+    });
+
+    test('100 MB までは 1 MB 単位', () {
+      expect(label(42 * mb + 600 * 1024), '約43 MB');
+    });
+
+    test('100 MB を超えたら 10 MB 単位', () {
+      expect(label(347 * mb), '約350 MB');
+    });
+
+    test('GB は 10 未満なら小数 1 桁', () {
+      expect(label((2.84 * 1024 * mb).round()), '約2.8 GB');
+      expect(label(12 * 1024 * mb + 700 * mb), '約13 GB');
+    });
+  });
+
   group('表示の丸め', () {
     String label(Duration d) => ScanEstimate.roughLabel(d);
 

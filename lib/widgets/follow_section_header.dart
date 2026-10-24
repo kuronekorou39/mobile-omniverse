@@ -44,6 +44,9 @@ class FollowSectionHeader extends StatelessWidget {
           const SizedBox(width: 6),
           Tooltip(
             triggerMode: TooltipTriggerMode.tap,
+            // 数行の説明なので、既定の 1.5 秒では読み終わらない。
+            // 外を押せばその場で消える
+            showDuration: const Duration(seconds: 10),
             message: message,
             child: Icon(Icons.info_outline,
                 size: 16, color: scheme.onSurfaceVariant),

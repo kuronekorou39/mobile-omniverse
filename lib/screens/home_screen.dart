@@ -129,23 +129,29 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         }
       },
       child: Scaffold(
-        body: IndexedStack(
-          index: _currentIndex,
+        body: Stack(
           children: [
-            _buildTabNavigator(0, const AccountsScreen()),
-            _buildTabNavigator(1, OmniFeedScreen(
-              onRegisterTimelineTap: (callback) => onTimelineTap = callback,
-            )),
-            _buildTabNavigator(2, const NotificationsScreen()),
+            IndexedStack(
+              index: _currentIndex,
+              children: [
+                _buildTabNavigator(0, const AccountsScreen()),
+                _buildTabNavigator(1, OmniFeedScreen(
+                  onRegisterTimelineTap: (callback) => onTimelineTap = callback,
+                )),
+                _buildTabNavigator(2, const NotificationsScreen()),
+              ],
+            ),
+            // 下のバーの一部にすると、出るたびに本文が縮んで投稿ボタンが
+            // 上に動く。本文の上に重ねて、画面の並びは動かさない
+            const Positioned(
+              left: 0,
+              right: 0,
+              bottom: 0,
+              child: ComposeQueueBanner(),
+            ),
           ],
         ),
-        bottomNavigationBar: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const ComposeQueueBanner(),
-            _buildBottomBar(unreadTotal),
-          ],
-        ),
+        bottomNavigationBar: _buildBottomBar(unreadTotal),
       ),
     );
   }

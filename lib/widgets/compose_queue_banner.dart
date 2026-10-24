@@ -8,11 +8,13 @@ import '../providers/draft_list_provider.dart';
 import '../screens/compose_screen.dart';
 import '../services/draft_service.dart';
 
-/// 投稿キューの進み具合。HomeScreen の下のバーの真上に出す。
+/// 投稿キューの進み具合。HomeScreen の本文の下端、下のバーの真上に重ねる。
 ///
-/// 画面いっぱいの帯ではなく、下の知らせ（スナックバー）と同じく角の丸い
-/// 面を浮かせる。色は状態ごとに ColorScheme の「〜Container」を使い、
-/// 投稿中は primary、終わったら secondary、失敗は error の面にする
+/// 画面いっぱいの帯ではなく、中身ぶんの幅の角の丸い面を中央に浮かせる。
+/// 幅は左右の投稿ボタン（FAB）に掛からない範囲に収め、出ても投稿ボタンが
+/// 隠れたり動いたりしないようにする。色は状態ごとに ColorScheme の
+/// 「〜Container」を使い、投稿中は primary、終わったら secondary、
+/// 失敗は error の面にする
 class ComposeQueueBanner extends ConsumerStatefulWidget {
   const ComposeQueueBanner({super.key});
 
@@ -52,16 +54,25 @@ class _ComposeQueueBannerState extends ConsumerState<ComposeQueueBanner> {
     }
     _wasAllSuccess = isAllSuccess;
 
+    // FAB は端から 16、大きさ 56。その内側にさらに 12 空けた幅までにして、
+    // 左右どちらに FAB を置く設定でも面が掛からないようにする
+    final maxWidth = MediaQuery.sizeOf(context).width - 2 * (16 + 56 + 12);
+
     return AnimatedSize(
       duration: const Duration(milliseconds: 200),
       curve: Curves.easeOut,
       alignment: Alignment.bottomCenter,
       child: state.hasJobs
           ? Padding(
-              padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
-              child: _Banner(state: state),
+              padding: const EdgeInsets.only(bottom: 8),
+              child: Center(
+                child: ConstrainedBox(
+                  constraints: BoxConstraints(maxWidth: maxWidth),
+                  child: _Banner(state: state),
+                ),
+              ),
             )
-          : const SizedBox(width: double.infinity),
+          : const SizedBox.shrink(),
     );
   }
 }
@@ -86,8 +97,9 @@ class _Banner extends ConsumerWidget {
       bg = scheme.errorContainer;
       fg = scheme.onErrorContainer;
       statusIcon = Icon(Icons.error_outline, size: 20, color: fg);
+      // 横に「再投稿」と閉じるが並ぶので、文は短く
       message = state.totalCount == 1
-          ? '投稿に失敗しました'
+          ? '投稿に失敗'
           : '${state.failureCount}/${state.totalCount} 件失敗';
     } else if (state.isAllDone) {
       bg = scheme.secondaryContainer;
@@ -129,14 +141,16 @@ class _Banner extends ConsumerWidget {
         child: Padding(
           padding: const EdgeInsets.fromLTRB(14, 10, 8, 10),
           child: Column(
+            // 幅は中身ぶん。進み具合の帯だけは行の幅いっぱいに伸ばす
             mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               Row(
+                mainAxisSize: MainAxisSize.min,
                 children: [
                   statusIcon,
                   const SizedBox(width: 10),
-                  Expanded(
+                  Flexible(
                     child: Text(
                       message,
                       style: TextStyle(

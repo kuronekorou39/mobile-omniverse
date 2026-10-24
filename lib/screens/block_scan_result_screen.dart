@@ -184,12 +184,14 @@ class _BlockScanResultScreenState extends State<BlockScanResultScreen> {
 
   Widget _header(BlockRun run, BlockRunProgress? s) {
     final scheme = Theme.of(context).colorScheme;
+    // 1 行に全部並べると画面幅で変な所から折り返す。
+    // 走査の進みと、集めた量とで行を分ける
     final line = s == null
         ? '集計中…'
         : '起点 ${run.originLabel} ・ '
             '${formatNumber(s.doneSources)}/${formatNumber(s.totalSources)}人 走査済み'
             '${s.skippedSources > 0 ? '（${formatNumber(s.skippedSources)}人は対象外）' : ''}'
-            ' ・ 延べ${formatNumber(s.scanned)}件'
+            '\n延べ${formatNumber(s.scanned)}件'
             '${run.keepEdges ? '' : ' ・ 関係のみ記録'}';
 
     return Padding(

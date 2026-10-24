@@ -12,6 +12,7 @@ import '../widgets/follow_list_controls.dart';
 import '../utils/number_format.dart';
 import '../widgets/skeleton.dart';
 import '../utils/image_headers.dart';
+import 'account_age_screen.dart';
 import 'follow_diff_screen.dart';
 import 'user_profile_screen.dart';
 
@@ -125,6 +126,13 @@ class _FollowSnapshotScreenState extends State<FollowSnapshotScreen> {
             icon: const Icon(Icons.compare_arrows),
             tooltip: '比較する',
             onPressed: _openDiff,
+          ),
+          IconButton(
+            icon: const Icon(Icons.bar_chart),
+            tooltip: 'アカウント作成日の分布',
+            onPressed: () => Navigator.of(context).push(MaterialPageRoute(
+              builder: (_) => AccountAgeScreen(snapshot: s),
+            )),
           ),
         ],
       ),

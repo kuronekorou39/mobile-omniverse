@@ -774,6 +774,47 @@ class FollowDb {
     return rows.map(_userFromSnapshotRow).toList();
   }
 
+  /// 一覧の全員ぶんの作成日。分布を出すために使う。
+  ///
+  /// 作成日は X の生文字列で入っているので SQL では月に丸められない。
+  /// 文字列のまま返して Dart 側で読む。数万件でも短い文字列なので軽い
+  Future<List<({String restId, String createdAt})>> memberCreatedAts(
+      int snapshotId) async {
+    final db = await _database;
+    final rows = await db.rawQuery(
+      'SELECT u.restId AS restId, u.createdAt AS createdAt '
+      'FROM snapshot_members m JOIN users u ON u.restId = m.restId '
+      'WHERE m.snapshotId = ?',
+      [snapshotId],
+    );
+    return [
+      for (final r in rows)
+        (
+          restId: r['restId'] as String,
+          createdAt: (r['createdAt'] as String?) ?? '',
+        ),
+    ];
+  }
+
+  /// 一覧の中から、指定した相手だけを渡した順で返す。
+  /// 作成日で絞った人たちを一覧にするときに使う（1 ページぶんずつ渡す）
+  Future<List<FollowUser>> membersByIds(
+      int snapshotId, List<String> restIds) async {
+    if (restIds.isEmpty) return const [];
+    final db = await _database;
+    final marks = List.filled(restIds.length, '?').join(',');
+    final rows = await db.rawQuery(
+      'SELECT $_snapshotColumns '
+      'FROM snapshot_members m JOIN users u ON u.restId = m.restId '
+      'WHERE m.snapshotId = ? AND m.restId IN ($marks)',
+      [snapshotId, ...restIds],
+    );
+    final byId = {
+      for (final r in rows) r['restId'] as String: _userFromSnapshotRow(r),
+    };
+    return [for (final id in restIds) ?byId[id]];
+  }
+
   /// 一覧に必要な列。件数は走査時点の値を優先し、無ければ最新値で代用する
   static const _snapshotColumns = 'u.*, '
       'COALESCE(m.followersCount, u.followersCount) AS snapFollowers, '

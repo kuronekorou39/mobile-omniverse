@@ -1066,6 +1066,39 @@ void main() {
 
   // ───────────────────────── 使用量 ─────────────────────────
 
+  group('作成日の分布', () {
+    test('一覧の全員ぶんの作成日を返す', () async {
+      final id = await completedSnapshot('alice', 'followers', [
+        FollowUser(
+            restId: '1',
+            screenName: 'a',
+            name: '',
+            createdAt: 'Thu Apr 06 15:24:15 +0000 2023'),
+        FollowUser(restId: '2', screenName: 'b', name: ''),
+      ]);
+      final rows = await db.memberCreatedAts(id);
+      expect(rows.length, 2);
+      expect(rows.firstWhere((r) => r.restId == '1').createdAt,
+          'Thu Apr 06 15:24:15 +0000 2023');
+      expect(rows.firstWhere((r) => r.restId == '2').createdAt, '');
+    });
+
+    test('指定した相手だけを渡した順で返す', () async {
+      final id = await completedSnapshot(
+          'alice', 'followers', [user('1'), user('2'), user('3')]);
+      final users = await db.membersByIds(id, ['3', '1', '9']);
+      expect(users.map((u) => u.restId), ['3', '1']);
+      expect(await db.membersByIds(id, []), isEmpty);
+    });
+
+    test('別の一覧の相手は返さない', () async {
+      final a = await completedSnapshot('alice', 'followers', [user('1')]);
+      await completedSnapshot('alice', 'following', [user('2')]);
+      expect((await db.membersByIds(a, ['1', '2'])).map((u) => u.restId),
+          ['1']);
+    });
+  });
+
   group('使用量', () {
     test('対象ごとの行数を返す', () async {
       await completedSnapshot('alice', 'followers', [user('1'), user('2')]);

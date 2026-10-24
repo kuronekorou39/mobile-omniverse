@@ -46,6 +46,16 @@ void main() {
     test('件数が分からなければ出さない', () {
       expect(const ScanEstimate(items: 0).storageBytes, 0);
       expect(const ScanEstimate(items: 0).storageLabel, '—');
+      expect(const ScanEstimate(items: 0).lightStorageLabel, '—');
+    });
+
+    test('関係だけ残すなら、該当する割合ぶんだけ', () {
+      const e = ScanEstimate(items: 13000000);
+      expect(e.lightStorageBytes,
+          (13000000 * 0.02 * (136 + 266)).round());
+      // 1300 万件でも 100 MB 程度
+      expect(e.lightStorageLabel, '約100 MB');
+      expect(e.lightStorageBytes, lessThan(e.storageBytes ~/ 10));
     });
 
     String label(int bytes) => ScanEstimate.roughBytesLabel(bytes);

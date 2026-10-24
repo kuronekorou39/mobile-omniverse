@@ -145,6 +145,7 @@ class BlockScanService {
     required SnsService service,
     required String handle,
     required String origin,
+    bool keepEdges = true,
   }) async {
     if (isRunning) throw StateError('別の調査が実行中です');
     if (account.service != SnsService.x) {
@@ -161,12 +162,14 @@ class BlockScanService {
       origin: origin,
       sessionAccountId: account.id,
       sources: sources,
+      keepEdges: keepEdges,
     );
     DebugLogService.instance.log('BlockScan',
         '調査を開始: @$handle の$origin ${sources.length}人 (runId=$runId)');
     ScanLogService.instance.log(
         '=== 調査を開始 runId=$runId 対象=@$handle 起点=$origin '
-        '${sources.length}人 実行=@${account.handle} ===');
+        '${sources.length}人 実行=@${account.handle} '
+        '記録=${keepEdges ? '全部' : '関係のみ'} ===');
     await resume(account: account, runId: runId, targetHandle: handle);
     return runId;
   }
@@ -247,6 +250,8 @@ class BlockScanService {
     final schedulerWasRunning = scheduler.isRunning;
     if (schedulerWasRunning) scheduler.stop();
 
+    // 何を残す調査かは始めたときに決まっている。再開でも引き継ぐ
+    final keepEdges = (await db.blockRun(runId))?.keepEdges ?? true;
     final stats = await db.blockRunProgress(runId);
     progress.value = BlockScanProgress(
       runId: runId,
@@ -277,7 +282,11 @@ class BlockScanService {
           currentCollected: source.collected,
         );
 
-        await _scanOne(account: account, runId: runId, source: source);
+        await _scanOne(
+            account: account,
+            runId: runId,
+            source: source,
+            keepEdges: keepEdges);
 
         final s = await db.blockRunProgress(runId);
         progress.value = progress.value?.copyWith(
@@ -312,6 +321,7 @@ class BlockScanService {
     required Account account,
     required int runId,
     required BlockSource source,
+    required bool keepEdges,
   }) async {
     final db = FollowDb.instance;
     final job = FollowCaptureJobService.instance;
@@ -349,6 +359,7 @@ class BlockScanService {
             sourceRestId: source.restId,
             users: users,
             cursor: cursor,
+            keepEdges: keepEdges,
           );
           progress.value =
               progress.value?.copyWith(currentCollected: collected);

@@ -53,11 +53,25 @@ class ScanEstimate {
   static const double bytesPerItem =
       bytesPerFinding + bytesPerScanUser * uniqueShare;
 
-  /// 調査を終えたときに増えるファイルのおよその大きさ
+  /// 調査を終えたときに増えるファイルのおよその大きさ（フォロー先を全部残す）
   int get storageBytes => items <= 0 ? 0 : (items * bytesPerItem).round();
 
   /// 「約2.8 GB」「約300 MB」。桁が分かればよい
   String get storageLabel => roughBytesLabel(storageBytes);
+
+  /// 延べ件数のうち、ブロックかミュートが立っている割合。
+  ///
+  /// 他人のフォロー先に自分と関係のある人が混ざる率は低い。前もって
+  /// 分からないので、上振れ側に置く
+  static const double relationShare = 0.02;
+
+  /// 関係のある人だけ残す調査で増えるおよその大きさ。
+  /// 該当者はほぼ毎回初めて見る相手なので、users のぶんも全員分で見る
+  int get lightStorageBytes => items <= 0
+      ? 0
+      : (items * relationShare * (bytesPerFinding + bytesPerScanUser)).round();
+
+  String get lightStorageLabel => roughBytesLabel(lightStorageBytes);
 
   @visibleForTesting
   static String roughBytesLabel(int bytes) {

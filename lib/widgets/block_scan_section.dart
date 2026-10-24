@@ -9,7 +9,6 @@ import '../services/block_scan_service.dart';
 import '../services/follow_db.dart';
 import '../services/scan_estimate.dart';
 import '../utils/app_snackbar.dart';
-import '../utils/confirm_dialog.dart';
 import '../utils/number_format.dart';
 import 'follow_section_header.dart';
 import 'skeleton.dart';
@@ -123,8 +122,11 @@ class _BlockScanSectionState extends State<BlockScanSection> {
                 '超える相手は飛ばします（1 人で何時間もかかるため）。\n'
                 '「延べ」の件数は、起点の人たちのフォロー数を足したものです。'
                 '同じ人が何度も数えられるので、実際の人数はもっと少なくなります。'
-                '所要時間と保存容量の目安はこの延べ件数から出しています'
-                '（1 件あたり約 ${ScanEstimate.bytesPerItem.round()} バイト）。\n'
+                '所要時間と保存容量の目安はこの延べ件数から出しています。\n\n'
+                '始めるときに、ブロック・ミュートの有無だけを残すか、'
+                'たどったフォロー先もすべて残すかを選べます。'
+                'すべて残すと「人気」を集計できますが、'
+                '1 件あたり約 ${ScanEstimate.bytesPerItem.round()} バイト使います。\n'
                 '調査の結果は「保存容量」の上限とは別に数えるので、'
                 '上限を超えても取得の履歴は消えません。',
             expanded: open,
@@ -387,6 +389,8 @@ class _BlockScanSectionState extends State<BlockScanSection> {
                   Text(
                     [
                       if (ranBy != null) '${ranBy.handle} で調査',
+                      // 「人気」が出ない調査だと分かるようにしておく
+                      if (!r.keepEdges) '関係のみ記録',
                       r.isCompleted ? '完了' : '未完了',
                     ].join(' ・ '),
                     style: TextStyle(
@@ -524,21 +528,14 @@ class _BlockScanSectionState extends State<BlockScanSection> {
     if (picked == null || !mounted) return;
 
     final chosen = choices.firstWhere((c) => c.origin == picked);
-    final count = chosen.count ?? 0;
-    final estimate = ScanEstimate(items: chosen.items);
-    // 十数時間かかることがあるので、規模と目安を見せてから始める
-    final ok = await confirmDialog(
-      context,
-      title: 'つながり調査を開始',
-      message: '${formatNumber(count)}人のフォロー先を1人ずつたどります'
-          '${chosen.items > 0 ? '（延べ${formatNumber(chosen.items)}件。同じ人が何度も数えられるので、実際の人数はもっと少なくなります）' : ''}。\n'
-          '${chosen.items > 0 ? '目安 ${estimate.label}、保存に ${estimate.storageLabel} ほど使います。'
-              '通信状況や制限、相手の重なり方で前後します。\n' : ''}\n'
-          'フォローが ${formatNumber(FollowDb.blockScanFriendLimit)} 人を超える相手は飛ばします。\n'
-          '中断しても続きから再開でき、途中までの結果も見られます。',
-      confirmLabel: '開始',
+    // 十数時間かかることがあるので、規模と目安を見せてから始める。
+    // 何を残すかで容量が桁で変わるので、ここで一緒に選ぶ
+    final keepEdges = await _confirmStart(
+      originLabel: chosen.label,
+      count: chosen.count ?? 0,
+      estimate: ScanEstimate(items: chosen.items),
     );
-    if (!ok || !mounted) return;
+    if (keepEdges == null || !mounted) return;
 
     try {
       final runId = await _scan.start(
@@ -546,6 +543,7 @@ class _BlockScanSectionState extends State<BlockScanSection> {
         service: widget.service,
         handle: widget.handle,
         origin: picked,
+        keepEdges: keepEdges,
       );
       if (!mounted) return;
       if (runId == null) {
@@ -556,6 +554,102 @@ class _BlockScanSectionState extends State<BlockScanSection> {
     }
     await _load();
     widget.onChanged();
+  }
+
+  /// 何を残すかを選んでから始める。戻り値は「フォロー先を全部残すか」、
+  /// キャンセルなら null。
+  ///
+  /// 容量はここで決まる。起点の人数と目安を見ながら選べるようにする
+  Future<bool?> _confirmStart({
+    required String originLabel,
+    required int count,
+    required ScanEstimate estimate,
+  }) {
+    final hasItems = estimate.items > 0;
+    // 全部残すと GB 単位になりそうなら、軽い方を先に選んでおく
+    var keepEdges = !hasItems || estimate.storageBytes < 1024 * 1024 * 1024;
+    return showDialog<bool>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setState) {
+          final scheme = Theme.of(ctx).colorScheme;
+          final note = TextStyle(fontSize: 12, color: scheme.onSurfaceVariant);
+          return AlertDialog(
+            title: const Text('つながり調査を開始'),
+            contentPadding: const EdgeInsets.fromLTRB(24, 16, 24, 0),
+            content: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    '$originLabel ${formatNumber(count)}人のフォロー先を'
+                    '1人ずつたどります'
+                    '${hasItems ? '（延べ${formatNumber(estimate.items)}件、目安 ${estimate.label}）' : ''}。',
+                  ),
+                  const SizedBox(height: 12),
+                  Text('記録する内容',
+                      style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.bold,
+                          color: scheme.onSurfaceVariant)),
+                  RadioGroup<bool>(
+                    groupValue: keepEdges,
+                    onChanged: (v) => setState(() => keepEdges = v ?? true),
+                    child: Column(
+                      children: [
+                        RadioListTile<bool>(
+                          value: false,
+                          contentPadding: EdgeInsets.zero,
+                          title: const Text('ブロック・ミュートの有無だけ',
+                              style: TextStyle(fontSize: 14)),
+                          subtitle: Text(
+                            '関係のあった人だけ残します'
+                            '${hasItems ? '。保存 ${estimate.lightStorageLabel}' : ''}',
+                            style: note,
+                          ),
+                        ),
+                        RadioListTile<bool>(
+                          value: true,
+                          contentPadding: EdgeInsets.zero,
+                          title: const Text('たどったフォロー先もすべて',
+                              style: TextStyle(fontSize: 14)),
+                          subtitle: Text(
+                            '「人気」（つながっている人の間でよくフォローされている人）'
+                            'を集計できます'
+                            '${hasItems ? '。保存 ${estimate.storageLabel}' : ''}',
+                            style: note,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    'フォローが ${formatNumber(FollowDb.blockScanFriendLimit)} 人を'
+                    '超える相手は飛ばします。中断しても続きから再開でき、'
+                    '途中までの結果も見られます。'
+                    '${hasItems ? '目安は通信状況や制限、相手の重なり方で前後します。' : ''}',
+                    style: note,
+                  ),
+                  const SizedBox(height: 8),
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx),
+                child: const Text('キャンセル'),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.pop(ctx, keepEdges),
+                child: const Text('開始'),
+              ),
+            ],
+          );
+        },
+      ),
+    );
   }
 
   Future<void> _resume(BlockRun run) async {

@@ -150,9 +150,14 @@ void main() {
         users: [user('10'), user('11', blockedBy: false)],
       );
 
-      final p = await db.blockRunProgress(runId);
       // 「いずれでもない」と「取れていない」を混ぜない
-      expect(p.scanned, 1);
+      final raw = await db.debugDatabase();
+      final rows = await raw
+          .query('block_findings', where: 'runId = ?', whereArgs: [runId]);
+      expect(rows.map((r) => r['restId']), ['11']);
+      // 延べ件数は読んだ人数なので、記録しなかった相手も数える
+      final p = await db.blockRunProgress(runId);
+      expect(p.scanned, 2);
     });
 
     test('ブロック・被ブロック・ミュートを数える', () async {
@@ -495,6 +500,61 @@ void main() {
       );
       final run = (await db.listBlockRuns()).firstWhere((r) => r.id == runId);
       expect(run.originLabel, '相互');
+    });
+
+    test('1 件を id で引ける', () async {
+      final runId = await startRun([user('1')]);
+      expect((await db.blockRun(runId))!.id, runId);
+      expect(await db.blockRun(runId + 100), isNull);
+    });
+  });
+
+  group('記録する内容', () {
+    test('何も指定しなければフォロー先を全部残す', () async {
+      final runId = await startRun([user('1')]);
+      expect((await db.blockRun(runId))!.keepEdges, isTrue);
+    });
+
+    test('関係だけ残す調査では、どれも立っていない相手を書かない', () async {
+      final runId = await db.startBlockRun(
+        service: SnsService.x,
+        targetHandle: 'alice',
+        origin: 'following',
+        sources: [user('1')],
+        keepEdges: false,
+      );
+      expect((await db.blockRun(runId))!.keepEdges, isFalse);
+
+      await db.addBlockFindings(
+        runId: runId,
+        sourceRestId: '1',
+        keepEdges: false,
+        cursor: 'c1',
+        users: [
+          user('10', blockedBy: false, blocking: false, muting: false),
+          user('11', blockedBy: true, blocking: false, muting: false),
+          user('12', blockedBy: false, blocking: false, muting: true),
+        ],
+      );
+
+      final raw = await db.debugDatabase();
+      final kept = await raw.query('block_findings',
+          where: 'runId = ?', whereArgs: [runId], orderBy: 'restId');
+      expect(kept.map((r) => r['restId']), ['11', '12']);
+      // 関係のない相手は users にも入れない（そこが容量の本体）
+      expect(
+          await raw.query('users', where: 'restId = ?', whereArgs: ['10']),
+          isEmpty);
+
+      // 進み具合は 3 人ぶん数える。書かなかった相手も「調べた」うち
+      final src = await db.nextBlockSource(runId);
+      expect(src!.collected, 3);
+      expect(src.cursor, 'c1');
+
+      // 関係の集計はそのまま出る
+      final p = await db.blockRunProgress(runId);
+      expect(p.blockedBy, 1);
+      expect(p.muting, 1);
     });
   });
 }

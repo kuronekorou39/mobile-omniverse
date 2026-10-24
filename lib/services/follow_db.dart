@@ -40,7 +40,7 @@ class FollowDb {
   ///     実行アカウントとの関係 (blocked_by / blocking) を集める
   /// v8: 調査結果の一覧と件数が全行をなめていたので、関係が立っている行だけの
   ///     索引を足す
-  static const _version = 8;
+  static const _version = 9;
 
   Database? _db;
 
@@ -85,6 +85,7 @@ class FollowDb {
           await _upgradeToV6(db);
           await _upgradeToV7(db);
           await _upgradeToV8(db);
+          await _upgradeToV9(db);
         },
         onUpgrade: (db, from, to) async {
           if (from < 2) await _upgradeToV2(db);
@@ -94,6 +95,7 @@ class FollowDb {
           if (from < 6) await _upgradeToV6(db);
           if (from < 7) await _upgradeToV7(db);
           if (from < 8) await _upgradeToV8(db);
+          if (from < 9) await _upgradeToV9(db);
         },
         onConfigure: (db) async => db.execute('PRAGMA foreign_keys = ON'),
       ),
@@ -347,6 +349,16 @@ class FollowDb {
 
   /// block_findings が持つ関係の列
   static const _blockRelations = ['blockedBy', 'blocking', 'muting'];
+
+  /// 調査ごとに「フォロー先を全部残す」か「関係のある人だけ残す」かを持つ。
+  ///
+  /// 全部残すと「人気」の集計ができるが、延べ 1,000 万件で GB 単位になる。
+  /// 関係だけなら数十 MB で済む。これまでの調査は全部残していたので、
+  /// 既定は 1
+  static Future<void> _upgradeToV9(Database db) async {
+    await db.execute('ALTER TABLE block_runs ADD COLUMN keepEdges '
+        'INTEGER NOT NULL DEFAULT 1');
+  }
 
   Future<void> setTotalExpected(int snapshotId, int? total) async {
     if (total == null) return;
@@ -1060,6 +1072,7 @@ class FollowDb {
     required String origin,
     String? sessionAccountId,
     required List<FollowUser> sources,
+    bool keepEdges = true,
   }) async {
     final db = await _database;
     final runId = await db.insert('block_runs', {
@@ -1069,6 +1082,7 @@ class FollowDb {
       'origin': origin,
       'startedAt': DateTime.now().millisecondsSinceEpoch,
       'status': 'running',
+      'keepEdges': keepEdges ? 1 : 0,
     });
 
     await db.transaction((txn) async {
@@ -1118,6 +1132,7 @@ class FollowDb {
     required String sourceRestId,
     required List<FollowUser> users,
     String? cursor,
+    bool keepEdges = true,
   }) async {
     final db = await _database;
     final now = DateTime.now().millisecondsSinceEpoch;
@@ -1128,6 +1143,14 @@ class FollowDb {
         // 「調べた結果いずれでもない」と「そもそも取れていない」を
         // 混ぜると集計が濁る
         if (u.blockedBy == null && u.blocking == null && u.muting == null) {
+          continue;
+        }
+        // 関係だけ残す調査では、どれも立っていない相手は書かない。
+        // 件数は block_sources.collected に積むので、進み具合は失わない
+        if (!keepEdges &&
+            u.blockedBy != true &&
+            u.blocking != true &&
+            u.muting != true) {
           continue;
         }
         // 名前やアイコンは users から引くので、ここで入れておく。
@@ -1249,6 +1272,13 @@ class FollowDb {
     }
   }
 
+  Future<BlockRun?> blockRun(int runId) async {
+    final db = await _database;
+    final rows =
+        await db.query('block_runs', where: 'id = ?', whereArgs: [runId]);
+    return rows.isEmpty ? null : BlockRun.fromRow(rows.first);
+  }
+
   Future<List<BlockRun>> listBlockRuns(
       {SnsService? service, String? targetHandle, int limit = 50}) async {
     final db = await _database;
@@ -1362,7 +1392,10 @@ class FollowDb {
           "SELECT COUNT(*) FROM block_sources WHERE runId = ? AND status IN ('done', 'skipped', 'failed')"),
       skippedSources: await count(
           "SELECT COUNT(*) FROM block_sources WHERE runId = ? AND status = 'skipped'"),
-      scanned: await count('SELECT COUNT(*) FROM block_findings WHERE runId = ?'),
+      // 関係だけ残す調査では findings に全員は居ないので、行数ではなく
+      // 各起点で読んだ件数の合計で「延べ」を出す
+      scanned: await count(
+          'SELECT COALESCE(SUM(collected), 0) FROM block_sources WHERE runId = ?'),
       blockedBy: await count(blockRelationCountSql('blockedBy')),
       blocking: await count(blockRelationCountSql('blocking')),
       muting: await count(blockRelationCountSql('muting')),
@@ -1815,6 +1848,7 @@ class BlockRun {
     required this.status,
     this.sessionAccountId,
     this.completedAt,
+    this.keepEdges = true,
   });
 
   final int id;
@@ -1827,6 +1861,10 @@ class BlockRun {
   final DateTime startedAt;
   final DateTime? completedAt;
   final String status;
+
+  /// たどったフォロー先を全部残しているか。false なら関係のある人だけで、
+  /// 「人気」の集計はできない
+  final bool keepEdges;
 
   bool get isCompleted => status == 'completed';
 
@@ -1848,6 +1886,7 @@ class BlockRun {
             ? null
             : DateTime.fromMillisecondsSinceEpoch(r['completedAt'] as int),
         status: r['status'] as String,
+        keepEdges: ((r['keepEdges'] as int?) ?? 1) != 0,
       );
 }
 

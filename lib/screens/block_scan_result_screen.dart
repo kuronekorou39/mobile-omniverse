@@ -39,6 +39,11 @@ const _tabs = <({String label, String? relation, String empty})>[
 
 class _BlockScanResultScreenState extends State<BlockScanResultScreen> {
   BlockRunProgress? _stats;
+
+  /// 関係だけ残した調査には「人気」の元データが無いので、タブごと出さない
+  late final List<({String label, String? relation, String empty})>
+      _visibleTabs =
+      widget.run.keepEdges ? _tabs : _tabs.where((t) => t.relation != null).toList();
   FollowFilter _filter = FollowFilter.none;
 
   /// 人気タブで「自分がフォローしていない相手」だけに絞るか
@@ -114,7 +119,7 @@ class _BlockScanResultScreenState extends State<BlockScanResultScreen> {
     final s = _stats;
 
     return DefaultTabController(
-      length: _tabs.length,
+      length: _visibleTabs.length,
       child: Scaffold(
         appBar: AppBar(
           title: Text('@${run.targetHandle} のつながり調査'),
@@ -148,7 +153,7 @@ class _BlockScanResultScreenState extends State<BlockScanResultScreen> {
               Tab(text: _tabLabel(0, s?.blockedBy)),
               Tab(text: _tabLabel(1, s?.blocking)),
               Tab(text: _tabLabel(2, s?.muting)),
-              Tab(text: _tabs[3].label),
+              if (run.keepEdges) Tab(text: _tabs[3].label),
             ],
           ),
         ),
@@ -164,7 +169,7 @@ class _BlockScanResultScreenState extends State<BlockScanResultScreen> {
             Expanded(
               child: TabBarView(
                 children: [
-                  for (var i = 0; i < _tabs.length; i++) _list(i),
+                  for (var i = 0; i < _visibleTabs.length; i++) _list(i),
                 ],
               ),
             ),
@@ -183,7 +188,8 @@ class _BlockScanResultScreenState extends State<BlockScanResultScreen> {
         : '起点 ${run.originLabel} ・ '
             '${formatNumber(s.doneSources)}/${formatNumber(s.totalSources)}人 走査済み'
             '${s.skippedSources > 0 ? '（${formatNumber(s.skippedSources)}人は対象外）' : ''}'
-            ' ・ 延べ${formatNumber(s.scanned)}件';
+            ' ・ 延べ${formatNumber(s.scanned)}件'
+            '${run.keepEdges ? '' : ' ・ 関係のみ記録'}';
 
     return Padding(
       padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),

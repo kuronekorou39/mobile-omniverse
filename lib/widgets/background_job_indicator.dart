@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../services/block_scan_service.dart';
 import '../services/follow_capture_engine.dart';
 import '../services/follow_capture_job_service.dart';
+import '../utils/number_format.dart';
 
 /// 裏で走っている収集を、タイムラインからも分かるようにする。
 ///
@@ -54,13 +55,13 @@ class _Badge extends StatelessWidget {
       return s.cancelling
           ? 'つながり調査を中断しています'
           : 'つながり調査 @${s.targetHandle}\n'
-              '${s.done} / ${s.total} 人';
+              '${formatNumber(s.done)} / ${formatNumber(s.total)} 人';
     }
     final c = capture!;
     final kind = c.kind == FollowListKind.followers ? 'フォロワー' : 'フォロー';
     return c.cancelling
         ? '$kind の取得を中断しています'
-        : '@${c.targetHandle} の$kind\n${c.collected} 件';
+        : '@${c.targetHandle} の$kind\n${formatNumber(c.collected)} 件';
   }
 
   @override

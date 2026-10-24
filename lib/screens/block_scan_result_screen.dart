@@ -5,6 +5,7 @@ import '../models/sns_service.dart';
 import '../services/block_scan_service.dart';
 import '../services/export_service.dart';
 import '../services/follow_db.dart';
+import '../utils/number_format.dart';
 import '../utils/app_snackbar.dart';
 import '../utils/confirm_dialog.dart';
 import '../widgets/follow_list_controls.dart';
@@ -86,7 +87,7 @@ class _BlockScanResultScreenState extends State<BlockScanResultScreen> {
       context,
       title: 'この調査を削除',
       message: '${run.originLabel}起点の調査'
-          '${s == null ? '' : '（${s.doneSources}/${s.totalSources}人ぶん）'}'
+          '${s == null ? '' : '（${formatNumber(s.doneSources)}/${formatNumber(s.totalSources)}人ぶん）'}'
           'を削除します。\n\n'
           '集めた結果はすべて失われ、元に戻せません。'
           '走らせ直す場合は最初からになります。',
@@ -180,9 +181,9 @@ class _BlockScanResultScreenState extends State<BlockScanResultScreen> {
     final line = s == null
         ? '集計中…'
         : '起点 ${run.originLabel} ・ '
-            '${s.doneSources}/${s.totalSources}人 走査済み'
-            '${s.skippedSources > 0 ? '（${s.skippedSources}人は対象外）' : ''}'
-            ' ・ 延べ${s.scanned}件';
+            '${formatNumber(s.doneSources)}/${formatNumber(s.totalSources)}人 走査済み'
+            '${s.skippedSources > 0 ? '（${formatNumber(s.skippedSources)}人は対象外）' : ''}'
+            ' ・ 延べ${formatNumber(s.scanned)}件';
 
     return Padding(
       padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
@@ -246,7 +247,7 @@ class _BlockScanResultScreenState extends State<BlockScanResultScreen> {
                 mainAxisAlignment: MainAxisAlignment.center,
                 crossAxisAlignment: CrossAxisAlignment.end,
                 children: [
-                  Text('${f.sourceCount}人',
+                  Text('${formatNumber(f.sourceCount)}人',
                       style: const TextStyle(
                           fontSize: 13, fontWeight: FontWeight.bold)),
                   const Text('から',

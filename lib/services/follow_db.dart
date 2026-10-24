@@ -1301,6 +1301,41 @@ class FollowDb {
     return (rows.first['total'] as num?)?.toInt() ?? 0;
   }
 
+  /// フォローとフォロワーを合わせた（重複は 1 人にした）ときの延べ件数
+  Future<int> plannedItemsForUnion({
+    required int followersSnapshotId,
+    required int followingSnapshotId,
+  }) async {
+    final db = await _database;
+    final rows = await db.rawQuery(
+      'SELECT SUM(u.friendsCount) AS total FROM users u '
+      'WHERE u.friendsCount <= ? AND u.restId IN ('
+      '  SELECT restId FROM snapshot_members WHERE snapshotId = ? '
+      '  UNION '
+      '  SELECT restId FROM snapshot_members WHERE snapshotId = ?'
+      ')',
+      [blockScanFriendLimit, followersSnapshotId, followingSnapshotId],
+    );
+    return (rows.first['total'] as num?)?.toInt() ?? 0;
+  }
+
+  /// フォローとフォロワーを合わせた人数（重複は 1 人に数える）
+  Future<int> unionCount({
+    required int followersSnapshotId,
+    required int followingSnapshotId,
+  }) async {
+    final db = await _database;
+    return Sqflite.firstIntValue(await db.rawQuery(
+          'SELECT COUNT(*) FROM ('
+          '  SELECT restId FROM snapshot_members WHERE snapshotId = ? '
+          '  UNION '
+          '  SELECT restId FROM snapshot_members WHERE snapshotId = ?'
+          ')',
+          [followersSnapshotId, followingSnapshotId],
+        )) ??
+        0;
+  }
+
   /// 調査の残り件数。まだ手をつけていない起点のフォロー数の合計
   Future<int> remainingItems(int runId) async {
     final db = await _database;
@@ -1783,7 +1818,7 @@ class BlockRun {
   final SnsService service;
   final String targetHandle;
 
-  /// 起点。'following' / 'followers' / 'mutual'
+  /// 起点。'following' / 'followers' / 'mutual' / 'both'（フォロー＋フォロワー）
   final String origin;
   final String? sessionAccountId;
   final DateTime startedAt;
@@ -1795,6 +1830,7 @@ class BlockRun {
   String get originLabel => switch (origin) {
         'followers' => 'フォロワー',
         'mutual' => '相互',
+        'both' => 'フォロー＋フォロワー',
         _ => 'フォロー',
       };
 

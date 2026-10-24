@@ -9,6 +9,7 @@ import '../models/sns_service.dart';
 import '../services/export_service.dart';
 import '../services/follow_db.dart';
 import '../widgets/follow_list_controls.dart';
+import '../utils/number_format.dart';
 import '../widgets/skeleton.dart';
 import '../utils/image_headers.dart';
 import 'follow_diff_screen.dart';
@@ -43,7 +44,7 @@ class _FollowSnapshotScreenState extends State<FollowSnapshotScreen> {
       final box = context.findRenderObject() as RenderBox?;
       await Share.shareXFiles(
         [XFile(file.path)],
-        text: '@${s.targetHandle} の$kindLabel（${s.collectedCount}件）',
+        text: '@${s.targetHandle} の$kindLabel（${formatNumber(s.collectedCount)}件）',
         sharePositionOrigin:
             box != null ? box.localToGlobal(Offset.zero) & box.size : null,
       );
@@ -89,7 +90,7 @@ class _FollowSnapshotScreenState extends State<FollowSnapshotScreen> {
             for (final c in candidates)
               ListTile(
                 title: Text(dateLabel(c.startedAt)),
-                subtitle: Text('${c.collectedCount}件 ・ ${statusLabel(c)}',
+                subtitle: Text('${formatNumber(c.collectedCount)}件 ・ ${statusLabel(c)}',
                     style: const TextStyle(fontSize: 11)),
                 onTap: () => Navigator.pop(context, c),
               ),
@@ -132,7 +133,7 @@ class _FollowSnapshotScreenState extends State<FollowSnapshotScreen> {
           Padding(
             padding: const EdgeInsets.fromLTRB(12, 4, 12, 0),
             child: Text(
-              '${dateLabel(s.startedAt)} ・ ${s.collectedCount}件 ・ ${statusLabel(s)}'
+              '${dateLabel(s.startedAt)} ・ ${formatNumber(s.collectedCount)}件 ・ ${statusLabel(s)}'
               '${durationLabel(s) == null ? '' : ' ・ 所要${durationLabel(s)}'}',
               style: const TextStyle(fontSize: 11, color: Colors.grey),
             ),
@@ -199,7 +200,7 @@ bool looksIncomplete(FollowSnapshot s) {
 /// 取りこぼしの警告。疑いが無ければ null
 String? shortfallLabel(FollowSnapshot s) {
   if (!looksIncomplete(s)) return null;
-  return '想定 ${s.totalExpected}件 に対し ${s.collectedCount}件';
+  return '想定 ${formatNumber(s.totalExpected!)}件 に対し ${formatNumber(s.collectedCount)}件';
 }
 
 /// 取得にかかった時間。完了していなければ null
@@ -396,8 +397,8 @@ class FollowUserTile extends StatelessWidget {
       ]),
       subtitle: Text(
         '@${user.screenName}  ・  '
-        'フォロワー ${_fmt(user.followersCount)} / フォロー ${_fmt(user.friendsCount)}'
-        '${user.statusesCount == null ? '' : ' / 投稿 ${_fmt(user.statusesCount!)}'}'
+        'フォロワー ${formatNumber(user.followersCount)} / フォロー ${formatNumber(user.friendsCount)}'
+        '${user.statusesCount == null ? '' : ' / 投稿 ${formatNumber(user.statusesCount!)}'}'
         '${ratio == null ? '' : '  F比 ${ratio.toStringAsFixed(2)}'}',
         style: const TextStyle(fontSize: 11),
         overflow: TextOverflow.ellipsis,
@@ -415,9 +416,4 @@ class FollowUserTile extends StatelessWidget {
     );
   }
 
-  static String _fmt(int v) {
-    if (v >= 10000) return '${(v / 10000).toStringAsFixed(1)}万';
-    if (v >= 1000) return '${(v / 1000).toStringAsFixed(1)}千';
-    return '$v';
-  }
 }

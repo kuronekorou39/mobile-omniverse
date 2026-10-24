@@ -6,6 +6,7 @@ import '../services/follow_db.dart';
 import '../services/follow_history_cleanup.dart';
 import '../utils/app_snackbar.dart';
 import '../utils/confirm_dialog.dart';
+import '../utils/number_format.dart';
 import '../widgets/skeleton.dart';
 import 'follow_snapshot_screen.dart';
 
@@ -274,7 +275,7 @@ Widget followHistoryTile(FollowSnapshot s, {VoidCallback? onTap}) => ListTile(
             : (s.isResumable ? Colors.orange : Colors.red),
         size: 20,
       ),
-      title: Text('${dateLabel(s.startedAt)}  ${s.collectedCount}件',
+      title: Text('${dateLabel(s.startedAt)}  ${formatNumber(s.collectedCount)}件',
           style: const TextStyle(fontSize: 13)),
       subtitle: Text(
         '${s.kind == 'followers' ? 'フォロワー' : 'フォロー'}'

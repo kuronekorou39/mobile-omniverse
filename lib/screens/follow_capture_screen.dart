@@ -11,6 +11,7 @@ import '../services/x_api_service.dart';
 import '../utils/app_snackbar.dart';
 import '../utils/image_headers.dart';
 import '../widgets/sns_badge.dart';
+import '../utils/number_format.dart';
 import '../widgets/skeleton.dart';
 import 'follow_snapshot_screen.dart' show dateLabel;
 import 'follow_target_screen.dart';
@@ -215,7 +216,7 @@ class _FollowCaptureScreenState extends State<FollowCaptureScreen> {
           title: Text(p.cancelling
               ? '@${p.targetHandle} を中断しています…'
               : '@${p.targetHandle} を取得中'),
-          subtitle: Text('${p.collected}件 / ${p.round}ページ',
+          subtitle: Text('${formatNumber(p.collected)}件 / ${formatNumber(p.round)}ページ',
               style: const TextStyle(fontSize: 11)),
           trailing: TextButton(
             onPressed: p.cancelling ? null : _job.cancel,

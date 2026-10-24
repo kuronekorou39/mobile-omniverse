@@ -138,7 +138,7 @@ class BlockScanService {
 
   /// 起点の一覧から調査を始める。
   ///
-  /// [origin] は 'following' / 'followers' / 'mutual'。
+  /// [origin] は 'following' / 'followers' / 'mutual' / 'both'。
   /// 既に取得済みのスナップショットを使うので、ここでは通信しない。
   Future<int?> start({
     required Account account,
@@ -187,6 +187,21 @@ class BlockScanService {
             limit: limit,
             offset: offset,
           ));
+    }
+
+    // 両方は 2 本を足して、同じ人を 1 回にする
+    if (origin == 'both') {
+      if (followers == null || following == null) return const [];
+      final seen = <String>{};
+      final all = <FollowUser>[];
+      for (final id in [followers.id, following.id]) {
+        final rows = await _readAll(
+            (limit, offset) => db.members(id, limit: limit, offset: offset));
+        for (final u in rows) {
+          if (seen.add(u.restId)) all.add(u);
+        }
+      }
+      return all;
     }
 
     final snapshot = origin == 'followers' ? followers : following;

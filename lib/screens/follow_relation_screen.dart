@@ -4,6 +4,7 @@ import '../models/follow_user.dart';
 import '../models/sns_service.dart';
 import '../services/follow_db.dart';
 import '../widgets/follow_list_controls.dart';
+import '../utils/number_format.dart';
 import '../widgets/skeleton.dart';
 import 'follow_relation_diff_screen.dart';
 import 'follow_snapshot_screen.dart';
@@ -133,8 +134,8 @@ class _FollowRelationScreenState extends State<FollowRelationScreen>
               ListTile(
                 title: Text(dateLabel(g.followers.startedAt)),
                 subtitle: Text(
-                  'フォロワー ${g.followers.collectedCount}件'
-                  ' ／ フォロー ${g.following.collectedCount}件'
+                  'フォロワー ${formatNumber(g.followers.collectedCount)}件'
+                  ' ／ フォロー ${formatNumber(g.following.collectedCount)}件'
                   '（${dateLabel(g.following.startedAt)}）',
                   style: const TextStyle(fontSize: 11),
                 ),
@@ -209,7 +210,7 @@ class _FollowRelationScreenState extends State<FollowRelationScreen>
               Tab(
                   text: counts[i] == null
                       ? _tabs[i].label
-                      : '${_tabs[i].label} (${counts[i]})'),
+                      : '${_tabs[i].label} (${formatNumber(counts[i]!)})'),
           ],
         ),
       ),
@@ -218,8 +219,8 @@ class _FollowRelationScreenState extends State<FollowRelationScreen>
           Padding(
             padding: const EdgeInsets.fromLTRB(8, 8, 8, 0),
             child: Text(
-              'フォロワー ${dateLabel(f.startedAt)}（${f.collectedCount}件）'
-              ' ／ フォロー ${dateLabel(g.startedAt)}（${g.collectedCount}件）',
+              'フォロワー ${dateLabel(f.startedAt)}（${formatNumber(f.collectedCount)}件）'
+              ' ／ フォロー ${dateLabel(g.startedAt)}（${formatNumber(g.collectedCount)}件）',
               style: const TextStyle(fontSize: 10, color: Colors.grey),
               textAlign: TextAlign.center,
             ),

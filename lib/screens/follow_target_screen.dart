@@ -12,6 +12,7 @@ import '../services/follow_history_cleanup.dart';
 import '../utils/app_snackbar.dart';
 import '../utils/confirm_dialog.dart';
 import '../utils/image_headers.dart';
+import '../utils/number_format.dart';
 import '../widgets/block_scan_section.dart';
 import '../widgets/follow_section_header.dart';
 import '../widgets/skeleton.dart';
@@ -449,7 +450,9 @@ class _FollowTargetScreenState extends State<FollowTargetScreen> {
     final warn = s != null && looksIncomplete(s);
     return _statCard(
       label: label,
-      value: _loading ? null : (s == null ? '—' : _compact(s.collectedCount)),
+      value: _loading
+          ? null
+          : (s == null ? '—' : formatNumber(s.collectedCount)),
       sub: s == null ? '未取得' : (warn ? '取りこぼしの可能性' : dateLabel(s.startedAt)),
       warn: warn,
       onTap: s == null ? null : () => _openSnapshot(s),
@@ -460,7 +463,7 @@ class _FollowTargetScreenState extends State<FollowTargetScreen> {
     label: '相互',
     value: _loading
         ? null
-        : (_relation == null ? '—' : _compact(_relation!.mutual)),
+        : (_relation == null ? '—' : formatNumber(_relation!.mutual)),
     // 未取得でも押させる。遷移先が「何が足りないか」を出す
     sub: _relation == null ? '両方が必要' : '内訳を見る',
     onTap: _loading ? null : () async {
@@ -527,11 +530,20 @@ class _FollowTargetScreenState extends State<FollowTargetScreen> {
                   child: SkeletonBox(width: 56, height: 20),
                 )
               else
-                Text(
-                  value,
-                  maxLines: 1,
-                  style: const TextStyle(
-                      fontSize: 26, fontWeight: FontWeight.bold, height: 1),
+                // 6 桁を超えると 3 等分の幅に入らないので、そのときだけ縮める
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: FittedBox(
+                    fit: BoxFit.scaleDown,
+                    child: Text(
+                      value,
+                      maxLines: 1,
+                      style: const TextStyle(
+                          fontSize: 26,
+                          fontWeight: FontWeight.bold,
+                          height: 1),
+                    ),
+                  ),
                 ),
             ],
           ),
@@ -539,10 +551,6 @@ class _FollowTargetScreenState extends State<FollowTargetScreen> {
       ),
     );
   }
-
-  /// 3 等分の幅に収める。4 桁までは素の数字のほうが読みやすい
-  static String _compact(int v) =>
-      v >= 10000 ? '${(v / 10000).toStringAsFixed(1)}万' : '$v';
 
   // ─── 取得 ───
 
@@ -594,7 +602,7 @@ class _FollowTargetScreenState extends State<FollowTargetScreen> {
                         Expanded(
                           child: Text(
                             '${s.kind == 'followers' ? 'フォロワー' : 'フォロー'} '
-                            '${s.collectedCount}件目から',
+                            '${formatNumber(s.collectedCount)}件目から',
                             style: TextStyle(
                                 fontSize: 13,
                                 color: scheme.onTertiaryContainer),
@@ -845,7 +853,7 @@ class _FollowTargetScreenState extends State<FollowTargetScreen> {
               ],
             ),
             Text(
-              '${p.collected} 件 / ${p.round} ページ',
+              '${formatNumber(p.collected)} 件 / ${formatNumber(p.round)} ページ',
               style: const TextStyle(fontSize: 20),
             ),
             Text(
@@ -1053,7 +1061,7 @@ class _FollowTargetScreenState extends State<FollowTargetScreen> {
       note ??
           (last == null
               ? 'まだ取得していません'
-              : '前回 ${last.collectedCount}件'
+              : '前回 ${formatNumber(last.collectedCount)}件'
                     '${durationLabel(last) == null ? '' : ' ・ 所要${durationLabel(last)}'}'),
       style: const TextStyle(fontSize: 11),
     ),

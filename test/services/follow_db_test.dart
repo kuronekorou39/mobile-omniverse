@@ -900,6 +900,25 @@ void main() {
     });
   });
 
+  group('つながり調査の起点（フォロー＋フォロワー）', () {
+    test('人数は重複を 1 人に数え、延べ件数は上限超えの人を除く', () async {
+      final a = user('1', friends: 100);
+      final b = user('2', friends: 200);
+      final big = user('3', friends: FollowDb.blockScanFriendLimit + 1);
+      // a は両方に居る。big はフォローにだけ居て、フォロー数が上限超え
+      final f = await completedSnapshot('alice', 'followers', [a, b]);
+      final g = await completedSnapshot('alice', 'following', [a, big]);
+
+      expect(
+          await db.unionCount(followersSnapshotId: f, followingSnapshotId: g),
+          3);
+      expect(
+          await db.plannedItemsForUnion(
+              followersSnapshotId: f, followingSnapshotId: g),
+          300);
+    });
+  });
+
   // ───────────────────────── 間引き ─────────────────────────
 
   group('間引き', () {

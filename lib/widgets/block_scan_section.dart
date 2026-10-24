@@ -10,6 +10,7 @@ import '../services/follow_db.dart';
 import '../services/scan_estimate.dart';
 import '../utils/app_snackbar.dart';
 import '../utils/confirm_dialog.dart';
+import '../utils/number_format.dart';
 import 'follow_section_header.dart';
 import 'skeleton.dart';
 
@@ -117,7 +118,12 @@ class _BlockScanSectionState extends State<BlockScanSection> {
             info: 'つながっている人のフォロー先をたどって、'
                 'ブロック・ミュートの有無を調べます。\n'
                 '数時間かかりますが、途中で止めても続きから再開でき、'
-                'その時点までの結果を見られます。',
+                'その時点までの結果を見られます。\n\n'
+                'フォローが ${formatNumber(FollowDb.blockScanFriendLimit)} 人を'
+                '超える相手は飛ばします（1 人で何時間もかかるため）。\n'
+                '「延べ」の件数は、起点の人たちのフォロー数を足したものです。'
+                '同じ人が何度も数えられるので、実際の人数はもっと少なくなります。'
+                '所要時間の目安はこの延べ件数から出しています。',
             expanded: open,
             onToggle: () => _setExpanded(!open),
             summary: isMine
@@ -278,7 +284,7 @@ class _BlockScanSectionState extends State<BlockScanSection> {
                 crossAxisAlignment: CrossAxisAlignment.baseline,
                 textBaseline: TextBaseline.alphabetic,
                 children: [
-                  Text('${p.done} / ${p.total} 人',
+                  Text('${formatNumber(p.done)} / ${formatNumber(p.total)} 人',
                       style: const TextStyle(fontSize: 20)),
                   const Spacer(),
                   // 何時間待つのかは、途中で一番知りたい情報
@@ -294,7 +300,7 @@ class _BlockScanSectionState extends State<BlockScanSection> {
               Text(
                 p.currentHandle == null
                     ? '準備中'
-                    : '@${p.currentHandle} を走査中（${p.currentCollected}件）',
+                    : '@${p.currentHandle} を走査中（${formatNumber(p.currentCollected)}件）',
                 style: TextStyle(
                     fontSize: 11,
                     color: Theme.of(context).colorScheme.onSurfaceVariant),
@@ -369,8 +375,8 @@ class _BlockScanSectionState extends State<BlockScanSection> {
                   Text(
                     s == null
                         ? '集計中…'
-                        : '被ブロック ${s.blockedBy} ・ '
-                            '${s.doneSources}/${s.totalSources}人',
+                        : '被ブロック ${formatNumber(s.blockedBy)} ・ '
+                            '${formatNumber(s.doneSources)}/${formatNumber(s.totalSources)}人',
                     style: TextStyle(
                         fontSize: 12, color: scheme.onSurfaceVariant),
                   ),
@@ -444,6 +450,20 @@ class _BlockScanSectionState extends State<BlockScanSection> {
             : await db.plannedItemsForSnapshot(followers.id),
       ),
       (
+        origin: 'both',
+        label: 'フォロー＋フォロワー',
+        count: (followers != null && following != null)
+            ? await db.unionCount(
+                followersSnapshotId: followers.id,
+                followingSnapshotId: following.id)
+            : null,
+        items: (followers != null && following != null)
+            ? await db.plannedItemsForUnion(
+                followersSnapshotId: followers.id,
+                followingSnapshotId: following.id)
+            : 0,
+      ),
+      (
         origin: 'mutual',
         label: '相互',
         count: (followers != null && following != null)
@@ -479,8 +499,8 @@ class _BlockScanSectionState extends State<BlockScanSection> {
                 subtitle: Text(
                   c.count == null
                       ? 'まだ取得していません'
-                      : '${c.count}人のフォロー先をたどります'
-                          '${c.items > 0 ? '（延べ${c.items}件）' : ''}',
+                      : '${formatNumber(c.count!)}人のフォロー先をたどります'
+                          '${c.items > 0 ? '（延べ${formatNumber(c.items)}件）' : ''}',
                   style: const TextStyle(fontSize: 11),
                 ),
                 // かかる時間が選ぶ基準になるので、右端に出す
@@ -507,11 +527,11 @@ class _BlockScanSectionState extends State<BlockScanSection> {
     final ok = await confirmDialog(
       context,
       title: 'つながり調査を開始',
-      message: '$count人のフォロー先を1人ずつたどります'
-          '${chosen.items > 0 ? '（延べ${chosen.items}件）' : ''}。\n'
+      message: '${formatNumber(count)}人のフォロー先を1人ずつたどります'
+          '${chosen.items > 0 ? '（延べ${formatNumber(chosen.items)}件。同じ人が何度も数えられるので、実際の人数はもっと少なくなります）' : ''}。\n'
           '${chosen.items > 0 ? '目安 ${estimate.label}。これまでの取得の速さから見積もった'
               'ものなので、通信状況や制限で前後します。\n' : ''}\n'
-          'フォローが1万を超える相手は飛ばします。\n'
+          'フォローが ${formatNumber(FollowDb.blockScanFriendLimit)} 人を超える相手は飛ばします。\n'
           '中断しても続きから再開でき、途中までの結果も見られます。',
       confirmLabel: '開始',
     );

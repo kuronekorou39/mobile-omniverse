@@ -22,6 +22,7 @@ import '../widgets/image_viewer.dart';
 import '../widgets/empty_state.dart';
 import '../widgets/post_card.dart';
 import '../widgets/sns_badge.dart';
+import '../utils/number_format.dart';
 import '../widgets/skeleton.dart';
 import 'compose_screen.dart';
 import 'post_detail_screen.dart';
@@ -818,7 +819,7 @@ class _UserProfileScreenState extends ConsumerState<UserProfileScreen>
       mainAxisSize: MainAxisSize.min,
       children: [
         Text(
-          _formatCount(count),
+          formatNumber(count),
           style: const TextStyle(fontWeight: FontWeight.bold),
         ),
         const SizedBox(width: 4),
@@ -827,11 +828,6 @@ class _UserProfileScreenState extends ConsumerState<UserProfileScreen>
     );
   }
 
-  String _formatCount(int count) {
-    if (count >= 1000000) return '${(count / 1000000).toStringAsFixed(1)}M';
-    if (count >= 1000) return '${(count / 1000).toStringAsFixed(1)}K';
-    return count.toString();
-  }
 }
 
 /// PostCard のアバタータップで使う簡易ファクトリ

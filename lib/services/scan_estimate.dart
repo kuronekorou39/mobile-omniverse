@@ -89,8 +89,8 @@ class ScanEstimate {
     return g < 10 ? '約${g.toStringAsFixed(1)} GB' : '約${g.round()} GB';
   }
 
-  /// 見積もりは上振れも下振れもするので、桁が伝わればよい
-  @visibleForTesting
+  /// 見積もりは上振れも下振れもするので、桁が伝わればよい。
+  /// 他の見積もり（詳しい情報の取得）も同じ丸め方で出す
   static String roughLabel(Duration d) {
     if (d <= Duration.zero) return '—';
     if (d.inMinutes < 1) return '1分未満';

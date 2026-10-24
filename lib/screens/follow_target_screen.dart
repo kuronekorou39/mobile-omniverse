@@ -14,6 +14,7 @@ import '../utils/confirm_dialog.dart';
 import '../utils/image_headers.dart';
 import '../utils/number_format.dart';
 import '../widgets/block_scan_section.dart';
+import '../widgets/user_detail_section.dart';
 import '../widgets/follow_section_header.dart';
 import '../widgets/skeleton.dart';
 import 'follow_history_screen.dart';
@@ -294,6 +295,11 @@ class _FollowTargetScreenState extends State<FollowTargetScreen> {
                   handle: widget.handle,
                   account: _sessionAccount,
                   onChanged: _load,
+                ),
+                UserDetailSection(
+                  service: widget.service,
+                  handle: widget.handle,
+                  account: _sessionAccount,
                 ),
                 const FollowSectionHeader('データ'),
                 _storageSection(),

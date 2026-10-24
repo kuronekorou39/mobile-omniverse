@@ -40,7 +40,7 @@ class FollowDb {
   ///     実行アカウントとの関係 (blocked_by / blocking) を集める
   /// v8: 調査結果の一覧と件数が全行をなめていたので、関係が立っている行だけの
   ///     索引を足す
-  static const _version = 9;
+  static const _version = 10;
 
   Database? _db;
 
@@ -86,6 +86,7 @@ class FollowDb {
           await _upgradeToV7(db);
           await _upgradeToV8(db);
           await _upgradeToV9(db);
+          await _upgradeToV10(db);
         },
         onUpgrade: (db, from, to) async {
           if (from < 2) await _upgradeToV2(db);
@@ -96,6 +97,7 @@ class FollowDb {
           if (from < 7) await _upgradeToV7(db);
           if (from < 8) await _upgradeToV8(db);
           if (from < 9) await _upgradeToV9(db);
+          if (from < 10) await _upgradeToV10(db);
         },
         onConfigure: (db) async => db.execute('PRAGMA foreign_keys = ON'),
       ),
@@ -358,6 +360,27 @@ class FollowDb {
   static Future<void> _upgradeToV9(Database db) async {
     await db.execute('ALTER TABLE block_runs ADD COLUMN keepEdges '
         'INTEGER NOT NULL DEFAULT 1');
+  }
+
+  /// 1 人ずつ取り直さないと分からない情報（誕生日、最近の投稿日）。
+  ///
+  /// 一覧の API には載らないので、users とは別に持つ。いつ調べたかを
+  /// 項目のまとまりごとに持ち、古くなったものだけ取り直せるようにする。
+  /// 誕生日は本人が公開範囲を絞れるので、調べたのに分からないこともある
+  static Future<void> _upgradeToV10(Database db) async {
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS user_details (
+        restId TEXT PRIMARY KEY,
+        birthMonth INTEGER,
+        birthDay INTEGER,
+        birthYear INTEGER,
+        profileFetchedAt INTEGER,
+        lastPostAt INTEGER,
+        lastOwnPostAt INTEGER,
+        postsFetchedAt INTEGER,
+        error TEXT
+      )
+    ''');
   }
 
   Future<void> setTotalExpected(int snapshotId, int? total) async {
@@ -1547,9 +1570,200 @@ class FollowDb {
   /// 見ないと、数時間かけて集めた相手の名前やアイコンが消える
   Future<int> pruneOrphanUsers() async {
     final db = await _database;
-    return db.rawDelete('DELETE FROM users WHERE restId NOT IN '
+    final deleted = await db.rawDelete('DELETE FROM users WHERE restId NOT IN '
         '(SELECT restId FROM snapshot_members) '
         'AND restId NOT IN (SELECT restId FROM block_findings)');
+    // 本人の行が消えた詳しい情報も道連れにする
+    await db.rawDelete(
+        'DELETE FROM user_details WHERE restId NOT IN (SELECT restId FROM users)');
+    return deleted;
+  }
+
+  // ─── 詳しい情報（誕生日・最近の投稿日） ───
+
+  /// 起点の人たちを表す部分問い合わせ。無い一覧を指していれば null。
+  /// 'all' はフォローとフォロワーを合わせたもの（片方しか無ければそれだけ）
+  static MemberSet? memberSetFor(
+    String origin, {
+    FollowSnapshot? followers,
+    FollowSnapshot? following,
+  }) {
+    switch (origin) {
+      case 'all':
+        final ids = [?followers?.id, ?following?.id];
+        if (ids.isEmpty) return null;
+        return MemberSet(
+            'SELECT restId FROM snapshot_members WHERE snapshotId IN '
+            '(${List.filled(ids.length, '?').join(',')})',
+            ids);
+      case 'followers':
+        if (followers == null) return null;
+        return MemberSet(
+            'SELECT restId FROM snapshot_members WHERE snapshotId = ?',
+            [followers.id]);
+      case 'mutual':
+        if (followers == null || following == null) return null;
+        return MemberSet(
+            'SELECT restId FROM snapshot_members WHERE snapshotId = ? '
+            'AND restId IN (SELECT restId FROM snapshot_members WHERE snapshotId = ?)',
+            [followers.id, following.id]);
+      default:
+        if (following == null) return null;
+        return MemberSet(
+            'SELECT restId FROM snapshot_members WHERE snapshotId = ?',
+            [following.id]);
+    }
+  }
+
+  /// まだ調べていない、または [freshAfterMs] より前に調べた人。
+  /// 取り直す項目だけを見るので、誕生日だけ欲しいときに投稿の古さは問わない
+  Future<List<({String restId, String screenName})>> detailCandidates(
+    MemberSet members, {
+    required bool wantBirthday,
+    required bool wantLastPost,
+    required int freshAfterMs,
+  }) async {
+    if (!wantBirthday && !wantLastPost) return const [];
+    final db = await _database;
+    final needs = <String>[
+      if (wantBirthday)
+        '(d.profileFetchedAt IS NULL OR d.profileFetchedAt < ?)',
+      if (wantLastPost) '(d.postsFetchedAt IS NULL OR d.postsFetchedAt < ?)',
+    ];
+    final rows = await db.rawQuery(
+      'SELECT u.restId AS restId, u.screenName AS screenName '
+      'FROM users u LEFT JOIN user_details d ON d.restId = u.restId '
+      'WHERE u.restId IN (${members.sql}) AND (${needs.join(' OR ')}) '
+      'ORDER BY u.restId',
+      [...members.args, for (var i = 0; i < needs.length; i++) freshAfterMs],
+    );
+    return [
+      for (final r in rows)
+        (restId: r['restId'] as String, screenName: r['screenName'] as String),
+    ];
+  }
+
+  /// どれだけ調べてあるか。見出しの要約と、取得ボタンの文言に使う
+  Future<DetailCoverage> detailCoverage(MemberSet members) async {
+    final db = await _database;
+    final r = (await db.rawQuery(
+      'SELECT COUNT(*) AS total, '
+      'SUM(d.profileFetchedAt IS NOT NULL) AS profileFetched, '
+      'SUM(d.birthMonth IS NOT NULL) AS birthdayKnown, '
+      'SUM(d.postsFetchedAt IS NOT NULL) AS postsFetched, '
+      'SUM(d.lastPostAt IS NOT NULL) AS lastPostKnown '
+      'FROM users u LEFT JOIN user_details d ON d.restId = u.restId '
+      'WHERE u.restId IN (${members.sql})',
+      members.args,
+    ))
+        .first;
+    int n(String k) => (r[k] as int?) ?? 0;
+    return DetailCoverage(
+      total: n('total'),
+      profileFetched: n('profileFetched'),
+      birthdayKnown: n('birthdayKnown'),
+      postsFetched: n('postsFetched'),
+      lastPostKnown: n('lastPostKnown'),
+    );
+  }
+
+  /// 調べた結果を書く。渡さなかったまとまりは今の値を残す。
+  ///
+  /// [profile] を渡すと誕生日のまとまりを、[posts] を渡すと投稿のまとまりを
+  /// 置き換える。分からなかった（非公開など）ときは中身 null で渡し、
+  /// 「調べたが分からない」として記録する
+  Future<void> upsertUserDetail(
+    String restId, {
+    ({int? month, int? day, int? year})? profile,
+    ({DateTime? last, DateTime? lastOwn})? posts,
+    String? error,
+    bool clearError = false,
+    DateTime? now,
+  }) async {
+    final db = await _database;
+    final at = (now ?? DateTime.now()).millisecondsSinceEpoch;
+    final row = <String, Object?>{'restId': restId};
+    if (profile != null) {
+      row['birthMonth'] = profile.month;
+      row['birthDay'] = profile.day;
+      row['birthYear'] = profile.year;
+      row['profileFetchedAt'] = at;
+    }
+    if (posts != null) {
+      row['lastPostAt'] = posts.last?.millisecondsSinceEpoch;
+      row['lastOwnPostAt'] = posts.lastOwn?.millisecondsSinceEpoch;
+      row['postsFetchedAt'] = at;
+    }
+    if (error != null || clearError) row['error'] = error;
+
+    final cols = row.keys.toList();
+    final updates = cols.where((c) => c != 'restId').toList();
+    if (updates.isEmpty) return;
+    await db.rawInsert(
+      'INSERT INTO user_details (${cols.join(',')}) '
+      'VALUES (${List.filled(cols.length, '?').join(',')}) '
+      'ON CONFLICT(restId) DO UPDATE SET '
+      '${updates.map((c) => '$c = excluded.$c').join(', ')}',
+      [for (final c in cols) row[c]],
+    );
+  }
+
+  Future<UserDetail?> userDetail(String restId) async {
+    final db = await _database;
+    final rows = await db.query('user_details',
+        where: 'restId = ?', whereArgs: [restId]);
+    return rows.isEmpty ? null : UserDetail.fromRow(rows.first);
+  }
+
+  /// 誕生日が分かっている人。月・日の順
+  Future<List<BirthdayEntry>> birthdays(MemberSet members) async {
+    final db = await _database;
+    final rows = await db.rawQuery(
+      'SELECT u.*, d.birthMonth, d.birthDay, d.birthYear '
+      'FROM users u JOIN user_details d ON d.restId = u.restId '
+      'WHERE u.restId IN (${members.sql}) '
+      'AND d.birthMonth IS NOT NULL AND d.birthDay IS NOT NULL '
+      'ORDER BY d.birthMonth, d.birthDay, u.screenName',
+      members.args,
+    );
+    return [
+      for (final r in rows)
+        BirthdayEntry(
+          user: _userFromRow(r),
+          month: r['birthMonth'] as int,
+          day: r['birthDay'] as int,
+          year: r['birthYear'] as int?,
+        ),
+    ];
+  }
+
+  /// 最近の投稿日を調べた人。古い順（投稿が見つからなかった人を先頭に）。
+  ///
+  /// [olderThanMs] を渡すと、その時刻より前にしか投稿していない人に絞る。
+  /// 投稿が 1 つも取れなかった人も「それ以来投稿していない」側に数える
+  Future<List<LastPostEntry>> lastPosts(
+    MemberSet members, {
+    int? olderThanMs,
+    int limit = 100,
+    int offset = 0,
+  }) async {
+    final db = await _database;
+    final rows = await db.rawQuery(
+      'SELECT u.*, d.lastPostAt, d.lastOwnPostAt, d.postsFetchedAt, d.error '
+      'FROM users u JOIN user_details d ON d.restId = u.restId '
+      'WHERE u.restId IN (${members.sql}) AND d.postsFetchedAt IS NOT NULL '
+      '${olderThanMs == null ? '' : 'AND (d.lastPostAt IS NULL OR d.lastPostAt < ?) '}'
+      'ORDER BY d.lastPostAt IS NOT NULL, d.lastPostAt ASC, u.screenName '
+      'LIMIT ? OFFSET ?',
+      [...members.args, ?olderThanMs, limit, offset],
+    );
+    return [
+      for (final r in rows)
+        LastPostEntry(
+          user: _userFromRow(r),
+          detail: UserDetail.fromRow(r),
+        ),
+    ];
   }
 
   static FollowUser _userFromRow(Map<String, Object?> r) => FollowUser(
@@ -1566,6 +1780,106 @@ class FollowDb {
         location: (r['location'] as String?) ?? '',
         createdAt: (r['createdAt'] as String?) ?? '',
       );
+}
+
+/// 「起点の人たち」を表す部分問い合わせ。restId を 1 列返す SQL と引数
+class MemberSet {
+  const MemberSet(this.sql, this.args);
+  final String sql;
+  final List<Object?> args;
+}
+
+/// 1 人ずつ取り直した情報
+class UserDetail {
+  const UserDetail({
+    required this.restId,
+    this.birthMonth,
+    this.birthDay,
+    this.birthYear,
+    this.profileFetchedAt,
+    this.lastPostAt,
+    this.lastOwnPostAt,
+    this.postsFetchedAt,
+    this.error,
+  });
+
+  final String restId;
+  final int? birthMonth;
+  final int? birthDay;
+
+  /// 年は月日とは別に非公開にできるので、月日だけ分かることがある
+  final int? birthYear;
+  final DateTime? profileFetchedAt;
+
+  /// 最近の投稿（リポスト含む）
+  final DateTime? lastPostAt;
+
+  /// 最近の自分の投稿（リポストを除く）
+  final DateTime? lastOwnPostAt;
+  final DateTime? postsFetchedAt;
+  final String? error;
+
+  bool get hasBirthday => birthMonth != null && birthDay != null;
+
+  factory UserDetail.fromRow(Map<String, Object?> r) {
+    DateTime? ms(Object? v) =>
+        v == null ? null : DateTime.fromMillisecondsSinceEpoch(v as int);
+    return UserDetail(
+      restId: r['restId'] as String,
+      birthMonth: r['birthMonth'] as int?,
+      birthDay: r['birthDay'] as int?,
+      birthYear: r['birthYear'] as int?,
+      profileFetchedAt: ms(r['profileFetchedAt']),
+      lastPostAt: ms(r['lastPostAt']),
+      lastOwnPostAt: ms(r['lastOwnPostAt']),
+      postsFetchedAt: ms(r['postsFetchedAt']),
+      error: r['error'] as String?,
+    );
+  }
+}
+
+/// どれだけ調べてあるか
+class DetailCoverage {
+  const DetailCoverage({
+    required this.total,
+    required this.profileFetched,
+    required this.birthdayKnown,
+    required this.postsFetched,
+    required this.lastPostKnown,
+  });
+
+  final int total;
+
+  /// 誕生日を調べた人数（分からなかった人も含む）
+  final int profileFetched;
+
+  /// 誕生日が分かった人数
+  final int birthdayKnown;
+
+  /// 投稿を調べた人数
+  final int postsFetched;
+
+  /// 投稿が 1 つ以上見つかった人数
+  final int lastPostKnown;
+}
+
+class BirthdayEntry {
+  const BirthdayEntry({
+    required this.user,
+    required this.month,
+    required this.day,
+    this.year,
+  });
+  final FollowUser user;
+  final int month;
+  final int day;
+  final int? year;
+}
+
+class LastPostEntry {
+  const LastPostEntry({required this.user, required this.detail});
+  final FollowUser user;
+  final UserDetail detail;
 }
 
 /// 対象を一意に指すキー。handle は SNS ごとに別空間なので service と対にする

@@ -40,7 +40,7 @@ class FollowDb {
   ///     実行アカウントとの関係 (blocked_by / blocking) を集める
   /// v8: 調査結果の一覧と件数が全行をなめていたので、関係が立っている行だけの
   ///     索引を足す
-  static const _version = 10;
+  static const _version = 11;
 
   Database? _db;
 
@@ -87,6 +87,7 @@ class FollowDb {
           await _upgradeToV8(db);
           await _upgradeToV9(db);
           await _upgradeToV10(db);
+          await _upgradeToV11(db);
         },
         onUpgrade: (db, from, to) async {
           if (from < 2) await _upgradeToV2(db);
@@ -98,6 +99,7 @@ class FollowDb {
           if (from < 8) await _upgradeToV8(db);
           if (from < 9) await _upgradeToV9(db);
           if (from < 10) await _upgradeToV10(db);
+          if (from < 11) await _upgradeToV11(db);
         },
         onConfigure: (db) async => db.execute('PRAGMA foreign_keys = ON'),
       ),
@@ -360,6 +362,15 @@ class FollowDb {
   static Future<void> _upgradeToV9(Database db) async {
     await db.execute('ALTER TABLE block_runs ADD COLUMN keepEdges '
         'INTEGER NOT NULL DEFAULT 1');
+  }
+
+  /// 調査ごとに「どの関係を記録するか」を持つ（',' 区切り）。
+  ///
+  /// 記録しない関係は block_findings に NULL で入れ、結果でもタブを出さない。
+  /// これまでの調査は 3 つとも記録していたので、既定は全部
+  static Future<void> _upgradeToV11(Database db) async {
+    await db.execute('ALTER TABLE block_runs ADD COLUMN relations '
+        "TEXT NOT NULL DEFAULT '${BlockRun.allRelations.join(',')}'");
   }
 
   /// 1 人ずつ取り直さないと分からない情報（誕生日、最近の投稿日）。
@@ -1137,6 +1148,7 @@ class FollowDb {
     String? sessionAccountId,
     required List<FollowUser> sources,
     bool keepEdges = true,
+    Set<String> relations = BlockRun.allRelations,
   }) async {
     final db = await _database;
     final runId = await db.insert('block_runs', {
@@ -1147,6 +1159,7 @@ class FollowDb {
       'startedAt': DateTime.now().millisecondsSinceEpoch,
       'status': 'running',
       'keepEdges': keepEdges ? 1 : 0,
+      'relations': BlockRun.joinRelations(relations),
     });
 
     await db.transaction((txn) async {
@@ -1197,24 +1210,30 @@ class FollowDb {
     required List<FollowUser> users,
     String? cursor,
     bool keepEdges = true,
+    Set<String> relations = BlockRun.allRelations,
   }) async {
     final db = await _database;
     final now = DateTime.now().millisecondsSinceEpoch;
     await db.transaction((txn) async {
       final batch = txn.batch();
       for (final u in users) {
-        // 関係が 1 つも取れていない相手は記録しない。
-        // 「調べた結果いずれでもない」と「そもそも取れていない」を
-        // 混ぜると集計が濁る
-        if (u.blockedBy == null && u.blocking == null && u.muting == null) {
-          continue;
-        }
+        // 記録しない関係は無かったものとして扱う（NULL で書く）
+        final blockedBy = relations.contains('blockedBy') ? u.blockedBy : null;
+        final blocking = relations.contains('blocking') ? u.blocking : null;
+        final muting = relations.contains('muting') ? u.muting : null;
         // 関係だけ残す調査では、どれも立っていない相手は書かない。
         // 件数は block_sources.collected に積むので、進み具合は失わない
-        if (!keepEdges &&
-            u.blockedBy != true &&
-            u.blocking != true &&
-            u.muting != true) {
+        final hasRelation =
+            blockedBy == true || blocking == true || muting == true;
+        if (!keepEdges && !hasRelation) continue;
+        // 関係が 1 つも取れていない相手は記録しない。
+        // 「調べた結果いずれでもない」と「そもそも取れていない」を
+        // 混ぜると集計が濁る。関係を何も記録しない（フォロー先だけの）
+        // 調査は「人気」の集計に要るので全員残す
+        if (relations.isNotEmpty &&
+            blockedBy == null &&
+            blocking == null &&
+            muting == null) {
           continue;
         }
         // 名前やアイコンは users から引くので、ここで入れておく。
@@ -1260,9 +1279,9 @@ class FollowDb {
             'runId': runId,
             'sourceRestId': sourceRestId,
             'restId': u.restId,
-            'blockedBy': _boolInt(u.blockedBy),
-            'blocking': _boolInt(u.blocking),
-            'muting': _boolInt(u.muting),
+            'blockedBy': _boolInt(blockedBy),
+            'blocking': _boolInt(blocking),
+            'muting': _boolInt(muting),
           },
           conflictAlgorithm: ConflictAlgorithm.replace,
         );
@@ -2204,7 +2223,18 @@ class BlockRun {
     this.sessionAccountId,
     this.completedAt,
     this.keepEdges = true,
+    this.relations = allRelations,
   });
+
+  /// 記録できる関係。結果のタブもこの順
+  static const allRelations = {'blockedBy', 'blocking', 'muting'};
+
+  static String joinRelations(Set<String> relations) =>
+      [for (final r in allRelations) if (relations.contains(r)) r].join(',');
+
+  static Set<String> parseRelations(String? raw) => raw == null
+      ? allRelations
+      : {for (final r in raw.split(',')) if (allRelations.contains(r)) r};
 
   final int id;
   final SnsService service;
@@ -2220,6 +2250,26 @@ class BlockRun {
   /// たどったフォロー先を全部残しているか。false なら関係のある人だけで、
   /// 「人気」の集計はできない
   final bool keepEdges;
+
+  /// 記録している関係（'blockedBy' / 'blocking' / 'muting'）
+  final Set<String> relations;
+
+  /// 何を残しているかの短い表示。全部残していれば null
+  String? get recordLabel {
+    final parts = <String>[
+      for (final r in allRelations)
+        if (relations.contains(r)) relationLabel(r),
+      if (keepEdges) 'フォロー先',
+    ];
+    if (keepEdges && relations.length == allRelations.length) return null;
+    return parts.join('・');
+  }
+
+  static String relationLabel(String relation) => switch (relation) {
+        'blockedBy' => '被ブロック',
+        'blocking' => 'ブロック中',
+        _ => 'ミュート中',
+      };
 
   bool get isCompleted => status == 'completed';
 
@@ -2242,6 +2292,7 @@ class BlockRun {
             : DateTime.fromMillisecondsSinceEpoch(r['completedAt'] as int),
         status: r['status'] as String,
         keepEdges: ((r['keepEdges'] as int?) ?? 1) != 0,
+        relations: parseRelations(r['relations'] as String?),
       );
 }
 

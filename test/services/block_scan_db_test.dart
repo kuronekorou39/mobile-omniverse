@@ -556,5 +556,74 @@ void main() {
       expect(p.blockedBy, 1);
       expect(p.muting, 1);
     });
+
+    test('記録しない関係は NULL で書き、選んだ関係の無い相手は残さない', () async {
+      final runId = await db.startBlockRun(
+        service: SnsService.x,
+        targetHandle: 'alice',
+        origin: 'following',
+        sources: [user('1')],
+        keepEdges: false,
+        relations: {'muting'},
+      );
+      final run = (await db.blockRun(runId))!;
+      expect(run.relations, {'muting'});
+      expect(run.recordLabel, 'ミュート中');
+
+      await db.addBlockFindings(
+        runId: runId,
+        sourceRestId: '1',
+        keepEdges: false,
+        relations: {'muting'},
+        users: [
+          // ブロックされているが、ミュートしか記録しないので残らない
+          user('11', blockedBy: true, blocking: false, muting: false),
+          user('12', blockedBy: true, blocking: false, muting: true),
+        ],
+      );
+
+      final raw = await db.debugDatabase();
+      final kept = await raw.query('block_findings',
+          where: 'runId = ?', whereArgs: [runId]);
+      expect(kept.map((r) => r['restId']), ['12']);
+      expect(kept.single['blockedBy'], isNull, reason: '記録しない関係');
+      expect(kept.single['muting'], 1);
+
+      final p = await db.blockRunProgress(runId);
+      expect(p.blockedBy, 0);
+      expect(p.muting, 1);
+    });
+
+    test('フォロー先だけを残す調査は、関係が取れていない相手も残す', () async {
+      final runId = await db.startBlockRun(
+        service: SnsService.x,
+        targetHandle: 'alice',
+        origin: 'following',
+        sources: [user('1')],
+        relations: const {},
+      );
+      final run = (await db.blockRun(runId))!;
+      expect(run.relations, isEmpty);
+      expect(run.recordLabel, 'フォロー先');
+
+      await db.addBlockFindings(
+        runId: runId,
+        sourceRestId: '1',
+        relations: const {},
+        users: [user('10'), user('11', blockedBy: true)],
+      );
+      final raw = await db.debugDatabase();
+      final kept = await raw.query('block_findings',
+          where: 'runId = ?', whereArgs: [runId], orderBy: 'restId');
+      expect(kept.map((r) => r['restId']), ['10', '11']);
+      expect(kept.map((r) => r['blockedBy']), [null, null]);
+    });
+
+    test('全部記録する調査には表示用の短い名前が無い', () async {
+      final runId = await startRun([user('1')]);
+      final run = (await db.blockRun(runId))!;
+      expect(run.relations, BlockRun.allRelations);
+      expect(run.recordLabel, isNull);
+    });
   });
 }

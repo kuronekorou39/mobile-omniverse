@@ -389,8 +389,8 @@ class _BlockScanSectionState extends State<BlockScanSection> {
                   Text(
                     [
                       if (ranBy != null) '${ranBy.handle} で調査',
-                      // 「人気」が出ない調査だと分かるようにしておく
-                      if (!r.keepEdges) '関係のみ記録',
+                      // 全部は記録していない調査だと分かるようにしておく
+                      if (r.recordLabel != null) '記録: ${r.recordLabel}',
                       r.isCompleted ? '完了' : '未完了',
                     ].join(' ・ '),
                     style: TextStyle(
@@ -503,11 +503,12 @@ class _BlockScanSectionState extends State<BlockScanSection> {
               ListTile(
                 dense: true,
                 title: Text(c.label),
+                // 1 行に収まらず変な所で折れるので、人数と延べ件数で行を分ける
                 subtitle: Text(
                   c.count == null
                       ? 'まだ取得していません'
                       : '${formatNumber(c.count!)}人のフォロー先をたどります'
-                          '${c.items > 0 ? '（延べ${formatNumber(c.items)}件・保存 ${ScanEstimate(items: c.items).storageLabel}）' : ''}',
+                          '${c.items > 0 ? '\n延べ${formatNumber(c.items)}件 ・ 保存 ${ScanEstimate(items: c.items).storageLabel}' : ''}',
                   style: const TextStyle(fontSize: 11),
                 ),
                 // かかる時間が選ぶ基準になるので、右端に出す
@@ -530,12 +531,12 @@ class _BlockScanSectionState extends State<BlockScanSection> {
     final chosen = choices.firstWhere((c) => c.origin == picked);
     // 十数時間かかることがあるので、規模と目安を見せてから始める。
     // 何を残すかで容量が桁で変わるので、ここで一緒に選ぶ
-    final keepEdges = await _confirmStart(
+    final record = await _confirmStart(
       originLabel: chosen.label,
       count: chosen.count ?? 0,
       estimate: ScanEstimate(items: chosen.items),
     );
-    if (keepEdges == null || !mounted) return;
+    if (record == null || !mounted) return;
 
     try {
       final runId = await _scan.start(
@@ -543,7 +544,8 @@ class _BlockScanSectionState extends State<BlockScanSection> {
         service: widget.service,
         handle: widget.handle,
         origin: picked,
-        keepEdges: keepEdges,
+        keepEdges: record.keepEdges,
+        relations: record.relations,
       );
       if (!mounted) return;
       if (runId == null) {
@@ -556,24 +558,50 @@ class _BlockScanSectionState extends State<BlockScanSection> {
     widget.onChanged();
   }
 
-  /// 何を残すかを選んでから始める。戻り値は「フォロー先を全部残すか」、
-  /// キャンセルなら null。
+  /// 何を記録するかを選んでから始める。キャンセルなら null。
   ///
-  /// 容量はここで決まる。起点の人数と目安を見ながら選べるようにする
-  Future<bool?> _confirmStart({
+  /// 容量はここで決まる。項目ごとのチェックにして、選び方に応じた
+  /// 保存容量を下に出す。長い説明はセクションの ⓘ に任せ、ここには置かない
+  Future<BlockScanRecord?> _confirmStart({
     required String originLabel,
     required int count,
     required ScanEstimate estimate,
   }) {
     final hasItems = estimate.items > 0;
-    // 全部残すと GB 単位になりそうなら、軽い方を先に選んでおく
+    final relations = {...BlockRun.allRelations};
+    // 全部残すと GB 単位になりそうなら、フォロー先は外しておく
     var keepEdges = !hasItems || estimate.storageBytes < 1024 * 1024 * 1024;
-    return showDialog<bool>(
+    return showDialog<BlockScanRecord>(
       context: context,
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setState) {
           final scheme = Theme.of(ctx).colorScheme;
           final note = TextStyle(fontSize: 12, color: scheme.onSurfaceVariant);
+          final nothing = relations.isEmpty && !keepEdges;
+          final storage = !hasItems
+              ? null
+              : keepEdges
+                  ? estimate.storageLabel
+                  : nothing
+                      ? null
+                      : estimate.lightStorageLabel;
+
+          Widget check({
+            required String title,
+            String? subtitle,
+            required bool value,
+            required ValueChanged<bool> onChanged,
+          }) =>
+              CheckboxListTile(
+                value: value,
+                onChanged: (v) => setState(() => onChanged(v ?? false)),
+                dense: true,
+                contentPadding: EdgeInsets.zero,
+                controlAffinity: ListTileControlAffinity.leading,
+                title: Text(title, style: const TextStyle(fontSize: 14)),
+                subtitle: subtitle == null ? null : Text(subtitle, style: note),
+              );
+
           return AlertDialog(
             title: const Text('つながり調査を開始'),
             contentPadding: const EdgeInsets.fromLTRB(24, 16, 24, 0),
@@ -582,56 +610,39 @@ class _BlockScanSectionState extends State<BlockScanSection> {
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
-                    '$originLabel ${formatNumber(count)}人のフォロー先を'
-                    '1人ずつたどります'
-                    '${hasItems ? '（延べ${formatNumber(estimate.items)}件、目安 ${estimate.label}）' : ''}。',
-                  ),
+                  Text('$originLabel ${formatNumber(count)}人のフォロー先をたどります'),
+                  if (hasItems)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 4),
+                      child: Text(
+                        '延べ${formatNumber(estimate.items)}件 ・ 目安 ${estimate.label}',
+                        style: note,
+                      ),
+                    ),
                   const SizedBox(height: 12),
                   Text('記録する内容',
                       style: TextStyle(
                           fontSize: 12,
                           fontWeight: FontWeight.bold,
                           color: scheme.onSurfaceVariant)),
-                  RadioGroup<bool>(
-                    groupValue: keepEdges,
-                    onChanged: (v) => setState(() => keepEdges = v ?? true),
-                    child: Column(
-                      children: [
-                        RadioListTile<bool>(
-                          value: false,
-                          contentPadding: EdgeInsets.zero,
-                          title: const Text('ブロック・ミュートの有無だけ',
-                              style: TextStyle(fontSize: 14)),
-                          subtitle: Text(
-                            '関係のあった人だけ残します'
-                            '${hasItems ? '。保存 ${estimate.lightStorageLabel}' : ''}',
-                            style: note,
-                          ),
-                        ),
-                        RadioListTile<bool>(
-                          value: true,
-                          contentPadding: EdgeInsets.zero,
-                          title: const Text('たどったフォロー先もすべて',
-                              style: TextStyle(fontSize: 14)),
-                          subtitle: Text(
-                            '「人気」（つながっている人の間でよくフォローされている人）'
-                            'を集計できます'
-                            '${hasItems ? '。保存 ${estimate.storageLabel}' : ''}',
-                            style: note,
-                          ),
-                        ),
-                      ],
+                  for (final r in BlockRun.allRelations)
+                    check(
+                      title: _relationChoiceLabel(r),
+                      value: relations.contains(r),
+                      onChanged: (v) => v ? relations.add(r) : relations.remove(r),
                     ),
+                  check(
+                    title: 'たどったフォロー先すべて',
+                    subtitle: '「人気」を集計できます',
+                    value: keepEdges,
+                    onChanged: (v) => keepEdges = v,
                   ),
                   const SizedBox(height: 8),
-                  Text(
-                    'フォローが ${formatNumber(FollowDb.blockScanFriendLimit)} 人を'
-                    '超える相手は飛ばします。中断しても続きから再開でき、'
-                    '途中までの結果も見られます。'
-                    '${hasItems ? '目安は通信状況や制限、相手の重なり方で前後します。' : ''}',
-                    style: note,
-                  ),
+                  if (storage != null)
+                    Text('保存 $storage', style: note)
+                  else if (nothing)
+                    Text('記録する内容を選んでください',
+                        style: note.copyWith(color: scheme.error)),
                   const SizedBox(height: 8),
                 ],
               ),
@@ -642,7 +653,12 @@ class _BlockScanSectionState extends State<BlockScanSection> {
                 child: const Text('キャンセル'),
               ),
               FilledButton(
-                onPressed: () => Navigator.pop(ctx, keepEdges),
+                onPressed: nothing
+                    ? null
+                    : () => Navigator.pop(
+                        ctx,
+                        BlockScanRecord(
+                            relations: {...relations}, keepEdges: keepEdges)),
                 child: const Text('開始'),
               ),
             ],
@@ -651,6 +667,12 @@ class _BlockScanSectionState extends State<BlockScanSection> {
       ),
     );
   }
+
+  static String _relationChoiceLabel(String relation) => switch (relation) {
+        'blockedBy' => 'ブロックされている相手',
+        'blocking' => 'ブロックしている相手',
+        _ => 'ミュートしている相手',
+      };
 
   Future<void> _resume(BlockRun run) async {
     // 結果は「調査を始めたアカウントから見た関係」。今選ばれている
@@ -679,4 +701,12 @@ class _BlockScanSectionState extends State<BlockScanSection> {
     widget.onChanged();
   }
 
+}
+
+/// 調査で何を記録するか。[_confirmStart] の戻り値
+class BlockScanRecord {
+  const BlockScanRecord({required this.relations, required this.keepEdges});
+
+  final Set<String> relations;
+  final bool keepEdges;
 }

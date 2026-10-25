@@ -24,8 +24,10 @@ class BlockScanResultScreen extends StatefulWidget {
   State<BlockScanResultScreen> createState() => _BlockScanResultScreenState();
 }
 
+typedef _Tab = ({String label, String? relation, String empty});
+
 /// タブと、対応する block_findings の列
-const _tabs = <({String label, String? relation, String empty})>[
+const _tabs = <_Tab>[
   (
     label: '被ブロック',
     relation: 'blockedBy',
@@ -40,10 +42,15 @@ const _tabs = <({String label, String? relation, String empty})>[
 class _BlockScanResultScreenState extends State<BlockScanResultScreen> {
   BlockRunProgress? _stats;
 
-  /// 関係だけ残した調査には「人気」の元データが無いので、タブごと出さない
-  late final List<({String label, String? relation, String empty})>
-      _visibleTabs =
-      widget.run.keepEdges ? _tabs : _tabs.where((t) => t.relation != null).toList();
+  /// 記録していない関係と、フォロー先を残していない調査の「人気」は、
+  /// 元データが無いのでタブごと出さない
+  late final List<_Tab> _visibleTabs = [
+    for (final t in _tabs)
+      if (t.relation == null
+          ? widget.run.keepEdges
+          : widget.run.relations.contains(t.relation))
+        t,
+  ];
   FollowFilter _filter = FollowFilter.none;
 
   /// 人気タブで「自分がフォローしていない相手」だけに絞るか
@@ -150,10 +157,7 @@ class _BlockScanResultScreenState extends State<BlockScanResultScreen> {
           bottom: TabBar(
             isScrollable: true,
             tabs: [
-              Tab(text: _tabLabel(0, s?.blockedBy)),
-              Tab(text: _tabLabel(1, s?.blocking)),
-              Tab(text: _tabLabel(2, s?.muting)),
-              if (run.keepEdges) Tab(text: _tabs[3].label),
+              for (final t in _visibleTabs) Tab(text: _tabLabel(t, s)),
             ],
           ),
         ),
@@ -179,8 +183,15 @@ class _BlockScanResultScreenState extends State<BlockScanResultScreen> {
     );
   }
 
-  String _tabLabel(int i, int? count) =>
-      count == null ? _tabs[i].label : '${_tabs[i].label} ($count)';
+  String _tabLabel(_Tab t, BlockRunProgress? s) {
+    final count = switch (t.relation) {
+      'blockedBy' => s?.blockedBy,
+      'blocking' => s?.blocking,
+      'muting' => s?.muting,
+      _ => null,
+    };
+    return count == null ? t.label : '${t.label} ($count)';
+  }
 
   Widget _header(BlockRun run, BlockRunProgress? s) {
     final scheme = Theme.of(context).colorScheme;
@@ -192,7 +203,7 @@ class _BlockScanResultScreenState extends State<BlockScanResultScreen> {
             '${formatNumber(s.doneSources)}/${formatNumber(s.totalSources)}人 走査済み'
             '${s.skippedSources > 0 ? '（${formatNumber(s.skippedSources)}人は対象外）' : ''}'
             '\n延べ${formatNumber(s.scanned)}件'
-            '${run.keepEdges ? '' : ' ・ 関係のみ記録'}';
+            '${run.recordLabel == null ? '' : ' ・ 記録: ${run.recordLabel}'}';
 
     return Padding(
       padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
@@ -221,7 +232,7 @@ class _BlockScanResultScreenState extends State<BlockScanResultScreen> {
 
   Widget _list(int index) {
     final scheme = Theme.of(context).colorScheme;
-    final tab = _tabs[index];
+    final tab = _visibleTabs[index];
     final isPopular = tab.relation == null;
 
     return Column(

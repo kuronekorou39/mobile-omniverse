@@ -146,6 +146,7 @@ class BlockScanService {
     required String handle,
     required String origin,
     bool keepEdges = true,
+    Set<String> relations = BlockRun.allRelations,
   }) async {
     if (isRunning) throw StateError('別の調査が実行中です');
     if (account.service != SnsService.x) {
@@ -163,13 +164,15 @@ class BlockScanService {
       sessionAccountId: account.id,
       sources: sources,
       keepEdges: keepEdges,
+      relations: relations,
     );
     DebugLogService.instance.log('BlockScan',
         '調査を開始: @$handle の$origin ${sources.length}人 (runId=$runId)');
     ScanLogService.instance.log(
         '=== 調査を開始 runId=$runId 対象=@$handle 起点=$origin '
         '${sources.length}人 実行=@${account.handle} '
-        '記録=${keepEdges ? '全部' : '関係のみ'} ===');
+        '記録=${BlockRun.joinRelations(relations)}'
+        '${keepEdges ? ',edges' : ''} ===');
     await resume(account: account, runId: runId, targetHandle: handle);
     return runId;
   }
@@ -251,7 +254,9 @@ class BlockScanService {
     if (schedulerWasRunning) scheduler.stop();
 
     // 何を残す調査かは始めたときに決まっている。再開でも引き継ぐ
-    final keepEdges = (await db.blockRun(runId))?.keepEdges ?? true;
+    final run = await db.blockRun(runId);
+    final keepEdges = run?.keepEdges ?? true;
+    final relations = run?.relations ?? BlockRun.allRelations;
     final stats = await db.blockRunProgress(runId);
     progress.value = BlockScanProgress(
       runId: runId,
@@ -286,7 +291,8 @@ class BlockScanService {
             account: account,
             runId: runId,
             source: source,
-            keepEdges: keepEdges);
+            keepEdges: keepEdges,
+            relations: relations);
 
         final s = await db.blockRunProgress(runId);
         progress.value = progress.value?.copyWith(
@@ -322,6 +328,7 @@ class BlockScanService {
     required int runId,
     required BlockSource source,
     required bool keepEdges,
+    required Set<String> relations,
   }) async {
     final db = FollowDb.instance;
     final job = FollowCaptureJobService.instance;
@@ -360,6 +367,7 @@ class BlockScanService {
             users: users,
             cursor: cursor,
             keepEdges: keepEdges,
+            relations: relations,
           );
           progress.value =
               progress.value?.copyWith(currentCollected: collected);

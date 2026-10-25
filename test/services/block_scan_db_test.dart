@@ -300,6 +300,131 @@ void main() {
       expect(paged.first.user.screenName, 'user10', reason: 'users を引けている');
     });
 
+    test('同じ起点から同じ相手を二度書いても 1 人と数える', () async {
+      final runId = await startRun([user('1')]);
+      // 再開でページが重なると同じ相手がもう一度来る
+      await db.addBlockFindings(runId: runId, sourceRestId: '1', users: [
+        user('10', blockedBy: false),
+      ]);
+      await db.addBlockFindings(runId: runId, sourceRestId: '1', users: [
+        user('10', blockedBy: false),
+        user('11', blockedBy: false),
+      ]);
+      final rows = await db.popularAmongSources(runId: runId);
+      expect({for (final r in rows) r.user.restId: r.sourceCount},
+          {'10': 1, '11': 1});
+    });
+
+    test('つながりを残さず人気だけ積む調査でも一覧が出る', () async {
+      final runId = await db.startBlockRun(
+        service: SnsService.x,
+        targetHandle: 'alice',
+        origin: 'following',
+        sources: [user('1'), user('2')],
+        keepEdges: false,
+        keepPopular: true,
+      );
+      for (final src in ['1', '2']) {
+        await db.addBlockFindings(
+          runId: runId,
+          sourceRestId: src,
+          keepEdges: false,
+          users: [user('10', blockedBy: false), user('11', muting: true)],
+        );
+      }
+      final rows = await db.popularAmongSources(runId: runId);
+      expect({for (final r in rows) r.user.restId: r.sourceCount},
+          {'10': 2, '11': 2});
+      // 関係の無い相手の行は書かず、関係のある相手だけ残る
+      final raw = await db.debugDatabase();
+      final kept = await raw.query('block_findings',
+          where: 'runId = ?', whereArgs: [runId]);
+      expect(kept.map((r) => r['restId']).toSet(), {'11'});
+      // 人気で参照している相手は掃除で消えない
+      await db.pruneOrphanUsers();
+      expect(await raw.query('users', where: 'restId = ?', whereArgs: ['10']),
+          isNotEmpty);
+    });
+
+    test('人気を積まない調査には集計表の行ができない', () async {
+      final runId = await db.startBlockRun(
+        service: SnsService.x,
+        targetHandle: 'alice',
+        origin: 'following',
+        sources: [user('1')],
+        keepEdges: false,
+        keepPopular: false,
+      );
+      await db.addBlockFindings(
+        runId: runId,
+        sourceRestId: '1',
+        keepEdges: false,
+        keepPopular: false,
+        users: [user('10', blockedBy: false), user('11', muting: true)],
+      );
+      expect(await db.popularAmongSources(runId: runId), isEmpty);
+      expect((await db.blockRun(runId))!.keepPopular, isFalse);
+    });
+
+    test('集計表ができる前の調査は、起点ごとに作り直せる', () async {
+      final runId = await startRun([user('1'), user('2'), user('3')]);
+      final raw = await db.debugDatabase();
+      // 人気を積まずに書いた＝昔の調査の状態を作る
+      for (final src in ['1', '2']) {
+        await db.addBlockFindings(
+          runId: runId,
+          sourceRestId: src,
+          keepPopular: false,
+          users: [user('10', blockedBy: false), user('1$src', blockedBy: false)],
+        );
+        await db.finishBlockSource(runId, src, status: 'done');
+      }
+      await raw.update('block_sources', {'aggregated': 0},
+          where: 'runId = ?', whereArgs: [runId]);
+      expect(await db.popularAmongSources(runId: runId), isEmpty);
+
+      // 走査の終わった起点だけが対象。3 は未着手なので数えない
+      var p = await db.popularBuildProgress(runId);
+      expect((p.done, p.total), (0, 2));
+
+      final first = await db.nextUnaggregatedSource(runId);
+      expect(first!.restId, '1');
+      await db.aggregateSource(runId, '1');
+      p = await db.popularBuildProgress(runId);
+      expect((p.done, p.total), (1, 2));
+      // 二度足しても増えない
+      await db.aggregateSource(runId, '1');
+      await db.aggregateSource(runId, '2');
+      expect(await db.nextUnaggregatedSource(runId), isNull);
+
+      final rows = await db.popularAmongSources(runId: runId);
+      expect({for (final r in rows) r.user.restId: r.sourceCount},
+          {'10': 2, '11': 1, '12': 1});
+
+      // 未着手の 3 を走査すると、書きながら積む側に回る
+      await db.aggregateSource(runId, '3');
+      await db.addBlockFindings(
+          runId: runId, sourceRestId: '3', users: [user('10', blockedBy: false)]);
+      final after = await db.popularAmongSources(runId: runId);
+      expect(after.first.sourceCount, 3);
+    });
+
+    test('ある相手をフォローしている起点を引ける', () async {
+      final runId = await startRun([user('1'), user('2'), user('3')]);
+      await db.addBlockFindings(runId: runId, sourceRestId: '1', users: [
+        user('10', blockedBy: false),
+      ]);
+      await db.addBlockFindings(runId: runId, sourceRestId: '3', users: [
+        user('10', blockedBy: false),
+        user('11', blockedBy: false),
+      ]);
+      final sources =
+          await db.sourcesFollowing(runId: runId, restId: '10');
+      expect(sources.map((u) => u.restId).toSet(), {'1', '3'});
+      expect(await db.sourcesFollowing(runId: runId, restId: '11'),
+          hasLength(1));
+    });
+
     test('自分がフォローしている相手を外せる', () async {
       // 起点に居る = 自分がフォローしている
       final runId = await startRun([user('1'), user('2')]);
@@ -335,12 +460,14 @@ void main() {
       }
     });
 
-    test('人気の集計は block_findings の本体を読まない', () async {
+    test('人気の一覧は集計表を索引順に読むだけ', () async {
       final runId = await startRun([user('1')]);
       final detail = await plan(
           FollowDb.popularAmongSourcesSql(onlyNotFollowed: false),
           [runId, 100, 0]);
-      expect(detail, contains('COVERING INDEX idx_block_findings_user'));
+      expect(detail, contains('idx_block_popular_count'));
+      expect(detail, isNot(contains('block_findings')));
+      expect(detail, isNot(contains('TEMP B-TREE')), reason: '並べ替えしない');
     });
   });
 
@@ -522,6 +649,7 @@ void main() {
         origin: 'following',
         sources: [user('1')],
         keepEdges: false,
+        keepPopular: false,
       );
       expect((await db.blockRun(runId))!.keepEdges, isFalse);
 
@@ -529,6 +657,7 @@ void main() {
         runId: runId,
         sourceRestId: '1',
         keepEdges: false,
+        keepPopular: false,
         cursor: 'c1',
         users: [
           user('10', blockedBy: false, blocking: false, muting: false),
@@ -550,6 +679,8 @@ void main() {
       final src = await db.nextBlockSource(runId);
       expect(src!.collected, 3);
       expect(src.cursor, 'c1');
+      // 人気も積まないので集計表にも何も乗らない
+      expect(await db.popularAmongSources(runId: runId), isEmpty);
 
       // 関係の集計はそのまま出る
       final p = await db.blockRunProgress(runId);
@@ -568,7 +699,7 @@ void main() {
       );
       final run = (await db.blockRun(runId))!;
       expect(run.relations, {'muting'});
-      expect(run.recordLabel, 'ミュート中');
+      expect(run.recordLabel, 'ミュート中・人気');
 
       await db.addBlockFindings(
         runId: runId,
@@ -604,7 +735,7 @@ void main() {
       );
       final run = (await db.blockRun(runId))!;
       expect(run.relations, isEmpty);
-      expect(run.recordLabel, 'フォロー先');
+      expect(run.recordLabel, '人気・つながり');
 
       await db.addBlockFindings(
         runId: runId,
@@ -623,7 +754,27 @@ void main() {
       final runId = await startRun([user('1')]);
       final run = (await db.blockRun(runId))!;
       expect(run.relations, BlockRun.allRelations);
+      expect(run.keepPopular, isTrue);
       expect(run.recordLabel, isNull);
+    });
+
+    test('残す内容の短い名前', () async {
+      Future<String?> label(
+          {required bool keepEdges, required bool keepPopular}) async {
+        final runId = await db.startBlockRun(
+          service: SnsService.x,
+          targetHandle: 'alice',
+          origin: 'following',
+          sources: [user('1')],
+          keepEdges: keepEdges,
+          keepPopular: keepPopular,
+        );
+        return (await db.blockRun(runId))!.recordLabel;
+      }
+
+      expect(await label(keepEdges: false, keepPopular: false), '関係のみ');
+      expect(await label(keepEdges: false, keepPopular: true), '関係・人気');
+      expect(await label(keepEdges: true, keepPopular: true), isNull);
     });
   });
 }

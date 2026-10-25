@@ -1,7 +1,11 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:share_plus/share_plus.dart';
 
+import '../models/follow_user.dart';
 import '../models/sns_service.dart';
+import '../services/block_popular_builder.dart';
 import '../services/block_scan_service.dart';
 import '../services/export_service.dart';
 import '../services/follow_db.dart';
@@ -14,7 +18,7 @@ import 'follow_snapshot_screen.dart';
 /// つながり調査の結果。
 ///
 /// 走査は数時間かかるので、**途中でも見られる**ことを前提にしている。
-/// 集計はそのつど数え直すので、走査中に開いても今までの分が出る。
+/// 走査中に開いても今までの分が出て、人気の人数は見ている間に増えていく。
 class BlockScanResultScreen extends StatefulWidget {
   const BlockScanResultScreen({super.key, required this.run});
 
@@ -42,12 +46,12 @@ const _tabs = <_Tab>[
 class _BlockScanResultScreenState extends State<BlockScanResultScreen> {
   BlockRunProgress? _stats;
 
-  /// 記録していない関係と、フォロー先を残していない調査の「人気」は、
+  /// 記録していない関係と、人気を積んでいない調査の「人気」は、
   /// 元データが無いのでタブごと出さない
   late final List<_Tab> _visibleTabs = [
     for (final t in _tabs)
       if (t.relation == null
-          ? widget.run.keepEdges
+          ? widget.run.keepPopular
           : widget.run.relations.contains(t.relation))
         t,
   ];
@@ -56,10 +60,39 @@ class _BlockScanResultScreenState extends State<BlockScanResultScreen> {
   /// 人気タブで「自分がフォローしていない相手」だけに絞るか
   bool _onlyNotFollowed = false;
 
+  /// 人気の人数は走査や集計表の作り直しで増えていく。変化を 2 秒ごとに
+  /// まとめて、一覧をその場で読み直す（スクロール位置は変えない）
+  int _popularTick = 0;
+  Timer? _tickTimer;
+
   @override
   void initState() {
     super.initState();
     _load();
+    if (widget.run.keepPopular) {
+      BlockPopularBuilder.instance.progress.addListener(_onCountsChanged);
+      BlockScanService.instance.progress.addListener(_onCountsChanged);
+      // 集計表ができる前の調査なら、ここから裏で作り始める
+      BlockPopularBuilder.instance.ensureBuilt(widget.run.id);
+    }
+  }
+
+  @override
+  void dispose() {
+    _tickTimer?.cancel();
+    BlockPopularBuilder.instance.progress.removeListener(_onCountsChanged);
+    BlockScanService.instance.progress.removeListener(_onCountsChanged);
+    super.dispose();
+  }
+
+  void _onCountsChanged() {
+    if (_tickTimer != null) return;
+    _tickTimer = Timer(const Duration(seconds: 2), () {
+      _tickTimer = null;
+      if (!mounted) return;
+      setState(() => _popularTick++);
+      _load();
+    });
   }
 
   Future<void> _load() async {
@@ -235,6 +268,11 @@ class _BlockScanResultScreenState extends State<BlockScanResultScreen> {
     final tab = _visibleTabs[index];
     final isPopular = tab.relation == null;
 
+    // 発見元を開けるのは、その相手の行が残っているとき。関係のタブは
+    // 必ず残っている。人気はつながりを残した調査だけ
+    final canOpenSources = !isPopular || widget.run.keepEdges;
+    final status = isPopular ? _popularStatus(scheme) : null;
+
     return Column(
       children: [
         if (isPopular)
@@ -245,9 +283,11 @@ class _BlockScanResultScreenState extends State<BlockScanResultScreen> {
             title: const Text('自分がフォローしていない相手だけ',
                 style: TextStyle(fontSize: 12)),
           ),
+        ?status,
         Expanded(
           child: PagedFollowList<BlockFinding>(
             reloadKey: (index, _filter, _onlyNotFollowed),
+            refreshKey: isPopular ? _popularTick : null,
             fetch: (offset, limit) => isPopular
                 ? FollowDb.instance.popularAmongSources(
                     runId: widget.run.id,
@@ -266,17 +306,35 @@ class _BlockScanResultScreenState extends State<BlockScanResultScreen> {
               user: f.user,
               service: SnsService.x,
               accountId: widget.run.sessionAccountId,
-              trailing: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                crossAxisAlignment: CrossAxisAlignment.end,
-                children: [
-                  Text('${formatNumber(f.sourceCount)}人',
-                      style: const TextStyle(
-                          fontSize: 13, fontWeight: FontWeight.bold)),
-                  Text('から',
-                      style: TextStyle(
-                          fontSize: 9, color: scheme.onSurfaceVariant)),
-                ],
+              // 人数を押すと、つながりの中の誰からか（発見元）が開く
+              trailing: InkWell(
+                onTap: canOpenSources ? () => _openSources(f.user) : null,
+                borderRadius: BorderRadius.circular(8),
+                child: Padding(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    crossAxisAlignment: CrossAxisAlignment.end,
+                    children: [
+                      Text('${formatNumber(f.sourceCount)}人',
+                          style: const TextStyle(
+                              fontSize: 13, fontWeight: FontWeight.bold)),
+                      Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text('から',
+                              style: TextStyle(
+                                  fontSize: 9,
+                                  color: scheme.onSurfaceVariant)),
+                          if (canOpenSources)
+                            Icon(Icons.chevron_right,
+                                size: 12, color: scheme.onSurfaceVariant),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
               ),
             ),
             emptyLabel: tab.empty,
@@ -285,4 +343,67 @@ class _BlockScanResultScreenState extends State<BlockScanResultScreen> {
       ],
     );
   }
+
+  /// 人気の人数がまだ動いているときの知らせ。止まっていれば null
+  Widget? _popularStatus(ColorScheme scheme) {
+    final build = BlockPopularBuilder.instance.progress.value;
+    final scan = BlockScanService.instance.progress.value;
+    String? text;
+    double? value;
+    if (build != null && build.runId == widget.run.id) {
+      text = '集計中… ${formatNumber(build.done)}/${formatNumber(build.total)}人';
+      value = build.total == 0 ? null : build.done / build.total;
+    } else if (scan != null && scan.runId == widget.run.id) {
+      text = '調査中 ・ 人数は増えていきます';
+    }
+    if (text == null) return null;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 2, 16, 6),
+      child: Row(
+        children: [
+          SizedBox(
+            width: 12,
+            height: 12,
+            child: CircularProgressIndicator(strokeWidth: 1.5, value: value),
+          ),
+          const SizedBox(width: 8),
+          Text(text,
+              style: TextStyle(fontSize: 11, color: scheme.onSurfaceVariant)),
+        ],
+      ),
+    );
+  }
+
+  void _openSources(FollowUser user) {
+    Navigator.of(context).push(MaterialPageRoute(
+      builder: (_) => _SourcesFollowingScreen(run: widget.run, user: user),
+    ));
+  }
+}
+
+/// つながりの中で、ある相手をフォローしている人たち（発見元の起点）
+class _SourcesFollowingScreen extends StatelessWidget {
+  const _SourcesFollowingScreen({required this.run, required this.user});
+
+  final BlockRun run;
+  final FollowUser user;
+
+  @override
+  Widget build(BuildContext context) => Scaffold(
+        appBar: AppBar(title: Text('@${user.screenName} をフォローしているつながり')),
+        body: PagedFollowList<FollowUser>(
+          fetch: (offset, limit) => FollowDb.instance.sourcesFollowing(
+            runId: run.id,
+            restId: user.restId,
+            limit: limit,
+            offset: offset,
+          ),
+          itemBuilder: (u) => FollowUserTile(
+            user: u,
+            service: SnsService.x,
+            accountId: run.sessionAccountId,
+          ),
+          emptyLabel: 'まだ見つかっていません',
+        ),
+      );
 }

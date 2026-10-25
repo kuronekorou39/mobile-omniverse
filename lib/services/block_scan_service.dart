@@ -146,7 +146,7 @@ class BlockScanService {
     required String handle,
     required String origin,
     bool keepEdges = true,
-    Set<String> relations = BlockRun.allRelations,
+    bool keepPopular = true,
   }) async {
     if (isRunning) throw StateError('別の調査が実行中です');
     if (account.service != SnsService.x) {
@@ -164,15 +164,14 @@ class BlockScanService {
       sessionAccountId: account.id,
       sources: sources,
       keepEdges: keepEdges,
-      relations: relations,
+      keepPopular: keepPopular,
     );
     DebugLogService.instance.log('BlockScan',
         '調査を開始: @$handle の$origin ${sources.length}人 (runId=$runId)');
     ScanLogService.instance.log(
         '=== 調査を開始 runId=$runId 対象=@$handle 起点=$origin '
         '${sources.length}人 実行=@${account.handle} '
-        '記録=${BlockRun.joinRelations(relations)}'
-        '${keepEdges ? ',edges' : ''} ===');
+        '記録=関係${keepPopular ? '+人気' : ''}${keepEdges ? '+つながり' : ''} ===');
     await resume(account: account, runId: runId, targetHandle: handle);
     return runId;
   }
@@ -256,6 +255,7 @@ class BlockScanService {
     // 何を残す調査かは始めたときに決まっている。再開でも引き継ぐ
     final run = await db.blockRun(runId);
     final keepEdges = run?.keepEdges ?? true;
+    final keepPopular = run?.keepPopular ?? true;
     final relations = run?.relations ?? BlockRun.allRelations;
     final stats = await db.blockRunProgress(runId);
     progress.value = BlockScanProgress(
@@ -292,6 +292,7 @@ class BlockScanService {
             runId: runId,
             source: source,
             keepEdges: keepEdges,
+            keepPopular: keepPopular,
             relations: relations);
 
         final s = await db.blockRunProgress(runId);
@@ -328,11 +329,18 @@ class BlockScanService {
     required int runId,
     required BlockSource source,
     required bool keepEdges,
+    required bool keepPopular,
     required Set<String> relations,
   }) async {
     final db = FollowDb.instance;
     final job = FollowCaptureJobService.instance;
     final webView = FollowCaptureWebViewService.instance;
+
+    // 集計表ができる前の調査を続けるとき、この人の途中までの結果が
+    // まだ人気に乗っていないことがある。先に乗せてから、続きは書きながら積む
+    if (keepPopular && !source.aggregated) {
+      await db.aggregateSource(runId, source.restId);
+    }
 
     // 走査用 WebView は 1 本ごとに作り直す (使い回すと X の SPA が
     // 起動しない)。ここでも 1 人ごとに立て直す
@@ -367,6 +375,7 @@ class BlockScanService {
             users: users,
             cursor: cursor,
             keepEdges: keepEdges,
+            keepPopular: keepPopular,
             relations: relations,
           );
           progress.value =

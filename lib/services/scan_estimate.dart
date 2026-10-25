@@ -1,5 +1,3 @@
-import 'package:flutter/foundation.dart';
-
 /// つながり調査の所要時間の目安。
 ///
 /// 走査は 1 ページごとに間隔を空けて投げるので、速さは送信間隔と 1 ページの
@@ -49,12 +47,32 @@ class ScanEstimate {
   /// 重複が増えて下がる。始める前には分からないので、ほどほどの値を置く
   static const double uniqueShare = 0.3;
 
-  /// 延べ 1 件あたりのおよその容量
-  static const double bytesPerItem =
-      bytesPerFinding + bytesPerScanUser * uniqueShare;
+  /// 「人気」の集計行 1 行ぶん（相手ごとに 1 行、索引込みの実測）
+  static const int bytesPerPopularRow = 90;
 
-  /// 調査を終えたときに増えるファイルのおよその大きさ（フォロー先を全部残す）
-  int get storageBytes => items <= 0 ? 0 : (items * bytesPerItem).round();
+  /// 全部残す調査の、延べ 1 件あたりのおよその容量
+  static const double bytesPerItem = bytesPerFinding +
+      (bytesPerScanUser + bytesPerPopularRow) * uniqueShare;
+
+  /// 調査を終えたときに増えるファイルのおよその大きさ（全部残す）
+  int get storageBytes => totalBytes(popular: true, edges: true);
+
+  /// ブロック・ミュートの関係ぶん。どの調査でも必ず書く
+  int get relationBytes => lightStorageBytes;
+
+  /// 「人気」を積むぶん。初めて見た相手の users 行と集計行
+  int get popularBytes => items <= 0
+      ? 0
+      : (items * uniqueShare * (bytesPerScanUser + bytesPerPopularRow)).round();
+
+  /// つながり（誰が誰をフォローしているか）を全部残すぶん
+  int get edgesBytes => items <= 0 ? 0 : (items * bytesPerFinding).round();
+
+  /// 選んだ内容での合計。つながりを残すなら人気も付いてくる
+  int totalBytes({required bool popular, required bool edges}) =>
+      relationBytes +
+      (popular || edges ? popularBytes : 0) +
+      (edges ? edgesBytes : 0);
 
   /// 「約2.8 GB」「約300 MB」。桁が分かればよい
   String get storageLabel => roughBytesLabel(storageBytes);
@@ -73,7 +91,7 @@ class ScanEstimate {
 
   String get lightStorageLabel => roughBytesLabel(lightStorageBytes);
 
-  @visibleForTesting
+  /// 「約2.8 GB」「約300 MB」「1 MB未満」。桁が伝わればよい
   static String roughBytesLabel(int bytes) {
     const mb = 1024 * 1024;
     const gb = 1024 * mb;

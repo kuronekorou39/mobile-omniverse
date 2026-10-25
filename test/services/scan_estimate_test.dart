@@ -31,16 +31,31 @@ void main() {
   group('保存容量の目安', () {
     const mb = 1024 * 1024;
 
-    test('延べ 1 件の単価は実測の行と、重複を見込んだ相手のぶん', () {
+    test('延べ 1 件の単価は実測の行と、重複を見込んだ相手と集計のぶん', () {
       expect(ScanEstimate.bytesPerItem,
-          closeTo(136 + 266 * 0.3, 0.001));
+          closeTo(136 + (266 + 90) * 0.3, 0.001));
     });
 
-    test('延べ件数に単価を掛ける', () {
-      final e = const ScanEstimate(items: 13000000);
-      expect(e.storageBytes, (13000000 * ScanEstimate.bytesPerItem).round());
-      // 1300 万件で 2.6 GB 台
-      expect(e.storageLabel, '約2.6 GB');
+    test('全部残す容量は、関係・人気・つながりの合計', () {
+      const e = ScanEstimate(items: 13000000);
+      expect(e.storageBytes, e.relationBytes + e.popularBytes + e.edgesBytes);
+      expect(e.storageBytes, e.totalBytes(popular: true, edges: true));
+      // 1300 万件で 3 GB 台
+      expect(e.storageLabel, '約3.0 GB');
+    });
+
+    test('項目ごとの容量。つながりを残すなら人気も付いてくる', () {
+      const e = ScanEstimate(items: 13000000);
+      expect(e.popularBytes, (13000000 * 0.3 * (266 + 90)).round());
+      expect(e.edgesBytes, 13000000 * 136);
+      expect(e.totalBytes(popular: false, edges: false), e.relationBytes);
+      expect(e.totalBytes(popular: true, edges: false),
+          e.relationBytes + e.popularBytes);
+      expect(e.totalBytes(popular: false, edges: true),
+          e.relationBytes + e.popularBytes + e.edgesBytes);
+      // 人気だけなら全部残すより十分小さい
+      expect(e.totalBytes(popular: true, edges: false),
+          lessThan(e.storageBytes ~/ 2));
     });
 
     test('件数が分からなければ出さない', () {

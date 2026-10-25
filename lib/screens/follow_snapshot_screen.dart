@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
@@ -238,6 +239,7 @@ class PagedFollowList<T> extends StatefulWidget {
     required this.emptyLabel,
     this.pageSize = 100,
     this.reloadKey,
+    this.refreshKey,
   });
 
   /// offset から limit 件を読む
@@ -248,6 +250,10 @@ class PagedFollowList<T> extends StatefulWidget {
 
   /// 変わったら先頭から読み直す（並び順の変更など）
   final Object? reloadKey;
+
+  /// 変わったら、読み込んだ分をその場で読み直す。スクロール位置も
+  /// 読み込み中の見た目も変えない（走査中に増える数字の反映など）
+  final Object? refreshKey;
 
   @override
   State<PagedFollowList<T>> createState() => _PagedFollowListState<T>();
@@ -274,7 +280,11 @@ class _PagedFollowListState<T> extends State<PagedFollowList<T>>
   @override
   void didUpdateWidget(covariant PagedFollowList<T> old) {
     super.didUpdateWidget(old);
-    if (old.reloadKey != widget.reloadKey) _loadFirst();
+    if (old.reloadKey != widget.reloadKey) {
+      _loadFirst();
+    } else if (old.refreshKey != widget.refreshKey) {
+      _refreshInPlace();
+    }
   }
 
   @override
@@ -303,6 +313,20 @@ class _PagedFollowListState<T> extends State<PagedFollowList<T>>
         ..addAll(page);
       _loading = false;
       _reachedEnd = page.length < widget.pageSize;
+    });
+  }
+
+  /// 読み込んである件数ぶんを先頭から読み直し、そのまま差し替える
+  Future<void> _refreshInPlace() async {
+    if (_loading || _loadingMore) return;
+    final count = math.max(_items.length, widget.pageSize);
+    final rows = await widget.fetch(0, count);
+    if (!mounted) return;
+    setState(() {
+      _items
+        ..clear()
+        ..addAll(rows);
+      _reachedEnd = rows.length < count;
     });
   }
 

@@ -40,7 +40,7 @@ class FollowDb {
   ///     実行アカウントとの関係 (blocked_by / blocking) を集める
   /// v8: 調査結果の一覧と件数が全行をなめていたので、関係が立っている行だけの
   ///     索引を足す
-  static const _version = 11;
+  static const _version = 12;
 
   Database? _db;
 
@@ -88,6 +88,7 @@ class FollowDb {
           await _upgradeToV9(db);
           await _upgradeToV10(db);
           await _upgradeToV11(db);
+          await _upgradeToV12(db);
         },
         onUpgrade: (db, from, to) async {
           if (from < 2) await _upgradeToV2(db);
@@ -100,6 +101,7 @@ class FollowDb {
           if (from < 9) await _upgradeToV9(db);
           if (from < 10) await _upgradeToV10(db);
           if (from < 11) await _upgradeToV11(db);
+          if (from < 12) await _upgradeToV12(db);
         },
         onConfigure: (db) async => db.execute('PRAGMA foreign_keys = ON'),
       ),
@@ -371,6 +373,35 @@ class FollowDb {
   static Future<void> _upgradeToV11(Database db) async {
     await db.execute('ALTER TABLE block_runs ADD COLUMN relations '
         "TEXT NOT NULL DEFAULT '${BlockRun.allRelations.join(',')}'");
+  }
+
+  /// 「人気」を走査しながら積む集計表。
+  ///
+  /// block_findings を GROUP BY で数え直すと、1,000 万行の調査では
+  /// 開くたびに分の単位で待つ。代わりに 1 ページ書くごとに相手ごとの
+  /// 人数を足していき、人気の一覧はこの表を索引順に読むだけにする。
+  ///
+  /// 既存の調査は block_findings から起点ごとに作り直す。どこまで反映したか
+  /// を block_sources.aggregated に持ち、裏で少しずつ進める
+  static Future<void> _upgradeToV12(Database db) async {
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS block_popular (
+        runId INTEGER NOT NULL,
+        restId TEXT NOT NULL,
+        sourceCount INTEGER NOT NULL,
+        PRIMARY KEY (runId, restId)
+      )
+    ''');
+    await db.execute('CREATE INDEX IF NOT EXISTS idx_block_popular_count '
+        'ON block_popular(runId, sourceCount DESC, restId)');
+    await db.execute('ALTER TABLE block_runs ADD COLUMN keepPopular '
+        'INTEGER NOT NULL DEFAULT 1');
+    // フォロー先を残していない調査には人気の元データが無い
+    await db.execute('UPDATE block_runs SET keepPopular = keepEdges');
+    await db.execute('ALTER TABLE block_sources ADD COLUMN aggregated '
+        'INTEGER NOT NULL DEFAULT 0');
+    await db.execute('UPDATE block_sources SET aggregated = 1 WHERE runId IN '
+        '(SELECT id FROM block_runs WHERE keepPopular = 0)');
   }
 
   /// 1 人ずつ取り直さないと分からない情報（誕生日、最近の投稿日）。
@@ -1148,6 +1179,7 @@ class FollowDb {
     String? sessionAccountId,
     required List<FollowUser> sources,
     bool keepEdges = true,
+    bool keepPopular = true,
     Set<String> relations = BlockRun.allRelations,
   }) async {
     final db = await _database;
@@ -1159,6 +1191,7 @@ class FollowDb {
       'startedAt': DateTime.now().millisecondsSinceEpoch,
       'status': 'running',
       'keepEdges': keepEdges ? 1 : 0,
+      'keepPopular': keepPopular ? 1 : 0,
       'relations': BlockRun.joinRelations(relations),
     });
 
@@ -1177,6 +1210,8 @@ class FollowDb {
           'position': i,
           'status': skip ? 'skipped' : 'pending',
           'reason': skip ? 'フォローが多すぎる (${u.friendsCount})' : null,
+          // 新しい調査は書きながら人気を積むので、作り直しは要らない
+          'aggregated': 1,
         }, conflictAlgorithm: ConflictAlgorithm.ignore);
       }
       await batch.commit(noResult: true);
@@ -1210,6 +1245,7 @@ class FollowDb {
     required List<FollowUser> users,
     String? cursor,
     bool keepEdges = true,
+    bool keepPopular = true,
     Set<String> relations = BlockRun.allRelations,
   }) async {
     final db = await _database;
@@ -1221,21 +1257,21 @@ class FollowDb {
         final blockedBy = relations.contains('blockedBy') ? u.blockedBy : null;
         final blocking = relations.contains('blocking') ? u.blocking : null;
         final muting = relations.contains('muting') ? u.muting : null;
-        // 関係だけ残す調査では、どれも立っていない相手は書かない。
-        // 件数は block_sources.collected に積むので、進み具合は失わない
-        final hasRelation =
-            blockedBy == true || blocking == true || muting == true;
-        if (!keepEdges && !hasRelation) continue;
         // 関係が 1 つも取れていない相手は記録しない。
         // 「調べた結果いずれでもない」と「そもそも取れていない」を
-        // 混ぜると集計が濁る。関係を何も記録しない（フォロー先だけの）
-        // 調査は「人気」の集計に要るので全員残す
+        // 混ぜると集計が濁る。関係を何も記録しない調査は全員残す
         if (relations.isNotEmpty &&
             blockedBy == null &&
             blocking == null &&
             muting == null) {
           continue;
         }
+        // つながりを残さない調査では、関係の無い相手の行は書かない。
+        // 件数は block_sources.collected に積むので、進み具合は失わない
+        final hasRelation =
+            blockedBy == true || blocking == true || muting == true;
+        final keepRow = keepEdges || hasRelation;
+        if (!keepRow && !keepPopular) continue;
         // 名前やアイコンは users から引くので、ここで入れておく。
         // 入れないと結果の一覧が JOIN で空になる。
         //
@@ -1273,18 +1309,45 @@ class FollowDb {
             now,
           ],
         );
-        batch.insert(
-          'block_findings',
-          {
-            'runId': runId,
-            'sourceRestId': sourceRestId,
-            'restId': u.restId,
-            'blockedBy': _boolInt(blockedBy),
-            'blocking': _boolInt(blocking),
-            'muting': _boolInt(muting),
-          },
-          conflictAlgorithm: ConflictAlgorithm.replace,
-        );
+        if (keepPopular) {
+          if (keepEdges) {
+            // 同じ (起点, 相手) を二度書いても数えない。つながりの行が
+            // 「もう数えた」の印になる。行を書く前に数えること
+            batch.rawInsert(
+              'INSERT INTO block_popular (runId, restId, sourceCount) '
+              'SELECT ?, ?, 1 WHERE NOT EXISTS ('
+              '  SELECT 1 FROM block_findings '
+              '  WHERE runId = ? AND sourceRestId = ? AND restId = ?) '
+              'ON CONFLICT(runId, restId) '
+              'DO UPDATE SET sourceCount = sourceCount + 1',
+              [runId, u.restId, runId, sourceRestId, u.restId],
+            );
+          } else {
+            // つながりを残さないと重複を見分けられない。ページの重なりは
+            // 稀なので、多少の数え過ぎは受け入れる
+            batch.rawInsert(
+              'INSERT INTO block_popular (runId, restId, sourceCount) '
+              'VALUES (?, ?, 1) '
+              'ON CONFLICT(runId, restId) '
+              'DO UPDATE SET sourceCount = sourceCount + 1',
+              [runId, u.restId],
+            );
+          }
+        }
+        if (keepRow) {
+          batch.insert(
+            'block_findings',
+            {
+              'runId': runId,
+              'sourceRestId': sourceRestId,
+              'restId': u.restId,
+              'blockedBy': _boolInt(blockedBy),
+              'blocking': _boolInt(blocking),
+              'muting': _boolInt(muting),
+            },
+            conflictAlgorithm: ConflictAlgorithm.replace,
+          );
+        }
       }
       await batch.commit(noResult: true);
       await txn.rawUpdate(
@@ -1342,6 +1405,8 @@ class FollowDb {
     await db.transaction((txn) async {
       await txn.delete('block_findings',
           where: 'runId = ?', whereArgs: [runId]);
+      await txn
+          .delete('block_popular', where: 'runId = ?', whereArgs: [runId]);
       await txn
           .delete('block_sources', where: 'runId = ?', whereArgs: [runId]);
       await txn.delete('block_runs', where: 'id = ?', whereArgs: [runId]);
@@ -1532,12 +1597,12 @@ class FollowDb {
   }
 
   /// つながっている人たちの間で、何人からフォローされているか。
-  /// 走査結果の集計だけで出せるので追加の通信は要らない。
+  /// 走査しながら積んだ block_popular を索引順に読むだけなので、
+  /// 何百万件の調査でもすぐ返る。走査中や作り直しの途中なら、
+  /// その時点までの人数が出る。
   ///
-  /// 関係で絞れないので調査の全行が対象になる。先に block_findings だけで
-  /// 数えて 1 ページぶんに絞り、users はその分だけ引く。全行を users と
-  /// 突き合わせてから数えると、1 ページ出すたびに数百万回の引き直しになる。
-  /// 同じ理由で、同数のときの並びは users を見ずに済む restId にしてある。
+  /// 先に block_popular だけで 1 ページぶんに絞り、users はその分だけ引く。
+  /// 同数のときの並びは users を見ずに済む restId にしてある。
   ///
   /// 発見元の @ID ([BlockFinding.sourceNames]) は入れない。ほぼ全員が
   /// 該当するので、並べても読めない長さになる
@@ -1573,14 +1638,90 @@ class FollowDb {
         'u.statusesCount AS snapStatuses, '
         'a.sourceCount AS sourceCount '
         'FROM ('
-        '  SELECT b.restId AS restId, COUNT(*) AS sourceCount '
-        '  FROM block_findings b '
+        '  SELECT b.restId AS restId, b.sourceCount AS sourceCount '
+        '  FROM block_popular b '
         '  WHERE b.runId = ?${onlyNotFollowed ? notFollowed : ''} '
-        '  GROUP BY b.restId '
-        '  ORDER BY sourceCount DESC, b.restId '
+        '  ORDER BY b.sourceCount DESC, b.restId '
         '  LIMIT ? OFFSET ?'
         ') a JOIN users u ON u.restId = a.restId '
         'ORDER BY a.sourceCount DESC, a.restId';
+  }
+
+  /// 人気の集計がまだ反映されていない、走査の終わった起点を 1 人。
+  /// 無ければ null（走査中・未着手の起点は、走査の側で反映する）
+  Future<BlockSource?> nextUnaggregatedSource(int runId) async {
+    final db = await _database;
+    final rows = await db.query('block_sources',
+        where: 'runId = ? AND aggregated = 0 '
+            "AND status IN ('done', 'skipped', 'failed')",
+        whereArgs: [runId],
+        orderBy: 'position',
+        limit: 1);
+    return rows.isEmpty ? null : BlockSource.fromRow(rows.first);
+  }
+
+  /// 起点 1 人ぶんの結果を block_findings から人気の集計に足す。
+  /// 走査中の起点にも使う。途中まで取れていた分を先に反映してから、
+  /// 続きは書きながら積む。二度呼んでも二重に足さない
+  Future<void> aggregateSource(int runId, String restId) async {
+    final db = await _database;
+    await db.transaction((txn) async {
+      final rows = await txn.query('block_sources',
+          columns: ['aggregated'],
+          where: 'runId = ? AND restId = ?',
+          whereArgs: [runId, restId]);
+      if (rows.isEmpty || rows.first['aggregated'] == 1) return;
+      await txn.rawInsert(
+        'INSERT INTO block_popular (runId, restId, sourceCount) '
+        'SELECT runId, restId, 1 FROM block_findings '
+        'WHERE runId = ? AND sourceRestId = ? '
+        'ON CONFLICT(runId, restId) DO UPDATE SET sourceCount = sourceCount + 1',
+        [runId, restId],
+      );
+      await txn.update('block_sources', {'aggregated': 1},
+          where: 'runId = ? AND restId = ?', whereArgs: [runId, restId]);
+    });
+  }
+
+  /// 人気の集計に反映した起点の数 / 走査の終わった起点の数。
+  /// 走査中・未着手の起点は、走査の側で書きながら積むので数えない
+  Future<({int done, int total})> popularBuildProgress(int runId) async {
+    final db = await _database;
+    final rows = await db.rawQuery(
+      'SELECT COUNT(*) AS total, '
+      'COALESCE(SUM(aggregated), 0) AS done '
+      'FROM block_sources WHERE runId = ? '
+      "AND status IN ('done', 'skipped', 'failed')",
+      [runId],
+    );
+    final r = rows.first;
+    return (
+      done: (r['done'] as num?)?.toInt() ?? 0,
+      total: (r['total'] as num?)?.toInt() ?? 0,
+    );
+  }
+
+  /// つながりの中で [restId] をフォローしている起点の人たち。
+  /// つながりを残した調査（keepEdges）でだけ出せる
+  Future<List<FollowUser>> sourcesFollowing({
+    required int runId,
+    required String restId,
+    int limit = 100,
+    int offset = 0,
+  }) async {
+    final db = await _database;
+    final rows = await db.rawQuery(
+      'SELECT u.*, '
+      'u.followersCount AS snapFollowers, u.friendsCount AS snapFriends, '
+      'u.statusesCount AS snapStatuses '
+      'FROM block_findings b '
+      'JOIN users u ON u.restId = b.sourceRestId '
+      'WHERE b.runId = ? AND b.restId = ? '
+      'ORDER BY u.followersCount DESC, u.restId '
+      'LIMIT ? OFFSET ?',
+      [runId, restId, limit, offset],
+    );
+    return rows.map(_userFromSnapshotRow).toList();
   }
 
   /// 参照されなくなった users を掃除する。
@@ -1591,7 +1732,8 @@ class FollowDb {
     final db = await _database;
     final deleted = await db.rawDelete('DELETE FROM users WHERE restId NOT IN '
         '(SELECT restId FROM snapshot_members) '
-        'AND restId NOT IN (SELECT restId FROM block_findings)');
+        'AND restId NOT IN (SELECT restId FROM block_findings) '
+        'AND restId NOT IN (SELECT restId FROM block_popular)');
     // 本人の行が消えた詳しい情報も道連れにする
     await db.rawDelete(
         'DELETE FROM user_details WHERE restId NOT IN (SELECT restId FROM users)');
@@ -2223,6 +2365,7 @@ class BlockRun {
     this.sessionAccountId,
     this.completedAt,
     this.keepEdges = true,
+    this.keepPopular = true,
     this.relations = allRelations,
   });
 
@@ -2251,18 +2394,27 @@ class BlockRun {
   /// 「人気」の集計はできない
   final bool keepEdges;
 
+  /// 「人気」（相手ごとの被フォロー人数）を積んでいるか
+  final bool keepPopular;
+
   /// 記録している関係（'blockedBy' / 'blocking' / 'muting'）
   final Set<String> relations;
 
   /// 何を残しているかの短い表示。全部残していれば null
   String? get recordLabel {
-    final parts = <String>[
-      for (final r in allRelations)
-        if (relations.contains(r)) relationLabel(r),
-      if (keepEdges) 'フォロー先',
-    ];
-    if (keepEdges && relations.length == allRelations.length) return null;
-    return parts.join('・');
+    if (keepEdges && keepPopular && relations.length == allRelations.length) {
+      return null;
+    }
+    final rel = relations.length == allRelations.length
+        ? '関係'
+        : [for (final r in allRelations) if (relations.contains(r)) relationLabel(r)]
+            .join('・');
+    if (!keepPopular && !keepEdges) return rel.isEmpty ? '' : '$relのみ';
+    return [
+      if (rel.isNotEmpty) rel,
+      if (keepPopular) '人気',
+      if (keepEdges) 'つながり',
+    ].join('・');
   }
 
   static String relationLabel(String relation) => switch (relation) {
@@ -2292,6 +2444,7 @@ class BlockRun {
             : DateTime.fromMillisecondsSinceEpoch(r['completedAt'] as int),
         status: r['status'] as String,
         keepEdges: ((r['keepEdges'] as int?) ?? 1) != 0,
+        keepPopular: ((r['keepPopular'] as int?) ?? 1) != 0,
         relations: parseRelations(r['relations'] as String?),
       );
 }
@@ -2308,6 +2461,7 @@ class BlockSource {
     this.cursor,
     this.collected = 0,
     this.reason,
+    this.aggregated = true,
   });
 
   final int runId;
@@ -2315,6 +2469,9 @@ class BlockSource {
   final String screenName;
   final int? friendsCount;
   final int position;
+
+  /// この人ぶんの結果が人気の集計に反映されているか
+  final bool aggregated;
 
   /// pending / running / done / skipped / failed
   final String status;
@@ -2334,6 +2491,7 @@ class BlockSource {
         cursor: r['cursor'] as String?,
         collected: (r['collected'] as int?) ?? 0,
         reason: r['reason'] as String?,
+        aggregated: ((r['aggregated'] as int?) ?? 1) != 0,
       );
 }
 

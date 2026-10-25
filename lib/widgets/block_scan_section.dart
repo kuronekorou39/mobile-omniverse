@@ -123,10 +123,9 @@ class _BlockScanSectionState extends State<BlockScanSection> {
                 '「延べ」の件数は、起点の人たちのフォロー数を足したものです。'
                 '同じ人が何度も数えられるので、実際の人数はもっと少なくなります。'
                 '所要時間と保存容量の目安はこの延べ件数から出しています。\n\n'
-                '始めるときに、ブロック・ミュートの有無だけを残すか、'
-                'たどったフォロー先もすべて残すかを選べます。'
-                'すべて残すと「人気」を集計できますが、'
-                '1 件あたり約 ${ScanEstimate.bytesPerItem.round()} バイト使います。\n'
+                '始めるときに「人気」と「つながり」を残すかを選べます。'
+                'ブロック・ミュートの関係は必ず残します。'
+                'つながりまで残すと 1 件あたり約 ${ScanEstimate.bytesPerItem.round()} バイト使います。\n'
                 '調査の結果は「保存容量」の上限とは別に数えるので、'
                 '上限を超えても取得の履歴は消えません。',
             expanded: open,
@@ -545,7 +544,7 @@ class _BlockScanSectionState extends State<BlockScanSection> {
         handle: widget.handle,
         origin: picked,
         keepEdges: record.keepEdges,
-        relations: record.relations,
+        keepPopular: record.keepPopular,
       );
       if (!mounted) return;
       if (runId == null) {
@@ -568,38 +567,44 @@ class _BlockScanSectionState extends State<BlockScanSection> {
     required ScanEstimate estimate,
   }) {
     final hasItems = estimate.items > 0;
-    final relations = {...BlockRun.allRelations};
-    // 全部残すと GB 単位になりそうなら、フォロー先は外しておく
-    var keepEdges = !hasItems || estimate.storageBytes < 1024 * 1024 * 1024;
+    const gb = 1024 * 1024 * 1024;
+    // GB 単位になりそうな項目は外しておく
+    var keepPopular = !hasItems ||
+        estimate.totalBytes(popular: true, edges: false) < gb;
+    var keepEdges =
+        !hasItems || estimate.totalBytes(popular: true, edges: true) < gb;
+    String size(int bytes) => ScanEstimate.roughBytesLabel(bytes);
     return showDialog<BlockScanRecord>(
       context: context,
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setState) {
           final scheme = Theme.of(ctx).colorScheme;
           final note = TextStyle(fontSize: 12, color: scheme.onSurfaceVariant);
-          final nothing = relations.isEmpty && !keepEdges;
-          final storage = !hasItems
-              ? null
-              : keepEdges
-                  ? estimate.storageLabel
-                  : nothing
-                      ? null
-                      : estimate.lightStorageLabel;
+          final total =
+              estimate.totalBytes(popular: keepPopular, edges: keepEdges);
 
           Widget check({
             required String title,
-            String? subtitle,
+            required String subtitle,
+            String? sizeLabel,
             required bool value,
+            bool enabled = true,
             required ValueChanged<bool> onChanged,
           }) =>
               CheckboxListTile(
                 value: value,
+                enabled: enabled,
                 onChanged: (v) => setState(() => onChanged(v ?? false)),
                 dense: true,
                 contentPadding: EdgeInsets.zero,
                 controlAffinity: ListTileControlAffinity.leading,
                 title: Text(title, style: const TextStyle(fontSize: 14)),
-                subtitle: subtitle == null ? null : Text(subtitle, style: note),
+                subtitle: Text(subtitle, style: note),
+                secondary: sizeLabel == null
+                    ? null
+                    : Text(sizeLabel,
+                        style: const TextStyle(
+                            fontSize: 12, fontWeight: FontWeight.bold)),
               );
 
           return AlertDialog(
@@ -625,24 +630,36 @@ class _BlockScanSectionState extends State<BlockScanSection> {
                           fontSize: 12,
                           fontWeight: FontWeight.bold,
                           color: scheme.onSurfaceVariant)),
-                  for (final r in BlockRun.allRelations)
-                    check(
-                      title: _relationChoiceLabel(r),
-                      value: relations.contains(r),
-                      onChanged: (v) => v ? relations.add(r) : relations.remove(r),
+                  // 関係は 1 行ごとの印なので容量に響かない。選ばせず必ず残す
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(0, 6, 0, 2),
+                    child: Text(
+                      'ブロック・ミュートの関係は必ず記録します'
+                      '${hasItems ? '（${size(estimate.relationBytes)}）' : ''}',
+                      style: note,
                     ),
+                  ),
                   check(
-                    title: 'たどったフォロー先すべて',
-                    subtitle: '「人気」を集計できます',
+                    title: '人気',
+                    subtitle: 'つながりの中でよくフォローされている人',
+                    sizeLabel: hasItems ? size(estimate.popularBytes) : null,
+                    value: keepPopular,
+                    // つながりを残すなら人気は必ず付いてくる
+                    enabled: !keepEdges,
+                    onChanged: (v) => keepPopular = v,
+                  ),
+                  check(
+                    title: 'つながり',
+                    subtitle: '人気の相手を、つながりの中で誰がフォローしているか',
+                    sizeLabel: hasItems ? '＋${size(estimate.edgesBytes)}' : null,
                     value: keepEdges,
-                    onChanged: (v) => keepEdges = v,
+                    onChanged: (v) {
+                      keepEdges = v;
+                      if (v) keepPopular = true;
+                    },
                   ),
                   const SizedBox(height: 8),
-                  if (storage != null)
-                    Text('保存 $storage', style: note)
-                  else if (nothing)
-                    Text('記録する内容を選んでください',
-                        style: note.copyWith(color: scheme.error)),
+                  if (hasItems) Text('保存 合計 ${size(total)}', style: note),
                   const SizedBox(height: 8),
                 ],
               ),
@@ -653,12 +670,10 @@ class _BlockScanSectionState extends State<BlockScanSection> {
                 child: const Text('キャンセル'),
               ),
               FilledButton(
-                onPressed: nothing
-                    ? null
-                    : () => Navigator.pop(
-                        ctx,
-                        BlockScanRecord(
-                            relations: {...relations}, keepEdges: keepEdges)),
+                onPressed: () => Navigator.pop(
+                    ctx,
+                    BlockScanRecord(
+                        keepPopular: keepPopular, keepEdges: keepEdges)),
                 child: const Text('開始'),
               ),
             ],
@@ -667,12 +682,6 @@ class _BlockScanSectionState extends State<BlockScanSection> {
       ),
     );
   }
-
-  static String _relationChoiceLabel(String relation) => switch (relation) {
-        'blockedBy' => 'ブロックされている相手',
-        'blocking' => 'ブロックしている相手',
-        _ => 'ミュートしている相手',
-      };
 
   Future<void> _resume(BlockRun run) async {
     // 結果は「調査を始めたアカウントから見た関係」。今選ばれている
@@ -703,10 +712,14 @@ class _BlockScanSectionState extends State<BlockScanSection> {
 
 }
 
-/// 調査で何を記録するか。[_confirmStart] の戻り値
+/// 調査で何を記録するか。[_confirmStart] の戻り値。
+/// ブロック・ミュートの関係は常に記録するので、ここには持たない
 class BlockScanRecord {
-  const BlockScanRecord({required this.relations, required this.keepEdges});
+  const BlockScanRecord({required this.keepPopular, required this.keepEdges});
 
-  final Set<String> relations;
+  /// 「人気」（相手ごとの被フォロー人数）を積むか
+  final bool keepPopular;
+
+  /// 誰が誰をフォローしているかを全部残すか
   final bool keepEdges;
 }

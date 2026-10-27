@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import '../models/account.dart';
 import '../models/sns_service.dart';
 import '../services/account_storage_service.dart';
+import '../services/fetch_jobs.dart';
 import '../services/follow_capture_job_service.dart';
 import '../services/bluesky_api_service.dart';
 import '../services/follow_db.dart';
@@ -12,6 +13,7 @@ import '../utils/app_snackbar.dart';
 import '../utils/image_headers.dart';
 import '../widgets/sns_badge.dart';
 import '../utils/number_format.dart';
+import '../widgets/fetch_busy_note.dart';
 import '../widgets/skeleton.dart';
 import 'follow_snapshot_screen.dart' show dateLabel;
 import 'follow_target_screen.dart';
@@ -36,12 +38,14 @@ class _FollowCaptureScreenState extends State<FollowCaptureScreen> {
   void initState() {
     super.initState();
     _job.progress.addListener(_onProgress);
+    FetchJobs.instance.current.addListener(_onProgress);
     _load();
   }
 
   @override
   void dispose() {
     _job.progress.removeListener(_onProgress);
+    FetchJobs.instance.current.removeListener(_onProgress);
     super.dispose();
   }
 
@@ -129,6 +133,8 @@ class _FollowCaptureScreenState extends State<FollowCaptureScreen> {
   @override
   Widget build(BuildContext context) {
     final running = _job.progress.value;
+    // フォロー/フォロワー取得以外（つながり調査など）が走っていても始められない
+    final busy = FetchJobs.instance.current.value;
 
     return Scaffold(
       appBar: AppBar(
@@ -155,11 +161,18 @@ class _FollowCaptureScreenState extends State<FollowCaptureScreen> {
             : ListView(
                 children: [
                   _storageBar(),
-                  if (running != null) _runningBanner(running),
+                  if (running != null)
+                    _runningBanner(running)
+                  else if (busy != null)
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+                      child: FetchBusyNote(busy),
+                    ),
                   const Padding(
                     padding: EdgeInsets.fromLTRB(16, 8, 16, 8),
                     child: Text(
-                      '他の画面に移っても取得は続きます。中断しても続きから再開できます。',
+                      '他の画面に移っても、アプリを裏に回しても取得は続きます'
+                      '（通知が出ている間）。中断しても続きから再開できます。',
                       style: TextStyle(fontSize: 11, color: Colors.grey),
                     ),
                   ),
@@ -168,7 +181,7 @@ class _FollowCaptureScreenState extends State<FollowCaptureScreen> {
                     title: const Text('予定分を今すぐ実行'),
                     subtitle: const Text('中断分の再開と、期限が来た定期取得',
                         style: TextStyle(fontSize: 11)),
-                    enabled: !_job.isRunning,
+                    enabled: busy == null,
                     onTap: _runDueNow,
                   ),
                   const Divider(),

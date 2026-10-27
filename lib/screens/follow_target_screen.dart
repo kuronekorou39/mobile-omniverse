@@ -5,6 +5,7 @@ import '../models/account.dart';
 import '../models/sns_service.dart';
 import '../services/account_storage_service.dart';
 import '../services/block_scan_service.dart';
+import '../services/fetch_jobs.dart';
 import '../services/follow_capture_engine.dart';
 import '../services/follow_capture_job_service.dart';
 import '../services/follow_db.dart';
@@ -14,6 +15,7 @@ import '../utils/confirm_dialog.dart';
 import '../utils/image_headers.dart';
 import '../utils/number_format.dart';
 import '../widgets/block_scan_section.dart';
+import '../widgets/fetch_busy_note.dart';
 import '../widgets/user_detail_section.dart';
 import '../widgets/follow_section_header.dart';
 import '../widgets/skeleton.dart';
@@ -65,6 +67,7 @@ class _FollowTargetScreenState extends State<FollowTargetScreen> {
     super.initState();
     _job.progress.addListener(_onProgress);
     _scan.progress.addListener(_onScanProgress);
+    FetchJobs.instance.current.addListener(_onProgress);
     _cleanup.busy.addListener(_onCleanupChanged);
     _load();
   }
@@ -73,6 +76,7 @@ class _FollowTargetScreenState extends State<FollowTargetScreen> {
   void dispose() {
     _job.progress.removeListener(_onProgress);
     _scan.progress.removeListener(_onScanProgress);
+    FetchJobs.instance.current.removeListener(_onProgress);
     _cleanup.busy.removeListener(_onCleanupChanged);
     super.dispose();
   }
@@ -563,9 +567,21 @@ class _FollowTargetScreenState extends State<FollowTargetScreen> {
   Widget _captureActions() {
     final resumable = _history.where((s) => s.isResumable).toList();
     final scheme = Theme.of(context).colorScheme;
+    // 取得は 1 本ずつ。この対象の取得が走っているときは上に重ねた
+    // 進み具合で分かるので、それ以外のときだけ理由を出す
+    final running = _job.progress.value;
+    final busy = FetchJobs.instance.current.value;
+    final blockedBy = busy != null &&
+            !(busy.kind == FetchJobKind.followCapture &&
+                running?.targetHandle == widget.handle &&
+                running?.service == widget.service)
+        ? busy
+        : null;
+    final canStart = busy == null;
     return Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
+          if (blockedBy != null) FetchBusyNote(blockedBy),
           FilledButton(
             style: FilledButton.styleFrom(
               padding: const EdgeInsets.symmetric(vertical: 16),
@@ -575,7 +591,7 @@ class _FollowTargetScreenState extends State<FollowTargetScreen> {
               textStyle: const TextStyle(
                   fontSize: 16, fontWeight: FontWeight.bold),
             ),
-            onPressed: _job.isRunning || _loading || _cleaning
+            onPressed: !canStart || _loading || _cleaning
                 ? null
                 : _startWithConfirm,
             child: const Text('今すぐ取得'),
@@ -589,7 +605,7 @@ class _FollowTargetScreenState extends State<FollowTargetScreen> {
                 borderRadius: BorderRadius.circular(16),
                 child: InkWell(
                   borderRadius: BorderRadius.circular(16),
-                  onTap: _job.isRunning
+                  onTap: !canStart
                       ? null
                       : () => _start(
                             s.kind == 'followers'

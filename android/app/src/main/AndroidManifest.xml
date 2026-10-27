@@ -3,6 +3,9 @@
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
+    <!-- 長い取得を裏で続けている間の通知と、画面を消しても CPU を起こしておくため -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
     <application
         android:usesCleartextTraffic="true"
         android:label="OmniVerse"
@@ -42,6 +45,16 @@
             <property
                 android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
                 android:value="Display timeline overlay for social media monitoring"/>
+        </service>
+        <!-- フォロー/フォロワー取得・つながり調査を裏で続けるためのサービス。
+             数時間から数日かかり、dataSync の 6 時間制限に収まらないので specialUse -->
+        <service
+            android:name=".JobForegroundService"
+            android:exported="false"
+            android:foregroundServiceType="specialUse">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="User-started collection of follow lists that runs for hours"/>
         </service>
         <!-- image_cropper（uCrop）の Activity 登録。
              ステータス/ナビゲーションバーに UI が埋もれないよう SafeArea 対応の

@@ -12,6 +12,7 @@ import 'screens/overlay_timeline_screen.dart';
 import 'widgets/perf_overlay.dart';
 import 'screens/splash_screen.dart';
 import 'services/account_storage_service.dart';
+import 'services/background_job_keeper.dart';
 import 'services/compose_image_store.dart';
 import 'services/debug_log_service.dart';
 import 'services/draft_service.dart';
@@ -47,6 +48,8 @@ void main() async {
     await ScanLogService.instance.init();
     await NotificationCacheService.instance.loadSeenAt();
     MemoryGuardService.instance.start();
+    // 長い取得が走っている間は通知を出し、裏に回っても止めない
+    BackgroundJobKeeper.instance.init();
 
     // 下書きから参照されていない投稿用画像を片付ける。
     // 下書きと投稿失敗時の再送で使うので、参照が残っているものは消さない。
@@ -163,7 +166,8 @@ class OmniVerseApp extends ConsumerWidget {
               if (settings.showPerfOverlay) const PerfOverlay(),
               // 走査中だけルートに WebView を置く。
               // ここに置くことで、取得画面を離れてタイムラインを見ていても
-              // 走査が続く（アプリ自体を裏に回すと止まる）。
+              // 走査が続く。裏に回っている間は描画が止まってここに置けないので、
+              // 別の経路で立てる（FollowCaptureWebViewService.openHost）。
               Positioned(
                 left: FollowCaptureWebViewHost.offscreenX,
                 top: 0,

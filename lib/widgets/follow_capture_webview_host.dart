@@ -4,7 +4,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 
 import '../services/follow_capture_webview_service.dart';
-import '../utils/platform_ua.dart';
 
 /// フォロー/フォロワー走査用の WebView を 1 枚ホストするウィジェット。
 ///
@@ -24,7 +23,7 @@ class FollowCaptureWebViewHost extends StatefulWidget {
   /// 呼び出し側が持つ（ValueListenableBuilder を挟むと Positioned が
   /// Stack の直接の子でなくなり実行時エラーになるため）
   static const offscreenX = -3000.0;
-  static const size = Size(412, 915);
+  static const size = FollowCaptureWebViewService.hostSize;
 
   @override
   State<FollowCaptureWebViewHost> createState() =>
@@ -56,12 +55,8 @@ class _FollowCaptureWebViewHostState extends State<FollowCaptureWebViewHost> {
             injectionTime: UserScriptInjectionTime.AT_DOCUMENT_START,
           ),
         ]),
-        initialSettings: InAppWebViewSettings(
-          javaScriptEnabled: true,
-          userAgent: platformUserAgent,
-          domStorageEnabled: true,
-          thirdPartyCookiesEnabled: true,
-        ),
+        // 裏に回っても止まらないよう、裏用の WebView と同じ設定にする
+        initialSettings: FollowCaptureWebViewService.settings(),
         onWebViewCreated: (controller) {
           _controller = controller;
           FollowCaptureWebViewService.instance.attach(controller);

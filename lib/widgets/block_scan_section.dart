@@ -6,10 +6,12 @@ import '../models/sns_service.dart';
 import '../screens/block_scan_result_screen.dart';
 import '../services/account_storage_service.dart';
 import '../services/block_scan_service.dart';
+import '../services/fetch_jobs.dart';
 import '../services/follow_db.dart';
 import '../services/scan_estimate.dart';
 import '../utils/app_snackbar.dart';
 import '../utils/number_format.dart';
+import 'fetch_busy_note.dart';
 import 'follow_section_header.dart';
 import 'skeleton.dart';
 
@@ -55,12 +57,14 @@ class _BlockScanSectionState extends State<BlockScanSection> {
   void initState() {
     super.initState();
     _scan.progress.addListener(_onProgress);
+    FetchJobs.instance.current.addListener(_onProgress);
     _load();
   }
 
   @override
   void dispose() {
     _scan.progress.removeListener(_onProgress);
+    FetchJobs.instance.current.removeListener(_onProgress);
     super.dispose();
   }
 
@@ -99,8 +103,9 @@ class _BlockScanSectionState extends State<BlockScanSection> {
     // 進捗が届く。自分の対象でなければ、進捗ではなく「塞がっている」
     // ことを示す。同じグルグルを出すと自分が動いているように見える
     final isMine = running != null && running.targetHandle == widget.handle;
-    final otherRunning =
-        running != null && running.targetHandle != widget.handle;
+    // 別の対象の調査も、フォロー/フォロワー取得や詳しい情報の取得も、
+    // 走っている間はここから始められない
+    final blockedBy = isMine ? null : FetchJobs.instance.current.value;
     final hasUnfinished = _runs.any((r) => !r.isCompleted);
     // 決めていなければ、気にしておくべきものがあるときだけ開いておく
     final open = _expanded ?? (isMine || hasUnfinished);
@@ -138,7 +143,7 @@ class _BlockScanSectionState extends State<BlockScanSection> {
                         ? null
                         : '${_runs.length}件',
           ),
-          if (open) ..._body(running, isMine, otherRunning, hasUnfinished),
+          if (open) ..._body(running, isMine, blockedBy, hasUnfinished),
         ],
       ),
     );
@@ -151,10 +156,10 @@ class _BlockScanSectionState extends State<BlockScanSection> {
   }
 
   List<Widget> _body(BlockScanProgress? running, bool isMine,
-          bool otherRunning, bool hasUnfinished) =>
+          RunningFetch? blockedBy, bool hasUnfinished) =>
       [
           if (isMine) _runningCard(running!),
-          if (otherRunning) _otherRunningNote(running!),
+          if (blockedBy != null) FetchBusyNote(blockedBy),
           if (_loading) ...[
             // 調査の記録 1 行ぶんの形で待つ
             const SkeletonBox(height: 72, radius: 16),
@@ -165,57 +170,17 @@ class _BlockScanSectionState extends State<BlockScanSection> {
           ],
           if (!isMine)
             _startButton(
-              blocked: otherRunning,
+              blocked: blockedBy != null,
               // 続きがあるうちは、そちらが主。新規は控えめに出す
               hasResumable: hasUnfinished,
             ),
       ];
 
-  /// 別の対象を調べている間は、この対象の様子ではないことをはっきり出す。
-  /// 走査は 1 本ずつなので、終わるまでここでは始められない
-  Widget _otherRunningNote(BlockScanProgress p) {
-    final scheme = Theme.of(context).colorScheme;
-    return Container(
-      margin: const EdgeInsets.only(bottom: 8),
-      decoration: BoxDecoration(
-        color: scheme.surfaceContainer,
-        borderRadius: BorderRadius.circular(16),
-      ),
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 13),
-      child: Row(
-        children: [
-          Icon(Icons.hourglass_empty, size: 20, color: scheme.onSurfaceVariant),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  '@${p.targetHandle} を調査中',
-                  style: TextStyle(
-                      fontSize: 13,
-                      fontWeight: FontWeight.bold,
-                      color: scheme.onSurfaceVariant),
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  'この対象ではありません。終わるまで始められません',
-                  style: TextStyle(
-                      fontSize: 11, color: scheme.onSurfaceVariant),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
   Widget _startButton({bool blocked = false, bool hasResumable = false}) {
     final scheme = Theme.of(context).colorScheme;
     final enabled = widget.account != null && !blocked;
     final label = blocked
-        ? '他の調査が終わるまで待機'
+        ? '他の取得が終わるまで待機'
         : hasResumable
             ? '新しく調査を始める'
             : '調査を開始';
@@ -352,7 +317,7 @@ class _BlockScanSectionState extends State<BlockScanSection> {
   /// 行の中で押せるのは「再開」だけにする。削除は結果画面のメニューに置く
   Widget _runRow(BlockRun r) {
     final s = _stats[r.id];
-    final resumable = !r.isCompleted && !_scan.isRunning;
+    final resumable = !r.isCompleted && !FetchJobs.instance.isBusy;
     final scheme = Theme.of(context).colorScheme;
     final ranBy =
         r.sessionAccountId == null ? null : _accountOf(r.sessionAccountId!);

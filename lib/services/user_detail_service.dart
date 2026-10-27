@@ -4,6 +4,7 @@ import '../models/account.dart';
 import '../models/post.dart';
 import '../models/sns_service.dart';
 import 'debug_log_service.dart';
+import 'fetch_jobs.dart';
 import 'follow_db.dart';
 import 'x_api_service.dart';
 
@@ -124,6 +125,7 @@ class UserDetailService {
     bool refresh = false,
   }) async {
     if (isRunning) throw StateError('別の取得が実行中です');
+    FetchJobs.instance.ensureIdle(FetchJobKind.userDetail);
     if (service != SnsService.x || account.service != SnsService.x) {
       throw StateError('詳しい情報の取得は X のみ対応しています');
     }

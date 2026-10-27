@@ -5,6 +5,7 @@ import '../models/follow_user.dart';
 import '../models/sns_service.dart';
 import 'account_pool.dart';
 import 'debug_log_service.dart';
+import 'fetch_jobs.dart';
 import 'follow_capture_engine.dart';
 import 'follow_capture_job_service.dart';
 import 'follow_capture_webview_service.dart';
@@ -104,9 +105,9 @@ class BlockScanService {
   /// 現実的でない。フォロー/フォロワー取得と同じように、放っておいても
   /// 進むようにする。走るのは 1 本だけ（新しいものから）。
   Future<void> resumeUnfinished({required List<Account> accounts}) async {
-    if (isRunning) return;
-    final job = FollowCaptureJobService.instance;
-    if (job.isRunning || job.isWebViewBusy) return;
+    // 他の取得が走っているなら、終わってから次の起動で拾う
+    if (FetchJobs.instance.isBusy) return;
+    if (FollowCaptureJobService.instance.isWebViewBusy) return;
     if (accounts.isEmpty) return;
 
     final runs = await FollowDb.instance.listBlockRuns(limit: 20);
@@ -149,6 +150,7 @@ class BlockScanService {
     bool keepPopular = true,
   }) async {
     if (isRunning) throw StateError('別の調査が実行中です');
+    FetchJobs.instance.ensureIdle(FetchJobKind.blockScan);
     if (account.service != SnsService.x) {
       throw StateError('つながり調査は X のみ対応しています');
     }
@@ -237,8 +239,8 @@ class BlockScanService {
     required String targetHandle,
   }) async {
     if (isRunning) throw StateError('別の調査が実行中です');
+    FetchJobs.instance.ensureIdle(FetchJobKind.blockScan);
     final job = FollowCaptureJobService.instance;
-    if (job.isRunning) throw StateError('フォロー/フォロワーの取得が実行中です');
     if (job.isWebViewBusy) throw StateError('他の処理が WebView を使用中です');
 
     final db = FollowDb.instance;
@@ -308,7 +310,7 @@ class BlockScanService {
       progress.value = null;
       await webView.reset();
       // 走査用 WebView は 1 人ごとに畳んでいるので、ここで最後に落とす
-      job.hostNeeded.value = false;
+      await webView.closeHost();
       if (schedulerWasRunning) scheduler.start();
       DebugLogService.instance
           .log('BlockScan', '調査を終了 (completed=$completed)');
@@ -333,7 +335,6 @@ class BlockScanService {
     required Set<String> relations,
   }) async {
     final db = FollowDb.instance;
-    final job = FollowCaptureJobService.instance;
     final webView = FollowCaptureWebViewService.instance;
 
     // 集計表ができる前の調査を続けるとき、この人の途中までの結果が
@@ -344,9 +345,8 @@ class BlockScanService {
 
     // 走査用 WebView は 1 本ごとに作り直す (使い回すと X の SPA が
     // 起動しない)。ここでも 1 人ごとに立て直す
-    job.hostNeeded.value = true;
     try {
-      await webView.waitForHost();
+      await webView.openHost();
     } catch (e) {
       await db.finishBlockSource(runId, source.restId,
           status: 'failed', reason: 'WebView を用意できなかった: $e');
@@ -419,7 +419,7 @@ class BlockScanService {
             '@${source.screenName} 打ち切り $collected件（フォローが多い）');
       }
       await webView.reset();
-      job.hostNeeded.value = false;
+      await webView.closeHost();
     }
   }
 }

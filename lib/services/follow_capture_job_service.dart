@@ -7,6 +7,7 @@ import '../models/x_rate_limit.dart';
 import 'account_pool.dart';
 import 'bluesky_api_service.dart';
 import 'debug_log_service.dart';
+import 'fetch_jobs.dart';
 import 'follow_capture_bluesky_service.dart';
 import 'follow_capture_engine.dart';
 import 'follow_capture_webview_service.dart';
@@ -153,9 +154,9 @@ class FollowCaptureJobService {
   final progress = ValueNotifier<FollowJobProgress?>(null);
 
   /// 走査用 WebView をアプリのルートに置いてほしいか。
-  /// これを true にするとどの画面に居ても走査が続く（アプリを開いている限り）。
-  /// 常時 WebView を抱えるとメモリを食うので、走査中だけ立てる。
-  final hostNeeded = ValueNotifier<bool>(false);
+  /// 持ち主は WebView のサービス。立て方を表と裏で切り替えるのがそちらなので
+  ValueNotifier<bool> get hostNeeded =>
+      FollowCaptureWebViewService.instance.hostNeeded;
 
   CaptureCancelToken? _cancelToken;
 
@@ -226,7 +227,7 @@ class FollowCaptureJobService {
         await run(account: account, targetHandle: handle, kind: kind);
       }
     } finally {
-      hostNeeded.value = false;
+      await FollowCaptureWebViewService.instance.closeHost();
     }
   }
 
@@ -244,7 +245,7 @@ class FollowCaptureJobService {
     required List<Account> accounts,
     bool force = false,
   }) async {
-    if (isRunning || isWebViewBusy) return;
+    if (FetchJobs.instance.isBusy || isWebViewBusy) return;
     await loadSettings();
     if (!force && !autoRunOnLaunch) return;
     if (accounts.isEmpty) return;
@@ -253,7 +254,7 @@ class FollowCaptureJobService {
     try {
       await _runDueWork(accounts);
     } finally {
-      hostNeeded.value = false;
+      await FollowCaptureWebViewService.instance.closeHost();
     }
     await FollowDb.instance.pruneToSizeLimit(sizeLimitBytes);
   }
@@ -386,6 +387,7 @@ class FollowCaptureJobService {
     // 対象の SNS は実行アカウントの SNS と同じ。別々には選べない
     final service = account.service;
     if (isRunning) throw StateError('別の走査が実行中です');
+    FetchJobs.instance.ensureIdle(FetchJobKind.followCapture);
     if (service == SnsService.x && isWebViewBusy) {
       throw StateError('他の処理が WebView を使用中です');
     }
@@ -423,9 +425,8 @@ class FollowCaptureJobService {
     // snapshot が running のまま残り、WebView も畳まれずに居座る。
     try {
       if (needsHost) {
-        // ルートにホストを立ててから走らせる（画面を移動しても継続させるため）
-        hostNeeded.value = true;
-        await webView.waitForHost();
+        // ホストを立ててから走らせる（画面を移動しても、裏に回っても続けるため）
+        await webView.openHost();
       }
 
       _cancelToken = CaptureCancelToken();
@@ -508,7 +509,7 @@ class FollowCaptureJobService {
         //
         // 畳むと host 側が detachHost で古い controller を手放すので、
         // 次の waitForHost は新しいものを待てる。
-        hostNeeded.value = false;
+        await webView.closeHost();
       } else {
         bluesky.reset();
       }

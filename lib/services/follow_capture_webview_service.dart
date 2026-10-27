@@ -2,14 +2,14 @@ import 'dart:async';
 import 'dart:collection';
 import 'dart:convert';
 import 'dart:io' show Platform;
-import 'dart:ui' show Size;
 
-import 'package:flutter/foundation.dart';
+import 'package:flutter/widgets.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 
 import '../models/account.dart';
 import '../models/x_rate_limit.dart';
 import '../utils/platform_ua.dart';
+import 'android_background.dart';
 import 'debug_log_service.dart';
 import 'follow_capture_engine.dart';
 import 'follow_list_parser.dart';
@@ -230,6 +230,8 @@ class FollowCaptureWebViewService {
   /// HeadlessInAppWebView では捕獲はできるものの再送が必ず 404 になる
   /// (ビューポート・ペース・txId 寿命・ct0 ずれはいずれも実測で否定済み)。
   /// 表示中の WebView なら数分後でも 200 が返るため、実表示のものを使う。
+  /// 原因は Headless が非表示 (INVISIBLE) で置かれること。端末側で
+  /// 見えている状態に直せば Headless でも 200 が返る（[openHost] 参照）。
   void attach(InAppWebViewController controller) {
     _controller = controller;
     controller.addJavaScriptHandler(
@@ -325,17 +327,94 @@ class FollowCaptureWebViewService {
     }
   }
 
-  // ignore: unused_element
-  Future<void> _ensureHeadlessWebView() async {
-    if (_webView != null && _controller != null) return;
+  // ─── 裏に回っているときの WebView ───
 
-    final created = Completer<void>();
+  /// 走査用 WebView が要るときに呼ぶ。終わったら必ず [closeHost] を呼ぶこと。
+  ///
+  /// 画面に出ているときは、これまでどおりルートの [FollowCaptureWebViewHost]
+  /// を立てる（実績のある経路）。
+  ///
+  /// アプリが裏に回っていると Flutter は描画を止めるので、ルートに部品を
+  /// 差し込んでも WebView が作られず、待ち続けて失敗する。そのときは
+  /// HeadlessInAppWebView を作り、端末側で「見えている」状態に直してから使う。
+  /// Headless のままだと非表示扱いになり、再送が 404 になるため
+  /// （[attach] の説明を参照）。直せば表でも裏でも、画面を消していても
+  /// 最後まで取れる（実測）。
+  Future<void> openHost() async {
+    if (_controller != null) {
+      // 裏に居る間は描画が止まるので、前の人の走査で畳んだはずのホストが
+      // 木に残ったまま生きている（実測: 裏ではこれを使い回して最後まで進む）。
+      // 「要る」と言い直しておかないと、表に戻った最初の描画で畳まれ、
+      // 走査中の WebView が消える
+      if (_webView == null) hostNeeded.value = true;
+      return;
+    }
+    if (_framesRunning) {
+      hostNeeded.value = true;
+      await waitForHost();
+      return;
+    }
+    await _openHeadless();
+  }
 
-    _webView = HeadlessInAppWebView(
+  /// [openHost] で立てた WebView を畳む。
+  /// 1 本ごとに作り直す前提なので、使い回さない（[FollowCaptureJobService] 参照）
+  Future<void> closeHost() async {
+    final headless = _webView;
+    if (headless != null) {
+      _webView = null;
+      detach();
+      try {
+        await headless.dispose();
+      } catch (e) {
+        debugPrint('[FollowCaptureWebView] Headless の破棄に失敗: $e');
+      }
+      DebugLogService.instance
+          .log('FollowCaptureWebView', '裏用の WebView を畳みました');
+    }
+    hostNeeded.value = false;
+  }
+
+  /// 走査用 WebView をアプリのルートに置いてほしいか。
+  /// これを true にするとどの画面に居ても走査が続く。
+  /// 常時 WebView を抱えるとメモリを食うので、走査中だけ立てる。
+  final hostNeeded = ValueNotifier<bool>(false);
+
+  /// Flutter が描画しているか。裏に回る（hidden / paused）と止まる
+  static bool get _framesRunning {
+    final state = WidgetsBinding.instance.lifecycleState;
+    return state == null ||
+        state == AppLifecycleState.resumed ||
+        state == AppLifecycleState.inactive;
+  }
+
+  /// 画面の外に置く WebView と、裏に置く WebView の共通設定。
+  ///
+  /// 裏に回ると、WebView は既定で「見えていない」扱いになり、描画用の
+  /// プロセスの優先度も落とされる。Android はそのプロセスを凍結するので、
+  /// ページ内の fetch が返らなくなる（実測: 裏に回ると 45 秒で毎回
+  /// タイムアウト）。見え方と優先度を、表に居るときのまま保たせる。
+  static InAppWebViewSettings settings() => InAppWebViewSettings(
+        javaScriptEnabled: true,
+        userAgent: platformUserAgent,
+        domStorageEnabled: true,
+        thirdPartyCookiesEnabled: true,
+        // 窓が隠れても「見えている」扱いのままにする（名前は音声向けだが、
+        // 中身は onWindowVisibilityChanged を無視するだけ）
+        allowBackgroundAudioPlaying: true,
+        rendererPriorityPolicy: RendererPriorityPolicy(
+          rendererRequestedPriority: RendererPriority.RENDERER_PRIORITY_IMPORTANT,
+          waivedWhenNotVisible: false,
+        ),
+      );
+
+  Future<void> _openHeadless() async {
+    _hostReady = Completer<void>();
+    final headless = HeadlessInAppWebView(
       // サイズを与えないと 0x0 のままになり、X が UA (スマホ) と
       // ビューポートの不整合を bot と判定して 404 を返す。
-      // 実機相当の論理ピクセルを渡しておく。
-      initialSize: const Size(412, 915),
+      // 画面外のホストと同じ大きさにそろえる。
+      initialSize: hostSize,
       initialUrlRequest: URLRequest(url: WebUri('about:blank')),
       initialUserScripts: UnmodifiableListView([
         UserScript(
@@ -343,47 +422,32 @@ class FollowCaptureWebViewService {
           injectionTime: UserScriptInjectionTime.AT_DOCUMENT_START,
         ),
       ]),
-      initialSettings: InAppWebViewSettings(
-        javaScriptEnabled: true,
-        userAgent: platformUserAgent,
-        domStorageEnabled: true,
-        thirdPartyCookiesEnabled: true,
-      ),
-      onWebViewCreated: (controller) {
-        _controller = controller;
-        controller.addJavaScriptHandler(
-          handlerName: 'onFollowCaptured',
-          callback: (args) {
-            if (args.isNotEmpty) _onCaptured(args[0].toString());
-          },
-        );
-        controller.addJavaScriptHandler(
-          handlerName: 'onFollowPage',
-          callback: (args) {
-            if (args.isNotEmpty && !(_fetchCompleter?.isCompleted ?? true)) {
-              _fetchCompleter!.complete(args[0].toString());
-            }
-          },
-        );
-        if (!created.isCompleted) created.complete();
-      },
+      initialSettings: settings(),
+      onWebViewCreated: attach,
       onLoadStop: (controller, url) {
+        noteLoadStop(url?.toString());
         // SPA 遷移で user script が効かない場合の保険
         controller.evaluateJavascript(source: _interceptorScript);
       },
-      onConsoleMessage: (controller, msg) {
-        if (msg.messageLevel == ConsoleMessageLevel.ERROR) {
-          DebugLogService.instance.log('FollowCaptureWebView',
-              'console error: ${msg.message.length > 200 ? msg.message.substring(0, 200) : msg.message}');
-        }
-      },
+      onConsoleMessage: (controller, msg) => noteConsole(msg),
     );
-
-    await _webView!.run();
-    await created.future.timeout(const Duration(seconds: 15), onTimeout: () {
-      debugPrint('[FollowCaptureWebView] controller 生成がタイムアウト');
-    });
+    _webView = headless;
+    await headless.run();
+    try {
+      await waitForHost();
+    } catch (_) {
+      await closeHost();
+      rethrow;
+    }
+    // Headless は非表示 (INVISIBLE) で置かれる。表のホストと同じく
+    // 「見えているが画面の外」に直す
+    final shown = await AndroidBackground.revealWebView(headless.id);
+    DebugLogService.instance.log('FollowCaptureWebView',
+        '裏用の WebView を立てました (表示に直す: ${shown ? '成功' : '失敗'})');
   }
+
+  /// 画面外のホストと裏用の WebView の大きさ。実機相当の論理ピクセル
+  static const hostSize = Size(412, 915);
 
   void _onCaptured(String raw) {
     try {

@@ -5,11 +5,13 @@ import '../models/account.dart';
 import '../models/sns_service.dart';
 import '../screens/birthday_screen.dart';
 import '../screens/last_post_screen.dart';
+import '../services/fetch_jobs.dart';
 import '../services/follow_db.dart';
 import '../services/scan_estimate.dart';
 import '../services/user_detail_service.dart';
 import '../utils/app_snackbar.dart';
 import '../utils/number_format.dart';
+import 'fetch_busy_note.dart';
 import 'follow_section_header.dart';
 import 'skeleton.dart';
 
@@ -51,13 +53,19 @@ class _UserDetailSectionState extends State<UserDetailSection> {
   void initState() {
     super.initState();
     _svc.progress.addListener(_onProgress);
+    FetchJobs.instance.current.addListener(_onBusyChanged);
     _load();
   }
 
   @override
   void dispose() {
     _svc.progress.removeListener(_onProgress);
+    FetchJobs.instance.current.removeListener(_onBusyChanged);
     super.dispose();
+  }
+
+  void _onBusyChanged() {
+    if (mounted) setState(() {});
   }
 
   void _onProgress() {
@@ -99,7 +107,9 @@ class _UserDetailSectionState extends State<UserDetailSection> {
 
     final running = _svc.progress.value;
     final isMine = running != null && _isMine;
-    final otherRunning = running != null && !_isMine;
+    // 別の対象の取得も、フォロー/フォロワー取得やつながり調査も、
+    // 走っている間はここから始められない
+    final blockedBy = isMine ? null : FetchJobs.instance.current.value;
     final c = _coverage;
     final hasData = c != null && (c.profileFetched > 0 || c.postsFetched > 0);
     final open = _expanded ?? (isMine || hasData);
@@ -126,7 +136,7 @@ class _UserDetailSectionState extends State<UserDetailSection> {
                     ? null
                     : '${formatNumber(c.profileFetched > c.postsFetched ? c.profileFetched : c.postsFetched)}人分',
           ),
-          if (open) ..._body(running, isMine, otherRunning),
+          if (open) ..._body(running, isMine, blockedBy),
         ],
       ),
     );
@@ -139,11 +149,11 @@ class _UserDetailSectionState extends State<UserDetailSection> {
   }
 
   List<Widget> _body(
-      UserDetailProgress? running, bool isMine, bool otherRunning) {
+      UserDetailProgress? running, bool isMine, RunningFetch? blockedBy) {
     final c = _coverage;
     return [
       if (isMine) _runningCard(running!),
-      if (otherRunning) _otherRunningNote(running!),
+      if (blockedBy != null) FetchBusyNote(blockedBy),
       if (_loading) ...[
         const SkeletonBox(height: 48, radius: 12),
         const SizedBox(height: 4),
@@ -185,7 +195,7 @@ class _UserDetailSectionState extends State<UserDetailSection> {
         SizedBox(
           width: double.infinity,
           child: OutlinedButton(
-            onPressed: widget.account != null && !otherRunning && c != null
+            onPressed: widget.account != null && blockedBy == null && c != null
                 ? _pickAndStart
                 : null,
             style: OutlinedButton.styleFrom(
@@ -195,7 +205,7 @@ class _UserDetailSectionState extends State<UserDetailSection> {
               textStyle:
                   const TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
             ),
-            child: Text(otherRunning ? '他の取得が終わるまで待機' : '取得する'),
+            child: Text(blockedBy != null ? '他の取得が終わるまで待機' : '取得する'),
           ),
         ),
     ];
@@ -236,30 +246,6 @@ class _UserDetailSectionState extends State<UserDetailSection> {
                 color: onTap == null ? scheme.outlineVariant : scheme.onSurfaceVariant),
           ],
         ),
-      ),
-    );
-  }
-
-  Widget _otherRunningNote(UserDetailProgress p) {
-    final scheme = Theme.of(context).colorScheme;
-    return Container(
-      margin: const EdgeInsets.only(bottom: 8),
-      decoration: BoxDecoration(
-        color: scheme.surfaceContainer,
-        borderRadius: BorderRadius.circular(16),
-      ),
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 13),
-      child: Row(
-        children: [
-          Icon(Icons.hourglass_empty, size: 20, color: scheme.onSurfaceVariant),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Text(
-              '@${p.targetHandle} の取得中。終わるまで始められません',
-              style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant),
-            ),
-          ),
-        ],
       ),
     );
   }

@@ -84,6 +84,12 @@ enum FollowCaptureReason {
 
   /// ラウンド上限に達した
   maxRounds,
+
+  /// 相手が非公開・凍結・削除済みで、一覧を読めない
+  targetUnavailable,
+
+  /// 一覧ページを開いても X が一覧の通信を投げず、雛形を捕獲できなかった
+  captureFailed,
 }
 
 /// 1 ターゲット × 1 種別の走査結果
@@ -95,6 +101,7 @@ class FollowCaptureResult {
     this.cursor,
     this.httpStatus,
     this.rateLimit,
+    this.detail,
   });
 
   /// 全件取得しきったか
@@ -106,6 +113,10 @@ class FollowCaptureResult {
   final String? cursor;
   final int? httpStatus;
   final XRateLimit? rateLimit;
+
+  /// 理由の補足。[FollowCaptureReason.targetUnavailable] なら
+  /// 「非公開」「凍結」などの短い言い方
+  final String? detail;
 }
 
 /// 進捗通知
@@ -145,6 +156,35 @@ class CaptureCancelledException implements Exception {
 
   @override
   String toString() => '走査が中断されました';
+}
+
+/// 相手が非公開・凍結・削除済みで一覧を読めないと分かったときの例外。
+///
+/// 取得口が UserByScreenName の応答を見て投げる。エンジンはやり直さず
+/// すぐに [FollowCaptureReason.targetUnavailable] で終える。
+class FollowTargetUnavailableException implements Exception {
+  const FollowTargetUnavailableException(this.state);
+
+  final FollowTargetState state;
+
+  @override
+  String toString() =>
+      '@${state.screenName} は${state.availability.label}ため一覧を読めません';
+}
+
+/// 一覧ページを開いても雛形になる通信を捕獲できなかったときの例外。
+///
+/// 捕獲は中で読み込み直しを繰り返したうえでのタイムアウトなので、
+/// 通信エラーのように何度も間を空けてやり直す意味が薄い。
+/// エンジンは 1 回だけ取り直して、だめなら
+/// [FollowCaptureReason.captureFailed] で終える。
+class FollowCaptureFailedException implements Exception {
+  const FollowCaptureFailedException(this.message);
+
+  final String message;
+
+  @override
+  String toString() => message;
 }
 
 /// 走査のキャンセル用トークン
@@ -227,6 +267,12 @@ class FollowCaptureEngine {
   /// 429 で reset 時刻が読めなかったときの待ち時間
   static const rateLimitFallbackWait = Duration(seconds: 60);
 
+  /// 捕獲の空振りをやり直す回数。捕獲自体が 1 分以上待っているので 1 回だけ
+  static const maxCaptureRetries = 1;
+
+  /// 捕獲をやり直す前に置く間
+  static const captureRetryWait = Duration(seconds: 15);
+
   /// 暴走防止のラウンド上限
   static const defaultMaxRounds = 5000;
 
@@ -256,6 +302,7 @@ class FollowCaptureEngine {
     var totalUsers = 0;
     var round = 0;
     var consecutiveNetworkErrors = 0;
+    var captureRetries = 0;
     DateTime? lastFetchAt;
     XRateLimit? lastRateLimit;
 
@@ -265,6 +312,7 @@ class FollowCaptureEngine {
       FollowCaptureReason reason, {
       required bool completed,
       int? httpStatus,
+      String? detail,
     }) {
       onWaiting?.call(null);
       _log(kind,
@@ -276,6 +324,7 @@ class FollowCaptureEngine {
         cursor: cursor,
         httpStatus: httpStatus,
         rateLimit: lastRateLimit,
+        detail: detail,
       );
     }
 
@@ -345,6 +394,22 @@ class FollowCaptureEngine {
           cancelToken: cancelToken,
         );
         lastFetchAt = DateTime.now();
+      } on FollowTargetUnavailableException catch (e) {
+        // 鍵・凍結・削除済み。待っても読めるようにはならないので即終える
+        _log(kind, 'target unavailable: $e');
+        return finish(FollowCaptureReason.targetUnavailable,
+            completed: false, detail: e.state.availability.label);
+      } on FollowCaptureFailedException catch (e) {
+        if (cancelled()) {
+          return finish(FollowCaptureReason.aborted, completed: false);
+        }
+        captureRetries++;
+        _log(kind, 'capture failed at round $round ($captureRetries): $e');
+        if (captureRetries > maxCaptureRetries) {
+          return finish(FollowCaptureReason.captureFailed, completed: false);
+        }
+        await wait('一覧ページの開き直し', captureRetryWait);
+        continue;
       } catch (e) {
         // 取得口の中の待機から抜けてきた場合も含めて、まず中断を見る。
         // 再試行に載せてしまうと中断ボタンが数十秒効かなくなる。

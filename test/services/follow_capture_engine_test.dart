@@ -6,6 +6,7 @@ import 'package:mobile_omniverse/models/sns_service.dart';
 import 'package:mobile_omniverse/models/x_rate_limit.dart';
 import 'package:mobile_omniverse/services/account_pool.dart';
 import 'package:mobile_omniverse/services/follow_capture_engine.dart';
+import 'package:mobile_omniverse/services/follow_list_parser.dart';
 
 Account _account(String id) => Account(
       id: id,
@@ -390,6 +391,50 @@ void main() {
       expect(result.completed, isFalse);
       expect(result.reason, FollowCaptureReason.httpError);
       expect(result.httpStatus, 500);
+    });
+  });
+
+  group('読めない相手', () {
+    test('鍵・凍結・削除済みはやり直さずに targetUnavailable で終える', () async {
+      handler = (call, _) async => throw const FollowTargetUnavailableException(
+            FollowTargetState(
+              screenName: 'someone',
+              availability: FollowTargetAvailability.protected,
+            ),
+          );
+
+      final result = await run();
+
+      expect(result.reason, FollowCaptureReason.targetUnavailable);
+      expect(result.completed, isFalse);
+      expect(result.detail, '非公開');
+      expect(requestedCursors, [null]);
+      expect(sleeps, isEmpty);
+    });
+
+    test('捕獲の空振りは 1 回だけ取り直して captureFailed で終える', () async {
+      handler = (call, _) async =>
+          throw const FollowCaptureFailedException('捕獲できず');
+
+      final result = await run();
+
+      expect(result.reason, FollowCaptureReason.captureFailed);
+      expect(result.completed, isFalse);
+      // 1 回目 → 短い間 → 2 回目で諦める。通信エラーの 30 秒×5 回には載せない
+      expect(requestedCursors, [null, null]);
+      expect(sleeps, [FollowCaptureEngine.captureRetryWait]);
+    });
+
+    test('取り直しで捕獲できれば続きを読む', () async {
+      handler = (call, _) async {
+        if (call == 0) throw const FollowCaptureFailedException('捕獲できず');
+        return _ok('1', '0|end');
+      };
+
+      final result = await run();
+
+      expect(result.reason, FollowCaptureReason.terminal);
+      expect(result.totalUsers, 1);
     });
   });
 

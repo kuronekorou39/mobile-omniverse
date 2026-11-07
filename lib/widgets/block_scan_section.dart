@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -61,15 +63,29 @@ class _BlockScanSectionState extends State<BlockScanSection> {
     _load();
   }
 
+  /// 待機中だけ 1 秒ごとに描き直して、残り秒数を進める
+  Timer? _waitTick;
+
   @override
   void dispose() {
+    _waitTick?.cancel();
     _scan.progress.removeListener(_onProgress);
     FetchJobs.instance.current.removeListener(_onProgress);
     super.dispose();
   }
 
   void _onProgress() {
-    if (mounted) setState(() {});
+    if (!mounted) return;
+    final waiting = _scan.progress.value?.waitingReason != null;
+    if (waiting && _waitTick == null) {
+      _waitTick = Timer.periodic(const Duration(seconds: 1), (_) {
+        if (mounted) setState(() {});
+      });
+    } else if (!waiting) {
+      _waitTick?.cancel();
+      _waitTick = null;
+    }
+    setState(() {});
   }
 
   Future<void> _load() async {
@@ -274,6 +290,16 @@ class _BlockScanSectionState extends State<BlockScanSection> {
                     fontSize: 11,
                     color: Theme.of(context).colorScheme.onSurfaceVariant),
               ),
+              // 止まって見えるときに、待っているだけだと分かるように
+              if (p.waitingReason case final reason?)
+                Text(
+                  _waitingLabel(reason, p.waitingUntil),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                      fontSize: 11,
+                      color: Theme.of(context).colorScheme.tertiary),
+                ),
               if (p.total > 0) ...[
                 const SizedBox(height: 6),
                 ClipRRect(
@@ -286,6 +312,12 @@ class _BlockScanSectionState extends State<BlockScanSection> {
           ),
         ),
       );
+
+  static String _waitingLabel(String reason, DateTime? until) {
+    final left = until?.difference(DateTime.now());
+    if (left == null || left.isNegative) return '待機中: $reason';
+    return '待機中: $reason（あと${left.inSeconds}秒）';
+  }
 
   /// 調査の記録はどれも同じ性質の行なので、ひとつの面にまとめる
   Widget _runList() {

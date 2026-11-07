@@ -25,6 +25,8 @@ class BlockScanProgress {
     this.total = 0,
     this.cancelling = false,
     this.remainingItems = 0,
+    this.waitingReason,
+    this.waitingUntil,
   });
 
   final int runId;
@@ -43,6 +45,11 @@ class BlockScanProgress {
   /// まだ手をつけていない起点のフォロー数の合計。残り時間の見積もりに使う
   final int remainingItems;
 
+  /// 通信を止めて待っている理由（レート制限、やり直しの間 など）。
+  /// 止まっているのか待っているのかが分からないと、中断するか迷う
+  final String? waitingReason;
+  final DateTime? waitingUntil;
+
   BlockScanProgress copyWith({
     String? currentHandle,
     int? currentCollected,
@@ -50,6 +57,9 @@ class BlockScanProgress {
     int? total,
     bool? cancelling,
     int? remainingItems,
+    String? waitingReason,
+    DateTime? waitingUntil,
+    bool clearWaiting = false,
   }) =>
       BlockScanProgress(
         runId: runId,
@@ -61,6 +71,9 @@ class BlockScanProgress {
         total: total ?? this.total,
         cancelling: cancelling ?? this.cancelling,
         remainingItems: remainingItems ?? this.remainingItems,
+        waitingReason:
+            clearWaiting ? null : (waitingReason ?? this.waitingReason),
+        waitingUntil: clearWaiting ? null : (waitingUntil ?? this.waitingUntil),
       );
 }
 
@@ -381,12 +394,26 @@ class BlockScanService {
           progress.value =
               progress.value?.copyWith(currentCollected: collected);
         },
+        onWaiting: (w) {
+          progress.value = w == null
+              ? progress.value?.copyWith(clearWaiting: true)
+              : progress.value?.copyWith(
+                  waitingReason: w.reason,
+                  waitingUntil: w.startedAt.add(w.total),
+                );
+        },
       );
 
       if (result.completed) {
         await db.finishBlockSource(runId, source.restId, status: 'done');
         ScanLogService.instance
             .log('@${source.screenName} 完了 $collected件');
+      } else if (result.reason == FollowCaptureReason.targetUnavailable) {
+        // 鍵・凍結・削除済み。失敗ではなく、調べられない相手として外す
+        final label = result.detail ?? '読めない';
+        await db.finishBlockSource(runId, source.restId,
+            status: 'skipped', reason: label);
+        ScanLogService.instance.log('@${source.screenName} 対象外（$label）');
       } else if (_cancelToken?.isCancelled ?? false) {
         // 中断。status は running のままにして、次回この人の続きから
         DebugLogService.instance.log(

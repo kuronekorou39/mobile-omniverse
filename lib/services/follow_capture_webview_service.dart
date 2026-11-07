@@ -162,6 +162,19 @@ class FollowCaptureWebViewService {
     } catch(e) {}
   }
 
+  // 相手の状態 (鍵・凍結・削除済み) は、X が一覧より先に投げる
+  // UserByScreenName の応答に載っている。読めない相手は一覧の通信が
+  // 飛ばないので、これを見ないと捕獲のタイムアウトまで待つことになる。
+  var USER = /\/UserByScreenName(\?|$)/;
+  function isUserOp(url){
+    return typeof url === 'string' && USER.test(url);
+  }
+  function reportUser(url, body){
+    try {
+      window.flutter_inappwebview.callHandler('onFollowUser', JSON.stringify({url:url, body:body}));
+    } catch(e) {}
+  }
+
   var originalFetch = window.fetch;
   window.fetch = function(){
     var args = arguments;
@@ -173,6 +186,12 @@ class FollowCaptureWebViewService {
       if (String(url).indexOf('/i/api/graphql/') >= 0) {
         p.then(function(r){ seen(url, r.status); })
          .catch(function(){ seen(url, 'ERR'); });
+      }
+      if (isUserOp(url)) {
+        p.then(function(r){ return r.clone(); }).then(function(c){
+          if (c.status !== 200) return;
+          return c.text().then(function(body){ reportUser(url, body); });
+        }).catch(function(){});
       }
       if (!isTarget(url)) return p;
 
@@ -214,6 +233,11 @@ class FollowCaptureWebViewService {
     if (info && String(info.url).indexOf('/i/api/graphql/') >= 0) {
       this.addEventListener('loadend', function(){ seen(info.url, self.status); });
     }
+    if (info && isUserOp(String(info.url))) {
+      this.addEventListener('load', function(){
+        if (self.status === 200) reportUser(String(info.url), self.responseText);
+      });
+    }
     if (info && isTarget(info.url) && !window.__fcw_replaying) {
       this.addEventListener('load', function(){
         if (self.status !== 200) return;
@@ -249,6 +273,12 @@ class FollowCaptureWebViewService {
       },
     );
     controller.addJavaScriptHandler(
+      handlerName: 'onFollowUser',
+      callback: (args) {
+        if (args.isNotEmpty) _onUserSeen(args[0].toString());
+      },
+    );
+    controller.addJavaScriptHandler(
       handlerName: 'onFollowSeen',
       callback: (args) {
         if (args.isNotEmpty && _seenOps.length < 200) {
@@ -264,6 +294,38 @@ class FollowCaptureWebViewService {
 
   /// 捕獲を待っている間に X が投げた GraphQL (名前:status)。診断用
   final List<String> _seenOps = [];
+
+  /// いま一覧ページを開いている相手の @ID（小文字）
+  String? _capturingHandle;
+
+  /// UserByScreenName から読んだ、いまの相手の状態。読めない相手のときだけ入る
+  FollowTargetState? _targetState;
+
+  /// X が投げた UserByScreenName の応答。いま開いている相手が鍵・凍結・
+  /// 削除済みなら、捕獲を待たずに [FollowTargetUnavailableException] で抜ける
+  void _onUserSeen(String payload) {
+    final String url;
+    final String body;
+    try {
+      final map = json.decode(payload) as Map<String, dynamic>;
+      url = map['url'] as String? ?? '';
+      body = map['body'] as String? ?? '';
+    } catch (_) {
+      return;
+    }
+    final state = FollowTargetState.parse(url, body);
+    if (state == null || state.screenName != _capturingHandle) return;
+    if (state.readable) return;
+
+    _targetState = state;
+    DebugLogService.instance.log('FollowCaptureWebView',
+        '@${state.screenName} は${state.availability.label} '
+        '(${state.message ?? '-'}) → 捕獲を待たずに終える');
+    final completer = _captureCompleter;
+    if (completer != null && !completer.isCompleted) {
+      completer.completeError(FollowTargetUnavailableException(state));
+    }
+  }
 
   /// ホスト側の onLoadStop から。捕獲が空振りしたとき、そもそもどの
   /// ページに居たのか (ログイン画面に飛ばされた等) を残す
@@ -601,6 +663,7 @@ class FollowCaptureWebViewService {
     _pendingInitialPage = null;
     _capturingKind = kind;
     _seenOps.clear();
+    _targetState = null;
     // トークンは endpoint をまたいで使い回せるので、通常は捨てない。
     // 404 からの捕り直し (force) のときだけ作り直す。
     if (force) {
@@ -611,6 +674,7 @@ class FollowCaptureWebViewService {
 
     final path = kind == FollowListKind.following ? 'following' : 'followers';
     final handle = targetHandle.replaceFirst('@', '');
+    _capturingHandle = handle.toLowerCase();
     final url = WebUri('https://x.com/$handle/$path');
     await _controller!.loadUrl(urlRequest: URLRequest(url: url));
 
@@ -618,6 +682,10 @@ class FollowCaptureWebViewService {
       await CaptureCancelToken.race(
           _awaitCaptureWithReload(url, handle, path, cancelToken), cancelToken);
     } on TimeoutException {
+      // 一覧の通信が来なかった理由が相手の状態なら、それを伝える
+      if (_targetState case final state?) {
+        throw FollowTargetUnavailableException(state);
+      }
       // 通信が 1 本も来ないまま終わったときは、画面に何が出ているかを
       // 見ないと切り分けようがない。推測を重ねるより実物を見る。
       String? dump;
@@ -635,6 +703,12 @@ class FollowCaptureWebViewService {
           '(${Platform.operatingSystem}) '
           'seen=[${_seenOps.join(', ')}] page=$dump');
       return false;
+    }
+
+    // 一覧の通信は来たが、相手は鍵（フォローしていない）だった。
+    // 中身は空なので、0 件の完了ではなく「読めない」として扱う
+    if (_targetState case final state?) {
+      throw FollowTargetUnavailableException(state);
     }
 
     // 捕獲は「最初の XHR が飛んだ時点」で完了する。X のクライアントはその後も
@@ -736,7 +810,8 @@ class FollowCaptureWebViewService {
           kind: kind,
           cancelToken: cancelToken);
       if (!ok) {
-        throw StateError('Followers リクエストを捕獲できませんでした');
+        throw const FollowCaptureFailedException(
+            '一覧の通信を捕獲できませんでした');
       }
     }
 

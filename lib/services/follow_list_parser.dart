@@ -145,3 +145,132 @@ class FollowListParser {
 
 Map<String, dynamic> _asMap(Object? value) =>
     value is Map<String, dynamic> ? value : const {};
+
+/// 走査の相手がいまどういう状態か
+enum FollowTargetAvailability {
+  /// 一覧を読める
+  available,
+
+  /// 非公開で、実行アカウントがフォローしていない
+  protected,
+
+  /// 凍結されている
+  suspended,
+
+  /// アカウントが無い（削除・ID 変更）
+  missing,
+
+  /// X が「見られない」と言っているが理由が上のどれでもない
+  unavailable;
+
+  bool get readable => this == available;
+
+  /// 調査の記録や知らせに出す短い言い方
+  String get label => switch (this) {
+        available => '読める',
+        protected => '非公開',
+        suspended => '凍結',
+        missing => '存在しない',
+        unavailable => '見られない',
+      };
+}
+
+/// UserByScreenName の応答から読んだ、相手の状態。
+///
+/// 一覧ページを開くと X 自身が先に UserByScreenName を投げる。鍵・凍結・
+/// 削除済みだとフォロー一覧の通信は飛ばないので、ここを見ないと
+/// 捕獲のタイムアウトまで待つしかなくなる。
+class FollowTargetState {
+  const FollowTargetState({
+    required this.screenName,
+    required this.availability,
+    this.message,
+  });
+
+  /// 問い合わせた @ID（小文字）。応答が空でも URL から分かる
+  final String screenName;
+  final FollowTargetAvailability availability;
+
+  /// X が添えた理由の文（UserUnavailable の message）
+  final String? message;
+
+  bool get readable => availability.readable;
+
+  /// GraphQL の URL と応答本文から状態を読む。
+  ///
+  /// 応答が UserByScreenName の形をしていなければ null。
+  /// 「分からない」を「読める」に倒さないため、判断できない形は null で返し、
+  /// 呼び出し側は何もしない（これまでどおり捕獲を待つ）。
+  static FollowTargetState? parse(String url, String body) {
+    final fromUrl = _screenNameFromUrl(url);
+    final Object? decoded;
+    try {
+      decoded = json.decode(body);
+    } catch (_) {
+      return null;
+    }
+    if (decoded is! Map<String, dynamic>) return null;
+    final data = decoded['data'];
+    if (data is! Map<String, dynamic>) return null;
+
+    final result = _asMap(
+        _asMap(data['user'])['result']);
+
+    // 削除済み・存在しない ID は data が空で返る
+    if (result.isEmpty) {
+      if (fromUrl == null) return null;
+      return FollowTargetState(
+          screenName: fromUrl, availability: FollowTargetAvailability.missing);
+    }
+
+    final legacy = _asMap(result['legacy']);
+    final core = _asMap(result['core']);
+    final screenName = fromUrl ??
+        (legacy['screen_name'] ?? core['screen_name'])
+            ?.toString()
+            .toLowerCase();
+    if (screenName == null) return null;
+
+    if (result['__typename'] == 'UserUnavailable') {
+      final reason = result['reason']?.toString() ?? '';
+      final message = result['message']?.toString();
+      return FollowTargetState(
+        screenName: screenName,
+        availability: reason.toLowerCase() == 'suspended'
+            ? FollowTargetAvailability.suspended
+            : FollowTargetAvailability.unavailable,
+        message: message,
+      );
+    }
+
+    // X は legacy から privacy / relationship_perspectives へ移している最中。
+    // 両方を見る（FollowUser.fromUserResult と同じ）
+    final privacy = _asMap(result['privacy']);
+    final perspectives =
+        _asMap(result['relationship_perspectives']);
+    final isProtected =
+        (legacy['protected'] ?? privacy['protected']) == true;
+    final following =
+        (legacy['following'] ?? perspectives['following']) == true;
+    return FollowTargetState(
+      screenName: screenName,
+      availability: isProtected && !following
+          ? FollowTargetAvailability.protected
+          : FollowTargetAvailability.available,
+    );
+  }
+
+  /// URL の variables から screen_name を読む（小文字）
+  static String? _screenNameFromUrl(String url) {
+    final match = RegExp(r'[?&]variables=([^&]*)').firstMatch(url);
+    if (match == null) return null;
+    try {
+      final vars = json.decode(Uri.decodeComponent(match.group(1)!));
+      if (vars is! Map) return null;
+      final name = vars['screen_name'];
+      return name is String && name.isNotEmpty ? name.toLowerCase() : null;
+    } catch (_) {
+      return null;
+    }
+  }
+}

@@ -15,7 +15,6 @@ import '../utils/confirm_dialog.dart';
 import '../utils/image_headers.dart';
 import '../utils/number_format.dart';
 import '../widgets/block_scan_section.dart';
-import '../widgets/fetch_busy_note.dart';
 import '../widgets/user_detail_section.dart';
 import '../widgets/follow_section_header.dart';
 import '../widgets/skeleton.dart';
@@ -287,7 +286,6 @@ class _FollowTargetScreenState extends State<FollowTargetScreen> {
                 // 取得にも調査にも効くので、どちらのまとまりにも入れず先頭に置く
                 _accountSelector(t),
                 const SizedBox(height: FollowSectionHeader.sectionGap),
-                const FollowSectionHeader('フォロー / フォロワー'),
                 _dashboard(),
                 const SizedBox(height: 12),
                 _captureActions(),
@@ -357,7 +355,6 @@ class _FollowTargetScreenState extends State<FollowTargetScreen> {
               child: const SkeletonBox(width: 120, height: 14),
             ),
             const SizedBox(height: FollowSectionHeader.sectionGap),
-            const FollowSectionHeader('フォロー / フォロワー'),
             _dashboard(),
             const SizedBox(height: 12),
             _captureActions(),
@@ -380,8 +377,7 @@ class _FollowTargetScreenState extends State<FollowTargetScreen> {
           '実行アカウント',
           // 常に出しておくほどの情報ではないので畳む
           info: widget.service == SnsService.x
-              ? 'フォロー/フォロワーの取得と、つながり調査の両方に使います。\n'
-                  'X の鍵アカウントは、つながっているアカウントでないと取得できません'
+              ? '鍵アカウントは、つながっているアカウントでないと取得できません'
               : null,
         ),
         Container(
@@ -419,16 +415,6 @@ class _FollowTargetScreenState extends State<FollowTargetScreen> {
                       : (v) => _updateTarget(t.copyWith(sessionAccountId: v)),
                 ),
         ),
-        // 取得中は一時的なので黙って止める。調査のほうは数日残りうるので、
-        // なぜ替えられないのかを出しておく
-        if (_scanLocksAccount)
-          Padding(
-            padding: const EdgeInsets.fromLTRB(4, 6, 4, 0),
-            child: Text(
-              '未完了のつながり調査があるあいだは切り替えられません',
-              style: TextStyle(fontSize: 11, color: scheme.onSurfaceVariant),
-            ),
-          ),
       ],
     );
   }
@@ -568,7 +554,8 @@ class _FollowTargetScreenState extends State<FollowTargetScreen> {
     final resumable = _history.where((s) => s.isResumable).toList();
     final scheme = Theme.of(context).colorScheme;
     // 取得は 1 本ずつ。この対象の取得が走っているときは上に重ねた
-    // 進み具合で分かるので、それ以外のときだけ理由を出す
+    // 進み具合で分かる。他の取得で塞がれているときは、注記を足さずに
+    // ボタンの文言で言う
     final running = _job.progress.value;
     final busy = FetchJobs.instance.current.value;
     final blockedBy = busy != null &&
@@ -581,7 +568,6 @@ class _FollowTargetScreenState extends State<FollowTargetScreen> {
     return Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          if (blockedBy != null) FetchBusyNote(blockedBy),
           FilledButton(
             style: FilledButton.styleFrom(
               padding: const EdgeInsets.symmetric(vertical: 16),
@@ -594,7 +580,7 @@ class _FollowTargetScreenState extends State<FollowTargetScreen> {
             onPressed: !canStart || _loading || _cleaning
                 ? null
                 : _startWithConfirm,
-            child: const Text('今すぐ取得'),
+            child: Text(blockedBy?.waitLabel ?? '今すぐ取得'),
           ),
           // 中断した続きは、埋もれると気づかれないので面を持たせる
           for (final s in resumable)
@@ -647,36 +633,42 @@ class _FollowTargetScreenState extends State<FollowTargetScreen> {
 
   // ─── 定期取得 ───
 
-  /// 定期取得と履歴。面は付けず行だけ並べる。上の数字のカードと同じ面に
-  /// すると、似た見た目のものが続いて区別がつかない。
+  /// 定期取得と履歴。面は付けず、1 行に左右で並べる。上の数字のカードと
+  /// 同じ面にすると、似た見た目のものが続いて区別がつかない。
   /// 間隔そのものは設定画面で見られるので、ここには次回だけ出す。
   /// [t] が null なら読み込み中
-  Widget _links(FollowTarget? t) => Column(
+  Widget _links(FollowTarget? t) => Row(
         children: [
-          _linkRow(
-            icon: Icons.autorenew,
-            label: '定期取得',
-            value: t == null ? null : _scheduleValue(t),
-            onTap: t == null
-                ? null
-                : () async {
-                    await Navigator.of(context).push(
-                      MaterialPageRoute(
-                          builder: (_) => FollowScheduleScreen(target: t)),
-                    );
-                    await _load();
-                  },
+          Expanded(
+            child: _linkRow(
+              icon: Icons.autorenew,
+              label: '定期取得',
+              value: t == null ? null : _scheduleValue(t),
+              onTap: t == null
+                  ? null
+                  : () async {
+                      await Navigator.of(context).push(
+                        MaterialPageRoute(
+                            builder: (_) =>
+                                FollowScheduleScreen(target: t)),
+                      );
+                      await _load();
+                    },
+            ),
           ),
-          _linkRow(
-            icon: Icons.history,
-            label: '履歴',
-            value: t == null
-                ? null
-                : _cleaning
-                    ? '削除中…'
-                    : (_history.isEmpty ? 'なし' : '${_history.length}件'),
-            // 削除中も開ける。開いた先で進み具合が分かり、中身は開けない
-            onTap: t == null || _history.isEmpty ? null : _openHistory,
+          const SizedBox(width: 8),
+          Expanded(
+            child: _linkRow(
+              icon: Icons.history,
+              label: '履歴',
+              value: t == null
+                  ? null
+                  : _cleaning
+                      ? '削除中…'
+                      : (_history.isEmpty ? 'なし' : '${_history.length}件'),
+              // 削除中も開ける。開いた先で進み具合が分かり、中身は開けない
+              onTap: t == null || _history.isEmpty ? null : _openHistory,
+            ),
           ),
         ],
       );
@@ -714,22 +706,25 @@ class _FollowTargetScreenState extends State<FollowTargetScreen> {
         child: Row(
           children: [
             Icon(icon, size: 20, color: scheme.onSurfaceVariant),
-            const SizedBox(width: 12),
+            const SizedBox(width: 8),
+            Text(label,
+                style: const TextStyle(
+                    fontSize: 14, fontWeight: FontWeight.w500)),
+            const SizedBox(width: 8),
             Expanded(
-              child: Text(label,
-                  style: const TextStyle(
-                      fontSize: 14, fontWeight: FontWeight.w500)),
+              child: value == null
+                  ? const Align(
+                      alignment: Alignment.centerRight,
+                      child: SkeletonBox(width: 48, height: 12))
+                  : Text(
+                      value,
+                      maxLines: 1,
+                      textAlign: TextAlign.right,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                          fontSize: 13, color: scheme.onSurfaceVariant),
+                    ),
             ),
-            if (value == null)
-              const SkeletonBox(width: 48, height: 12)
-            else
-              Text(
-                value,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style:
-                    TextStyle(fontSize: 13, color: scheme.onSurfaceVariant),
-              ),
             const SizedBox(width: 4),
             Icon(Icons.chevron_right,
                 size: 18, color: scheme.onSurfaceVariant),

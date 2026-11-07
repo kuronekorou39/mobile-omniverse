@@ -13,7 +13,6 @@ import '../services/follow_db.dart';
 import '../services/scan_estimate.dart';
 import '../utils/app_snackbar.dart';
 import '../utils/number_format.dart';
-import 'fetch_busy_note.dart';
 import 'follow_section_header.dart';
 import 'skeleton.dart';
 
@@ -132,23 +131,14 @@ class _BlockScanSectionState extends State<BlockScanSection> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          // 3 行の説明は毎回読むものではないので畳む
+          // 説明は要点だけ。細かい決まりは始めるときの画面で見せる
           FollowSectionHeader(
             'つながり調査',
             info: 'つながっている人のフォロー先をたどって、'
                 'ブロック・ミュートの有無を調べます。\n'
-                '数時間かかりますが、途中で止めても続きから再開でき、'
-                'その時点までの結果を見られます。\n\n'
+                '数時間かかりますが、途中で止めても続きから再開できます。\n'
                 'フォローが ${formatNumber(FollowDb.blockScanFriendLimit)} 人を'
-                '超える相手は飛ばします（1 人で何時間もかかるため）。\n'
-                '「延べ」の件数は、起点の人たちのフォロー数を足したものです。'
-                '同じ人が何度も数えられるので、実際の人数はもっと少なくなります。'
-                '所要時間と保存容量の目安はこの延べ件数から出しています。\n\n'
-                '始めるときに「人気」と「つながり」を残すかを選べます。'
-                'ブロック・ミュートの関係は必ず残します。'
-                'つながりまで残すと 1 件あたり約 ${ScanEstimate.bytesPerItem.round()} バイト使います。\n'
-                '調査の結果は「保存容量」の上限とは別に数えるので、'
-                '上限を超えても取得の履歴は消えません。',
+                '超える相手は飛ばします。',
             expanded: open,
             onToggle: () => _setExpanded(!open),
             summary: isMine
@@ -175,7 +165,6 @@ class _BlockScanSectionState extends State<BlockScanSection> {
           RunningFetch? blockedBy, bool hasUnfinished) =>
       [
           if (isMine) _runningCard(running!),
-          if (blockedBy != null) FetchBusyNote(blockedBy),
           if (_loading) ...[
             // 調査の記録 1 行ぶんの形で待つ
             const SkeletonBox(height: 72, radius: 16),
@@ -186,17 +175,17 @@ class _BlockScanSectionState extends State<BlockScanSection> {
           ],
           if (!isMine)
             _startButton(
-              blocked: blockedBy != null,
+              blockedBy: blockedBy,
               // 続きがあるうちは、そちらが主。新規は控えめに出す
               hasResumable: hasUnfinished,
             ),
       ];
 
-  Widget _startButton({bool blocked = false, bool hasResumable = false}) {
+  Widget _startButton({RunningFetch? blockedBy, bool hasResumable = false}) {
     final scheme = Theme.of(context).colorScheme;
-    final enabled = widget.account != null && !blocked;
-    final label = blocked
-        ? '他の取得が終わるまで待機'
+    final enabled = widget.account != null && blockedBy == null;
+    final label = blockedBy != null
+        ? blockedBy.waitLabel
         : hasResumable
             ? '新しく調査を始める'
             : '調査を開始';

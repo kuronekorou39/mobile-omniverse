@@ -11,7 +11,6 @@ import '../services/scan_estimate.dart';
 import '../services/user_detail_service.dart';
 import '../utils/app_snackbar.dart';
 import '../utils/number_format.dart';
-import 'fetch_busy_note.dart';
 import 'follow_section_header.dart';
 import 'skeleton.dart';
 
@@ -153,7 +152,6 @@ class _UserDetailSectionState extends State<UserDetailSection> {
     final c = _coverage;
     return [
       if (isMine) _runningCard(running!),
-      if (blockedBy != null) FetchBusyNote(blockedBy),
       if (_loading) ...[
         const SkeletonBox(height: 48, radius: 12),
         const SizedBox(height: 4),
@@ -205,7 +203,7 @@ class _UserDetailSectionState extends State<UserDetailSection> {
               textStyle:
                   const TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
             ),
-            child: Text(blockedBy != null ? '他の取得が終わるまで待機' : '取得する'),
+            child: Text(blockedBy?.waitLabel ?? '取得する'),
           ),
         ),
     ];

@@ -32,6 +32,14 @@ class RunningFetch {
   final int? done;
   final int? total;
 
+  /// 塞がれている側のボタンに入れる文。取得は 1 本ずつなので、
+  /// 何が終われば押せるようになるかだけを言う
+  String get waitLabel => switch (kind) {
+        FetchJobKind.blockScan => 'つながり調査が終わるまで待機',
+        FetchJobKind.userDetail => '詳しい情報の取得が終わるまで待機',
+        FetchJobKind.followCapture => '一覧の取得が終わるまで待機',
+      };
+
   @override
   bool operator ==(Object other) =>
       other is RunningFetch &&

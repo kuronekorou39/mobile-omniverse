@@ -5,6 +5,7 @@ import '../models/sns_service.dart';
 import '../services/follow_db.dart';
 import '../widgets/follow_list_controls.dart';
 import 'follow_snapshot_screen.dart';
+import '../widgets/target_title.dart';
 
 /// 相互 / 片思われ / 片思い を世代どうしで比べる画面。
 ///
@@ -85,7 +86,7 @@ class _FollowRelationDiffScreenState extends State<FollowRelationDiffScreen> {
       length: 2,
       child: Scaffold(
         appBar: AppBar(
-          title: Text('@${widget.handle} の${widget.label}の差分'),
+          title: TargetTitle('${widget.label}の差分', handle: widget.handle),
           bottom: TabBar(tabs: [
             Tab(text: _tabLabel('増えた', _added)),
             Tab(text: _tabLabel('減った', _removed)),

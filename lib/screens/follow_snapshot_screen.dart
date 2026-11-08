@@ -17,6 +17,7 @@ import '../utils/image_headers.dart';
 import 'account_age_screen.dart';
 import 'follow_diff_screen.dart';
 import 'user_profile_screen.dart';
+import '../widgets/target_title.dart';
 
 /// 1 回の走査結果を一覧表示する。
 /// 数千件になるのでページングで読み込む。
@@ -114,7 +115,7 @@ class _FollowSnapshotScreenState extends State<FollowSnapshotScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: Text('@${s.targetHandle} の$kindLabel'),
+        title: TargetTitle(kindLabel, handle: s.targetHandle),
         actions: [
           IconButton(
             icon: const Icon(Icons.ios_share),

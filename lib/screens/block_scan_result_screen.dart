@@ -14,6 +14,7 @@ import '../utils/app_snackbar.dart';
 import '../utils/confirm_dialog.dart';
 import '../widgets/follow_list_controls.dart';
 import 'follow_snapshot_screen.dart';
+import '../widgets/target_title.dart';
 
 /// つながり調査の結果。
 ///
@@ -162,7 +163,7 @@ class _BlockScanResultScreenState extends State<BlockScanResultScreen> {
       length: _visibleTabs.length,
       child: Scaffold(
         appBar: AppBar(
-          title: Text('@${run.targetHandle} のつながり調査'),
+          title: TargetTitle('つながり調査', handle: run.targetHandle),
           actions: [
             IconButton(
               icon: const Icon(Icons.ios_share),
@@ -390,7 +391,7 @@ class _SourcesFollowingScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Scaffold(
-        appBar: AppBar(title: Text('@${user.screenName} をフォローしているつながり')),
+        appBar: AppBar(title: TargetTitle('フォローしているつながり', handle: user.screenName)),
         body: PagedFollowList<FollowUser>(
           fetch: (offset, limit) => FollowDb.instance.sourcesFollowing(
             runId: run.id,

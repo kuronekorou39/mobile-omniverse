@@ -9,6 +9,7 @@ import '../utils/number_format.dart';
 import '../widgets/skeleton.dart';
 import 'follow_relation_diff_screen.dart';
 import 'follow_snapshot_screen.dart';
+import '../widgets/target_title.dart';
 
 /// 相互 / 片思われ / 片思い を見る画面。
 ///
@@ -167,14 +168,14 @@ class _FollowRelationScreenState extends State<FollowRelationScreen>
 
     if (_loading) {
       return Scaffold(
-        appBar: AppBar(title: Text('@${widget.handle} の関係')),
+        appBar: AppBar(title: TargetTitle('関係', handle: widget.handle)),
         body: SkeletonList(itemBuilder: (i) => UserTileSkeleton(variant: i)),
       );
     }
 
     if (f == null || g == null) {
       return Scaffold(
-        appBar: AppBar(title: Text('@${widget.handle} の関係')),
+        appBar: AppBar(title: TargetTitle('関係', handle: widget.handle)),
         body: Center(
           child: Padding(
             padding: const EdgeInsets.all(24),
@@ -194,7 +195,7 @@ class _FollowRelationScreenState extends State<FollowRelationScreen>
 
     return Scaffold(
       appBar: AppBar(
-        title: Text('@${widget.handle} の関係'),
+        title: TargetTitle('関係', handle: widget.handle),
         actions: [
           IconButton(
             icon: const Icon(Icons.compare_arrows),

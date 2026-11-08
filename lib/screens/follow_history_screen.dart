@@ -9,6 +9,7 @@ import '../utils/confirm_dialog.dart';
 import '../utils/number_format.dart';
 import '../widgets/skeleton.dart';
 import 'follow_snapshot_screen.dart';
+import '../widgets/target_title.dart';
 
 /// 取得履歴の全件。
 ///
@@ -75,7 +76,7 @@ class _FollowHistoryScreenState extends State<FollowHistoryScreen> {
     final scheme = Theme.of(context).colorScheme;
     return Scaffold(
       appBar: AppBar(
-        title: Text('@${widget.handle} の履歴'),
+        title: TargetTitle('履歴', handle: widget.handle),
         actions: [
           if (_cleaning || _deletableCount(_keepChoices.first) > 0)
             IconButton(

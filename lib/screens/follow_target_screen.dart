@@ -632,8 +632,9 @@ class _FollowTargetScreenState extends State<FollowTargetScreen> {
 
   // ─── 定期取得 ───
 
-  /// 定期取得と履歴。面は付けず、1 行に左右で並べる。上の数字のカードと
-  /// 同じ面にすると、似た見た目のものが続いて区別がつかない。
+  /// 定期取得と履歴。面は付けず、1 行に左右で並べる。
+  /// 見出しより控えめにして、間に仕切りを入れる。仕切りが無いと
+  /// 左の日付と右の「履歴」が隣り合って、どちらの値か分からない。
   /// 間隔そのものは設定画面で見られるので、ここには次回だけ出す。
   /// [t] が null なら読み込み中
   Widget _links(FollowTarget? t) => Row(
@@ -655,7 +656,12 @@ class _FollowTargetScreenState extends State<FollowTargetScreen> {
                     },
             ),
           ),
-          const SizedBox(width: 8),
+          Container(
+            width: 1,
+            height: 16,
+            margin: const EdgeInsets.symmetric(horizontal: 8),
+            color: Theme.of(context).colorScheme.outlineVariant,
+          ),
           Expanded(
             child: _linkRow(
               icon: Icons.history,
@@ -701,15 +707,15 @@ class _FollowTargetScreenState extends State<FollowTargetScreen> {
       borderRadius: BorderRadius.circular(12),
       child: Padding(
         // 面が無いので、左端を見出しや下の「保存容量」とそろえる
-        padding: const EdgeInsets.fromLTRB(4, 12, 0, 12),
+        padding: const EdgeInsets.fromLTRB(4, 10, 4, 10),
         child: Row(
           children: [
-            Icon(icon, size: 20, color: scheme.onSurfaceVariant),
-            const SizedBox(width: 8),
+            Icon(icon, size: 16, color: scheme.onSurfaceVariant),
+            const SizedBox(width: 6),
             Text(label,
                 style: TextStyle(
-                  fontSize: 14,
-                  fontWeight: FontWeight.w500,
+                  fontSize: 12,
+                  color: scheme.onSurfaceVariant,
                   // 面が無いので、押せる行だと分かる印を付ける
                   decoration:
                       onTap == null ? null : TextDecoration.underline,
@@ -718,21 +724,17 @@ class _FollowTargetScreenState extends State<FollowTargetScreen> {
             const SizedBox(width: 8),
             Expanded(
               child: value == null
-                  ? const Align(
-                      alignment: Alignment.centerRight,
-                      child: SkeletonBox(width: 48, height: 12))
+                  ? const SkeletonBox(width: 40, height: 11)
                   : Text(
                       value,
                       maxLines: 1,
-                      textAlign: TextAlign.right,
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(
-                          fontSize: 13, color: scheme.onSurfaceVariant),
+                          fontSize: 12,
+                          fontWeight: FontWeight.w500,
+                          color: scheme.onSurface),
                     ),
             ),
-            const SizedBox(width: 4),
-            Icon(Icons.chevron_right,
-                size: 18, color: scheme.onSurfaceVariant),
           ],
         ),
       ),

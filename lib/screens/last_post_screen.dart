@@ -5,6 +5,7 @@ import '../services/follow_db.dart';
 import '../utils/number_format.dart';
 import '../utils/relative_time.dart';
 import 'follow_snapshot_screen.dart';
+import '../widgets/target_title.dart';
 
 /// 最近の投稿日を調べた人を、古い順に並べる。
 ///
@@ -80,7 +81,7 @@ class _LastPostScreenState extends State<LastPostScreen> {
             .millisecondsSinceEpoch;
     return Scaffold(
       appBar: AppBar(
-        title: Text('@${widget.handle} の最近の投稿日'),
+        title: TargetTitle('最近の投稿日', handle: widget.handle),
         bottom: PreferredSize(
           preferredSize: const Size.fromHeight(20),
           child: Padding(

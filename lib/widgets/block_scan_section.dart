@@ -145,9 +145,7 @@ class _BlockScanSectionState extends State<BlockScanSection> {
                 ? '調査中'
                 : hasUnfinished
                     ? '未完了あり'
-                    : _runs.isEmpty
-                        ? null
-                        : '${_runs.length}件',
+                    : null,
           ),
           if (open) ..._body(running, isMine, blockedBy, hasUnfinished),
         ],
@@ -315,25 +313,66 @@ class _BlockScanSectionState extends State<BlockScanSection> {
   }
 
   /// 調査の記録はどれも同じ性質の行なので、ひとつの面にまとめる
+  /// 以前の調査まで開いているか
+  bool _showOlder = false;
+
+  /// ここに並べる調査。最新の 1 件だけにして、履歴の山にしない。
+  /// 最新が完了していて、その前に未完了が残っているなら、再開の入口と
+  /// してそれも出す。それ以外は「以前の調査」から開く
+  List<BlockRun> get _shownRuns {
+    if (_runs.isEmpty) return const [];
+    final shown = [_runs.first];
+    if (_runs.first.isCompleted) {
+      final unfinished = _runs.skip(1).where((r) => !r.isCompleted).firstOrNull;
+      if (unfinished != null) shown.add(unfinished);
+    }
+    return shown;
+  }
+
   Widget _runList() {
     final scheme = Theme.of(context).colorScheme;
-    return Material(
-      color: scheme.surfaceContainer,
-      borderRadius: BorderRadius.circular(16),
-      clipBehavior: Clip.antiAlias,
-      child: Column(
-        children: [
-          for (final (i, r) in _runs.indexed) ...[
-            if (i > 0)
-              Divider(
-                  height: 1,
-                  indent: 14,
-                  endIndent: 14,
-                  color: scheme.outlineVariant),
-            _runRow(r),
-          ],
-        ],
-      ),
+    final shown = _shownRuns;
+    final older = _runs.where((r) => !shown.contains(r)).toList();
+    final rows = _showOlder ? [...shown, ...older] : shown;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Material(
+          color: scheme.surfaceContainer,
+          borderRadius: BorderRadius.circular(16),
+          clipBehavior: Clip.antiAlias,
+          child: Column(
+            children: [
+              for (final (i, r) in rows.indexed) ...[
+                if (i > 0)
+                  Divider(
+                      height: 1,
+                      indent: 14,
+                      endIndent: 14,
+                      color: scheme.outlineVariant),
+                _runRow(r),
+              ],
+            ],
+          ),
+        ),
+        // 隠した調査も消せるように、入口だけ控えめに残す
+        if (older.isNotEmpty)
+          Align(
+            alignment: Alignment.centerRight,
+            child: TextButton(
+              onPressed: () => setState(() => _showOlder = !_showOlder),
+              style: TextButton.styleFrom(
+                foregroundColor: scheme.onSurfaceVariant,
+                textStyle: const TextStyle(fontSize: 12),
+                padding: const EdgeInsets.symmetric(horizontal: 8),
+                minimumSize: const Size(0, 32),
+              ),
+              child: Text(_showOlder
+                  ? '以前の調査を隠す'
+                  : '以前の調査 ${older.length}件'),
+            ),
+          ),
+      ],
     );
   }
 

@@ -5,6 +5,7 @@ import '../models/sns_service.dart';
 import '../services/follow_db.dart';
 import '../widgets/follow_list_controls.dart';
 import 'follow_snapshot_screen.dart';
+import '../widgets/target_title.dart';
 
 /// 2 回分の取得結果の差分。
 /// フォロワーなら「増えた = 新規フォロワー」「減った = フォロー解除」になる。
@@ -72,7 +73,7 @@ class _FollowDiffScreenState extends State<FollowDiffScreen>
 
     return Scaffold(
       appBar: AppBar(
-        title: Text('@${n.targetHandle} の差分'),
+        title: TargetTitle('差分', handle: n.targetHandle),
         bottom: TabBar(controller: _tab, tabs: [
           Tab(text: _tabLabel('増えた', _added)),
           Tab(text: _tabLabel('減った', _removed)),

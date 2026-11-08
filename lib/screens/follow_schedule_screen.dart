@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../services/follow_capture_job_service.dart';
 import '../services/follow_db.dart';
 import 'follow_snapshot_screen.dart';
+import '../widgets/target_title.dart';
 
 /// 定期取得の設定。
 ///
@@ -47,7 +48,7 @@ class _FollowScheduleScreenState extends State<FollowScheduleScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: Text('@${_target.handle} の定期取得')),
+      appBar: AppBar(title: TargetTitle('定期取得', handle: _target.handle)),
       body: ListView(
         children: [
           const Padding(

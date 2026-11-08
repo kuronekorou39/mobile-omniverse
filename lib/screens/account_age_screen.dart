@@ -7,6 +7,7 @@ import '../utils/number_format.dart';
 import '../widgets/follow_section_header.dart';
 import '../widgets/skeleton.dart';
 import 'follow_snapshot_screen.dart';
+import '../widgets/target_title.dart';
 
 /// 一覧の中のアカウント作成日の分布。
 ///
@@ -42,7 +43,7 @@ class _AccountAgeScreenState extends State<AccountAgeScreen> {
     final s = widget.snapshot;
     final kindLabel = s.kind == 'followers' ? 'フォロワー' : 'フォロー';
     return Scaffold(
-      appBar: AppBar(title: Text('@${s.targetHandle} の$kindLabelの作成日')),
+      appBar: AppBar(title: TargetTitle('$kindLabelの作成日', handle: s.targetHandle)),
       body: _stats == null ? _skeleton() : _body(_stats!),
     );
   }

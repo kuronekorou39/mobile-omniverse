@@ -186,6 +186,13 @@ class _FollowSnapshotScreenState extends State<FollowSnapshotScreen> {
   }
 }
 
+/// 日付だけのラベル。今年なら年を省く。
+/// 「次はいつ」「最後はいつ」のように時刻まで要らない場所に使う
+String dayLabel(DateTime dt) {
+  final md = '${dt.month}/${dt.day}';
+  return dt.year == DateTime.now().year ? md : '${dt.year}/$md';
+}
+
 /// 日時ラベル。今年なら年を省く（履歴は縦に並ぶので 1 行を短くしたい）
 String dateLabel(DateTime dt) {
   final md = '${dt.month}/${dt.day} '

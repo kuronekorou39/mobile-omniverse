@@ -279,16 +279,22 @@ class _BlockScanSectionState extends State<BlockScanSection> {
                     fontSize: 11,
                     color: Theme.of(context).colorScheme.onSurfaceVariant),
               ),
-              // 止まって見えるときに、待っているだけだと分かるように
-              if (p.waitingReason case final reason?)
-                Text(
-                  _waitingLabel(reason, p.waitingUntil),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                      fontSize: 11,
-                      color: Theme.of(context).colorScheme.tertiary),
-                ),
+              // 止まって見えるときに、待っているだけだと分かるように。
+              // 高さは常に確保して、出入りで下の棒がずれないようにする
+              SizedBox(
+                height: 16,
+                width: double.infinity,
+                child: p.waitingReason == null
+                    ? null
+                    : Text(
+                        _waitingLabel(p.waitingReason!, p.waitingUntil),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                            fontSize: 11,
+                            color: Theme.of(context).colorScheme.tertiary),
+                      ),
+              ),
               if (p.total > 0) ...[
                 const SizedBox(height: 6),
                 ClipRRect(

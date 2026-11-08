@@ -13,9 +13,8 @@ import '../utils/app_snackbar.dart';
 import '../utils/image_headers.dart';
 import '../widgets/sns_badge.dart';
 import '../utils/number_format.dart';
-import '../widgets/fetch_busy_note.dart';
 import '../widgets/skeleton.dart';
-import 'follow_snapshot_screen.dart' show dateLabel;
+import 'follow_snapshot_screen.dart' show dayLabel;
 import 'follow_target_screen.dart';
 
 /// フォロー/フォロワー取得のハブ。走査対象の一覧と全体設定を置く。
@@ -135,6 +134,7 @@ class _FollowCaptureScreenState extends State<FollowCaptureScreen> {
     final running = _job.progress.value;
     // フォロー/フォロワー取得以外（つながり調査など）が走っていても始められない
     final busy = FetchJobs.instance.current.value;
+    final scheme = Theme.of(context).colorScheme;
 
     return Scaffold(
       appBar: AppBar(
@@ -159,41 +159,27 @@ class _FollowCaptureScreenState extends State<FollowCaptureScreen> {
         child: _loading
             ? SkeletonList(itemBuilder: (i) => UserTileSkeleton(variant: i))
             : ListView(
+                padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
                 children: [
                   _storageBar(),
-                  if (running != null)
-                    _runningBanner(running)
-                  else if (busy != null)
-                    Padding(
-                      padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
-                      child: FetchBusyNote(busy),
-                    ),
-                  const Padding(
-                    padding: EdgeInsets.fromLTRB(16, 8, 16, 8),
-                    child: Text(
-                      '他の画面に移っても、アプリを裏に回しても取得は続きます'
-                      '（通知が出ている間）。中断しても続きから再開できます。',
-                      style: TextStyle(fontSize: 11, color: Colors.grey),
-                    ),
-                  ),
-                  ListTile(
-                    leading: const Icon(Icons.schedule),
-                    title: const Text('予定分を今すぐ実行'),
-                    subtitle: const Text('中断分の再開と、期限が来た定期取得',
-                        style: TextStyle(fontSize: 11)),
-                    enabled: busy == null,
-                    onTap: _runDueNow,
-                  ),
-                  const Divider(),
+                  if (running != null) ...[
+                    _runningBanner(running),
+                    const SizedBox(height: 12),
+                  ],
+                  // 押せないときは出さない。何もできない行は邪魔なだけ
+                  if (running == null && busy == null) ...[
+                    _runDueRow(),
+                    const SizedBox(height: 4),
+                  ],
                   if (_targets.isEmpty)
-                    const Padding(
-                      padding: EdgeInsets.all(24),
+                    Padding(
+                      padding: const EdgeInsets.all(24),
                       child: Text('対象がありません。＋ から追加してください',
-                          style: TextStyle(color: Colors.grey)),
+                          style: TextStyle(color: scheme.onSurfaceVariant)),
                     )
                   else
-                    for (final t in _targets) _targetTile(t, running),
-                  const SizedBox(height: 80),
+                    _targetList(running),
+                  const SizedBox(height: 88),
                 ],
               ),
       ),
@@ -201,100 +187,223 @@ class _FollowCaptureScreenState extends State<FollowCaptureScreen> {
   }
 
   Widget _storageBar() {
+    final scheme = Theme.of(context).colorScheme;
     final limit = _job.sizeLimitBytes;
     final ratio = limit == 0 ? 0.0 : (_totalBytes / limit).clamp(0.0, 1.0);
     return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+      padding: const EdgeInsets.only(bottom: 12),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          LinearProgressIndicator(value: ratio, minHeight: 8),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(4),
+            child: LinearProgressIndicator(value: ratio, minHeight: 8),
+          ),
           const SizedBox(height: 4),
           Text(
             '${formatBytes(_totalBytes)} / ${formatBytes(limit)}',
-            style: const TextStyle(fontSize: 11, color: Colors.grey),
+            style: TextStyle(fontSize: 11, color: scheme.onSurfaceVariant),
           ),
         ],
       ),
     );
   }
 
-  Widget _runningBanner(FollowJobProgress p) => Card(
-        margin: const EdgeInsets.fromLTRB(12, 8, 12, 0),
-        child: ListTile(
-          leading: const SizedBox(
-              width: 20,
-              height: 20,
-              child: CircularProgressIndicator(strokeWidth: 2)),
-          title: Text(p.cancelling
-              ? '@${p.targetHandle} を中断しています…'
-              : '@${p.targetHandle} を取得中'),
-          subtitle: Text('${formatNumber(p.collected)}件 / ${formatNumber(p.round)}ページ',
-              style: const TextStyle(fontSize: 11)),
-          trailing: TextButton(
-            onPressed: p.cancelling ? null : _job.cancel,
-            child: const Text('中断'),
-          ),
-          onTap: () => _openTarget(p.service, p.targetHandle),
+  /// 中断分の再開と、期限が来た定期取得をまとめて走らせる行。
+  /// 面は付けず、対象の一覧より軽く見せる
+  Widget _runDueRow() {
+    final scheme = Theme.of(context).colorScheme;
+    return InkWell(
+      onTap: _runDueNow,
+      borderRadius: BorderRadius.circular(12),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(4, 10, 0, 10),
+        child: Row(
+          children: [
+            Icon(Icons.schedule, size: 20, color: scheme.onSurfaceVariant),
+            const SizedBox(width: 8),
+            Text('予定分を今すぐ実行',
+                style: TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w500,
+                  decoration: TextDecoration.underline,
+                  decorationColor: scheme.outline,
+                )),
+            const Spacer(),
+            Icon(Icons.chevron_right,
+                size: 18, color: scheme.onSurfaceVariant),
+          ],
         ),
-      );
+      ),
+    );
+  }
+
+  /// 取得中の面。進行中の表示は他の画面と同じ形にそろえる
+  Widget _runningBanner(FollowJobProgress p) {
+    final scheme = Theme.of(context).colorScheme;
+    return Material(
+      color: scheme.surfaceContainerHigh,
+      borderRadius: BorderRadius.circular(16),
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: () => _openTarget(p.service, p.targetHandle),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(14, 6, 6, 6),
+          child: Row(
+            children: [
+              const SizedBox(
+                  width: 16,
+                  height: 16,
+                  child: CircularProgressIndicator(strokeWidth: 2)),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      p.cancelling
+                          ? '@${p.targetHandle} を中断しています…'
+                          : '@${p.targetHandle} を取得中',
+                      style: const TextStyle(
+                          fontSize: 14, fontWeight: FontWeight.bold),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    Text(
+                      '${formatNumber(p.collected)}件 ・ ${formatNumber(p.round)}ページ',
+                      style: TextStyle(
+                          fontSize: 11, color: scheme.onSurfaceVariant),
+                    ),
+                  ],
+                ),
+              ),
+              TextButton(
+                onPressed: p.cancelling ? null : _job.cancel,
+                child: const Text('中断'),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// 対象はどれも同じ性質の行なので、ひとつの面にまとめて線で区切る
+  Widget _targetList(FollowJobProgress? running) {
+    final scheme = Theme.of(context).colorScheme;
+    return Material(
+      color: scheme.surfaceContainer,
+      borderRadius: BorderRadius.circular(16),
+      clipBehavior: Clip.antiAlias,
+      child: Column(
+        children: [
+          for (final (i, t) in _targets.indexed) ...[
+            if (i > 0)
+              Divider(height: 1, indent: 72, color: scheme.outlineVariant),
+            _targetTile(t, running),
+          ],
+        ],
+      ),
+    );
+  }
 
   Widget _targetTile(FollowTarget t, FollowJobProgress? running) {
+    final scheme = Theme.of(context).colorScheme;
     final s = _summaries[t.key];
     final isRunning = running?.targetHandle == t.handle &&
         running?.service == t.service;
     final schedule = [
-      if (t.followersIntervalDays > 0) 'フォロワー${t.followersIntervalDays}日',
-      if (t.followingIntervalDays > 0) 'フォロー${t.followingIntervalDays}日',
+      if (t.followersIntervalDays > 0) 'フォロワー ${t.followersIntervalDays}日',
+      if (t.followingIntervalDays > 0) 'フォロー ${t.followingIntervalDays}日',
     ].join(' / ');
+    // 3 行目は補足。最終取得と定期の間隔を薄く出す
+    final note = [
+      if (s?.lastLabel case final last?) '最終 $last',
+      if (schedule.isNotEmpty) schedule,
+    ].join(' ・ ');
 
-    return ListTile(
-      // SNS はアイコンの左に置く。@ID の右だと ID の長さで位置が動いて
-      // 縦に並べたときに揃わない
-      leading: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          SnsBadge(service: t.service, size: 9),
-          const SizedBox(width: 8),
-          ClipOval(
-            child: t.avatarUrl.isEmpty
-                ? const SizedBox(
-                    width: 40, height: 40, child: Icon(Icons.person))
-                : CachedNetworkImage(
-                    imageUrl: t.avatarUrl,
-                    httpHeaders: kImageHeaders,
-                    width: 40,
-                    height: 40,
-                    fit: BoxFit.cover,
-                    memCacheWidth: 80,
-                    errorWidget: (_, __, ___) => const SizedBox(
-                        width: 40, height: 40, child: Icon(Icons.person)),
-                  ),
-          ),
-        ],
-      ),
-      title: Text('@${t.handle}', overflow: TextOverflow.ellipsis),
-      subtitle: Text(
-        [
-          s?.followers == null
-              ? 'フォロワー —'
-              : 'フォロワー ${s!.followers!.collectedCount}',
-          s?.following == null
-              ? 'フォロー —'
-              : 'フォロー ${s!.following!.collectedCount}',
-          if (s?.mutual != null) '相互 ${s!.mutual}',
-        ].join(' / ') +
-            (s?.lastLabel == null ? '' : '\n最終 ${s!.lastLabel}') +
-            (schedule.isEmpty ? '' : ' ・ $schedule'),
-        style: const TextStyle(fontSize: 11),
-      ),
-      trailing: isRunning
-          ? const SizedBox(
-              width: 18,
-              height: 18,
-              child: CircularProgressIndicator(strokeWidth: 2))
-          : const Icon(Icons.chevron_right),
+    return InkWell(
       onTap: () => _openTarget(t.service, t.handle),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(14, 12, 10, 12),
+        child: Row(
+          children: [
+            // SNS はアイコンの左に置く。@ID の右だと ID の長さで位置が動いて
+            // 縦に並べたときに揃わない
+            SnsBadge(service: t.service, size: 9),
+            const SizedBox(width: 8),
+            ClipOval(
+              child: t.avatarUrl.isEmpty
+                  ? const SizedBox(
+                      width: 40, height: 40, child: Icon(Icons.person))
+                  : CachedNetworkImage(
+                      imageUrl: t.avatarUrl,
+                      httpHeaders: kImageHeaders,
+                      width: 40,
+                      height: 40,
+                      fit: BoxFit.cover,
+                      memCacheWidth: 80,
+                      errorWidget: (_, __, ___) => const SizedBox(
+                          width: 40, height: 40, child: Icon(Icons.person)),
+                    ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('@${t.handle}',
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                          fontSize: 15, fontWeight: FontWeight.w600)),
+                  const SizedBox(height: 4),
+                  _counts(s),
+                  if (note.isNotEmpty) ...[
+                    const SizedBox(height: 2),
+                    Text(note,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style:
+                            TextStyle(fontSize: 11, color: scheme.outline)),
+                  ],
+                ],
+              ),
+            ),
+            const SizedBox(width: 8),
+            if (isRunning)
+              const SizedBox(
+                  width: 18,
+                  height: 18,
+                  child: CircularProgressIndicator(strokeWidth: 2))
+            else
+              Icon(Icons.chevron_right,
+                  size: 20, color: scheme.onSurfaceVariant),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// 件数の行。名前は薄く、数字は濃くして、数字が先に目に入るようにする
+  Widget _counts(_TargetSummary? s) {
+    final scheme = Theme.of(context).colorScheme;
+    final label = TextStyle(fontSize: 11, color: scheme.onSurfaceVariant);
+    final number = TextStyle(
+        fontSize: 13, fontWeight: FontWeight.w600, color: scheme.onSurface);
+    String count(FollowSnapshot? snap) =>
+        snap == null ? '—' : formatNumber(snap.collectedCount);
+    return Text.rich(
+      TextSpan(children: [
+        TextSpan(text: 'フォロワー ', style: label),
+        TextSpan(text: count(s?.followers), style: number),
+        TextSpan(text: '   フォロー ', style: label),
+        TextSpan(text: count(s?.following), style: number),
+        if (s?.mutual case final mutual?) ...[
+          TextSpan(text: '   相互 ', style: label),
+          TextSpan(text: formatNumber(mutual), style: number),
+        ],
+      ]),
+      maxLines: 1,
+      overflow: TextOverflow.ellipsis,
     );
   }
 
@@ -357,10 +466,12 @@ class _FollowCaptureScreenState extends State<FollowCaptureScreen> {
                 onChanged: (v) => setLocal(() => accountId = v ?? accountId),
               ),
               const SizedBox(height: 8),
-              const Text(
+              Text(
                 '選んだアカウントと同じ SNS の対象になります。\n'
                 'X の鍵アカウントは、つながっているアカウントを選んでください',
-                style: TextStyle(fontSize: 11, color: Colors.grey),
+                style: TextStyle(
+                    fontSize: 11,
+                    color: Theme.of(ctx).colorScheme.onSurfaceVariant),
               ),
             ],
           ),
@@ -511,6 +622,6 @@ class _TargetSummary {
         .whereType<DateTime>()
         .toList()
       ..sort();
-    return dates.isEmpty ? null : dateLabel(dates.last);
+    return dates.isEmpty ? null : dayLabel(dates.last);
   }
 }

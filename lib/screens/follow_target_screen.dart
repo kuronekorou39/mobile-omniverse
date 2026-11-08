@@ -303,7 +303,6 @@ class _FollowTargetScreenState extends State<FollowTargetScreen> {
                   handle: widget.handle,
                   account: _sessionAccount,
                 ),
-                const FollowSectionHeader('データ'),
                 _storageSection(),
                 // 重ねたカードで最後の項目が隠れないよう、その分だけ空ける
                 SizedBox(height: isMine ? _runningCardReserve : 32),
@@ -687,7 +686,7 @@ class _FollowTargetScreenState extends State<FollowTargetScreen> {
     if (dues.isEmpty) return '未定';
     dues.sort();
     final next = dues.first;
-    return next.isAfter(DateTime.now()) ? dateLabel(next) : '次の起動時';
+    return next.isAfter(DateTime.now()) ? dayLabel(next) : '次の起動時';
   }
 
   Widget _linkRow({
@@ -708,8 +707,14 @@ class _FollowTargetScreenState extends State<FollowTargetScreen> {
             Icon(icon, size: 20, color: scheme.onSurfaceVariant),
             const SizedBox(width: 8),
             Text(label,
-                style: const TextStyle(
-                    fontSize: 14, fontWeight: FontWeight.w500)),
+                style: TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w500,
+                  // 面が無いので、押せる行だと分かる印を付ける
+                  decoration:
+                      onTap == null ? null : TextDecoration.underline,
+                  decorationColor: scheme.outline,
+                )),
             const SizedBox(width: 8),
             Expanded(
               child: value == null

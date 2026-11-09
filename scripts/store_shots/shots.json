@@ -1,0 +1,84 @@
+{
+  "iphone": [
+    {
+      "name": "timeline",
+      "src": "スナップショット/raw/iphone/timeline.png",
+      "title": "X も Bluesky も、\nひとつのタイムラインに。",
+      "subtitle": "複数アカウントの投稿を、時系列でまとめて読む"
+    },
+    {
+      "name": "accounts",
+      "src": "スナップショット/submit/iphone/03_IMG_4509_multi-account.png",
+      "title": "最大 5 アカウントを、\nタップで出し入れ。",
+      "subtitle": "X と Bluesky を、ひとつのアプリで"
+    },
+    {
+      "name": "compose",
+      "src": "スナップショット/raw/iphone/compose.png",
+      "title": "どのアカウントからでも、\nここから投稿。",
+      "subtitle": "リプライ・引用・画像にも対応"
+    },
+    {
+      "name": "engage",
+      "src": "スナップショット/submit/iphone/09_IMG_4522_post-detail.png",
+      "title": "いいねも、\nアカウントを選んで。",
+      "subtitle": "どの名義で反応するかを、その場で決める"
+    },
+    {
+      "name": "notifications",
+      "src": "スナップショット/raw/iphone/notifications.png",
+      "title": "通知も、まとめてひとつに。",
+      "subtitle": "フォロー・いいね・リプライを種類で絞り込み"
+    },
+    {
+      "name": "follow",
+      "src": "スナップショット/raw/iphone/follow.png",
+      "title": "フォロー・フォロワーの増減を、\n自動で記録。",
+      "subtitle": "定期取得で、誰が増えて誰が減ったかを残す"
+    },
+    {
+      "name": "blockscan",
+      "src": "スナップショット/raw/iphone/blockscan.png",
+      "title": "ブロック・ミュートの有無を、\nつながりからたどる。",
+      "subtitle": "数時間かかる調査も、途中から再開できる"
+    },
+    {
+      "name": "customize",
+      "src": "スナップショット/submit/iphone/07_IMG_4519_customize.png",
+      "title": "テーマもフォントも、\n自分仕様に。",
+      "subtitle": "毎日使うものだから、見た目も読みやすさも"
+    }
+  ],
+  "ipad": [
+    {
+      "name": "timeline",
+      "src": "スナップショット/raw/ipad/timeline.png",
+      "title": "X も Bluesky も、\nひとつのタイムラインに。",
+      "subtitle": "複数アカウントの投稿を、時系列でまとめて読む"
+    },
+    {
+      "name": "accounts",
+      "src": "スナップショット/submit/ipad/04_IMG_2100_multi-account.png",
+      "title": "最大 5 アカウントを、\nタップで出し入れ。",
+      "subtitle": "X と Bluesky を、ひとつのアプリで"
+    },
+    {
+      "name": "notifications",
+      "src": "スナップショット/raw/ipad/notifications.png",
+      "title": "通知も、まとめてひとつに。",
+      "subtitle": "フォロー・いいね・リプライを種類で絞り込み"
+    },
+    {
+      "name": "follow",
+      "src": "スナップショット/raw/ipad/follow.png",
+      "title": "フォロー・フォロワーの増減を、\n自動で記録。",
+      "subtitle": "定期取得で、誰が増えて誰が減ったかを残す"
+    },
+    {
+      "name": "customize",
+      "src": "スナップショット/submit/ipad/08_IMG_2086_customize.png",
+      "title": "テーマ・フォント・並びを、\n自分仕様に。",
+      "subtitle": "毎日使うものだから、見た目も読みやすさも"
+    }
+  ]
+}

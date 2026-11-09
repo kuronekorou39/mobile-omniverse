@@ -31,6 +31,73 @@ class XWebViewActionService {
   /// アカウントごとの全 cookie を保持 (authToken → cookie list)
   final Map<String, List<Cookie>> _accountCookies = {};
 
+  /// ログインが切れていたときに利用者へ出す文
+  static const loginLostMessage =
+      'X のログインが切れています。アカウント画面の「セッション更新」で'
+      'ログインし直してください';
+
+  /// x.com のログインページか。compose を開いてここへ飛ばされたら、
+  /// WebView の Cookie が消えているか、X に蹴られている
+  @visibleForTesting
+  static bool isLoginUrl(String url) =>
+      url.contains('/i/jf/onboarding') ||
+      url.contains('/i/flow/login') ||
+      RegExp(r'^https://(x|twitter)\.com/login').hasMatch(url);
+
+  /// WebView の Cookie 置き場に、このアカウントの auth_token が入っているか。
+  ///
+  /// 置き場は走査・ログイン・セッション更新の WebView と共有していて、
+  /// 向こうが消したり入れ替えたりしても、こちらは気づけない。
+  /// 前回の投稿から時間が空いていると、その間に何があったか分からないので、
+  /// 投稿の前に実物を見る。確認できないときは、今までどおり進む
+  Future<bool> _hasAuthCookie(XCredentials creds) async {
+    try {
+      final cookies = await CookieManager.instance()
+          .getCookies(url: WebUri('https://x.com'));
+      final auth = cookies.where((c) => c.name == 'auth_token').firstOrNull;
+      final state = auth == null
+          ? 'なし'
+          : '${auth.value}' == creds.authToken
+              ? '一致'
+              : '別アカウント';
+      DebugLogService.instance.log(
+          'XWebView',
+          'cookie store: ${cookies.length}件 auth_token=$state '
+          '[${cookies.map((c) => c.name).join(',')}]');
+      return auth != null && '${auth.value}' == creds.authToken;
+    } catch (e) {
+      DebugLogService.instance.log('XWebView', 'cookie store の確認に失敗: $e');
+      return true;
+    }
+  }
+
+  /// 保存してある cookie を捨てて、アカウントの資格情報から入れ直す。
+  /// 保存分はログアウト後の状態を写している可能性があるので使わない
+  Future<void> _reinit(XCredentials creds) async {
+    _accountCookies.remove(creds.authToken);
+    _isReady = false;
+    await init(creds);
+  }
+
+  Future<String> _currentUrl() async =>
+      (await _controller!.getUrl())?.toString() ?? '';
+
+  /// 投稿画面を開いて、読み込みが落ち着くまで待つ
+  Future<void> _loadCompose(String composeUrl) async {
+    _isReady = false;
+    _readyCompleter = Completer<void>();
+    await _controller!.loadUrl(
+      urlRequest: URLRequest(url: WebUri(composeUrl)),
+    );
+    await _readyCompleter!.future.timeout(
+      const Duration(seconds: 15),
+      onTimeout: () {
+        _isReady = true;
+        debugPrint('[XWebView] Timeout waiting for compose page');
+      },
+    );
+  }
+
   /// WebView の初回作成（_controller が使えるまで待機）
   Future<void> _ensureWebView() async {
     if (_webView != null && _controller != null) return;
@@ -269,6 +336,12 @@ class XWebViewActionService {
       List<XFile>? imageFiles}) async {
     if (!_isReady || _currentAuthToken != creds.authToken) {
       await init(creds);
+    } else if (!await _hasAuthCookie(creds)) {
+      // 他の WebView に Cookie を消されていた。黙って開くとログインページへ
+      // 飛ばされて「エディタが見つからない」になる
+      DebugLogService.instance
+          .log('XWebView', 'auth_token が消えているので cookie を入れ直す');
+      await _reinit(creds);
     }
     if (_controller == null) {
       return (success: false, statusCode: 0, body: 'WebView not ready');
@@ -321,19 +394,25 @@ class XWebViewActionService {
         }
       }
 
-      _isReady = false;
-      _readyCompleter = Completer<void>();
-      await _controller!.loadUrl(
-        urlRequest: URLRequest(url: WebUri(composeUrl)),
-      );
+      await _loadCompose(composeUrl);
 
-      await _readyCompleter!.future.timeout(
-        const Duration(seconds: 15),
-        onTimeout: () {
-          _isReady = true;
-          debugPrint('[XWebView] Timeout waiting for compose page');
-        },
-      );
+      // ログインページへ飛ばされたら、cookie を入れ直して一度だけ開き直す。
+      // それでも駄目なら、エディタを待っても無駄なのでここで諦める
+      var pageUrl = await _currentUrl();
+      if (isLoginUrl(pageUrl)) {
+        DebugLogService.instance.log('XWebView',
+            'compose がログインページへ飛ばされた ($pageUrl)。cookie を入れ直す');
+        await _reinit(creds);
+        await _loadCompose(composeUrl);
+        pageUrl = await _currentUrl();
+        if (isLoginUrl(pageUrl)) {
+          sw.stop();
+          DebugLogService.instance.log('XWebView',
+              'createTweet FAIL: 入れ直してもログインページ ($pageUrl) '
+              '(${sw.elapsedMilliseconds}ms)');
+          return (success: false, statusCode: 0, body: loginLostMessage);
+        }
+      }
 
       // 2. エディタが表示されるまで待つ
       // X の DOM は mobile / desktop / iPad で testid が微妙に違うことがある

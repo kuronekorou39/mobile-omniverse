@@ -276,7 +276,10 @@ class ComposeQueueNotifier extends StateNotifier<ComposeQueueState> {
         statusCode: result.statusCode,
         errorMessage: result.success
             ? null
-            : 'X 投稿失敗 (${result.statusCode})');
+            // ログイン切れは利用者が直せるので、番号でなく直し方を出す
+            : result.body == XWebViewActionService.loginLostMessage
+                ? result.body
+                : 'X 投稿失敗 (${result.statusCode})');
     final body = result.body;
     _ref.read(activityLogProvider.notifier).logAction(
           action: ActivityAction.post,

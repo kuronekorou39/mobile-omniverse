@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'dart:async';
 
 import 'android_background.dart';
@@ -63,6 +64,9 @@ class BackgroundJobKeeper {
 
   Future<void> _start(RunningFetch c) async {
     _started = true;
+    // 前面サービスは Android だけ。iOS で呼ぶと毎回「失敗」の記録が残り、
+    // 取得のたびに _started を戻して繰り返す
+    if (!Platform.isAndroid) return;
     _lastUpdate = DateTime.now();
     if (!_askedPermission) {
       _askedPermission = true;

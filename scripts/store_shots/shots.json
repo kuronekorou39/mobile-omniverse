@@ -3,101 +3,83 @@
     {
       "name": "timeline",
       "src": "スナップショット/raw/iphone/timeline.png",
-      "title": "X も Bluesky も、\nひとつのタイムラインに。",
-      "subtitle": "複数アカウントの投稿を、時系列でまとめて読む"
+      "title": "X と Bluesky の投稿を\nひとつのタイムラインで読める",
+      "subtitle": "複数アカウントのTLが１つにまとまる"
     },
     {
       "name": "accounts",
       "src": "スナップショット/submit/iphone/03_IMG_4509_multi-account.png",
-      "title": "アカウントをいくつでも、\nタップで出し入れ。",
-      "subtitle": "X と Bluesky を、ひとつのアプリで",
+      "title": "アカウントは\nいくつでも登録できる",
+      "subtitle": "X と Bluesky を１つのアプリで",
       "mosaic": [[290, 500, 400, 100], [290, 720, 400, 100], [290, 900, 400, 140], [290, 1140, 400, 100]]
-    },
-    {
-      "name": "compose",
-      "src": "スナップショット/raw/iphone/compose.png",
-      "title": "どのアカウントからでも、\nここから投稿。",
-      "subtitle": "リプライ・引用・画像にも対応"
-    },
-    {
-      "name": "engage",
-      "src": "スナップショット/submit/iphone/09_IMG_4522_post-detail.png",
-      "title": "いいねも、\nアカウントを選んで。",
-      "subtitle": "どの名義で反応するかを、その場で決める"
     },
     {
       "name": "notifications",
       "src": "スナップショット/raw/iphone/notifications.png",
-      "title": "通知も、まとめてひとつに。",
-      "subtitle": "フォロー・いいね・リプライを種類で絞り込み"
-    },
-    {
-      "name": "likes",
-      "src": "スナップショット/raw/iphone/likes.png",
-      "title": "いいねとブックマークを、\nあとから見返す。",
-      "subtitle": "アカウントをまたいで一覧に"
+      "title": "通知を全アカウント\nまとめて確認",
+      "subtitle": "フォロー・いいね・リプライを種類で絞り込める"
     },
     {
       "name": "follow",
       "src": "スナップショット/raw/iphone/follow.png",
-      "title": "フォロー・フォロワーを、\n自動で記録。",
-      "subtitle": "定期取得で、増減の履歴を残す"
+      "title": "フォロー・フォロワーの増減を\n自動で記録",
+      "subtitle": "定期取得で履歴が残り続ける"
     },
     {
       "name": "follow_diff",
       "src": "スナップショット/raw/iphone/follow_diff.png",
-      "title": "誰が増えて、\n誰が減ったか。",
-      "subtitle": "前回との差分を、人ごとに"
+      "title": "誰が増えて\n誰が減ったかが分かる",
+      "subtitle": "前回との差分を人ごとに表示"
     },
     {
       "name": "blockscan",
       "src": "スナップショット/raw/iphone/blockscan.png",
-      "title": "ブロック・ミュートの有無を、\nつながりからたどる。",
-      "subtitle": "数時間かかる調査も、途中から再開できる"
+      "title": "ブロック・ミュートの有無を\nつながりからたどる",
+      "subtitle": "数時間かかる調査も途中から再開できる"
     },
     {
       "name": "customize",
       "src": "スナップショット/submit/iphone/07_IMG_4519_customize.png",
-      "title": "テーマもフォントも、\n自分仕様に。",
-      "subtitle": "毎日使うものだから、見た目も読みやすさも"
+      "title": "テーマとフォントを\n好みに合わせる",
+      "subtitle": ""
     }
   ],
   "ipad": [
     {
       "name": "timeline",
       "src": "スナップショット/raw/ipad/timeline.png",
-      "title": "X も Bluesky も、\nひとつのタイムラインに。",
-      "subtitle": "複数アカウントの投稿を、時系列でまとめて読む"
+      "title": "X と Bluesky の投稿を\nひとつのタイムラインで読める",
+      "subtitle": "複数アカウントのTLが１つにまとまる"
     },
     {
       "name": "accounts",
       "src": "スナップショット/raw/ipad/accounts.png",
-      "title": "アカウントをいくつでも、\nタップで出し入れ。",
-      "subtitle": "X と Bluesky を、ひとつのアプリで"
+      "title": "アカウントは\nいくつでも登録できる",
+      "subtitle": "X と Bluesky を１つのアプリで"
     },
     {
       "name": "notifications",
       "src": "スナップショット/raw/ipad/notifications.png",
-      "title": "通知も、まとめてひとつに。",
-      "subtitle": "フォロー・いいね・リプライを種類で絞り込み"
+      "title": "通知を全アカウント\nまとめて確認",
+      "subtitle": "フォロー・いいね・リプライを種類で絞り込める"
     },
     {
       "name": "follow",
       "src": "スナップショット/raw/ipad/follow.png",
-      "title": "フォロー・フォロワーを、\n自動で記録。",
-      "subtitle": "定期取得で、増減の履歴を残す"
+      "title": "フォロー・フォロワーの増減を\n自動で記録",
+      "subtitle": "定期取得で履歴が残り続ける"
     },
     {
       "name": "blockscan",
       "src": "スナップショット/raw/ipad/blockscan.png",
-      "title": "ブロック・ミュートの有無を、\nつながりからたどる。",
-      "subtitle": "数時間かかる調査も、途中から再開できる"
+      "title": "ブロック・ミュートの有無を\nつながりからたどる",
+      "subtitle": "数時間かかる調査も途中から再開できる"
     },
     {
       "name": "customize",
       "src": "スナップショット/submit/ipad/08_IMG_2086_customize.png",
-      "title": "テーマもフォントも、\n自分仕様に。",
-      "subtitle": "毎日使うものだから、見た目も読みやすさも"
+      "title": "テーマとフォントを\n好みに合わせる",
+      "subtitle": ""
     }
   ]
 }

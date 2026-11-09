@@ -9,8 +9,9 @@
     {
       "name": "accounts",
       "src": "スナップショット/submit/iphone/03_IMG_4509_multi-account.png",
-      "title": "最大 5 アカウントを、\nタップで出し入れ。",
-      "subtitle": "X と Bluesky を、ひとつのアプリで"
+      "title": "アカウントをいくつでも、\nタップで出し入れ。",
+      "subtitle": "X と Bluesky を、ひとつのアプリで",
+      "mosaic": [[290, 500, 400, 100], [290, 720, 400, 100], [290, 900, 400, 140], [290, 1140, 400, 100]]
     },
     {
       "name": "compose",
@@ -31,10 +32,22 @@
       "subtitle": "フォロー・いいね・リプライを種類で絞り込み"
     },
     {
+      "name": "likes",
+      "src": "スナップショット/raw/iphone/likes.png",
+      "title": "いいねとブックマークを、\nあとから見返す。",
+      "subtitle": "アカウントをまたいで一覧に"
+    },
+    {
       "name": "follow",
       "src": "スナップショット/raw/iphone/follow.png",
-      "title": "フォロー・フォロワーの増減を、\n自動で記録。",
-      "subtitle": "定期取得で、誰が増えて誰が減ったかを残す"
+      "title": "フォロー・フォロワーを、\n自動で記録。",
+      "subtitle": "定期取得で、増減の履歴を残す"
+    },
+    {
+      "name": "follow_diff",
+      "src": "スナップショット/raw/iphone/follow_diff.png",
+      "title": "誰が増えて、\n誰が減ったか。",
+      "subtitle": "前回との差分を、人ごとに"
     },
     {
       "name": "blockscan",
@@ -58,8 +71,8 @@
     },
     {
       "name": "accounts",
-      "src": "スナップショット/submit/ipad/04_IMG_2100_multi-account.png",
-      "title": "最大 5 アカウントを、\nタップで出し入れ。",
+      "src": "スナップショット/raw/ipad/accounts.png",
+      "title": "アカウントをいくつでも、\nタップで出し入れ。",
       "subtitle": "X と Bluesky を、ひとつのアプリで"
     },
     {
@@ -71,13 +84,19 @@
     {
       "name": "follow",
       "src": "スナップショット/raw/ipad/follow.png",
-      "title": "フォロー・フォロワーの増減を、\n自動で記録。",
-      "subtitle": "定期取得で、誰が増えて誰が減ったかを残す"
+      "title": "フォロー・フォロワーを、\n自動で記録。",
+      "subtitle": "定期取得で、増減の履歴を残す"
+    },
+    {
+      "name": "blockscan",
+      "src": "スナップショット/raw/ipad/blockscan.png",
+      "title": "ブロック・ミュートの有無を、\nつながりからたどる。",
+      "subtitle": "数時間かかる調査も、途中から再開できる"
     },
     {
       "name": "customize",
       "src": "スナップショット/submit/ipad/08_IMG_2086_customize.png",
-      "title": "テーマ・フォント・並びを、\n自分仕様に。",
+      "title": "テーマもフォントも、\n自分仕様に。",
       "subtitle": "毎日使うものだから、見た目も読みやすさも"
     }
   ]

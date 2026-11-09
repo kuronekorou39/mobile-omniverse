@@ -125,9 +125,23 @@ def rounded_mask(size: tuple[int, int], radius: int) -> Image.Image:
     return m
 
 
-def compose(src: Path, title: str, subtitle: str, layout: Layout) -> Image.Image:
+def mosaic(shot: Image.Image, boxes: list[list[int]], block: int) -> Image.Image:
+    """[x, y, w, h] (素のキャプチャの px) の範囲をモザイクにする。
+    名前や @ID を隠すのに使う。ぼかしより「隠した」と分かりやすい"""
+    out = shot.copy()
+    for x, y, w, h in boxes:
+        region = out.crop((x, y, x + w, y + h))
+        small = region.resize((max(1, w // block), max(1, h // block)), Image.BOX)
+        out.paste(small.resize((w, h), Image.NEAREST), (x, y))
+    return out
+
+
+def compose(src: Path, title: str, subtitle: str, layout: Layout,
+            boxes: list[list[int]] | None = None, block: int = 24) -> Image.Image:
     cw, ch = layout.canvas
     shot = Image.open(src).convert("RGB")
+    if boxes:
+        shot = mosaic(shot, boxes, block)
 
     # 文字を先に測って、端末に使える高さを決める
     tf = font(layout.title_size, "Bold")
@@ -208,7 +222,8 @@ def main() -> None:
             if not src.exists():
                 print(f"  skip {device} {i}: 見つからない {src}")
                 continue
-            img = compose(src, s["title"], s.get("subtitle", ""), layout)
+            img = compose(src, s["title"], s.get("subtitle", ""), layout,
+                          boxes=s.get("mosaic"), block=s.get("mosaic_block", 24))
             out = out_dir / f"{i:02d}_{s['name']}.png"
             img.save(out, optimize=True)
             print(f"  {out.relative_to(ROOT)}  {img.size[0]}x{img.size[1]}")

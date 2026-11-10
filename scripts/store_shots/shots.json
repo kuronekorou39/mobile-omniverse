@@ -9,7 +9,7 @@
     {
       "name": "accounts",
       "src": "スナップショット/submit/iphone/03_IMG_4509_multi-account.png",
-      "title": "アカウントは\nいくつでも登録できる",
+      "title": "アカウントは\nいくつでも追加できる",
       "subtitle": "X と Bluesky を１つのアプリで",
       "mosaic": [[290, 500, 400, 100], [290, 720, 400, 100], [290, 900, 400, 140], [290, 1140, 400, 100]]
     },
@@ -54,7 +54,7 @@
     {
       "name": "accounts",
       "src": "スナップショット/raw/ipad/accounts.png",
-      "title": "アカウントは\nいくつでも登録できる",
+      "title": "アカウントは\nいくつでも追加できる",
       "subtitle": "X と Bluesky を１つのアプリで"
     },
     {

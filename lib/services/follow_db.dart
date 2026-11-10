@@ -525,11 +525,22 @@ class FollowDb {
   // ─── ストレージ使用量 ───
 
   /// DB ファイルの実サイズ。インメモリで開いている場合は 0
+  /// 実際に使っているバイト数。
+  ///
+  /// ファイルの大きさではなく、使用中のページ数から出す。削除で空いた
+  /// ページは VACUUM するまでファイルに残るが、次の書き込みで使い回される
+  /// ので、ここでは空きを数えない。こうしておけば間引きの途中で VACUUM
+  /// して測り直す必要がなくなる (VACUUM は GB 級の DB だと数分かかり、
+  /// その間は他の画面の読み込みが全部待たされる)
   Future<int> databaseSizeBytes() async {
     final path = await _path();
     if (path == inMemoryDatabasePath) return 0;
-    final file = File(path);
-    return file.existsSync() ? file.lengthSync() : 0;
+    if (!File(path).existsSync()) return 0;
+    final db = await _database;
+    Future<int> pragma(String name) async =>
+        Sqflite.firstIntValue(await db.rawQuery('PRAGMA $name')) ?? 0;
+    final used = await pragma('page_count') - await pragma('freelist_count');
+    return (used < 0 ? 0 : used) * await pragma('page_size');
   }
 
   /// ブロック調査が占めている概算バイト数。
@@ -548,13 +559,17 @@ class FollowDb {
     // users 側は調査でしか出てこない相手のぶんを数える。
     // 単価は SQLite ファイルの実測から（ScanEstimate に置いてある）
     final findings = await count('block_findings');
-    final onlyInScan = Sqflite.firstIntValue(await db.rawQuery(
-          'SELECT COUNT(*) FROM users WHERE restId NOT IN '
-          '(SELECT restId FROM snapshot_members)',
+    // 「スナップショットに居ない users」を NOT IN で数えると、users が
+    // 数百万行のときに起動のたび数十秒かかる。全体から居る人数を引けば
+    // どちらも索引を舐めるだけで済む。見積もりなので端数は気にしない
+    final allUsers = await count('users');
+    final inSnapshots = Sqflite.firstIntValue(await db.rawQuery(
+          'SELECT COUNT(DISTINCT restId) FROM snapshot_members',
         )) ??
         0;
+    final onlyInScan = allUsers - inSnapshots;
     return findings * ScanEstimate.bytesPerFinding +
-        onlyInScan * ScanEstimate.bytesPerScanUser;
+        (onlyInScan < 0 ? 0 : onlyInScan) * ScanEstimate.bytesPerScanUser;
   }
 
   /// フォロー/フォロワーが占めている概算。間引きの判定はこちらで行う
@@ -587,6 +602,12 @@ class FollowDb {
   /// 判定にはブロック調査ぶんを含めない。調査は単体で GB に達するので、
   /// ファイル全体で測ると「スナップショットを全部消しても上限を
   /// 下回らない」状態になり、履歴が消し損になる。
+  ///
+  /// ここでは VACUUM しない。起動時に裏で走るので、数分間 DB を独占して
+  /// 対象画面やつながり調査の読み込みを止めてしまう。空いたページは
+  /// 次の取得で使い回され、[databaseSizeBytes] も使用中のページで数える
+  /// ので、ファイルを縮めなくても判定は進む。縮めるのは手で消したとき
+  /// ([deleteOldSnapshots] など) だけにする
   Future<int> pruneToSizeLimit(int limitBytes, {int keepPerKind = 2}) async {
     if (await followDataBytes() <= limitBytes) return 0;
     final db = await _database;
@@ -607,15 +628,9 @@ class FollowDb {
       await db.delete('snapshots', where: 'id = ?', whereArgs: [id]);
       deleted++;
       // 消すたびに測ると重いので、数件ごとに確認する
-      if (deleted % 5 == 0) {
-        await db.execute('VACUUM');
-        if (await followDataBytes() <= limitBytes) break;
-      }
+      if (deleted % 5 == 0 && await followDataBytes() <= limitBytes) break;
     }
-    if (deleted > 0) {
-      await pruneOrphanUsers();
-      await db.execute('VACUUM');
-    }
+    if (deleted > 0) await pruneOrphanUsers();
     return deleted;
   }
 

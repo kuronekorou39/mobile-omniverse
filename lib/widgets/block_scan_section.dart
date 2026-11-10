@@ -8,6 +8,7 @@ import '../models/sns_service.dart';
 import '../screens/block_scan_result_screen.dart';
 import '../services/account_storage_service.dart';
 import '../services/block_scan_service.dart';
+import '../services/debug_log_service.dart';
 import '../services/fetch_jobs.dart';
 import '../services/follow_db.dart';
 import '../services/scan_estimate.dart';
@@ -89,23 +90,33 @@ class _BlockScanSectionState extends State<BlockScanSection> {
 
   Future<void> _load() async {
     final db = FollowDb.instance;
-    final runs = await db.listBlockRuns(
-        service: widget.service, targetHandle: widget.handle, limit: 5);
-    final stats = <int, BlockRunProgress>{};
-    for (final r in runs) {
-      stats[r.id] = await db.blockRunProgress(r.id);
+    final sw = Stopwatch()..start();
+    try {
+      final runs = await db.listBlockRuns(
+          service: widget.service, targetHandle: widget.handle, limit: 5);
+      final stats = <int, BlockRunProgress>{};
+      for (final r in runs) {
+        stats[r.id] = await db.blockRunProgress(r.id);
+      }
+      final prefs = await SharedPreferences.getInstance();
+      final expanded = prefs.getBool(_prefExpanded);
+      if (!mounted) return;
+      setState(() {
+        _expanded = expanded;
+        _runs = runs;
+        _stats
+          ..clear()
+          ..addAll(stats);
+        _loading = false;
+      });
+      DebugLogService.instance.log('BlockScan',
+          '欄の読み込み ${runs.length} 件 ${sw.elapsedMilliseconds}ms');
+    } catch (e) {
+      // 失敗しても骨組みのまま残さない。一覧が空のまま出るだけにする
+      DebugLogService.instance.log('BlockScan',
+          '欄の読み込み失敗 (${sw.elapsedMilliseconds}ms): $e');
+      if (mounted) setState(() => _loading = false);
     }
-    final prefs = await SharedPreferences.getInstance();
-    final expanded = prefs.getBool(_prefExpanded);
-    if (!mounted) return;
-    setState(() {
-      _expanded = expanded;
-      _runs = runs;
-      _stats
-        ..clear()
-        ..addAll(stats);
-      _loading = false;
-    });
   }
 
   @override

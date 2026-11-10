@@ -5,6 +5,7 @@ import '../models/account.dart';
 import '../models/sns_service.dart';
 import '../services/account_storage_service.dart';
 import '../services/block_scan_service.dart';
+import '../services/debug_log_service.dart';
 import '../services/fetch_jobs.dart';
 import '../services/follow_capture_engine.dart';
 import '../services/follow_capture_job_service.dart';
@@ -58,6 +59,9 @@ class _FollowTargetScreenState extends State<FollowTargetScreen> {
   final Map<String, DateTime?> _nextDue = {};
   bool _loading = true;
 
+  /// 読み込みに失敗した理由。null なら成功
+  String? _loadError;
+
   /// 終わっていないつながり調査が残っているか
   bool _hasUnfinishedScan = false;
 
@@ -104,7 +108,25 @@ class _FollowTargetScreenState extends State<FollowTargetScreen> {
     }
   }
 
+  /// 途中で失敗しても骨組みのまま止めない。理由を出して読み直せるようにする
   Future<void> _load() async {
+    final sw = Stopwatch()..start();
+    try {
+      await _loadInner();
+      DebugLogService.instance.log('FollowTarget',
+          '@${widget.handle} 読み込み ${sw.elapsedMilliseconds}ms');
+    } catch (e) {
+      DebugLogService.instance.log('FollowTarget',
+          '@${widget.handle} 読み込み失敗 (${sw.elapsedMilliseconds}ms): $e');
+      if (!mounted) return;
+      setState(() {
+        _loading = false;
+        _loadError = '$e';
+      });
+    }
+  }
+
+  Future<void> _loadInner() async {
     final db = FollowDb.instance;
     final target =
         await db.getTarget(widget.service, widget.handle) ??
@@ -148,6 +170,7 @@ class _FollowTargetScreenState extends State<FollowTargetScreen> {
 
     if (!mounted) return;
     setState(() {
+      _loadError = null;
       _target = target;
       _latestFollowers = f;
       _latestFollowing = g;
@@ -215,6 +238,7 @@ class _FollowTargetScreenState extends State<FollowTargetScreen> {
   Widget build(BuildContext context) {
     final t = _target;
     if (_loading) return _loadingScaffold();
+    if (_loadError != null && t == null) return _errorScaffold(_loadError!);
     if (t == null) {
       return Scaffold(
         appBar: AppBar(title: Text('@${widget.handle}')),
@@ -323,6 +347,34 @@ class _FollowTargetScreenState extends State<FollowTargetScreen> {
 
   /// 読み込み中も読み込み後と同じ並びで出し、値の部分だけを棒にする。
   /// 中身が入ったときに画面の形が変わらないので、ちらつかない
+  Widget _errorScaffold(String reason) => Scaffold(
+        appBar: AppBar(title: Text('@${widget.handle}')),
+        body: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  '読み込めませんでした。\n$reason',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                      color: Theme.of(context).colorScheme.onSurfaceVariant),
+                ),
+                const SizedBox(height: 16),
+                FilledButton.tonal(
+                  onPressed: () {
+                    setState(() => _loading = true);
+                    _load();
+                  },
+                  child: const Text('読み直す'),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+
   Widget _loadingScaffold() => Scaffold(
         appBar: AppBar(
           title: Row(

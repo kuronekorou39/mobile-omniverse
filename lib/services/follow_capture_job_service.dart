@@ -147,7 +147,7 @@ class FollowCaptureJobService {
     sizeLimitBytes = value;
     final prefs = await SharedPreferences.getInstance();
     await prefs.setInt(_prefSizeLimit, value);
-    await FollowDb.instance.pruneToSizeLimit(value);
+    await pruneToLimit();
   }
 
   /// 実行中の進捗。null なら停止中
@@ -251,17 +251,36 @@ class FollowCaptureJobService {
     if (accounts.isEmpty) return;
 
     _chainAborted = false;
+    bool ran;
     try {
-      await _runDueWork(accounts);
+      ran = await _runDueWork(accounts);
     } finally {
       await FollowCaptureWebViewService.instance.closeHost();
     }
-    await FollowDb.instance.pruneToSizeLimit(sizeLimitBytes);
+    // 増えていないのに毎回測ると、users が数百万行のときに起動のたび
+    // DB を塞ぐ。取得して増えたときだけ上限を見る
+    if (ran) await pruneToLimit();
   }
 
-  Future<void> _runDueWork(List<Account> accounts) async {
+  /// 上限を超えたぶんの古い履歴を消す。何をしたかは通信ログに残す。
+  /// 失敗しても、呼び出し元 (起動時の自動処理) を止めない
+  Future<void> pruneToLimit() async {
+    final sw = Stopwatch()..start();
+    try {
+      final deleted = await FollowDb.instance.pruneToSizeLimit(sizeLimitBytes);
+      DebugLogService.instance.log('FollowJob',
+          '間引き: $deleted 件削除 (${sw.elapsedMilliseconds}ms)');
+    } catch (e) {
+      DebugLogService.instance.log(
+          'FollowJob', '間引きに失敗 (${sw.elapsedMilliseconds}ms): $e');
+    }
+  }
+
+  /// 期日の来た取得を順に走らせる。1 件でも取得を始めたら true
+  Future<bool> _runDueWork(List<Account> accounts) async {
     final db = FollowDb.instance;
     final targets = await db.listTargets();
+    var ran = false;
 
     // 実行アカウントは対象と同じ SNS でなければならない。
     // X の対象を Bluesky のアカウントで取りには行けない
@@ -274,18 +293,19 @@ class FollowCaptureJobService {
 
     // ① 未完了の再開を最優先。完了させないまま新しく始めない
     for (final t in targets) {
-      if (_chainAborted || isWebViewBusy) return;
+      if (_chainAborted || isWebViewBusy) return ran;
       for (final s in await db.resumableFor(t.service, t.handle)) {
         final account = accountFor(t);
         if (account == null) continue;
         debugPrint('[FollowJob] 再開: @${t.handle} / ${s.kind}');
+        ran = true;
         await run(
           account: account,
           targetHandle: t.handle,
           kind: _kindOf(s.kind),
           resume: s,
         );
-        if (_chainAborted) return;
+        if (_chainAborted) return ran;
       }
     }
 
@@ -302,17 +322,19 @@ class FollowCaptureJobService {
     due.sort((a, b) => a.dueAt.compareTo(b.dueAt));
 
     for (final item in due) {
-      if (_chainAborted || isWebViewBusy) return;
+      if (_chainAborted || isWebViewBusy) return ran;
       final account = accountFor(item.target);
       if (account == null) continue;
       debugPrint('[FollowJob] スケジュール実行: '
           '@${item.target.handle} / ${item.kind}');
+      ran = true;
       await run(
         account: account,
         targetHandle: item.target.handle,
         kind: _kindOf(item.kind),
       );
     }
+    return ran;
   }
 
   /// 期日どうしの間隔が詰まりすぎないための下限。

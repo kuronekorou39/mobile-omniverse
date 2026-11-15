@@ -205,6 +205,12 @@ class PostStylePreview extends StatelessWidget {
   /// カードや区切り線を付けず中身だけ描く（ほかの枠の中に並べるとき用）
   final bool bare;
 
+  /// assets/logo.png の横:縦 (1905x700)
+  static const _logoAspectRatio = 1905 / 700;
+
+  /// 見本画像の幅の上限
+  static const _sampleImageMaxWidth = 400.0;
+
   /// ログイン中の X アカウントのアイコン URL。無ければ null
   String? get _accountAvatarUrl {
     if (!useAccountAvatar) return null;
@@ -223,11 +229,12 @@ class PostStylePreview extends StatelessWidget {
     final isCard = postCardStyle == PostCardStyle.card;
     final meta = postMetaStyle(colorScheme, metaEmphasis);
     final isSensitive = sensitiveMode != SensitiveMode.show;
-    // 実際の singleImageMaxHeight に比例したプレビュー高さ
-    final imageHeight = switch (imagePreviewSize) {
-      ImagePreviewSize.small => 50.0,
-      ImagePreviewSize.medium => 80.0,
-      ImagePreviewSize.large => 110.0,
+    // 見本のロゴ画像を「大」で全体、「中」「小」で上下を切って見せる。
+    // 実物も「大」は画像全体、「中」「小」は幅に対する比率で切り取るので同じ見え方になる
+    final imageHeightFraction = switch (imagePreviewSize) {
+      ImagePreviewSize.small => 0.3,
+      ImagePreviewSize.medium => 0.6,
+      ImagePreviewSize.large => 1.0,
     };
 
     // PostCard と同じ横並びレイアウト（アバター左・コンテンツ右）
@@ -300,12 +307,18 @@ class PostStylePreview extends StatelessWidget {
               if (withImage) const SizedBox(height: 8),
               // 画像エリア（ロゴ画像 + センシティブオーバーレイ）
               if (withImage)
-              ClipRRect(
+              LayoutBuilder(builder: (context, constraints) {
+                // iPad の全幅に広げると見本だけで画面が埋まり、
+                // 下の設定項目が押し出されるので幅に上限を付ける
+                final width = constraints.maxWidth < _sampleImageMaxWidth
+                    ? constraints.maxWidth
+                    : _sampleImageMaxWidth;
+                return ClipRRect(
                 borderRadius: BorderRadius.circular(8),
                 child: AnimatedContainer(
                   duration: const Duration(milliseconds: 200),
-                  height: imageHeight,
-                  width: double.infinity,
+                  height: width / _logoAspectRatio * imageHeightFraction,
+                  width: width,
                   child: Stack(
                     fit: StackFit.expand,
                     children: [
@@ -331,7 +344,8 @@ class PostStylePreview extends StatelessWidget {
                     ],
                   ),
                 ),
-              ),
+              );
+              }),
               if (!hideEngagement) ...[
                 const SizedBox(height: 8),
                 Row(

@@ -74,14 +74,11 @@ void main() {
       expect(find.byType(SegmentedButton<PostCardStyle>), findsNothing);
     });
 
-    testWidgets('各行の subtitle に現在値を表示する', (tester) async {
+    testWidgets('タイルには記号と名前だけを出し、現在値は載せない', (tester) async {
       await pumpScreen(tester, const SettingsScreen());
 
-      // テーマ・フォントの現在値（どちらもデフォルト）
-      expect(find.text('システム・デフォルト'), findsOneWidget);
-      // 取得間隔は SharedPreferences の 60 秒が読み込まれる
-      expect(find.textContaining('60秒'), findsOneWidget);
-      expect(find.text('v1.0.0'), findsOneWidget);
+      expect(find.textContaining('60秒'), findsNothing);
+      expect(find.text('v1.0.0'), findsNothing);
     });
 
     testWidgets('デバッグ行は解錠前には出ない', (tester) async {

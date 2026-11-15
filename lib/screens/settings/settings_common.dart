@@ -62,33 +62,99 @@ String sensitiveModeLabel(SensitiveMode mode) => switch (mode) {
 String fabPositionLabel(FabPosition position) =>
     position == FabPosition.left ? '左' : '右';
 
-/// 設定トップの遷移行。
-/// 現在値を subtitle に出すことで、画面に入らなくても設定状態を一覧できる。
+/// 設定トップの正方形タイル。記号と名前だけを大きく中央に置く。
 class SettingsNavTile extends StatelessWidget {
   const SettingsNavTile({
     super.key,
     required this.icon,
     required this.title,
     required this.builder,
-    this.subtitle,
   });
 
   final IconData icon;
   final String title;
   final WidgetBuilder builder;
-  final String? subtitle;
 
   @override
   Widget build(BuildContext context) {
-    return ListTile(
-      leading: Icon(icon),
-      title: Text(title),
-      subtitle: subtitle == null
-          ? null
-          : Text(subtitle!, maxLines: 1, overflow: TextOverflow.ellipsis),
-      trailing: const Icon(Icons.chevron_right),
-      onTap: () =>
-          Navigator.of(context).push(MaterialPageRoute(builder: builder)),
+    final scheme = Theme.of(context).colorScheme;
+    return Material(
+      color: scheme.surfaceContainer,
+      borderRadius: BorderRadius.circular(20),
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: () =>
+            Navigator.of(context).push(MaterialPageRoute(builder: builder)),
+        // 記号と文字はタイルの大きさに合わせて伸ばす。
+        // 固定にすると iPad の大きなタイルの中で小さく取り残される
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            final side = constraints.maxWidth;
+            return Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(icon, size: side * 0.38, color: scheme.primary),
+                SizedBox(height: side * 0.06),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 8),
+                  child: FittedBox(
+                    fit: BoxFit.scaleDown,
+                    child: Text(
+                      title,
+                      maxLines: 1,
+                      style: TextStyle(
+                        fontSize: side * 0.115,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            );
+          },
+        ),
+      ),
+    );
+  }
+}
+
+/// 設定トップのタイルの並び。
+///
+/// スマホは 2 列、タブレットは 3 列で画面の幅いっぱいに使う。
+/// 入口は 6 個なので、どちらでも端数の段ができない。
+class SettingsNavGrid extends StatelessWidget {
+  const SettingsNavGrid({super.key, required this.children});
+
+  final List<Widget> children;
+
+  /// これ以上の幅なら 3 列にする
+  static const _threeColumnMinWidth = 600.0;
+
+  /// タイル 1 枚の辺の上限。iPad の横向きで 2 段が 1 画面に収まる大きさ
+  static const _maxTileSide = 300.0;
+
+  static const _gap = 16.0;
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final columns = constraints.maxWidth >= _threeColumnMinWidth ? 3 : 2;
+        final maxWidth = _maxTileSide * columns + _gap * (columns + 1);
+        return Align(
+          alignment: Alignment.topCenter,
+          child: ConstrainedBox(
+            constraints: BoxConstraints(maxWidth: maxWidth),
+            child: GridView.count(
+              crossAxisCount: columns,
+              padding: const EdgeInsets.all(_gap),
+              mainAxisSpacing: _gap,
+              crossAxisSpacing: _gap,
+              children: children,
+            ),
+          ),
+        );
+      },
     );
   }
 }

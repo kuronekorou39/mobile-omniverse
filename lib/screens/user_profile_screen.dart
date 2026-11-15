@@ -510,9 +510,7 @@ class _UserProfileScreenState extends ConsumerState<UserProfileScreen>
               post: post,
               sensitiveMode: s.sensitiveMode,
               compactEngagement: s.compactEngagement,
-              imageMaxHeight: s.imagePreviewSize.singleImageMaxHeight,
-              imageGridHeight: s.imagePreviewSize.gridImageHeight,
-              videoHeight: s.imagePreviewSize.videoHeight,
+              imagePreviewSize: s.imagePreviewSize,
               useSeparatorStyle: s.postCardStyle == PostCardStyle.separator,
               metaEmphasis: s.postMetaEmphasis,
               onTap: () {

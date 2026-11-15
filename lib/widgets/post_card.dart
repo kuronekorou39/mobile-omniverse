@@ -55,9 +55,7 @@ class PostCard extends StatelessWidget {
     this.onReply,
     this.sensitiveMode = SensitiveMode.hide,
     this.compactEngagement = true,
-    this.imageMaxHeight,
-    this.imageGridHeight,
-    this.videoHeight,
+    this.imagePreviewSize = ImagePreviewSize.medium,
     this.hideUserInfo = false,
     this.hideEngagement = false,
     this.metaEmphasis = PostMetaEmphasis.subtle,
@@ -74,9 +72,7 @@ class PostCard extends StatelessWidget {
   final VoidCallback? onReply;
   final SensitiveMode sensitiveMode;
   final bool compactEngagement;
-  final double? imageMaxHeight;
-  final double? imageGridHeight;
-  final double? videoHeight;
+  final ImagePreviewSize imagePreviewSize;
   final bool hideUserInfo;
   final bool hideEngagement;
   final PostMetaEmphasis metaEmphasis;
@@ -226,8 +222,7 @@ class PostCard extends StatelessWidget {
                                   const SizedBox(height: 8),
                                   PostImageGrid(
                                     imageUrls: post.imageUrls,
-                                    maxSingleHeight: imageMaxHeight,
-                                    gridHeight: imageGridHeight,
+                                    previewSize: imagePreviewSize,
                                     threadImageUrls: threadImageUrls,
                                     threadIndexOffset: threadIndexOffset,
                                   ),
@@ -237,7 +232,7 @@ class PostCard extends StatelessWidget {
                                   PostVideoThumbnail(
                                     videoUrl: post.videoUrl!,
                                     thumbnailUrl: post.videoThumbnailUrl!,
-                                    height: videoHeight,
+                                    previewSize: imagePreviewSize,
                                   ),
                                 ],
                               ],
@@ -413,7 +408,10 @@ class PostCard extends StatelessWidget {
                 borderRadius: BorderRadius.circular(6),
                 child: ConstrainedBox(
                   constraints: const BoxConstraints(maxHeight: 150),
-                  child: PostImageGrid(imageUrls: quoted.imageUrls),
+                  child: PostImageGrid(
+                    imageUrls: quoted.imageUrls,
+                    previewSize: ImagePreviewSize.small,
+                  ),
                 ),
               ),
             ),

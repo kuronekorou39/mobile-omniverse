@@ -2,8 +2,22 @@ import 'package:flutter/material.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../providers/settings_provider.dart' show ImagePreviewSize;
 import '../utils/image_headers.dart';
 import 'image_viewer.dart';
+
+/// 画像 1 枚の高さが画面の高さに占める上限。
+/// 縦長の画像を「大」で出しても 1 画面に収まり、前後の投稿が見えるようにする。
+const _maxScreenHeightFraction = 0.8;
+
+/// デコード幅の候補。スマホは 720 で足りるが、iPad の全幅では粗く見えるので上げる
+const _memCacheWidthPhone = 720;
+const _memCacheWidthTablet = 1440;
+
+int _memCacheWidthFor(BuildContext context, double layoutWidth) {
+  final physical = layoutWidth * MediaQuery.devicePixelRatioOf(context);
+  return physical > 1080 ? _memCacheWidthTablet : _memCacheWidthPhone;
+}
 
 /// 投稿本文のリンク付きテキストを構築する共有ウィジェット
 class LinkedText extends StatelessWidget {
@@ -82,15 +96,15 @@ class PostImageGrid extends StatelessWidget {
   const PostImageGrid({
     super.key,
     required this.imageUrls,
-    this.maxSingleHeight,
-    this.gridHeight,
+    this.previewSize = ImagePreviewSize.medium,
     this.threadImageUrls,
     this.threadIndexOffset = 0,
   });
 
   final List<String> imageUrls;
-  final double? maxSingleHeight;
-  final double? gridHeight;
+
+  /// 高さの決め方。置かれた幅に対する比率で決まる
+  final ImagePreviewSize previewSize;
   /// スレッド全体の画像URLリスト（指定時はビューアでこちらを使用）
   final List<String>? threadImageUrls;
   /// threadImageUrls 内でのこの投稿の画像の開始位置
@@ -101,9 +115,16 @@ class PostImageGrid extends StatelessWidget {
     final count = imageUrls.length.clamp(0, 4);
     if (count == 0) return const SizedBox.shrink();
 
-    if (count == 1) return _buildSingleImage(context, imageUrls[0], 0);
+    return LayoutBuilder(
+      builder: (context, constraints) =>
+          _buildForWidth(context, count, constraints.maxWidth),
+    );
+  }
 
-    final gh = gridHeight ?? 150;
+  Widget _buildForWidth(BuildContext context, int count, double width) {
+    if (count == 1) return _buildSingleImage(context, imageUrls[0], 0, width);
+
+    final gh = width * previewSize.gridImageHeightRatio;
 
     if (count == 2) {
       return Row(
@@ -189,18 +210,23 @@ class PostImageGrid extends StatelessWidget {
     );
   }
 
-  Widget _buildSingleImage(BuildContext context, String url, int index) {
+  Widget _buildSingleImage(
+      BuildContext context, String url, int index, double width) {
+    final byWidth = width * previewSize.singleImageHeightRatio;
+    final byScreen =
+        MediaQuery.sizeOf(context).height * _maxScreenHeightFraction;
     return GestureDetector(
       onTap: () => _openViewer(context, index),
       child: ClipRRect(
         borderRadius: BorderRadius.circular(8),
         child: ConstrainedBox(
-          constraints: BoxConstraints(maxHeight: maxSingleHeight ?? 300),
+          constraints:
+              BoxConstraints(maxHeight: byWidth < byScreen ? byWidth : byScreen),
           child: CachedNetworkImage(
             imageUrl: url,
             httpHeaders: kImageHeaders,
             fadeInDuration: Duration.zero,
-            memCacheWidth: 720,
+            memCacheWidth: _memCacheWidthFor(context, width),
             fit: BoxFit.cover,
             width: double.infinity,
             placeholder: (context, url) => Container(
@@ -222,7 +248,7 @@ class PostImageGrid extends StatelessWidget {
     BuildContext context,
     String url,
     int index, {
-    double? height,
+    required double height,
     BorderRadius? borderRadius,
   }) {
     return GestureDetector(
@@ -235,14 +261,14 @@ class PostImageGrid extends StatelessWidget {
           fadeInDuration: Duration.zero,
           memCacheWidth: 360,
           fit: BoxFit.cover,
-          height: height ?? gridHeight ?? 150,
+          height: height,
           width: double.infinity,
           placeholder: (context, url) => Container(
-            height: height ?? gridHeight ?? 150,
+            height: height,
             color: Colors.grey[300],
           ),
           errorWidget: (context, error, stackTrace) => Container(
-            height: height ?? gridHeight ?? 150,
+            height: height,
             color: Colors.grey[300],
             child: const Icon(Icons.broken_image, size: 20),
           ),
@@ -277,15 +303,25 @@ class PostVideoThumbnail extends StatelessWidget {
     super.key,
     required this.videoUrl,
     required this.thumbnailUrl,
-    this.height,
+    this.previewSize = ImagePreviewSize.medium,
   });
 
   final String videoUrl;
   final String thumbnailUrl;
-  final double? height;
+
+  /// 高さの決め方。置かれた幅に対する比率で決まる
+  final ImagePreviewSize previewSize;
 
   @override
   Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, constraints) =>
+          _buildForWidth(context, constraints.maxWidth),
+    );
+  }
+
+  Widget _buildForWidth(BuildContext context, double width) {
+    final height = width * previewSize.videoHeightRatio;
     return GestureDetector(
       onTap: () async {
         final uri = Uri.tryParse(videoUrl);
@@ -302,16 +338,16 @@ class PostVideoThumbnail extends StatelessWidget {
               imageUrl: thumbnailUrl,
               httpHeaders: kImageHeaders,
               fadeInDuration: Duration.zero,
-              memCacheWidth: 720,
+              memCacheWidth: _memCacheWidthFor(context, width),
               fit: BoxFit.cover,
               width: double.infinity,
-              height: height ?? 200,
+              height: height,
               placeholder: (context, url) => Container(
-                height: height ?? 200,
+                height: height,
                 color: Colors.grey[300],
               ),
               errorWidget: (context, error, stackTrace) => Container(
-                height: height ?? 200,
+                height: height,
                 color: Colors.grey[800],
                 child: const Icon(Icons.videocam,
                     color: Colors.white54, size: 48),

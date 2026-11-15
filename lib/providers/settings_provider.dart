@@ -16,20 +16,29 @@ enum ImagePreviewSize {
   const ImagePreviewSize(this.label);
   final String label;
 
-  double get singleImageMaxHeight => switch (this) {
-        small => 150,
-        medium => 200,
-        large => 300,
+  // 高さは px の固定値ではなく「メディアを置く幅に対する比率」で持つ。
+  // 固定値だと iPad のように幅が広い画面で横長に切り取られ、
+  // 「大」にしても画像の一部しか見えなくなるため。
+
+  /// 1 枚だけの画像の高さ上限。「大」は縦長 (9:16) まで切らずに収まる比率
+  double get singleImageHeightRatio => switch (this) {
+        small => 0.4,
+        medium => 0.75,
+        large => 2.0,
       };
-  double get gridImageHeight => switch (this) {
-        small => 80,
-        medium => 100,
-        large => 150,
+
+  /// 複数枚を並べるときの 1 マスの高さ。「大」で 2 列のマスが正方形になる
+  double get gridImageHeightRatio => switch (this) {
+        small => 0.22,
+        medium => 0.34,
+        large => 0.5,
       };
-  double get videoHeight => switch (this) {
-        small => 120,
-        medium => 150,
-        large => 200,
+
+  /// 動画サムネイルの高さ。「大」で 16:9 がそのまま収まる
+  double get videoHeightRatio => switch (this) {
+        small => 0.3,
+        medium => 0.42,
+        large => 9 / 16,
       };
 }
 

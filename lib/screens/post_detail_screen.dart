@@ -187,9 +187,7 @@ class _PostDetailScreenState extends ConsumerState<PostDetailScreen> {
                   post: parent,
                   sensitiveMode: s.sensitiveMode,
                   compactEngagement: s.compactEngagement,
-                  imageMaxHeight: s.imagePreviewSize.singleImageMaxHeight,
-                  imageGridHeight: s.imagePreviewSize.gridImageHeight,
-                  videoHeight: s.imagePreviewSize.videoHeight,
+                  imagePreviewSize: s.imagePreviewSize,
                   useSeparatorStyle: s.postCardStyle == PostCardStyle.separator,
                   metaEmphasis: s.postMetaEmphasis,
                   onTap: () {
@@ -263,9 +261,7 @@ class _PostDetailScreenState extends ConsumerState<PostDetailScreen> {
                     // 親投稿と同じくモザイク設定を渡す（渡さないと「全て隠す」が効かない）
                     sensitiveMode: s.sensitiveMode,
                     compactEngagement: s.compactEngagement,
-                    imageMaxHeight: s.imagePreviewSize.singleImageMaxHeight,
-                    imageGridHeight: s.imagePreviewSize.gridImageHeight,
-                    videoHeight: s.imagePreviewSize.videoHeight,
+                    imagePreviewSize: s.imagePreviewSize,
                     threadImageUrls: useThread && reply.imageUrls.isNotEmpty ? threadImages : null,
                     threadIndexOffset: replyOffsets[reply.id] ?? 0,
                     useSeparatorStyle: s.postCardStyle == PostCardStyle.separator,
@@ -377,6 +373,8 @@ class _PostDetailScreenState extends ConsumerState<PostDetailScreen> {
             const SizedBox(height: 12),
             PostImageGrid(
               imageUrls: post.imageUrls,
+              // 詳細の主役の投稿は設定によらず全体を見せる
+              previewSize: ImagePreviewSize.large,
               threadImageUrls: threadImages,
               threadIndexOffset: 0,
             ),
@@ -388,6 +386,7 @@ class _PostDetailScreenState extends ConsumerState<PostDetailScreen> {
             PostVideoThumbnail(
               videoUrl: post.videoUrl!,
               thumbnailUrl: post.videoThumbnailUrl!,
+              previewSize: ImagePreviewSize.large,
             ),
           ],
 
@@ -551,7 +550,10 @@ class _PostDetailScreenState extends ConsumerState<PostDetailScreen> {
               borderRadius: BorderRadius.circular(6),
               child: ConstrainedBox(
                 constraints: const BoxConstraints(maxHeight: 150),
-                child: PostImageGrid(imageUrls: quoted.imageUrls),
+                child: PostImageGrid(
+                  imageUrls: quoted.imageUrls,
+                  previewSize: ImagePreviewSize.small,
+                ),
               ),
             ),
           ],

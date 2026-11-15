@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 
+import '../services/app_update_service.dart';
 import '../services/debug_log_service.dart';
 import '../services/timeline_fetch_scheduler.dart';
 import '../utils/sensitive_reveal_store.dart';
@@ -88,6 +89,7 @@ class SettingsState {
     this.keepScreenOn = true,
     this.dripIntervalMs = 1500,
     this.debugLogEnabled = false,
+    this.betaUpdatesEnabled = false,
     this.showPerfOverlay = false,
     this.imageCacheSize = 50,
     this.imageSaveFolder = 'Pictures/OmniVerse',
@@ -129,6 +131,8 @@ class SettingsState {
   final int dripIntervalMs;
   /// デバッグログを記録するか
   final bool debugLogEnabled;
+  /// 全員に配る前のテスト版も更新として受け取るか（Android のみ）
+  final bool betaUpdatesEnabled;
   /// パフォーマンスオーバーレイを表示するか
   final bool showPerfOverlay;
   /// 画像メモリキャッシュ上限枚数
@@ -162,6 +166,7 @@ class SettingsState {
     bool? keepScreenOn,
     int? dripIntervalMs,
     bool? debugLogEnabled,
+    bool? betaUpdatesEnabled,
     bool? showPerfOverlay,
     int? imageCacheSize,
     String? imageSaveFolder,
@@ -189,6 +194,7 @@ class SettingsState {
       keepScreenOn: keepScreenOn ?? this.keepScreenOn,
       dripIntervalMs: dripIntervalMs ?? this.dripIntervalMs,
       debugLogEnabled: debugLogEnabled ?? this.debugLogEnabled,
+      betaUpdatesEnabled: betaUpdatesEnabled ?? this.betaUpdatesEnabled,
       showPerfOverlay: showPerfOverlay ?? this.showPerfOverlay,
       imageCacheSize: imageCacheSize ?? this.imageCacheSize,
       imageSaveFolder: imageSaveFolder ?? this.imageSaveFolder,
@@ -211,6 +217,7 @@ class SettingsNotifier extends StateNotifier<SettingsState> {
   static const _keyShowSensitiveContent = 'settings_show_sensitive_content';
   static const _keyCompactEngagement = 'settings_compact_engagement';
   static const _keyImagePreviewSize = 'settings_image_preview_size';
+  static const _keyBetaUpdates = 'settings_beta_updates';
   static const _keyHideUserInfo = 'settings_hide_user_info';
   static const _keyFontFamily = 'settings_font_family';
   static const _keyAppBarButtons = 'settings_appbar_buttons';
@@ -265,6 +272,7 @@ class SettingsNotifier extends StateNotifier<SettingsState> {
       keepScreenOn: prefs.getBool('settings_keep_screen_on') ?? d.keepScreenOn,
       dripIntervalMs: prefs.getInt('settings_drip_interval_ms') ?? d.dripIntervalMs,
       debugLogEnabled: prefs.getBool('settings_debug_log_enabled') ?? d.debugLogEnabled,
+      betaUpdatesEnabled: prefs.getBool(_keyBetaUpdates) ?? d.betaUpdatesEnabled,
       showPerfOverlay: prefs.getBool('settings_show_perf_overlay') ?? d.showPerfOverlay,
       imageCacheSize: prefs.getInt('settings_image_cache_size') ?? d.imageCacheSize,
       imageSaveFolder: prefs.getString('settings_image_save_folder') ?? d.imageSaveFolder,
@@ -278,6 +286,7 @@ class SettingsNotifier extends StateNotifier<SettingsState> {
 
     // デバッグログの有効/無効を反映
     DebugLogService.instance.enabled = state.debugLogEnabled;
+    AppUpdateService.instance.includeBeta = state.betaUpdatesEnabled;
     if (state.keepScreenOn) WakelockPlus.enable();
 
     // #3: デフォルトフェッチONの場合、起動時にスケジューラを開始
@@ -308,6 +317,7 @@ class SettingsNotifier extends StateNotifier<SettingsState> {
     await prefs.setBool('settings_keep_screen_on', state.keepScreenOn);
     await prefs.setInt('settings_drip_interval_ms', state.dripIntervalMs);
     await prefs.setBool('settings_debug_log_enabled', state.debugLogEnabled);
+    await prefs.setBool(_keyBetaUpdates, state.betaUpdatesEnabled);
     await prefs.setBool('settings_show_perf_overlay', state.showPerfOverlay);
     await prefs.setInt('settings_image_cache_size', state.imageCacheSize);
     await prefs.setString('settings_image_save_folder', state.imageSaveFolder);
@@ -410,12 +420,19 @@ class SettingsNotifier extends StateNotifier<SettingsState> {
     );
     PaintingBinding.instance.imageCache.maximumSize = state.imageCacheSize;
     DebugLogService.instance.enabled = state.debugLogEnabled;
+    AppUpdateService.instance.includeBeta = state.betaUpdatesEnabled;
     if (state.keepScreenOn) {
       WakelockPlus.enable();
     } else {
       WakelockPlus.disable();
     }
     _scheduler.setInterval(Duration(seconds: state.fetchIntervalSeconds));
+    _saveToPrefs();
+  }
+
+  void setBetaUpdatesEnabled(bool value) {
+    state = state.copyWith(betaUpdatesEnabled: value);
+    AppUpdateService.instance.includeBeta = value;
     _saveToPrefs();
   }
 

@@ -14,7 +14,8 @@ Future<void> showUpdateDialog(BuildContext context, AppUpdateInfo info) {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            'v${info.currentVersion} → v${info.latestVersion}',
+            'v${info.currentVersion} → v${info.latestVersion}'
+            '${info.isBeta ? '（テスト版）' : ''}',
             style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
           ),
           if (info.releaseNotes.isNotEmpty) ...[

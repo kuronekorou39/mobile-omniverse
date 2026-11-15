@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_cache_manager/flutter_cache_manager.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -263,6 +264,15 @@ class _DebugSettingsScreenState extends ConsumerState<DebugSettingsScreen> {
             value: settings.debugLogEnabled,
             onChanged: (value) => notifier.setDebugLogEnabled(value),
           ),
+          // テスト版の経路があるのは自前配布の Android だけ。
+          // iOS は App Store の公開版しか入れられない
+          if (defaultTargetPlatform == TargetPlatform.android)
+            SwitchListTile(
+              title: const Text('テスト版も受け取る'),
+              subtitle: const Text('全員に配る前の版も更新として案内する'),
+              value: settings.betaUpdatesEnabled,
+              onChanged: (value) => notifier.setBetaUpdatesEnabled(value),
+            ),
           const Divider(),
           ListTile(
             leading: const Icon(Icons.storage_outlined),

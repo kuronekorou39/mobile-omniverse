@@ -13,6 +13,7 @@ import 'package:mobile_omniverse/screens/settings/post_display_settings_screen.d
 import 'package:mobile_omniverse/screens/settings/settings_common.dart';
 import 'package:mobile_omniverse/screens/settings/timeline_settings_screen.dart';
 import 'package:mobile_omniverse/services/account_storage_service.dart';
+import 'package:mobile_omniverse/services/app_update_service.dart';
 import 'package:mobile_omniverse/services/timeline_fetch_scheduler.dart';
 
 void main() {
@@ -267,6 +268,22 @@ void main() {
       expect(find.text('queryId 管理'), findsOneWidget);
       expect(find.text('features 管理'), findsOneWidget);
       expect(find.text('タイムライン取得'), findsOneWidget);
+    });
+
+    testWidgets('「テスト版も受け取る」を切り替えると更新チェックに反映される',
+        (tester) async {
+      addTearDown(() => AppUpdateService.instance.includeBeta = false);
+      await pumpScreen(tester, const DebugSettingsScreen());
+
+      final tile = find.widgetWithText(SwitchListTile, 'テスト版も受け取る');
+      await tester.scrollUntilVisible(tile, 200.0,
+          scrollable: find.byType(Scrollable).first);
+      expect(AppUpdateService.instance.includeBeta, false);
+
+      await tester.tap(tile);
+      await tester.pumpAndSettle();
+
+      expect(AppUpdateService.instance.includeBeta, true);
     });
 
     testWidgets('キャッシュクリアと解錠解除の項目まで辿れる', (tester) async {

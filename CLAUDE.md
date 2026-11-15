@@ -23,6 +23,16 @@ git push origin "v${VERSION}"
 - `OmniVerse-v{VERSION}.apk` にリネーム
 - GitHub Releaseを作成してAPKを添付
 
+## Android の配信とテスト版
+
+タグを打っても Android のユーザーには降りない。アプリの更新チェックは GitHub ではなく
+`https://rou39.com/omniverse/update.json` を見ていて、これは portfolio 側の
+`scripts/omniverse/publish-android.mjs` を走らせたときだけ書き換わる。
+
+- 自分の端末だけで試す: `publish-android.mjs --beta --notes "..."`。`update-beta.json` だけが
+  更新され、届くのはデバッグ設定で「テスト版も受け取る」をオンにした端末だけ
+- 全員に配る: `--beta` を付けずに走らせる（iOS の審査が通ってから）
+
 ## ローカルビルド（デバッグ用）
 
 ```bash

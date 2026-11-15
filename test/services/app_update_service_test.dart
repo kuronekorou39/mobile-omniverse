@@ -23,6 +23,7 @@ void main() {
   tearDown(() {
     service.httpClientOverride = null;
     service.isIOSOverride = null;
+    service.includeBeta = false;
   });
 
   group('isNewer', () {
@@ -342,6 +343,71 @@ void main() {
         result.downloadUrl,
         'https://rou39.com/omniverse/OmniVerse-v1.15.0.apk',
       );
+    });
+  });
+
+  group('checkForUpdate - テスト版 (Android)', () {
+    // 現在のバージョンは setUpAll で 1.14.0 にしてある
+    String manifest(String version) => json.encode({
+          'version': version,
+          'release_notes': 'v$version',
+          'apk_url': 'https://rou39.com/omniverse/OmniVerse-v$version.apk',
+        });
+
+    /// 公開版とテスト版の案内を別々に返す。null は「まだ置いていない」
+    /// （サイトは存在しないパスにも HTML を 200 で返す）
+    MockHttpClient client({required String stable, String? beta}) =>
+        createUriAwareClient((uri) => uri.path.endsWith('update-beta.json')
+            ? (200, beta == null ? '<!doctype html>' : manifest(beta))
+            : (200, manifest(stable)));
+
+    setUp(() => service.isIOSOverride = false);
+
+    test('オフの端末にはテスト版を案内しない', () async {
+      service.httpClientOverride = client(stable: '1.14.0', beta: '1.15.0');
+
+      expect(await service.checkForUpdate(), isNull);
+    });
+
+    test('オンの端末には公開版より新しいテスト版を案内する', () async {
+      service.includeBeta = true;
+      service.httpClientOverride = client(stable: '1.14.0', beta: '1.15.0');
+
+      final result = await service.checkForUpdate();
+
+      expect(result!.latestVersion, '1.15.0');
+      expect(result.isBeta, true);
+    });
+
+    test('公開版がテスト版に追いついたら公開版として案内する', () async {
+      service.includeBeta = true;
+      service.httpClientOverride = client(stable: '1.15.0', beta: '1.15.0');
+
+      final result = await service.checkForUpdate();
+
+      expect(result!.latestVersion, '1.15.0');
+      expect(result.isBeta, false);
+    });
+
+    test('テスト版の案内がまだ無くても公開版の確認は続ける', () async {
+      service.includeBeta = true;
+      service.httpClientOverride = client(stable: '1.15.0');
+
+      final result = await service.checkForUpdate();
+
+      expect(result!.latestVersion, '1.15.0');
+      expect(result.isBeta, false);
+    });
+
+    test('iOS ではオンでもテスト版を見に行かない', () async {
+      service.includeBeta = true;
+      service.isIOSOverride = true;
+      service.httpClientOverride = createUriAwareClient((uri) {
+        expect(uri.host, 'itunes.apple.com');
+        return (200, json.encode({'resultCount': 0, 'results': []}));
+      });
+
+      expect(await service.checkForUpdate(), isNull);
     });
   });
 }

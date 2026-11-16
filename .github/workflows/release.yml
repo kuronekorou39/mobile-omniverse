@@ -7,6 +7,9 @@ on:
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+  # stable の最新を取ると、Flutter が上がった日に Gradle の最低版の要求も上がって
+  # ビルドが止まる。上げるときは Gradle / AGP と合わせてここを書き換える
+  FLUTTER_VERSION: '3.47.9'
 
 jobs:
   # ── Android APK ──
@@ -28,6 +31,7 @@ jobs:
         uses: subosito/flutter-action@v2
         with:
           channel: stable
+          flutter-version: ${{ env.FLUTTER_VERSION }}
 
       - name: Restore keystore
         if: env.KEYSTORE_BASE64 != ''
@@ -84,6 +88,7 @@ jobs:
         uses: subosito/flutter-action@v2
         with:
           channel: stable
+          flutter-version: ${{ env.FLUTTER_VERSION }}
 
       - name: Install dependencies
         run: flutter pub get

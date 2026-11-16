@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../providers/account_provider.dart';
 import '../providers/feed_provider.dart';
 import '../providers/notification_badge_provider.dart';
 import '../services/account_storage_service.dart';
@@ -13,9 +14,44 @@ import '../services/onboarding_service.dart';
 import '../widgets/onboarding/timeline_style_sheet.dart';
 import '../widgets/compose_queue_banner.dart';
 import '../widgets/count_badge.dart';
+import '../widgets/feed_header_buttons.dart';
+import '../widgets/home_rail.dart';
 import 'accounts_screen.dart';
+import 'follow_capture_screen.dart';
 import 'notifications_screen.dart';
 import 'omni_feed_screen.dart';
+import 'settings_screen.dart';
+import 'user_search_screen.dart';
+
+/// タブの中で何枚の画面が積まれているかを数える。
+/// 左の列のボタンは、タブの最初の画面にいるときだけ出す
+class _TabDepthObserver extends NavigatorObserver {
+  _TabDepthObserver(this.onChanged);
+
+  final VoidCallback onChanged;
+  int _pages = 0;
+
+  bool get atRoot => _pages <= 1;
+
+  // 下から出るシートは数えない（開いている間に列のボタンが消えてしまう）
+  void _add(Route<dynamic>? route, int delta) {
+    if (route is! PageRoute) return;
+    _pages += delta;
+    onChanged();
+  }
+
+  @override
+  void didPush(Route<dynamic> route, Route<dynamic>? previousRoute) =>
+      _add(route, 1);
+
+  @override
+  void didPop(Route<dynamic> route, Route<dynamic>? previousRoute) =>
+      _add(route, -1);
+
+  @override
+  void didRemove(Route<dynamic> route, Route<dynamic>? previousRoute) =>
+      _add(route, -1);
+}
 
 class HomeScreen extends ConsumerStatefulWidget {
   const HomeScreen({super.key});
@@ -37,6 +73,23 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     GlobalKey<NavigatorState>(),
     GlobalKey<NavigatorState>(),
   ];
+
+  late final _depthObservers = [
+    for (var i = 0; i < 3; i++) _TabDepthObserver(_onTabDepthChanged),
+  ];
+
+  /// 画面の積み下ろしはビルドの最中にも起きるので、描き直しは次のフレームに回す
+  bool _depthRebuildScheduled = false;
+
+  void _onTabDepthChanged() {
+    if (_depthRebuildScheduled) return;
+    _depthRebuildScheduled = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _depthRebuildScheduled = false;
+      if (mounted) setState(() {});
+    });
+    WidgetsBinding.instance.ensureVisualUpdate();
+  }
 
   Timer? _followCaptureTimer;
 
@@ -115,6 +168,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       if (hasPosts) _maybeShowTimelineStyle();
     });
 
+    final wide = MediaQuery.sizeOf(context).width >= wideLayoutMinWidth;
+
     // 端末の戻るボタンでタブ内のNavigatorを戻す
     return PopScope(
       canPop: false,
@@ -129,29 +184,41 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         }
       },
       child: Scaffold(
-        body: Stack(
-          children: [
-            IndexedStack(
-              index: _currentIndex,
-              children: [
-                _buildTabNavigator(0, const AccountsScreen()),
-                _buildTabNavigator(1, OmniFeedScreen(
-                  onRegisterTimelineTap: (callback) => onTimelineTap = callback,
-                )),
-                _buildTabNavigator(2, const NotificationsScreen()),
-              ],
-            ),
-            // 下のバーの一部にすると、出るたびに本文が縮んで投稿ボタンが
-            // 上に動く。本文の上に重ねて、画面の並びは動かさない
-            const Positioned(
-              left: 0,
-              right: 0,
-              bottom: 0,
-              child: ComposeQueueBanner(),
-            ),
-          ],
+        body: HomeRailScope(
+          active: wide,
+          child: Row(
+            children: [
+              if (wide) _buildRail(unreadTotal),
+              Expanded(
+                // 向きを変えて列が出入りしても、タブの中身を作り直させない
+                key: const ValueKey('home_content'),
+                child: Stack(
+                  children: [
+                    IndexedStack(
+                      index: _currentIndex,
+                      children: [
+                        _buildTabNavigator(0, const AccountsScreen()),
+                        _buildTabNavigator(1, OmniFeedScreen(
+                          onRegisterTimelineTap: (callback) => onTimelineTap = callback,
+                        )),
+                        _buildTabNavigator(2, const NotificationsScreen()),
+                      ],
+                    ),
+                    // 下のバーの一部にすると、出るたびに本文が縮んで投稿ボタンが
+                    // 上に動く。本文の上に重ねて、画面の並びは動かさない
+                    const Positioned(
+                      left: 0,
+                      right: 0,
+                      bottom: 0,
+                      child: ComposeQueueBanner(),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
         ),
-        bottomNavigationBar: _buildBottomBar(unreadTotal),
+        bottomNavigationBar: wide ? null : _buildBottomBar(unreadTotal),
       ),
     );
   }
@@ -160,6 +227,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   Widget _buildTabNavigator(int index, Widget child) {
     return Navigator(
       key: _navigatorKeys[index],
+      observers: [_depthObservers[index]],
       onGenerateRoute: (_) => MaterialPageRoute(
         builder: (_) => child,
       ),
@@ -202,6 +270,55 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         _styleSheetTimer = null;
       }
     }
+  }
+
+  /// いまのタブの中で次の画面を開く
+  void _pushInCurrentTab(WidgetBuilder builder) {
+    _navigatorKeys[_currentIndex]
+        .currentState
+        ?.push(MaterialPageRoute(builder: builder));
+  }
+
+  Widget _railButton(IconData icon, String tooltip, WidgetBuilder builder) {
+    return IconButton(
+      icon: Icon(icon, size: 20),
+      tooltip: tooltip,
+      onPressed: () => _pushInCurrentTab(builder),
+      constraints: headerButtonConstraints,
+      padding: EdgeInsets.zero,
+    );
+  }
+
+  /// 横に広い画面で、ヘッダーと下のバーの代わりに左へ立てる列
+  Widget _buildRail(int unreadTotal) {
+    final atRoot = _depthObservers[_currentIndex].atRoot;
+    final hasAccounts = ref.watch(accountProvider.select((a) => a.isNotEmpty));
+
+    // 縦画面で各タブのヘッダーにあるボタン。奥の画面に進んだら出さない
+    final actions = <Widget>[
+      if (atRoot && _currentIndex == 0 && hasAccounts) ...[
+        _railButton(Icons.groups_outlined, 'フォロー / フォロワー',
+            (_) => const FollowCaptureScreen()),
+        _railButton(Icons.person_search, 'ユーザー検索',
+            (_) => const UserSearchScreen()),
+      ],
+      if (atRoot && _currentIndex == 1) ...[
+        const FeedQuickButtons(axis: Axis.vertical),
+        const OverlayLaunchButton(),
+      ],
+    ];
+
+    return HomeRail(
+      currentIndex: _currentIndex,
+      onTabTap: _onTabTap,
+      unreadTotal: unreadTotal,
+      actions: actions,
+      footer: [
+        if (atRoot)
+          _railButton(Icons.settings_outlined, '設定',
+              (_) => const SettingsScreen()),
+      ],
+    );
   }
 
   Widget _buildBottomBar(int unreadTotal) {

@@ -23,6 +23,7 @@ import '../services/bluesky_api_service.dart';
 import '../services/notification_cache_service.dart';
 import '../services/x_api_service.dart';
 import '../widgets/empty_state.dart';
+import '../widgets/home_rail.dart';
 import '../widgets/sns_badge.dart';
 import '../widgets/skeleton.dart';
 import 'notification_webview_screen.dart';
@@ -316,9 +317,12 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
     // タップだけを起点にすると、選んだままタブへ戻ってきたときや、
     // 見ている最中に届いたぶんの数字が残り続ける。
 
+    // ホームが左の列を出しているときは、ロゴと設定ボタンの段を外す
+    final railActive = HomeRailScope.isActive(context);
+
     if (accounts.isEmpty) {
       return Scaffold(
-        appBar: AppBar(
+        appBar: railActive ? null : AppBar(
           leadingWidth: 0,
           leading: const SizedBox.shrink(),
           titleSpacing: 16,
@@ -358,6 +362,7 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
 
     return Scaffold(
       appBar: AppBar(
+        toolbarHeight: railActive ? 0 : null,
         leadingWidth: 0,
         leading: const SizedBox.shrink(),
         titleSpacing: 16,
@@ -392,7 +397,8 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
         ),
         bottom: PreferredSize(
           preferredSize: const Size.fromHeight(86),
-          child: SizedBox(
+          child: _readable(
+            railActive,
             height: 86,
             child: ListView(
               scrollDirection: Axis.horizontal,
@@ -418,21 +424,41 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
           ),
         ),
       ),
-      body: IndexedStack(
-        index: _selectedIndex,
-        children: [
-          _UnifiedNotificationList(
-            key: ValueKey(accounts.map((a) => a.id).join(',')),
-            accounts: accounts,
-            isVisible: _selectedIndex == 0,
-          ),
-          for (var i = 0; i < accounts.length; i++)
-            _NotificationList(
-              key: ValueKey(accounts[i].id),
-              account: accounts[i],
-              isVisible: _selectedIndex == i + 1,
+      body: _readable(
+        railActive,
+        child: IndexedStack(
+          index: _selectedIndex,
+          children: [
+            _UnifiedNotificationList(
+              key: ValueKey(accounts.map((a) => a.id).join(',')),
+              accounts: accounts,
+              isVisible: _selectedIndex == 0,
             ),
-        ],
+            for (var i = 0; i < accounts.length; i++)
+              _NotificationList(
+                key: ValueKey(accounts[i].id),
+                account: accounts[i],
+                isVisible: _selectedIndex == i + 1,
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// 横に広い画面では、タイムラインと同じ幅に絞って中央に置く。
+  /// 向きを変えても中身を作り直さないよう、絞らないときも同じ形の木にする
+  Widget _readable(bool narrow, {required Widget child, double? height}) {
+    return Center(
+      child: ConstrainedBox(
+        constraints: BoxConstraints(
+          maxWidth: narrow ? readableContentMaxWidth : double.infinity,
+        ),
+        child: SizedBox(
+          width: double.infinity,
+          height: height ?? double.infinity,
+          child: child,
+        ),
       ),
     );
   }

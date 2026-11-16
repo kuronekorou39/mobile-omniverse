@@ -6,7 +6,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_overlay_window/flutter_overlay_window.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import '../models/activity_log.dart';
 import '../models/post.dart';
 import '../providers/activity_log_provider.dart';
@@ -19,7 +18,8 @@ import '../services/app_update_service.dart';
 import '../services/debug_log_service.dart';
 import '../services/timeline_fetch_scheduler.dart';
 import '../utils/app_snackbar.dart';
-import '../widgets/background_job_indicator.dart';
+import '../widgets/feed_header_buttons.dart';
+import '../widgets/home_rail.dart';
 import '../utils/engagement_errors.dart';
 import '../models/account.dart';
 import '../widgets/account_picker_modal.dart';
@@ -32,69 +32,6 @@ import 'accounts_screen.dart';
 import 'compose_screen.dart';
 import 'settings_screen.dart';
 import 'post_detail_screen.dart';
-
-/// ヘッダーバーのボタン定義を生成（AppBar / QuickSettingsPanel 共通）
-List<({String key, IconData icon, String tooltip, VoidCallback onPressed})>
-    _buildHeaderButtonItems(SettingsState settings, SettingsNotifier notifier) {
-  final items =
-      <({String key, IconData icon, String tooltip, VoidCallback onPressed})>[];
-
-  if (settings.appBarButtons.contains('sensitive')) {
-    final (icon, tooltip) = switch (settings.sensitiveMode) {
-      SensitiveMode.show => (Icons.blur_off, 'モザイク: OFF'),
-      SensitiveMode.hide => (Icons.blur_on, 'モザイク: センシティブのみ'),
-      SensitiveMode.hideAll => (Icons.blur_circular, 'モザイク: 全て隠す'),
-    };
-    items.add((
-      key: 'sensitive',
-      icon: icon,
-      tooltip: tooltip,
-      onPressed: () => notifier.cycleSensitiveMode(),
-    ));
-  }
-
-  if (settings.appBarButtons.contains('userInfo')) {
-    final isHiding = settings.hideUserInfo;
-    items.add((
-      key: 'userInfo',
-      icon: isHiding ? Icons.face_retouching_off : Icons.face_retouching_natural,
-      tooltip: isHiding ? '匿名モード: ON' : '匿名モード: OFF',
-      onPressed: () => notifier.setHideUserInfo(!isHiding),
-    ));
-  }
-
-  if (settings.appBarButtons.contains('wakelock')) {
-    final isOn = settings.keepScreenOn;
-    items.add((
-      key: 'wakelock',
-      icon: isOn ? Icons.lock : Icons.lock_open,
-      tooltip: isOn ? 'スリープ防止: ON' : 'スリープ防止: OFF',
-      onPressed: () => notifier.setKeepScreenOn(!isOn),
-    ));
-  }
-
-  if (settings.appBarButtons.contains('retweet')) {
-    final isHiding = settings.hideAllRetweets;
-    items.add((
-      key: 'retweet',
-      icon: isHiding ? Icons.repeat_on : Icons.repeat,
-      tooltip: isHiding ? 'RT非表示: ON' : 'RT非表示: OFF',
-      onPressed: () => notifier.setHideAllRetweets(!isHiding),
-    ));
-  }
-
-  if (settings.appBarButtons.contains('engagement')) {
-    final isHiding = settings.hideEngagement;
-    items.add((
-      key: 'engagement',
-      icon: isHiding ? Icons.chat_bubble : Icons.chat_bubble_outline,
-      tooltip: isHiding ? 'アクション非表示: ON' : 'アクション非表示: OFF',
-      onPressed: () => notifier.setHideEngagement(!isHiding),
-    ));
-  }
-
-  return items;
-}
 
 class OmniFeedScreen extends ConsumerStatefulWidget {
   const OmniFeedScreen({super.key, this.onRegisterTimelineTap});
@@ -126,9 +63,6 @@ class _OmniFeedScreenState extends ConsumerState<OmniFeedScreen>
   Set<String>? _lastHideRtIds;
   bool? _lastHideAllRt;
 
-  /// タイマー表示の定期リビルド用
-  Timer? _countdownTimer;
-
   @override
   void initState() {
     super.initState();
@@ -143,7 +77,6 @@ class _OmniFeedScreenState extends ConsumerState<OmniFeedScreen>
         curve: Curves.easeOutCubic,
       );
     });
-    _startCountdownTimer();
     // スケジューラのサイクル完了時に通知バッジをチェック
     TimelineFetchScheduler.instance.onCycleComplete = () {
       ref.read(notificationBadgeProvider.notifier).onSchedulerCycle();
@@ -179,16 +112,6 @@ class _OmniFeedScreenState extends ConsumerState<OmniFeedScreen>
     });
   }
 
-  void _startCountdownTimer() {
-    _countdownTimer = Timer.periodic(const Duration(seconds: 1), (_) {
-      if (!mounted) return;
-      // タイマー表示が有効な場合のみ再描画（カウントダウン値は FeedNotifier が管理）
-      if (ref.read(settingsProvider).showFetchTimer) {
-        setState(() {});
-      }
-    });
-  }
-
   Future<void> _checkForUpdate() async {
     final info = await AppUpdateService.instance.checkForUpdate();
     if (info != null && mounted) {
@@ -199,7 +122,6 @@ class _OmniFeedScreenState extends ConsumerState<OmniFeedScreen>
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
-    _countdownTimer?.cancel();
     _scrollController.removeListener(_onScroll);
     _scrollController.dispose();
     super.dispose();
@@ -481,58 +403,6 @@ class _OmniFeedScreenState extends ConsumerState<OmniFeedScreen>
     ));
   }
 
-  List<Widget> _buildAppBarLeftButtons(SettingsState settings) {
-    final notifier = ref.read(settingsProvider.notifier);
-    final items = _buildHeaderButtonItems(settings, notifier);
-
-    // フェッチタイマーは常に独立表示（メニューに入れない）
-    final hasAccounts = ref.read(accountProvider).isNotEmpty;
-    final showTimer = hasAccounts && settings.isFetchingActive && settings.showFetchTimer;
-    // タイマー表示時はボタン枠を1つ使うため、残り2個以上でまとめる
-    final groupThreshold = showTimer ? 2 : 3;
-
-    final buttons = <Widget>[];
-
-    if (items.length >= groupThreshold) {
-      buttons.add(
-        IconButton(
-          icon: const Icon(Icons.more_vert, size: 20),
-          constraints: const BoxConstraints(minWidth: 40, minHeight: 40),
-          padding: EdgeInsets.zero,
-          onPressed: () => _showQuickSettingsPanel(context),
-        ),
-      );
-    } else {
-      for (final item in items) {
-        buttons.add(IconButton(
-          icon: Icon(item.icon, size: 20),
-          tooltip: item.tooltip,
-          onPressed: item.onPressed,
-          constraints: const BoxConstraints(minWidth: 40, minHeight: 40),
-          padding: EdgeInsets.zero,
-        ));
-      }
-    }
-
-    if (showTimer) {
-      buttons.add(_buildFetchIndicator(context, settings));
-    }
-
-    // 裏で走っている収集は、この画面からは見えないまま何時間も続く。
-    // 動いていることと、その進みをここに出す
-    buttons.add(const BackgroundJobIndicator());
-
-    return buttons;
-  }
-
-  void _showQuickSettingsPanel(BuildContext context) {
-    showDialog(
-      context: context,
-      barrierColor: Colors.black26,
-      builder: (_) => const _QuickSettingsPanel(),
-    );
-  }
-
   void _openSettingsScreen(BuildContext context) {
     Navigator.of(context).push(PageRouteBuilder(
       pageBuilder: (context, anim1, anim2) => const SettingsScreen(),
@@ -549,124 +419,6 @@ class _OmniFeedScreenState extends ConsumerState<OmniFeedScreen>
         );
       },
     ));
-  }
-
-  /// オーバーレイ権限の付与手順を案内するガイドを表示。
-  /// 設定画面で権限が付与された場合 true を返す。
-  Future<bool?> _showOverlayPermissionGuide() {
-    return showModalBottomSheet<bool>(
-      context: context,
-      builder: (ctx) => SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(20, 20, 20, 12),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Text(
-                'オーバーレイ権限が必要です',
-                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-              ),
-              const SizedBox(height: 8),
-              const Text(
-                'ストア外アプリは「制限付き設定」の解除が必要です。',
-                style: TextStyle(fontSize: 13, color: Colors.grey),
-              ),
-              const SizedBox(height: 16),
-              const Text('1. 設定 → アプリ → OmniVerse を選択',
-                  style: TextStyle(fontSize: 14)),
-              const SizedBox(height: 4),
-              const Text('2. 右上の「⋮」メニュー →「制限付き設定を許可」',
-                  style: TextStyle(fontSize: 14)),
-              const SizedBox(height: 4),
-              const Text('3. PIN / 生体認証で確認',
-                  style: TextStyle(fontSize: 14)),
-              const SizedBox(height: 4),
-              const Text('4. 下のボタンから権限を ON にする',
-                  style: TextStyle(fontSize: 14)),
-              const SizedBox(height: 20),
-              SizedBox(
-                width: double.infinity,
-                child: ElevatedButton.icon(
-                  icon: const Icon(Icons.settings),
-                  label: const Text('オーバーレイ権限の設定を開く'),
-                  onPressed: () async {
-                    if (Platform.isAndroid) await FlutterOverlayWindow.requestPermission();
-                    final granted =
-                        Platform.isAndroid ? await FlutterOverlayWindow.isPermissionGranted() : false;
-                    if (ctx.mounted) Navigator.of(ctx).pop(granted);
-                  },
-                ),
-              ),
-              const SizedBox(height: 4),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  Future<void> _launchOverlay(FeedState feed) async {
-    var granted = Platform.isAndroid ? await FlutterOverlayWindow.isPermissionGranted() : false;
-    if (!granted) {
-      if (!mounted) return;
-      final result = await _showOverlayPermissionGuide();
-      if (result == true) {
-        granted = Platform.isAndroid ? await FlutterOverlayWindow.isPermissionGranted() : false;
-      }
-      if (!granted) return;
-    }
-
-    final isActive = Platform.isAndroid ? await FlutterOverlayWindow.isActive() : false;
-    if (isActive) {
-      if (Platform.isAndroid) await FlutterOverlayWindow.closeOverlay();
-      ref.read(feedProvider.notifier).setOverlayActive(false);
-      return;
-    }
-
-    try {
-      // 保存済みのオーバーレイサイズ設定を読み込み
-      const widths = [180, 250, 360];
-      const heights = [250, 400, 700];
-      final prefs = await SharedPreferences.getInstance();
-      final wIndex = (prefs.getInt('overlay_wIndex') ?? 0).clamp(0, 2);
-      final hIndex = (prefs.getInt('overlay_hIndex') ?? 0).clamp(0, 2);
-      if (Platform.isAndroid) {
-        await FlutterOverlayWindow.showOverlay(
-          height: heights[hIndex],
-          width: widths[wIndex],
-          enableDrag: false,
-          overlayTitle: 'OmniVerse',
-          flag: OverlayFlag.defaultFlag,
-          positionGravity: PositionGravity.none,
-        );
-      }
-
-      final posts = feed.posts.take(100).map((p) => p.toJson()).toList();
-      final settings = ref.read(settingsProvider);
-      if (Platform.isAndroid) {
-        await FlutterOverlayWindow.shareData(jsonEncode({
-          'posts': posts,
-          'fetch': {
-            'remaining': 0,
-            'total': settings.fetchIntervalSeconds,
-            'isFetching': ref.read(feedProvider).isFetching,
-          },
-          'showFetchTimer': settings.showFetchTimer,
-        }));
-      }
-
-      ref.read(feedProvider.notifier).setOverlayActive(true);
-
-      // ホーム画面に戻る（Activityを破棄せずバックグラウンドへ）
-      if (mounted && Platform.isAndroid) {
-        await FlutterOverlayWindow.moveToBackground();
-      }
-    } catch (e) {
-      if (!mounted) return;
-      showAppSnackBar(context, 'オーバーレイを開けませんでした: ${shortError(e)}',
-          type: SnackType.error);
-    }
   }
 
 
@@ -700,70 +452,81 @@ class _OmniFeedScreenState extends ConsumerState<OmniFeedScreen>
     }
     _prevPostIds = currentPostIds;
 
-    Widget body = CustomScrollView(
-      cacheExtent: 800,
-      controller: _scrollController,
-      physics: const AlwaysScrollableScrollPhysics(
-        parent: SmoothScrollPhysics(),
-      ),
-      slivers: [
-        SliverAppBar(
-          floating: true,
-          snap: false,
-          leadingWidth: 0,
-          leading: const SizedBox.shrink(),
-          titleSpacing: 16,
-          title: Stack(
-            clipBehavior: Clip.none,
-            children: [
-              // ロゴ: 中央やや右に固定（Oの位置が画面中央）
-              Positioned.fill(
-                child: Align(
-                  alignment: const Alignment(0.03, 0.0),
-                  child: GestureDetector(
-                    onTap: () {
-                      _scrollController.animateTo(
-                        0,
-                        duration: const Duration(milliseconds: 400),
-                        curve: Curves.easeOutCubic,
-                      );
-                    },
-                    child: Image.asset(
-                      'assets/logo.png',
-                      height: 36,
-                      fit: BoxFit.contain,
+    // ホームが左の列を出しているときは、ヘッダーのボタンはそちらにある
+    final railActive = HomeRailScope.isActive(context);
+
+    Widget body = LayoutBuilder(
+      builder: (context, constraints) {
+        // 横に広い画面では、読みやすい幅に絞って中央に置く。
+        // 余白の上でもスクロールできるよう、リスト自体は幅いっぱいに取る
+        final side =
+            railActive ? readableSidePadding(constraints.maxWidth) : 0.0;
+        return CustomScrollView(
+          cacheExtent: 800,
+          controller: _scrollController,
+          physics: const AlwaysScrollableScrollPhysics(
+            parent: SmoothScrollPhysics(),
+          ),
+          slivers: [
+            if (!railActive)
+            SliverAppBar(
+              floating: true,
+              snap: false,
+              leadingWidth: 0,
+              leading: const SizedBox.shrink(),
+              titleSpacing: 16,
+              title: Stack(
+                clipBehavior: Clip.none,
+                children: [
+                  // ロゴ: 中央やや右に固定（Oの位置が画面中央）
+                  Positioned.fill(
+                    child: Align(
+                      alignment: const Alignment(0.03, 0.0),
+                      child: GestureDetector(
+                        onTap: () {
+                          _scrollController.animateTo(
+                            0,
+                            duration: const Duration(milliseconds: 400),
+                            curve: Curves.easeOutCubic,
+                          );
+                        },
+                        child: Image.asset(
+                          'assets/logo.png',
+                          height: 36,
+                          fit: BoxFit.contain,
+                        ),
+                      ),
                     ),
                   ),
-                ),
-              ),
-              // 左右のボタン群（ロゴの上に配置）
-              Row(
-                children: [
-                  ..._buildAppBarLeftButtons(settings),
-                  const Spacer(),
-                  if (Platform.isAndroid)
-                    IconButton(
-                      icon: const Icon(Icons.picture_in_picture_alt, size: 20),
-                      tooltip: 'オーバーレイ',
-                      onPressed: () => _launchOverlay(ref.read(feedProvider)),
-                      constraints: const BoxConstraints(minWidth: 40, minHeight: 40),
-                      padding: EdgeInsets.zero,
-                    ),
-                  IconButton(
-                    icon: const Icon(Icons.settings_outlined, size: 20),
-                    tooltip: '設定',
-                    onPressed: () => _openSettingsScreen(context),
-                    constraints: const BoxConstraints(minWidth: 40, minHeight: 40),
-                    padding: EdgeInsets.zero,
+                  // 左右のボタン群（ロゴの上に配置）
+                  Row(
+                    children: [
+                      const FeedQuickButtons(),
+                      const Spacer(),
+                      const OverlayLaunchButton(),
+                      IconButton(
+                        icon: const Icon(Icons.settings_outlined, size: 20),
+                        tooltip: '設定',
+                        onPressed: () => _openSettingsScreen(context),
+                        constraints: const BoxConstraints(minWidth: 40, minHeight: 40),
+                        padding: EdgeInsets.zero,
+                      ),
+                    ],
                   ),
                 ],
               ),
-            ],
-          ),
-        ),
-        ..._buildSliverBody(
-            context, ref.read(feedProvider), settings, accounts, enabledAccountIds),
-      ],
+            ),
+            for (final sliver in _buildSliverBody(context,
+                ref.read(feedProvider), settings, accounts, enabledAccountIds))
+              side > 0
+                  ? SliverPadding(
+                      padding: EdgeInsets.symmetric(horizontal: side),
+                      sliver: sliver,
+                    )
+                  : sliver,
+          ],
+        );
+      },
     );
 
     if (accounts.isNotEmpty) {
@@ -789,7 +552,8 @@ class _OmniFeedScreenState extends ConsumerState<OmniFeedScreen>
     final hasAccounts = accounts.isNotEmpty;
 
     return Scaffold(
-      body: body,
+      // ヘッダーが無いぶん、ステータスバーの下から始める
+      body: railActive ? SafeArea(bottom: false, child: body) : body,
       floatingActionButtonLocation: settings.fabPosition == FabPosition.left
           ? FloatingActionButtonLocation.startFloat
           : FloatingActionButtonLocation.endFloat,
@@ -833,54 +597,6 @@ class _OmniFeedScreenState extends ConsumerState<OmniFeedScreen>
         ],
       )
           : null,
-    );
-  }
-
-  Widget _buildFetchIndicator(
-      BuildContext context, SettingsState settings) {
-    final total = settings.fetchIntervalSeconds;
-    final remaining = ref.read(feedProvider.notifier).remainingSeconds.clamp(0, total);
-    final progress = total > 0 ? remaining / total : 0.0;
-    final pendingCount = ref.read(feedProvider).pendingCount;
-    final showPending = pendingCount > 0;
-
-    // IconButtonと同じconstraints/paddingで間隔を統一
-    return ConstrainedBox(
-      constraints: const BoxConstraints(minWidth: 40, minHeight: 40),
-      child: Center(
-        child: SizedBox(
-          width: 24,
-          height: 24,
-          child: Stack(
-            alignment: Alignment.center,
-            children: [
-              SizedBox(
-                width: 20,
-                height: 20,
-                child: remaining == 0
-                    ? const CircularProgressIndicator(strokeWidth: 2)
-                    : CircularProgressIndicator(
-                        value: progress.toDouble(),
-                        strokeWidth: 2,
-                        backgroundColor:
-                            Theme.of(context).colorScheme.surfaceContainerHighest,
-                      ),
-              ),
-              if (showPending)
-                Center(
-                  child: Text(
-                    '+$pendingCount',
-                    style: TextStyle(
-                      fontSize: 9,
-                      color: Theme.of(context).colorScheme.primary,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                ),
-            ],
-          ),
-        ),
-      ),
     );
   }
 
@@ -1216,47 +932,3 @@ class _AnimatedPostCardState extends State<_AnimatedPostCard>
   }
 }
 
-/// ヘッダーのクイック設定パネル（タップしても閉じない）
-class _QuickSettingsPanel extends ConsumerWidget {
-  const _QuickSettingsPanel();
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final settings = ref.watch(settingsProvider);
-    final notifier = ref.read(settingsProvider.notifier);
-    final items = _buildHeaderButtonItems(settings, notifier);
-
-    return Align(
-      alignment: Alignment.topLeft,
-      child: Padding(
-        padding: EdgeInsets.only(
-          top: MediaQuery.of(context).padding.top + kToolbarHeight,
-          left: 8,
-        ),
-        child: Material(
-          elevation: 8,
-          borderRadius: BorderRadius.circular(12),
-          clipBehavior: Clip.antiAlias,
-          child: IntrinsicWidth(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: items.map((item) => InkWell(
-                onTap: item.onPressed,
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                  child: Row(
-                    children: [
-                      Icon(item.icon, size: 20),
-                      const SizedBox(width: 12),
-                      Text(item.tooltip, style: const TextStyle(fontSize: 13)),
-                    ],
-                  ),
-                ),
-              )).toList(),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}

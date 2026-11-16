@@ -10,6 +10,7 @@ import '../services/onboarding_service.dart';
 import '../services/timeline_fetch_scheduler.dart';
 import '../utils/app_snackbar.dart';
 import '../widgets/empty_state.dart';
+import '../widgets/home_rail.dart';
 import '../widgets/onboarding/coach_mark.dart';
 import '../widgets/onboarding/onboarding_dialog.dart';
 import '../widgets/onboarding/onboarding_trigger.dart';
@@ -74,8 +75,11 @@ class _AccountsScreenState extends ConsumerState<AccountsScreen> {
   Widget build(BuildContext context) {
     final accounts = ref.watch(accountProvider);
 
+    // ホームが左の列を出しているときは、ヘッダーのボタンはそちらにある
+    final railActive = HomeRailScope.isActive(context);
+
     return Scaffold(
-      appBar: AppBar(
+      appBar: railActive ? null : AppBar(
               leadingWidth: 0,
               leading: const SizedBox.shrink(),
               titleSpacing: 16,
@@ -151,14 +155,28 @@ class _AccountsScreenState extends ConsumerState<AccountsScreen> {
                 ),
               ),
             )
-          : Column(
+          : SafeArea(
+              bottom: false,
+              child: Column(
               children: [
                 // 全ON/OFF
                 Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 12, 8, 4),
+                  padding: const EdgeInsets.fromLTRB(20, 12, 8, 4),
                   child: Row(
                     children: [
-                      const Spacer(),
+                      // つまみを置かないぶん、動かし方を言葉で添える
+                      Expanded(
+                        child: Text(
+                          '長押しで並び替え',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: Theme.of(context)
+                                .colorScheme
+                                .onSurfaceVariant
+                                .withValues(alpha: 0.6),
+                          ),
+                        ),
+                      ),
                       TextButton(
                         onPressed: () => ref.read(accountProvider.notifier).enableAll(),
                         style: TextButton.styleFrom(
@@ -181,35 +199,24 @@ class _AccountsScreenState extends ConsumerState<AccountsScreen> {
                     ],
                   ),
                 ),
-                // 並び替え可能なアカウントリスト + 追加ボタン
+                // アカウントのカード + 追加ボタン
                 Expanded(
-                  child: ReorderableListView.builder(
-                    buildDefaultDragHandles: false,
+                  child: GridView.builder(
+                    padding: const EdgeInsets.fromLTRB(16, 4, 16, 24),
+                    gridDelegate:
+                        const SliverGridDelegateWithMaxCrossAxisExtent(
+                      maxCrossAxisExtent: _accountCardMaxSide,
+                      mainAxisSpacing: _accountCardGap,
+                      crossAxisSpacing: _accountCardGap,
+                    ),
                     itemCount: accounts.length + 1,
-                    onReorder: (oldIndex, newIndex) {
-                      // 追加ボタン行は並び替え対象外
-                      if (oldIndex >= accounts.length || newIndex > accounts.length) return;
-                      ref.read(accountProvider.notifier).reorder(oldIndex, newIndex);
-                    },
                     itemBuilder: (context, index) {
                       if (index == accounts.length) {
-                        return Padding(
-                          key: const ValueKey('_add_account'),
-                          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
-                          child: OutlinedButton.icon(
-                            onPressed: () => _showAddAccountDialog(context, ref),
-                            icon: const Icon(Icons.add),
-                            label: const Text('アカウントを追加'),
-                            style: OutlinedButton.styleFrom(
-                              minimumSize: const Size(double.infinity, 52),
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(12),
-                              ),
-                            ),
-                          ),
+                        return _AddAccountCard(
+                          onTap: () => _showAddAccountDialog(context, ref),
                         );
                       }
-                      return _AccountTile(
+                      return _AccountCard(
                         key: ValueKey(accounts[index].id),
                         account: accounts[index],
                         index: index,
@@ -218,6 +225,7 @@ class _AccountsScreenState extends ConsumerState<AccountsScreen> {
                   ),
                 ),
               ],
+            ),
             ),
     );
   }
@@ -300,8 +308,17 @@ class _AccountsScreenState extends ConsumerState<AccountsScreen> {
   }
 }
 
-class _AccountTile extends ConsumerWidget {
-  const _AccountTile({super.key, required this.account, required this.index});
+/// カード 1 枚の辺の上限。スマホの縦で 2 列になる大きさ
+const _accountCardMaxSide = 220.0;
+const _accountCardGap = 12.0;
+const _accountCardRadius = 20.0;
+
+/// アカウント 1 件を表す正方形のカード。
+///
+/// タップで詳細、右上のスイッチで取得の ON/OFF、長押しして別のカードへ
+/// 運ぶと並び替え。
+class _AccountCard extends ConsumerWidget {
+  const _AccountCard({super.key, required this.account, required this.index});
 
   final Account account;
   final int index;
@@ -316,88 +333,173 @@ class _AccountTile extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final fetchStatus = ref.watch(fetchStatusProvider);
-    final status = fetchStatus[account.id];
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final side = constraints.maxWidth;
+        final card = _buildCard(context, ref, side);
+        return DragTarget<int>(
+          onWillAcceptWithDetails: (details) => details.data != index,
+          onAcceptWithDetails: (details) {
+            final from = details.data;
+            // reorder は「抜く前の並びでの差し込み位置」を取る
+            ref
+                .read(accountProvider.notifier)
+                .reorder(from, from < index ? index + 1 : index);
+          },
+          builder: (context, candidates, _) {
+            final scheme = Theme.of(context).colorScheme;
+            return LongPressDraggable<int>(
+              data: index,
+              feedback: Opacity(
+                opacity: 0.9,
+                child: SizedBox.square(dimension: side, child: card),
+              ),
+              childWhenDragging: Opacity(opacity: 0.3, child: card),
+              // 運ばれてきたカードが上にある間は、落とす先を枠で示す
+              child: DecoratedBox(
+                position: DecorationPosition.foreground,
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(_accountCardRadius),
+                  border: candidates.isEmpty
+                      ? null
+                      : Border.all(color: scheme.primary, width: 2),
+                ),
+                child: card,
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Widget _buildCard(BuildContext context, WidgetRef ref, double side) {
+    final scheme = Theme.of(context).colorScheme;
+    final status = ref.watch(fetchStatusProvider)[account.id];
     final health = account.isEnabled
         ? (status?.health ?? AccountHealth.unknown)
         : AccountHealth.unknown;
+    final healthColor = _healthColor(health);
+    final avatarRadius = side * 0.2;
 
-    return ListTile(
-      leading: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          ReorderableDragStartListener(
-            index: index,
-            child: const Icon(Icons.drag_handle, color: Colors.grey, size: 20),
-          ),
-          const SizedBox(width: 8),
-          Stack(
-        clipBehavior: Clip.none,
-        children: [
-          CircleAvatar(
-            backgroundImage:
-                account.avatarUrl != null ? NetworkImage(account.avatarUrl!) : null,
-            child: account.avatarUrl == null
-                ? Text(
-                    account.displayName.isNotEmpty
-                        ? account.displayName[0].toUpperCase()
-                        : '?',
-                  )
-                : null,
-          ),
-          // タイムラインのカードと同じく、サービスのバッジは左上に置く
-          Positioned(
-            top: -4,
-            left: -6,
-            child: SnsBadge(service: account.service, size: 12),
-          ),
-          // 正常なときは出さない。異常だけが目に入るようにする
-          if (_healthColor(health) != null)
-            Positioned(
-              left: -2,
-              bottom: -2,
-              child: Container(
-                width: 12,
-                height: 12,
-                decoration: BoxDecoration(
-                  color: _healthColor(health),
-                  shape: BoxShape.circle,
-                  border: Border.all(
-                    color: Theme.of(context).scaffoldBackgroundColor,
-                    width: 2,
+    return Material(
+      color: scheme.surfaceContainer,
+      borderRadius: BorderRadius.circular(_accountCardRadius),
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: () => _openDetail(context),
+        child: Stack(
+          children: [
+            // OFF のアカウントは沈めて、取得していないことを見た目で伝える
+            Positioned.fill(
+              child: Opacity(
+                opacity: account.isEnabled ? 1 : 0.45,
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(12, 0, 12, 0),
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      SizedBox(height: side * 0.12),
+                      Stack(
+                        clipBehavior: Clip.none,
+                        children: [
+                          CircleAvatar(
+                            radius: avatarRadius,
+                            backgroundImage: account.avatarUrl != null
+                                ? NetworkImage(account.avatarUrl!)
+                                : null,
+                            child: account.avatarUrl == null
+                                ? Text(
+                                    account.displayName.isNotEmpty
+                                        ? account.displayName[0].toUpperCase()
+                                        : '?',
+                                    style:
+                                        TextStyle(fontSize: avatarRadius * 0.8),
+                                  )
+                                : null,
+                          ),
+                          // 正常なときは出さない。異常だけが目に入るようにする
+                          if (healthColor != null)
+                            Positioned(
+                              left: 0,
+                              bottom: 0,
+                              child: Container(
+                                width: 14,
+                                height: 14,
+                                decoration: BoxDecoration(
+                                  color: healthColor,
+                                  shape: BoxShape.circle,
+                                  border: Border.all(
+                                    color: scheme.surfaceContainer,
+                                    width: 2,
+                                  ),
+                                ),
+                              ),
+                            ),
+                        ],
+                      ),
+                      SizedBox(height: side * 0.06),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Flexible(
+                            child: Text(
+                              account.displayName,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                fontSize: 15,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                          ),
+                          if (account.isProtected) ...[
+                            const SizedBox(width: 3),
+                            Icon(Icons.lock,
+                                size: 13, color: scheme.onSurfaceVariant),
+                          ],
+                        ],
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        account.handle,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: scheme.onSurfaceVariant,
+                        ),
+                      ),
+                    ],
                   ),
                 ),
               ),
             ),
-        ],
-      ),
-        ],
-      ),
-      title: Row(
-        children: [
-          Flexible(
-            child: Text(
-              account.displayName,
-              overflow: TextOverflow.ellipsis,
+            // タイムラインのカードと同じく、サービスのバッジは左上に置く
+            Positioned(
+              top: 12,
+              left: 12,
+              child: SnsBadge(service: account.service, size: 12),
             ),
-          ),
-          if (account.isProtected) ...[
-            const SizedBox(width: 3),
-            Icon(Icons.lock, size: 13, color: Colors.grey[500]),
+            Positioned(
+              top: 0,
+              right: 2,
+              child: Transform.scale(
+                scale: 0.8,
+                alignment: Alignment.topRight,
+                child: Switch(
+                  value: account.isEnabled,
+                  onChanged: (_) {
+                    ref
+                        .read(accountProvider.notifier)
+                        .toggleAccount(account.id);
+                  },
+                ),
+              ),
+            ),
           ],
-        ],
+        ),
       ),
-      subtitle: Opacity(
-        opacity: 0.6,
-        child: Text(account.handle),
-      ),
-      trailing: Switch(
-        value: account.isEnabled,
-        onChanged: (_) {
-          ref.read(accountProvider.notifier).toggleAccount(account.id);
-        },
-      ),
-      onTap: () => _openDetail(context),
     );
   }
 
@@ -408,9 +510,54 @@ class _AccountTile extends ConsumerWidget {
       ),
     );
   }
+}
 
+/// 並びの最後に置く「追加」のカード。面を塗らず枠だけにして、
+/// 既にあるアカウントと見分けが付くようにする
+class _AddAccountCard extends StatelessWidget {
+  const _AddAccountCard({required this.onTap});
 
+  final VoidCallback onTap;
 
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Material(
+      color: Colors.transparent,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(_accountCardRadius),
+        side: BorderSide(color: scheme.outlineVariant),
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: onTap,
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            final side = constraints.maxWidth;
+            return Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(Icons.add, size: side * 0.3, color: scheme.primary),
+                SizedBox(height: side * 0.04),
+                const Padding(
+                  padding: EdgeInsets.symmetric(horizontal: 8),
+                  child: FittedBox(
+                    fit: BoxFit.scaleDown,
+                    child: Text(
+                      'アカウントを追加',
+                      maxLines: 1,
+                      style:
+                          TextStyle(fontSize: 14, fontWeight: FontWeight.w700),
+                    ),
+                  ),
+                ),
+              ],
+            );
+          },
+        ),
+      ),
+    );
+  }
 }
 
 /// アカウント詳細画面

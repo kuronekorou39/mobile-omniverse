@@ -75,6 +75,20 @@ void main() {
       expect(find.byType(SegmentedButton<PostCardStyle>), findsNothing);
     });
 
+    testWidgets('スマホの横向きでも全部のタイルがスクロール無しで収まる', (tester) async {
+      const landscape = Size(844, 390);
+      tester.view.physicalSize = landscape;
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      await pumpScreen(tester, const SettingsScreen());
+
+      for (final tile in tester.widgetList(find.byType(SettingsNavTile))) {
+        final rect = tester.getRect(find.byWidget(tile));
+        expect(rect.bottom, lessThanOrEqualTo(landscape.height));
+        expect(rect.right, lessThanOrEqualTo(landscape.width));
+      }
+    });
+
     testWidgets('タイルには記号と名前だけを出し、現在値は載せない', (tester) async {
       await pumpScreen(tester, const SettingsScreen());
 

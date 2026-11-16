@@ -120,37 +120,58 @@ class SettingsNavTile extends StatelessWidget {
 
 /// 設定トップのタイルの並び。
 ///
-/// スマホは 2 列、タブレットは 3 列で画面の幅いっぱいに使う。
-/// 入口は 6 個なので、どちらでも端数の段ができない。
+/// 画面の幅と高さの両方を見て、全部のタイルがスクロール無しで収まり、
+/// かつ 1 枚がいちばん大きくなる列数を選ぶ。幅だけで決めると、
+/// スマホの横向きのように低い画面で下の段がはみ出す。
 class SettingsNavGrid extends StatelessWidget {
   const SettingsNavGrid({super.key, required this.children});
 
   final List<Widget> children;
 
-  /// これ以上の幅なら 3 列にする
-  static const _threeColumnMinWidth = 600.0;
-
-  /// タイル 1 枚の辺の上限。iPad の横向きで 2 段が 1 画面に収まる大きさ
+  /// タイル 1 枚の辺の上限。タブレットで間延びしない大きさ
   static const _maxTileSide = 300.0;
 
+  /// これより小さくするくらいなら、収めるのをやめてスクロールさせる
+  static const _minTileSide = 96.0;
+
   static const _gap = 16.0;
+
+  /// [columns] 列で並べたときに、はみ出さずに取れるタイルの辺
+  double _sideFor(int columns, BoxConstraints area) {
+    final rows = (children.length / columns).ceil();
+    final byWidth = (area.maxWidth - _gap * (columns + 1)) / columns;
+    final byHeight = (area.maxHeight - _gap * (rows + 1)) / rows;
+    return byWidth < byHeight ? byWidth : byHeight;
+  }
 
   @override
   Widget build(BuildContext context) {
     return LayoutBuilder(
-      builder: (context, constraints) {
-        final columns = constraints.maxWidth >= _threeColumnMinWidth ? 3 : 2;
-        final maxWidth = _maxTileSide * columns + _gap * (columns + 1);
-        return Align(
-          alignment: Alignment.topCenter,
-          child: ConstrainedBox(
-            constraints: BoxConstraints(maxWidth: maxWidth),
-            child: GridView.count(
-              crossAxisCount: columns,
-              padding: const EdgeInsets.all(_gap),
-              mainAxisSpacing: _gap,
-              crossAxisSpacing: _gap,
-              children: children,
+      builder: (context, area) {
+        var columns = 1;
+        var side = 0.0;
+        for (var c = 1; c <= children.length; c++) {
+          final candidate = _sideFor(c, area);
+          if (candidate > side) {
+            columns = c;
+            side = candidate;
+          }
+        }
+        side = side.clamp(_minTileSide, _maxTileSide);
+
+        return SingleChildScrollView(
+          padding: const EdgeInsets.all(_gap),
+          child: Center(
+            child: SizedBox(
+              width: side * columns + _gap * (columns - 1),
+              child: Wrap(
+                spacing: _gap,
+                runSpacing: _gap,
+                children: [
+                  for (final child in children)
+                    SizedBox.square(dimension: side, child: child),
+                ],
+              ),
             ),
           ),
         );

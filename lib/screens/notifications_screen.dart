@@ -449,16 +449,12 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
   /// 横に広い画面では、タイムラインと同じ幅に絞って中央に置く。
   /// 向きを変えても中身を作り直さないよう、絞らないときも同じ形の木にする
   Widget _readable(bool narrow, {required Widget child, double? height}) {
-    return Center(
-      child: ConstrainedBox(
-        constraints: BoxConstraints(
-          maxWidth: narrow ? readableContentMaxWidth : double.infinity,
-        ),
-        child: SizedBox(
-          width: double.infinity,
-          height: height ?? double.infinity,
-          child: child,
-        ),
+    return LayoutBuilder(
+      builder: (context, constraints) => Padding(
+        padding: narrow
+            ? readableInsets(context, constraints.maxWidth)
+            : EdgeInsets.zero,
+        child: SizedBox(height: height, child: child),
       ),
     );
   }

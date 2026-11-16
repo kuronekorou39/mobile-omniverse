@@ -10,10 +10,21 @@ const wideLayoutMinWidth = 600.0;
 /// 画面いっぱいに伸ばすと 1 行が長くなりすぎて目で追いにくい
 const readableContentMaxWidth = 680.0;
 
-/// [availableWidth] の中で読みものを中央に寄せるための左右の余白
-double readableSidePadding(double availableWidth) {
-  final extra = availableWidth - readableContentMaxWidth;
-  return extra > 0 ? extra / 2 : 0;
+/// 読みものを画面の中央に置くための左右の余白。
+///
+/// [availableWidth] は左の列を除いた、中身に使える幅。この幅の中で中央に
+/// 寄せると列のぶんだけ右へずれて見えるので、画面全体の中央に合わせる。
+/// 列や端末の操作バーに当たるときは、幅のほうを狭めて左右対称を保つ。
+EdgeInsets readableInsets(BuildContext context, double availableWidth) {
+  final screenWidth = MediaQuery.sizeOf(context).width;
+  final rightInset = MediaQuery.paddingOf(context).right;
+  // 中身の左側を塞いでいる幅（左の列と、その外の切り欠き）
+  final leftTaken = screenWidth - availableWidth;
+
+  var margin = (screenWidth - readableContentMaxWidth) / 2;
+  if (margin < leftTaken) margin = leftTaken;
+  if (margin < rightInset) margin = rightInset;
+  return EdgeInsets.only(left: margin - leftTaken, right: margin);
 }
 
 /// ホーム画面が左の列（[HomeRail]）を出しているかを、各タブの画面へ伝える。

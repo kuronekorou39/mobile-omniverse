@@ -85,9 +85,38 @@ List<HeaderButtonItem> buildHeaderButtonItems(
   return items;
 }
 
-/// タイムラインの表示切り替え・取得タイマー・裏の収集の進み。
+/// 取得タイマーを出す状態か
+bool _showFetchTimer(WidgetRef ref) {
+  final hasAccounts = ref.watch(accountProvider.select((a) => a.isNotEmpty));
+  return hasAccounts &&
+      ref.watch(settingsProvider
+          .select((s) => s.isFetchingActive && s.showFetchTimer));
+}
+
+/// 取得タイマーと、裏で走っている収集の進み。
 ///
-/// 縦画面ではヘッダーの左に横並びで、横に広い画面では左の列に縦並びで置く。
+/// 縦画面ではヘッダーの切り替えボタンの隣、横に広い画面では右上の隅に置く。
+class FeedIndicators extends ConsumerWidget {
+  const FeedIndicators({super.key});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        if (_showFetchTimer(ref)) const FetchTimerIndicator(),
+        // 裏で走っている収集は、この画面からは見えないまま何時間も続く。
+        // 動いていることと、その進みをここに出す
+        const BackgroundJobIndicator(),
+      ],
+    );
+  }
+}
+
+/// タイムラインの表示切り替え。
+///
+/// 縦画面ではヘッダーの左に横並びで置き、取得の進みを隣に続ける。
+/// 横に広い画面では左の列に縦並びで置く（進みは右上の隅に分かれる）。
 class FeedQuickButtons extends ConsumerWidget {
   const FeedQuickButtons({super.key, this.axis = Axis.horizontal});
 
@@ -100,14 +129,11 @@ class FeedQuickButtons extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final settings = ref.watch(settingsProvider);
-    final hasAccounts =
-        ref.watch(accountProvider.select((a) => a.isNotEmpty));
     final items =
         buildHeaderButtonItems(settings, ref.read(settingsProvider.notifier));
 
     // 取得タイマーは常に独立表示（メニューに入れない）
-    final showTimer =
-        hasAccounts && settings.isFetchingActive && settings.showFetchTimer;
+    final showTimer = _showFetchTimer(ref);
 
     final bool group;
     if (axis == Axis.horizontal) {
@@ -140,10 +166,7 @@ class FeedQuickButtons extends ConsumerWidget {
               constraints: headerButtonConstraints,
               padding: EdgeInsets.zero,
             ),
-        if (showTimer) const FetchTimerIndicator(),
-        // 裏で走っている収集は、この画面からは見えないまま何時間も続く。
-        // 動いていることと、その進みをここに出す
-        const BackgroundJobIndicator(),
+        if (axis == Axis.horizontal) const FeedIndicators(),
       ],
     );
   }

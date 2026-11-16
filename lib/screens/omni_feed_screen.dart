@@ -457,10 +457,11 @@ class _OmniFeedScreenState extends ConsumerState<OmniFeedScreen>
 
     Widget body = LayoutBuilder(
       builder: (context, constraints) {
-        // 横に広い画面では、読みやすい幅に絞って中央に置く。
+        // 横に広い画面では、読みやすい幅に絞って画面の中央に置く。
         // 余白の上でもスクロールできるよう、リスト自体は幅いっぱいに取る
-        final side =
-            railActive ? readableSidePadding(constraints.maxWidth) : 0.0;
+        final insets = railActive
+            ? readableInsets(context, constraints.maxWidth)
+            : EdgeInsets.zero;
         return CustomScrollView(
           cacheExtent: 800,
           controller: _scrollController,
@@ -518,12 +519,9 @@ class _OmniFeedScreenState extends ConsumerState<OmniFeedScreen>
             ),
             for (final sliver in _buildSliverBody(context,
                 ref.read(feedProvider), settings, accounts, enabledAccountIds))
-              side > 0
-                  ? SliverPadding(
-                      padding: EdgeInsets.symmetric(horizontal: side),
-                      sliver: sliver,
-                    )
-                  : sliver,
+              insets == EdgeInsets.zero
+                  ? sliver
+                  : SliverPadding(padding: insets, sliver: sliver),
           ],
         );
       },
@@ -546,6 +544,13 @@ class _OmniFeedScreenState extends ConsumerState<OmniFeedScreen>
         body,
         if (showBanner)
           _buildNewPostsBanner(context, feed.pendingCount, feed.fastDripActive),
+        // ヘッダーが無いときは、取得の進みを右上の隅に出す
+        if (railActive)
+          Positioned(
+            top: 4,
+            right: 8 + MediaQuery.paddingOf(context).right,
+            child: const FeedIndicators(),
+          ),
       ],
     );
 
@@ -553,7 +558,10 @@ class _OmniFeedScreenState extends ConsumerState<OmniFeedScreen>
 
     return Scaffold(
       // ヘッダーが無いぶん、ステータスバーの下から始める
-      body: railActive ? SafeArea(bottom: false, child: body) : body,
+      // 左右は余白の計算の中で避ける（ここで削ると中央がずれる）
+      body: railActive
+          ? SafeArea(left: false, right: false, bottom: false, child: body)
+          : body,
       floatingActionButtonLocation: settings.fabPosition == FabPosition.left
           ? FloatingActionButtonLocation.startFloat
           : FloatingActionButtonLocation.endFloat,

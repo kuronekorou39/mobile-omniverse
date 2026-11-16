@@ -186,13 +186,22 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       child: Scaffold(
         body: HomeRailScope(
           active: wide,
+          rightInset: wide ? MediaQuery.paddingOf(context).right : 0,
           child: Row(
             children: [
               if (wide) _buildRail(unreadTotal),
               Expanded(
                 // 向きを変えて列が出入りしても、タブの中身を作り直させない
                 key: const ValueKey('home_content'),
-                child: Stack(
+                // 縦画面では下のバーが端末の操作バーを避けている。列にしたときは
+                // 避けるものが無くなるので、ここで中身ごと内側に収める。
+                // 横向きの操作バーは端末によって右にも下にも出る
+                child: SafeArea(
+                  left: false,
+                  top: false,
+                  right: wide,
+                  bottom: wide,
+                  child: Stack(
                   children: [
                     IndexedStack(
                       index: _currentIndex,
@@ -213,6 +222,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                       child: ComposeQueueBanner(),
                     ),
                   ],
+                ),
                 ),
               ),
             ],

@@ -47,6 +47,9 @@ class _OmniFeedScreenState extends ConsumerState<OmniFeedScreen>
     with WidgetsBindingObserver {
   final _scrollController = ScrollController();
 
+  /// 左の列を出しているときのヘッダーの高さ。横向きは縦が狭いので低くする
+  static const _railHeaderHeight = 44.0;
+
   /// スクロールトップボタン表示
   bool _showScrollToTop = false;
 
@@ -452,7 +455,9 @@ class _OmniFeedScreenState extends ConsumerState<OmniFeedScreen>
     }
     _prevPostIds = currentPostIds;
 
-    // ホームが左の列を出しているときは、ヘッダーのボタンはそちらにある
+    // ホームが左の列を出しているときは、ヘッダーのボタンはそちらにある。
+    // ヘッダーにはロゴと取得の進みだけを残す。先頭の投稿が画面の端に
+    // 貼り付かないようにするためで、下へ送ると隠れ、上へ戻すと出る
     final railActive = HomeRailScope.isActive(context);
 
     Widget body = LayoutBuilder(
@@ -469,10 +474,10 @@ class _OmniFeedScreenState extends ConsumerState<OmniFeedScreen>
             parent: SmoothScrollPhysics(),
           ),
           slivers: [
-            if (!railActive)
             SliverAppBar(
               floating: true,
               snap: false,
+              toolbarHeight: railActive ? _railHeaderHeight : kToolbarHeight,
               leadingWidth: 0,
               leading: const SizedBox.shrink(),
               titleSpacing: 16,
@@ -481,6 +486,9 @@ class _OmniFeedScreenState extends ConsumerState<OmniFeedScreen>
                 children: [
                   // ロゴ: 中央やや右に固定（Oの位置が画面中央）
                   Positioned.fill(
+                    // 列のときは、本文の列の中央に合わせる
+                    left: (insets.left - 16).clamp(0, double.infinity),
+                    right: (insets.right - 16).clamp(0, double.infinity),
                     child: Align(
                       alignment: const Alignment(0.03, 0.0),
                       child: GestureDetector(
@@ -493,7 +501,7 @@ class _OmniFeedScreenState extends ConsumerState<OmniFeedScreen>
                         },
                         child: Image.asset(
                           'assets/logo.png',
-                          height: 36,
+                          height: railActive ? 28 : 36,
                           fit: BoxFit.contain,
                         ),
                       ),
@@ -502,9 +510,11 @@ class _OmniFeedScreenState extends ConsumerState<OmniFeedScreen>
                   // 左右のボタン群（ロゴの上に配置）
                   Row(
                     children: [
-                      const FeedQuickButtons(),
+                      if (!railActive) const FeedQuickButtons(),
                       const Spacer(),
-                      const OverlayLaunchButton(),
+                      if (railActive) const FeedIndicators(),
+                      if (!railActive) const OverlayLaunchButton(),
+                      if (!railActive)
                       IconButton(
                         icon: const Icon(Icons.settings_outlined, size: 20),
                         tooltip: '設定',
@@ -544,13 +554,6 @@ class _OmniFeedScreenState extends ConsumerState<OmniFeedScreen>
         body,
         if (showBanner)
           _buildNewPostsBanner(context, feed.pendingCount, feed.fastDripActive),
-        // ヘッダーが無いときは、取得の進みを右上の隅に出す
-        if (railActive)
-          Positioned(
-            top: 4,
-            right: 8 + MediaQuery.paddingOf(context).right,
-            child: const FeedIndicators(),
-          ),
       ],
     );
 
@@ -558,10 +561,7 @@ class _OmniFeedScreenState extends ConsumerState<OmniFeedScreen>
 
     return Scaffold(
       // ヘッダーが無いぶん、ステータスバーの下から始める
-      // 左右は余白の計算の中で避ける（ここで削ると中央がずれる）
-      body: railActive
-          ? SafeArea(left: false, right: false, bottom: false, child: body)
-          : body,
+      body: body,
       floatingActionButtonLocation: settings.fabPosition == FabPosition.left
           ? FloatingActionButtonLocation.startFloat
           : FloatingActionButtonLocation.endFloat,

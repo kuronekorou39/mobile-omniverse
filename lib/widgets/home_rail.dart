@@ -15,16 +15,23 @@ const readableContentMaxWidth = 680.0;
 /// [availableWidth] は左の列を除いた、中身に使える幅。この幅の中で中央に
 /// 寄せると列のぶんだけ右へずれて見えるので、画面全体の中央に合わせる。
 /// 列や端末の操作バーに当たるときは、幅のほうを狭めて左右対称を保つ。
-EdgeInsets readableInsets(BuildContext context, double availableWidth) {
+///
+/// [rightTaken] は、呼び出し側が中身の右隣に置いているものの幅。
+EdgeInsets readableInsets(
+  BuildContext context,
+  double availableWidth, {
+  double rightTaken = 0,
+}) {
   final screenWidth = MediaQuery.sizeOf(context).width;
-  final rightInset = MediaQuery.paddingOf(context).right;
+  // 中身の右側を塞いでいる幅（端末の操作バーと、右隣に置いたもの）
+  final right = HomeRailScope.rightInsetOf(context) + rightTaken;
   // 中身の左側を塞いでいる幅（左の列と、その外の切り欠き）
-  final leftTaken = screenWidth - availableWidth;
+  final left = screenWidth - availableWidth - right;
 
   var margin = (screenWidth - readableContentMaxWidth) / 2;
-  if (margin < leftTaken) margin = leftTaken;
-  if (margin < rightInset) margin = rightInset;
-  return EdgeInsets.only(left: margin - leftTaken, right: margin);
+  if (margin < left) margin = left;
+  if (margin < right) margin = right;
+  return EdgeInsets.only(left: margin - left, right: margin - right);
 }
 
 /// ホーム画面が左の列（[HomeRail]）を出しているかを、各タブの画面へ伝える。
@@ -33,16 +40,30 @@ EdgeInsets readableInsets(BuildContext context, double availableWidth) {
 /// ヘッダーも列も無い画面になる。列が実際に出ているときだけ
 /// ヘッダーを外せるよう、出している側が知らせる。
 class HomeRailScope extends InheritedWidget {
-  const HomeRailScope({super.key, required this.active, required super.child});
+  const HomeRailScope({
+    super.key,
+    required this.active,
+    required this.rightInset,
+    required super.child,
+  });
 
   final bool active;
+
+  /// ホームが中身の右側で避けた幅（横向きのときの端末の操作バーなど）。
+  /// 避けたあとの中身からは見えなくなるので、ここで伝える
+  final double rightInset;
+
+  static double rightInsetOf(BuildContext context) =>
+      context.dependOnInheritedWidgetOfExactType<HomeRailScope>()?.rightInset ??
+      0;
 
   static bool isActive(BuildContext context) =>
       context.dependOnInheritedWidgetOfExactType<HomeRailScope>()?.active ??
       false;
 
   @override
-  bool updateShouldNotify(HomeRailScope oldWidget) => active != oldWidget.active;
+  bool updateShouldNotify(HomeRailScope oldWidget) =>
+      active != oldWidget.active || rightInset != oldWidget.rightInset;
 }
 
 /// 横に広い画面で左端に立てる列。

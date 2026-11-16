@@ -303,6 +303,11 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
   /// 0 = 「すべて」、1〜N = 各アカウント（accounts と同じ並び）
   int _selectedIndex = 0;
 
+  final _listsKey = GlobalKey();
+
+  /// 横に広い画面で、右端に縦で並べるチップの列の幅
+  static const _sideChipsWidth = 80.0;
+
   @override
   Widget build(BuildContext context) {
     final accounts = ref.watch(accountProvider).where((a) => a.isEnabled).toList();
@@ -360,9 +365,69 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
       );
     }
 
+    final lists = IndexedStack(
+      // 向きを変えると置き場所が変わる。鍵で持ち回って、読み込み済みの
+      // 通知を作り直させない
+      key: _listsKey,
+      index: _selectedIndex,
+      children: [
+        _UnifiedNotificationList(
+          key: ValueKey(accounts.map((a) => a.id).join(',')),
+          accounts: accounts,
+          isVisible: _selectedIndex == 0,
+        ),
+        for (var i = 0; i < accounts.length; i++)
+          _NotificationList(
+            key: ValueKey(accounts[i].id),
+            account: accounts[i],
+            isVisible: _selectedIndex == i + 1,
+          ),
+      ],
+    );
+
+    // 横に広い画面は縦が狭い。アカウントの並びを上に置くと通知が見える
+    // 高さを削るので、右端に縦で並べる
+    if (railActive) {
+      return Scaffold(
+        body: SafeArea(
+          left: false,
+          right: false,
+          bottom: false,
+          child: Row(
+            children: [
+              Expanded(
+                child: LayoutBuilder(
+                  builder: (context, constraints) => Padding(
+                    padding: readableInsets(
+                      context,
+                      constraints.maxWidth,
+                      rightTaken: _sideChipsWidth,
+                    ),
+                    child: lists,
+                  ),
+                ),
+              ),
+              SizedBox(
+                width: _sideChipsWidth,
+                child: ListView(
+                  padding: const EdgeInsets.symmetric(vertical: 8),
+                  children: [
+                    for (final chip in _buildChips(accounts, badge))
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 4),
+                        child: Center(child: chip),
+                      ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
     return Scaffold(
       appBar: AppBar(
-        toolbarHeight: railActive ? 0 : null,
         leadingWidth: 0,
         leading: const SizedBox.shrink(),
         titleSpacing: 16,
@@ -397,66 +462,43 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
         ),
         bottom: PreferredSize(
           preferredSize: const Size.fromHeight(86),
-          child: _readable(
-            railActive,
+          child: SizedBox(
             height: 86,
             child: ListView(
               scrollDirection: Axis.horizontal,
               padding: const EdgeInsets.fromLTRB(8, 4, 8, 8),
               children: [
-                _AllChip(
-                  selected: _selectedIndex == 0,
-                  totalUnread: badge.total,
-                  onTap: () => setState(() => _selectedIndex = 0),
-                ),
-                const SizedBox(width: 8),
-                for (var i = 0; i < accounts.length; i++) ...[
-                  _NotifAccountChip(
-                    account: accounts[i],
-                    selected: _selectedIndex == i + 1,
-                    unreadCount: badge.countFor(accounts[i].id),
-                    onTap: () => setState(() => _selectedIndex = i + 1),
+                for (final chip in _buildChips(accounts, badge))
+                  Padding(
+                    padding: const EdgeInsets.only(right: 8),
+                    child: chip,
                   ),
-                  if (i < accounts.length - 1) const SizedBox(width: 8),
-                ],
               ],
             ),
           ),
         ),
       ),
-      body: _readable(
-        railActive,
-        child: IndexedStack(
-          index: _selectedIndex,
-          children: [
-            _UnifiedNotificationList(
-              key: ValueKey(accounts.map((a) => a.id).join(',')),
-              accounts: accounts,
-              isVisible: _selectedIndex == 0,
-            ),
-            for (var i = 0; i < accounts.length; i++)
-              _NotificationList(
-                key: ValueKey(accounts[i].id),
-                account: accounts[i],
-                isVisible: _selectedIndex == i + 1,
-              ),
-          ],
-        ),
-      ),
+      body: lists,
     );
   }
 
-  /// 横に広い画面では、タイムラインと同じ幅に絞って中央に置く。
-  /// 向きを変えても中身を作り直さないよう、絞らないときも同じ形の木にする
-  Widget _readable(bool narrow, {required Widget child, double? height}) {
-    return LayoutBuilder(
-      builder: (context, constraints) => Padding(
-        padding: narrow
-            ? readableInsets(context, constraints.maxWidth)
-            : EdgeInsets.zero,
-        child: SizedBox(height: height, child: child),
+  /// 「すべて」と各アカウントのチップ。縦画面では上に横並び、
+  /// 横に広い画面では右端に縦並びで使う
+  List<Widget> _buildChips(List<Account> accounts, NotificationBadgeState badge) {
+    return [
+      _AllChip(
+        selected: _selectedIndex == 0,
+        totalUnread: badge.total,
+        onTap: () => setState(() => _selectedIndex = 0),
       ),
-    );
+      for (var i = 0; i < accounts.length; i++)
+        _NotifAccountChip(
+          account: accounts[i],
+          selected: _selectedIndex == i + 1,
+          unreadCount: badge.countFor(accounts[i].id),
+          onTap: () => setState(() => _selectedIndex = i + 1),
+        ),
+    ];
   }
 }
 

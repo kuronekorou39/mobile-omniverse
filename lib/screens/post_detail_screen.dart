@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../utils/engagement_errors.dart';
+import '../widgets/home_rail.dart';
 import '../utils/image_headers.dart';
 import '../models/account.dart';
 import '../models/activity_log.dart';
@@ -160,7 +161,7 @@ class _PostDetailScreenState extends ConsumerState<PostDetailScreen> {
             ),
         ],
       ),
-      body: RefreshIndicator(
+      body: ReadableWidth(child: RefreshIndicator(
         onRefresh: _loadReplies,
         child: Builder(builder: (context) {
           // スレッド全体のメディアURLを収集（メイン投稿 + リプライ）
@@ -290,7 +291,7 @@ class _PostDetailScreenState extends ConsumerState<PostDetailScreen> {
           ],
         );
         }),
-      ),
+      )),
     );
   }
 

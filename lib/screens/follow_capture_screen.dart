@@ -2,6 +2,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 
 import '../models/account.dart';
+import '../widgets/home_rail.dart';
 import '../models/sns_service.dart';
 import '../services/account_storage_service.dart';
 import '../services/fetch_jobs.dart';
@@ -154,7 +155,7 @@ class _FollowCaptureScreenState extends State<FollowCaptureScreen> {
         onPressed: _accounts.isEmpty ? null : _addTarget,
         child: const Icon(Icons.add),
       ),
-      body: RefreshIndicator(
+      body: ReadableWidth(child: RefreshIndicator(
         onRefresh: _load,
         child: _loading
             ? SkeletonList(itemBuilder: (i) => UserTileSkeleton(variant: i))
@@ -182,7 +183,7 @@ class _FollowCaptureScreenState extends State<FollowCaptureScreen> {
                   const SizedBox(height: 88),
                 ],
               ),
-      ),
+      )),
     );
   }
 

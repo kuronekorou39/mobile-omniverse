@@ -626,6 +626,253 @@ class _AccountDetailScreenState extends ConsumerState<_AccountDetailScreen> {
 
     final scheme = Theme.of(context).colorScheme;
 
+    final profile = <Widget>[
+      // プロフィールヘッダー。中央揃えで縦に積むと 80dp 以上使うので、
+      // 横 1 行にして情報の密度を上げる
+      Padding(
+        padding: const EdgeInsets.fromLTRB(20, 4, 20, 18),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            CircleAvatar(
+              radius: 28,
+              backgroundColor: scheme.primaryContainer,
+              backgroundImage: account.avatarUrl != null
+                  ? NetworkImage(account.avatarUrl!)
+                  : null,
+              child: account.avatarUrl == null
+                  ? Text(
+                      account.displayName.isNotEmpty
+                          ? account.displayName[0].toUpperCase()
+                          : '?',
+                      style: TextStyle(
+                        fontSize: 24,
+                        fontWeight: FontWeight.bold,
+                        color: scheme.onPrimaryContainer,
+                      ),
+                    )
+                  : null,
+            ),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Flexible(
+                        child: Text(
+                          account.displayName,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                              fontSize: 22, fontWeight: FontWeight.bold),
+                        ),
+                      ),
+                      if (account.isProtected) ...[
+                        const SizedBox(width: 6),
+                        Icon(Icons.lock,
+                            size: 16, color: scheme.onSurfaceVariant),
+                      ],
+                    ],
+                  ),
+                  const SizedBox(height: 6),
+                  Row(
+                    children: [
+                      SnsBadge(service: account.service),
+                      const SizedBox(width: 8),
+                      Flexible(
+                        child: Text(
+                          account.handle,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                              fontSize: 14,
+                              color: scheme.onSurfaceVariant),
+                        ),
+                      ),
+                    ],
+                  ),
+                  _SessionChip(
+                    accountId: account.id,
+                    onTap: () =>
+                        _openSessionRefresh(context, ref, account),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    ];
+    final viewCard = <Widget>[
+      // 「見るもの」はひとつの面にまとめる。同じ重さの行が並ぶので
+      // カード 1 枚に収め、区切り線だけで分ける
+      Padding(
+        key: _viewKey,
+        padding: const EdgeInsets.symmetric(horizontal: 16),
+        child: Container(
+          decoration: BoxDecoration(
+            color: scheme.surfaceContainer,
+            borderRadius: BorderRadius.circular(16),
+          ),
+          padding: const EdgeInsets.symmetric(vertical: 2, horizontal: 8),
+          child: Column(
+            children: [
+              _NavRow(
+                icon: Icons.person_outline,
+                label: 'プロフィール',
+                onTap: () => Navigator.of(context).push(
+                  MaterialPageRoute(
+                    builder: (_) => UserProfileScreen(
+                      username: account.displayName,
+                      handle: account.handle,
+                      service: account.service,
+                      avatarUrl: account.avatarUrl,
+                      accountId: account.id,
+                    ),
+                  ),
+                ),
+              ),
+              const _NavDivider(),
+              _NavRow(
+                icon: Icons.favorite_border,
+                label: 'ふぁぼ',
+                onTap: () => Navigator.of(context).push(
+                  MaterialPageRoute(
+                    builder: (_) => LikesBookmarksScreen(
+                        account: account, initialIndex: 0),
+                  ),
+                ),
+              ),
+              const _NavDivider(),
+              _NavRow(
+                icon: Icons.bookmark_border,
+                label: 'ブックマーク',
+                onTap: () => Navigator.of(context).push(
+                  MaterialPageRoute(
+                    builder: (_) => LikesBookmarksScreen(
+                        account: account, initialIndex: 1),
+                  ),
+                ),
+              ),
+              const _NavDivider(),
+            ],
+          ),
+        ),
+      ),
+    ];
+    final connections = <Widget>[
+      // 収集を伴う重い機能なので、面と枠を変えて 1 段持ち上げる。
+      // 遷移先の「つながり調査」と語がぶつからないよう動詞にした
+      Padding(
+        key: _connectionsKey,
+        padding: const EdgeInsets.symmetric(horizontal: 16),
+        child: Material(
+          color: scheme.surfaceContainerLowest,
+          borderRadius: BorderRadius.circular(18),
+          child: InkWell(
+            borderRadius: BorderRadius.circular(18),
+            onTap: () => Navigator.of(context).push(
+              MaterialPageRoute(
+                builder: (_) => FollowTargetScreen(
+                  service: account.service,
+                  handle:
+                      account.handle.replaceFirst('@', '').toLowerCase(),
+                ),
+              ),
+            ),
+            child: Container(
+              decoration: BoxDecoration(
+                border: Border.all(color: scheme.primary, width: 1.5),
+                borderRadius: BorderRadius.circular(18),
+              ),
+              padding:
+                  const EdgeInsets.symmetric(vertical: 18, horizontal: 16),
+              child: Row(
+                children: [
+                  Icon(Icons.groups_outlined,
+                      size: 28, color: scheme.primary),
+                  const SizedBox(width: 14),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text('つながりを調べる',
+                            style: TextStyle(
+                                fontSize: 17,
+                                fontWeight: FontWeight.bold)),
+                        const SizedBox(height: 4),
+                        Text(
+                          'フォロー / フォロワーの一覧・相互の判定・差分',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: scheme.onSurfaceVariant,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  Icon(Icons.chevron_right,
+                      size: 22, color: scheme.primary),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    ];
+    final settingRows = <Widget>[
+      // 設定は面を持たせず、入口より一段軽くする。見出しは付けない
+      // （2 行しかなく、面の違いで入口とは区別がつく）
+      Column(
+        key: _settingsKey,
+        children: [
+          _SettingRow(
+            label: 'タイムライン取得',
+            value: account.isEnabled,
+            onChanged: (_) => ref
+                .read(accountProvider.notifier)
+                .toggleAccount(account.id),
+          ),
+          _SettingRow(
+            label: 'フォロー先の RT を非表示',
+            value: ref
+                .watch(settingsProvider)
+                .hideRetweetsAccountIds
+                .contains(account.id),
+            onChanged: (_) => ref
+                .read(settingsProvider.notifier)
+                .toggleHideRetweets(account.id),
+          ),
+        ],
+      ),
+    ];
+    final danger = <Widget>[
+      // 破壊的操作はフォールドの下へ。消えるのはこのアプリの登録と
+      // 保存データで、SNS 側のアカウントではない。何が消えるかは
+      // 確認ダイアログで伝える
+      Padding(
+        padding: const EdgeInsets.fromLTRB(24, 20, 24, 10),
+        child: Divider(height: 1, color: scheme.outlineVariant),
+      ),
+      InkWell(
+        onTap: () => _confirmDelete(context, ref, account),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 24),
+          child: Row(
+            children: [
+              Icon(Icons.delete_outline, size: 22, color: scheme.error),
+              const SizedBox(width: 14),
+              Text('アカウント一覧から削除',
+                  style: TextStyle(
+                      fontSize: 15,
+                      fontWeight: FontWeight.bold,
+                      color: scheme.error)),
+            ],
+          ),
+        ),
+      ),
+    ];
+
     return Scaffold(
       appBar: AppBar(
         // 更新と削除はここから外した。更新は期限切れチップから、削除は
@@ -641,247 +888,25 @@ class _AccountDetailScreenState extends ConsumerState<_AccountDetailScreen> {
           ),
         ],
       ),
-      body: ListView(
-        children: [
-          // プロフィールヘッダー。中央揃えで縦に積むと 80dp 以上使うので、
-          // 横 1 行にして情報の密度を上げる
-          Padding(
-            padding: const EdgeInsets.fromLTRB(20, 4, 20, 18),
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                CircleAvatar(
-                  radius: 28,
-                  backgroundColor: scheme.primaryContainer,
-                  backgroundImage: account.avatarUrl != null
-                      ? NetworkImage(account.avatarUrl!)
-                      : null,
-                  child: account.avatarUrl == null
-                      ? Text(
-                          account.displayName.isNotEmpty
-                              ? account.displayName[0].toUpperCase()
-                              : '?',
-                          style: TextStyle(
-                            fontSize: 24,
-                            fontWeight: FontWeight.bold,
-                            color: scheme.onPrimaryContainer,
-                          ),
-                        )
-                      : null,
-                ),
-                const SizedBox(width: 14),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        children: [
-                          Flexible(
-                            child: Text(
-                              account.displayName,
-                              overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
-                                  fontSize: 22, fontWeight: FontWeight.bold),
-                            ),
-                          ),
-                          if (account.isProtected) ...[
-                            const SizedBox(width: 6),
-                            Icon(Icons.lock,
-                                size: 16, color: scheme.onSurfaceVariant),
-                          ],
-                        ],
-                      ),
-                      const SizedBox(height: 6),
-                      Row(
-                        children: [
-                          SnsBadge(service: account.service),
-                          const SizedBox(width: 8),
-                          Flexible(
-                            child: Text(
-                              account.handle,
-                              overflow: TextOverflow.ellipsis,
-                              style: TextStyle(
-                                  fontSize: 14,
-                                  color: scheme.onSurfaceVariant),
-                            ),
-                          ),
-                        ],
-                      ),
-                      _SessionChip(
-                        accountId: account.id,
-                        onTap: () =>
-                            _openSessionRefresh(context, ref, account),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-          ),
-          // 「見るもの」はひとつの面にまとめる。同じ重さの行が並ぶので
-          // カード 1 枚に収め、区切り線だけで分ける
-          Padding(
-            key: _viewKey,
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: Container(
-              decoration: BoxDecoration(
-                color: scheme.surfaceContainer,
-                borderRadius: BorderRadius.circular(16),
-              ),
-              padding: const EdgeInsets.symmetric(vertical: 2, horizontal: 8),
-              child: Column(
-                children: [
-                  _NavRow(
-                    icon: Icons.person_outline,
-                    label: 'プロフィール',
-                    onTap: () => Navigator.of(context).push(
-                      MaterialPageRoute(
-                        builder: (_) => UserProfileScreen(
-                          username: account.displayName,
-                          handle: account.handle,
-                          service: account.service,
-                          avatarUrl: account.avatarUrl,
-                          accountId: account.id,
-                        ),
-                      ),
-                    ),
-                  ),
-                  const _NavDivider(),
-                  _NavRow(
-                    icon: Icons.favorite_border,
-                    label: 'ふぁぼ',
-                    onTap: () => Navigator.of(context).push(
-                      MaterialPageRoute(
-                        builder: (_) => LikesBookmarksScreen(
-                            account: account, initialIndex: 0),
-                      ),
-                    ),
-                  ),
-                  const _NavDivider(),
-                  _NavRow(
-                    icon: Icons.bookmark_border,
-                    label: 'ブックマーク',
-                    onTap: () => Navigator.of(context).push(
-                      MaterialPageRoute(
-                        builder: (_) => LikesBookmarksScreen(
-                            account: account, initialIndex: 1),
-                      ),
-                    ),
-                  ),
-                  const _NavDivider(),
-                ],
-              ),
-            ),
-          ),
+      // 横に広い画面は縦が狭いので、このアカウントのこと（名前・設定・削除）と
+      // 開く先（投稿・つながり）を左右に分けて、スクロールせずに収める
+      body: WideColumns(
+        padding: const EdgeInsets.only(bottom: 32),
+        single: [
+          ...profile,
+          ...viewCard,
           const SizedBox(height: 22),
-          // 収集を伴う重い機能なので、面と枠を変えて 1 段持ち上げる。
-          // 遷移先の「つながり調査」と語がぶつからないよう動詞にした
-          Padding(
-            key: _connectionsKey,
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: Material(
-              color: scheme.surfaceContainerLowest,
-              borderRadius: BorderRadius.circular(18),
-              child: InkWell(
-                borderRadius: BorderRadius.circular(18),
-                onTap: () => Navigator.of(context).push(
-                  MaterialPageRoute(
-                    builder: (_) => FollowTargetScreen(
-                      service: account.service,
-                      handle:
-                          account.handle.replaceFirst('@', '').toLowerCase(),
-                    ),
-                  ),
-                ),
-                child: Container(
-                  decoration: BoxDecoration(
-                    border: Border.all(color: scheme.primary, width: 1.5),
-                    borderRadius: BorderRadius.circular(18),
-                  ),
-                  padding:
-                      const EdgeInsets.symmetric(vertical: 18, horizontal: 16),
-                  child: Row(
-                    children: [
-                      Icon(Icons.groups_outlined,
-                          size: 28, color: scheme.primary),
-                      const SizedBox(width: 14),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            const Text('つながりを調べる',
-                                style: TextStyle(
-                                    fontSize: 17,
-                                    fontWeight: FontWeight.bold)),
-                            const SizedBox(height: 4),
-                            Text(
-                              'フォロー / フォロワーの一覧・相互の判定・差分',
-                              style: TextStyle(
-                                fontSize: 12,
-                                color: scheme.onSurfaceVariant,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                      Icon(Icons.chevron_right,
-                          size: 22, color: scheme.primary),
-                    ],
-                  ),
-                ),
-              ),
-            ),
-          ),
+          ...connections,
           const SizedBox(height: 18),
-          // 設定は面を持たせず、入口より一段軽くする。見出しは付けない
-          // （2 行しかなく、面の違いで入口とは区別がつく）
-          Column(
-            key: _settingsKey,
-            children: [
-              _SettingRow(
-                label: 'タイムライン取得',
-                value: account.isEnabled,
-                onChanged: (_) => ref
-                    .read(accountProvider.notifier)
-                    .toggleAccount(account.id),
-              ),
-              _SettingRow(
-                label: 'フォロー先の RT を非表示',
-                value: ref
-                    .watch(settingsProvider)
-                    .hideRetweetsAccountIds
-                    .contains(account.id),
-                onChanged: (_) => ref
-                    .read(settingsProvider.notifier)
-                    .toggleHideRetweets(account.id),
-              ),
-            ],
-          ),
-          // 破壊的操作はフォールドの下へ。消えるのはこのアプリの登録と
-          // 保存データで、SNS 側のアカウントではない。何が消えるかは
-          // 確認ダイアログで伝える
-          Padding(
-            padding: const EdgeInsets.fromLTRB(24, 20, 24, 10),
-            child: Divider(height: 1, color: scheme.outlineVariant),
-          ),
-          InkWell(
-            onTap: () => _confirmDelete(context, ref, account),
-            child: Padding(
-              padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 24),
-              child: Row(
-                children: [
-                  Icon(Icons.delete_outline, size: 22, color: scheme.error),
-                  const SizedBox(width: 14),
-                  Text('アカウント一覧から削除',
-                      style: TextStyle(
-                          fontSize: 15,
-                          fontWeight: FontWeight.bold,
-                          color: scheme.error)),
-                ],
-              ),
-            ),
-          ),
-          const SizedBox(height: 32),
+          ...settingRows,
+          ...danger,
+        ],
+        first: [...profile, ...settingRows, ...danger],
+        second: [
+          const SizedBox(height: 4),
+          ...viewCard,
+          const SizedBox(height: 16),
+          ...connections,
         ],
       ),
     );

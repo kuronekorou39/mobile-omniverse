@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:share_plus/share_plus.dart';
 
 import '../models/follow_user.dart';
+import '../widgets/home_rail.dart';
 import '../models/sns_service.dart';
 import '../services/export_service.dart';
 import '../services/follow_db.dart';
@@ -136,7 +137,7 @@ class _FollowSnapshotScreenState extends State<FollowSnapshotScreen> {
           ),
         ],
       ),
-      body: Column(
+      body: ReadableWidth(child: Column(
         children: [
           Padding(
             padding: const EdgeInsets.fromLTRB(12, 4, 12, 0),
@@ -182,7 +183,7 @@ class _FollowSnapshotScreenState extends State<FollowSnapshotScreen> {
             ),
           ),
         ],
-      ),
+      )),
     );
   }
 }

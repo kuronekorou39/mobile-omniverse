@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../models/follow_user.dart';
+import '../widgets/home_rail.dart';
 import '../models/sns_service.dart';
 import '../services/follow_db.dart';
 import '../widgets/follow_list_controls.dart';
@@ -92,7 +93,7 @@ class _FollowRelationDiffScreenState extends State<FollowRelationDiffScreen> {
             Tab(text: _tabLabel('減った', _removed)),
           ]),
         ),
-        body: Column(
+        body: ReadableWidth(child: Column(
           children: [
             Padding(
               padding: const EdgeInsets.fromLTRB(10, 10, 10, 0),
@@ -120,7 +121,7 @@ class _FollowRelationDiffScreenState extends State<FollowRelationDiffScreen> {
               ]),
             ),
           ],
-        ),
+        )),
       ),
     );
   }

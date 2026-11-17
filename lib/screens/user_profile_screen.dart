@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../models/account.dart';
+import '../widgets/home_rail.dart';
 import '../models/activity_log.dart';
 import '../models/post.dart';
 import '../models/sns_service.dart';
@@ -346,7 +347,7 @@ class _UserProfileScreenState extends ConsumerState<UserProfileScreen>
         : (_hideRetweets ? _mediaPosts.where((p) => !p.isRetweet).toList() : _mediaPosts);
 
     return Scaffold(
-      body: _buildSliverBody(activePosts),
+      body: ReadableWidth(child: _buildSliverBody(activePosts)),
     );
   }
 

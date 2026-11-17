@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../models/account.dart';
+import '../widgets/home_rail.dart';
 import '../models/post.dart';
 import '../models/sns_service.dart';
 import '../providers/account_provider.dart';
@@ -94,13 +95,13 @@ class _LikesBookmarksScreenState extends ConsumerState<LikesBookmarksScreen>
           ],
         ),
       ),
-      body: TabBarView(
+      body: ReadableWidth(child: TabBarView(
         controller: _tabController,
         children: [
           _PostListTab(account: widget.account, kind: _ListKind.likes),
           _PostListTab(account: widget.account, kind: _ListKind.bookmarks),
         ],
-      ),
+      )),
     );
   }
 }

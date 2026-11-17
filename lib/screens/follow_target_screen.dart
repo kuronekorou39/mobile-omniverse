@@ -2,6 +2,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 
 import '../models/account.dart';
+import '../widgets/home_rail.dart';
 import '../models/sns_service.dart';
 import '../services/account_storage_service.dart';
 import '../services/block_scan_service.dart';
@@ -242,7 +243,7 @@ class _FollowTargetScreenState extends State<FollowTargetScreen> {
     if (t == null) {
       return Scaffold(
         appBar: AppBar(title: Text('@${widget.handle}')),
-        body: Center(
+        body: ReadableWidth(child: Center(
           // 読み込み表示のまま止まらないよう、理由を出して抜けられるようにする
           child: Padding(
             padding: const EdgeInsets.all(24),
@@ -254,7 +255,7 @@ class _FollowTargetScreenState extends State<FollowTargetScreen> {
                   color: Theme.of(context).colorScheme.onSurfaceVariant),
             ),
           ),
-        ),
+        )),
       );
     }
 
@@ -304,9 +305,10 @@ class _FollowTargetScreenState extends State<FollowTargetScreen> {
         children: [
           RefreshIndicator(
             onRefresh: _load,
-            child: ListView(
-              padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
-              children: [
+            // 横に広い画面は縦が狭いので、取得（左）と調査・保存（右）に
+            // 分けて、スクロールせずに見渡せるようにする
+            child: Builder(builder: (context) {
+              final capture = <Widget>[
                 // 取得にも調査にも効くので、どちらのまとまりにも入れず先頭に置く
                 _accountSelector(t),
                 const SizedBox(height: FollowSectionHeader.sectionGap),
@@ -315,7 +317,8 @@ class _FollowTargetScreenState extends State<FollowTargetScreen> {
                 _captureActions(),
                 const SizedBox(height: 12),
                 _links(t),
-                const SizedBox(height: FollowSectionHeader.sectionGap),
+              ];
+              final investigate = <Widget>[
                 BlockScanSection(
                   service: widget.service,
                   handle: widget.handle,
@@ -328,10 +331,21 @@ class _FollowTargetScreenState extends State<FollowTargetScreen> {
                   account: _sessionAccount,
                 ),
                 _storageSection(),
-                // 重ねたカードで最後の項目が隠れないよう、その分だけ空ける
-                SizedBox(height: isMine ? _runningCardReserve : 32),
-              ],
-            ),
+              ];
+              // 重ねたカードで最後の項目が隠れないよう、その分だけ空ける
+              final reserve = SizedBox(height: isMine ? _runningCardReserve : 32);
+              return WideColumns(
+                padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+                single: [
+                  ...capture,
+                  const SizedBox(height: FollowSectionHeader.sectionGap),
+                  ...investigate,
+                  reserve,
+                ],
+                first: [...capture, reserve],
+                second: [...investigate, reserve],
+              );
+            }),
           ),
           if (isMine)
             Positioned(
@@ -349,7 +363,7 @@ class _FollowTargetScreenState extends State<FollowTargetScreen> {
   /// 中身が入ったときに画面の形が変わらないので、ちらつかない
   Widget _errorScaffold(String reason) => Scaffold(
         appBar: AppBar(title: Text('@${widget.handle}')),
-        body: Center(
+        body: ReadableWidth(child: Center(
           child: Padding(
             padding: const EdgeInsets.all(24),
             child: Column(
@@ -372,7 +386,7 @@ class _FollowTargetScreenState extends State<FollowTargetScreen> {
               ],
             ),
           ),
-        ),
+        )),
       );
 
   Widget _loadingScaffold() => Scaffold(
@@ -390,7 +404,7 @@ class _FollowTargetScreenState extends State<FollowTargetScreen> {
             ],
           ),
         ),
-        body: ListView(
+        body: ReadableWidth(child: ListView(
           physics: const NeverScrollableScrollPhysics(),
           padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
           children: [
@@ -412,7 +426,7 @@ class _FollowTargetScreenState extends State<FollowTargetScreen> {
             const SizedBox(height: 12),
             _links(null),
           ],
-        ),
+        )),
       );
 
   // ─── 実行アカウント ───

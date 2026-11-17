@@ -549,12 +549,23 @@ class _OmniFeedScreenState extends ConsumerState<OmniFeedScreen>
         (!_lastAtTop || feed.pendingCount >= 100);
 
     // 常にStackで包む（条件付きStack化はツリー構造が変わりスクロール位置がリセットされる）
-    body = Stack(
-      children: [
-        body,
-        if (showBanner)
-          _buildNewPostsBanner(context, feed.pendingCount, feed.fastDripActive),
-      ],
+    final list = body;
+    body = LayoutBuilder(
+      builder: (context, constraints) {
+        // 知らせも本文の列の中央に置く。中身の領域の中央だと、左の列の
+        // ぶんだけ右へずれる
+        final insets = railActive
+            ? readableInsets(context, constraints.maxWidth)
+            : EdgeInsets.zero;
+        return Stack(
+          children: [
+            list,
+            if (showBanner)
+              _buildNewPostsBanner(
+                  context, feed.pendingCount, feed.fastDripActive, insets),
+          ],
+        );
+      },
     );
 
     final hasAccounts = accounts.isNotEmpty;
@@ -608,7 +619,8 @@ class _OmniFeedScreenState extends ConsumerState<OmniFeedScreen>
     );
   }
 
-  Widget _buildNewPostsBanner(BuildContext context, int count, bool fastDripActive) {
+  Widget _buildNewPostsBanner(BuildContext context, int count,
+      bool fastDripActive, EdgeInsets insets) {
     final canFastDrip = count >= 100;
 
     // 状態に応じたアイコン・テキスト・色を決定
@@ -658,8 +670,8 @@ class _OmniFeedScreenState extends ConsumerState<OmniFeedScreen>
 
     return Positioned(
       top: MediaQuery.of(context).padding.top + 8,
-      left: 0,
-      right: 0,
+      left: insets.left,
+      right: insets.right,
       child: Center(
         child: Material(
           color: Colors.transparent,

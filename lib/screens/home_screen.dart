@@ -196,7 +196,14 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                 // 縦画面では下のバーが端末の操作バーを避けている。列にしたときは
                 // 避けるものが無くなるので、ここで中身ごと内側に収める。
                 // 横向きの操作バーは端末によって右にも下にも出る
-                child: SafeArea(
+                //
+                // 左の切り欠き（カメラの穴）は列のほうで避けている。中身にも
+                // 余白として残っていると、ヘッダーや区切り線がもう一度その分
+                // 右へずれる
+                child: MediaQuery.removePadding(
+                  context: context,
+                  removeLeft: wide,
+                  child: SafeArea(
                   left: false,
                   top: false,
                   right: wide,
@@ -222,6 +229,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                       child: ComposeQueueBanner(),
                     ),
                   ],
+                ),
                 ),
                 ),
               ),

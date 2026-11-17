@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../models/account.dart';
+import '../widgets/home_rail.dart';
 import '../models/follow_user.dart';
 import '../models/sns_service.dart';
 import '../providers/account_provider.dart';
@@ -98,7 +99,7 @@ class _UserSearchScreenState extends ConsumerState<UserSearchScreen> {
 
     return Scaffold(
       appBar: AppBar(title: const Text('ユーザー検索')),
-      body: account == null
+      body: ReadableWidth(child: account == null
           ? const EmptyState(
               icon: Icons.person_search,
               title: 'アカウントがありません',
@@ -127,7 +128,7 @@ class _UserSearchScreenState extends ConsumerState<UserSearchScreen> {
                 const Divider(height: 1),
                 Expanded(child: _buildBody(account)),
               ],
-            ),
+            )),
     );
   }
 

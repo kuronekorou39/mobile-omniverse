@@ -34,6 +34,75 @@ EdgeInsets readableInsets(
   return EdgeInsets.only(left: margin - left, right: margin - right);
 }
 
+/// 奥の画面の本文を、横に広い画面では読みやすい幅に絞って画面の中央に置く。
+///
+/// 向きを変えても中身を作り直さないよう、絞らないときも同じ形の木にする
+/// （作り直すと読み込み済みの一覧やスクロール位置が消える）。
+class ReadableWidth extends StatelessWidget {
+  const ReadableWidth({super.key, required this.child});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    final active = HomeRailScope.isActive(context);
+    return LayoutBuilder(
+      builder: (context, constraints) => Padding(
+        padding: active
+            ? readableInsets(context, constraints.maxWidth)
+            : EdgeInsets.zero,
+        child: child,
+      ),
+    );
+  }
+}
+
+/// 横に広い画面では 2 列に分けて、縦にスクロールしなくても収まるようにする。
+///
+/// 縦画面では [single] の順で 1 列に積む。項目の順番は列に分けたときと
+/// 縦に積んだときで変わるので、それぞれ渡してもらう。
+class WideColumns extends StatelessWidget {
+  const WideColumns({
+    super.key,
+    required this.single,
+    required this.first,
+    required this.second,
+    this.padding = EdgeInsets.zero,
+  });
+
+  final List<Widget> single;
+  final List<Widget> first;
+  final List<Widget> second;
+  final EdgeInsets padding;
+
+  /// 2 列の間隔
+  static const _gap = 8.0;
+
+  @override
+  Widget build(BuildContext context) {
+    if (!HomeRailScope.isActive(context)) {
+      return ListView(padding: padding, children: single);
+    }
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Expanded(
+          child: ListView(
+            padding: padding.copyWith(right: _gap / 2),
+            children: first,
+          ),
+        ),
+        Expanded(
+          child: ListView(
+            padding: padding.copyWith(left: _gap / 2),
+            children: second,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
 /// ホーム画面が左の列（[HomeRail]）を出しているかを、各タブの画面へ伝える。
 ///
 /// 画面の幅だけで判断させると、ホームの外で単体で開かれたときに

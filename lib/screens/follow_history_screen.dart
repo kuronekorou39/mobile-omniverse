@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../models/sns_service.dart';
+import '../widgets/home_rail.dart';
 import '../services/follow_capture_job_service.dart';
 import '../services/follow_db.dart';
 import '../services/follow_history_cleanup.dart';
@@ -93,7 +94,7 @@ class _FollowHistoryScreenState extends State<FollowHistoryScreen> {
               )
             : null,
       ),
-      body: _loading
+      body: ReadableWidth(child: _loading
           ? ListView(
               physics: const NeverScrollableScrollPhysics(),
               children: [for (var i = 0; i < 8; i++) const _SkeletonTile()],
@@ -116,7 +117,7 @@ class _FollowHistoryScreenState extends State<FollowHistoryScreen> {
                       );
                     },
                   ),
-                ),
+                )),
     );
   }
 

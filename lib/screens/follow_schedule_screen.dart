@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../services/follow_capture_job_service.dart';
+import '../widgets/home_rail.dart';
 import '../services/follow_db.dart';
 import 'follow_snapshot_screen.dart';
 import '../widgets/target_title.dart';
@@ -49,7 +50,7 @@ class _FollowScheduleScreenState extends State<FollowScheduleScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: TargetTitle('定期取得', handle: _target.handle)),
-      body: ListView(
+      body: ReadableWidth(child: ListView(
         children: [
           const Padding(
             padding: EdgeInsets.fromLTRB(16, 16, 16, 8),
@@ -71,7 +72,7 @@ class _FollowScheduleScreenState extends State<FollowScheduleScreen> {
             (v) => _update(_target.copyWith(followingIntervalDays: v)),
           ),
         ],
-      ),
+      )),
     );
   }
 

@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:share_plus/share_plus.dart';
 
 import '../models/follow_user.dart';
+import '../widgets/home_rail.dart';
 import '../models/sns_service.dart';
 import '../services/block_popular_builder.dart';
 import '../services/block_scan_service.dart';
@@ -195,7 +196,7 @@ class _BlockScanResultScreenState extends State<BlockScanResultScreen> {
             ],
           ),
         ),
-        body: Column(
+        body: ReadableWidth(child: Column(
           children: [
             _header(run, s),
             FollowListControls(
@@ -212,7 +213,7 @@ class _BlockScanResultScreenState extends State<BlockScanResultScreen> {
               ),
             ),
           ],
-        ),
+        )),
       ),
     );
   }
@@ -392,7 +393,7 @@ class _SourcesFollowingScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) => Scaffold(
         appBar: AppBar(title: TargetTitle('フォローしているつながり', handle: user.screenName)),
-        body: PagedFollowList<FollowUser>(
+        body: ReadableWidth(child: PagedFollowList<FollowUser>(
           fetch: (offset, limit) => FollowDb.instance.sourcesFollowing(
             runId: run.id,
             restId: user.restId,
@@ -405,6 +406,6 @@ class _SourcesFollowingScreen extends StatelessWidget {
             accountId: run.sessionAccountId,
           ),
           emptyLabel: 'まだ見つかっていません',
-        ),
+        )),
       );
 }

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../models/follow_user.dart';
+import '../widgets/home_rail.dart';
 import '../models/sns_service.dart';
 import '../services/follow_db.dart';
 import '../widgets/follow_list_controls.dart';
@@ -169,14 +170,14 @@ class _FollowRelationScreenState extends State<FollowRelationScreen>
     if (_loading) {
       return Scaffold(
         appBar: AppBar(title: TargetTitle('関係', handle: widget.handle)),
-        body: SkeletonList(itemBuilder: (i) => UserTileSkeleton(variant: i)),
+        body: ReadableWidth(child: SkeletonList(itemBuilder: (i) => UserTileSkeleton(variant: i))),
       );
     }
 
     if (f == null || g == null) {
       return Scaffold(
         appBar: AppBar(title: TargetTitle('関係', handle: widget.handle)),
-        body: Center(
+        body: ReadableWidth(child: Center(
           child: Padding(
             padding: const EdgeInsets.all(24),
             child: Text(
@@ -187,7 +188,7 @@ class _FollowRelationScreenState extends State<FollowRelationScreen>
               style: const TextStyle(color: Colors.grey),
             ),
           ),
-        ),
+        )),
       );
     }
 
@@ -214,7 +215,7 @@ class _FollowRelationScreenState extends State<FollowRelationScreen>
           ],
         ),
       ),
-      body: Column(
+      body: ReadableWidth(child: Column(
         children: [
           Padding(
             padding: const EdgeInsets.fromLTRB(8, 8, 8, 0),
@@ -239,7 +240,7 @@ class _FollowRelationScreenState extends State<FollowRelationScreen>
             ),
           ),
         ],
-      ),
+      )),
     );
   }
 

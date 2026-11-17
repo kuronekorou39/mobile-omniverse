@@ -10,6 +10,8 @@ const wideLayoutMinWidth = 600.0;
 /// 画面いっぱいに伸ばすと 1 行が長くなりすぎて目で追いにくい
 const readableContentMaxWidth = 680.0;
 
+const _readableGap = 24.0;
+
 /// 読みものを画面の中央に置くための左右の余白。
 ///
 /// [availableWidth] は左の列を除いた、中身に使える幅。この幅の中で中央に
@@ -17,6 +19,9 @@ const readableContentMaxWidth = 680.0;
 /// 列や端末の操作バーに当たるときは、幅のほうを狭めて左右対称を保つ。
 ///
 /// [rightTaken] は、呼び出し側が中身の右隣に置いているものの幅。
+///
+/// 投稿の区切り線が左の列の縦線に触れると窮屈に見えるので、列や操作バーとの
+/// 間には少なくとも [_readableGap] を空ける
 EdgeInsets readableInsets(
   BuildContext context,
   double availableWidth, {
@@ -29,8 +34,8 @@ EdgeInsets readableInsets(
   final left = screenWidth - availableWidth - right;
 
   var margin = (screenWidth - readableContentMaxWidth) / 2;
-  if (margin < left) margin = left;
-  if (margin < right) margin = right;
+  if (margin < left + _readableGap) margin = left + _readableGap;
+  if (margin < right + _readableGap) margin = right + _readableGap;
   return EdgeInsets.only(left: margin - left, right: margin - right);
 }
 

@@ -36,11 +36,6 @@ const double _sourceInfoWidth = 50;
         nameWeight: FontWeight.w700,
         metaColor: scheme.outline,
       ),
-    PostMetaEmphasis.faint => (
-        nameColor: scheme.onSurfaceVariant,
-        nameWeight: FontWeight.w500,
-        metaColor: scheme.outline.withValues(alpha: 0.75),
-      ),
   };
 }
 

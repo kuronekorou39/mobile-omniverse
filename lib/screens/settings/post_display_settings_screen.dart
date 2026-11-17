@@ -87,21 +87,17 @@ class PostDisplaySettingsScreen extends ConsumerWidget {
                 ListTile(
                   leading: const Icon(Icons.contrast),
                   title: const Text('名前・時刻の濃さ'),
-                  // 「かなり控えめ」が長く、右端に並べると狭い画面で収まらないので下に置く
-                  subtitle: Padding(
-                    padding: const EdgeInsets.only(top: 8),
-                    child: SegmentedButton<PostMetaEmphasis>(
-                      showSelectedIcon: false,
-                      segments: [
-                        for (final e in PostMetaEmphasis.values)
-                          ButtonSegment(value: e, label: Text(e.label)),
-                      ],
-                      selected: {settings.postMetaEmphasis},
-                      onSelectionChanged: (value) =>
-                          notifier.setPostMetaEmphasis(value.first),
-                      style: const ButtonStyle(
-                        visualDensity: VisualDensity.compact,
-                      ),
+                  trailing: SegmentedButton<PostMetaEmphasis>(
+                    showSelectedIcon: false,
+                    segments: [
+                      for (final e in PostMetaEmphasis.values)
+                        ButtonSegment(value: e, label: Text(e.label)),
+                    ],
+                    selected: {settings.postMetaEmphasis},
+                    onSelectionChanged: (value) =>
+                        notifier.setPostMetaEmphasis(value.first),
+                    style: const ButtonStyle(
+                      visualDensity: VisualDensity.compact,
                     ),
                   ),
                 ),

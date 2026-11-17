@@ -60,8 +60,7 @@ enum PostCardStyle { card, separator }
 /// 投稿の名前・ID・時刻をどれだけ本文から引かせるか
 enum PostMetaEmphasis {
   normal('ふつう'),
-  subtle('控えめ'),
-  faint('かなり控えめ');
+  subtle('控えめ');
 
   const PostMetaEmphasis(this.label);
   final String label;

@@ -50,6 +50,17 @@ class _OmniFeedScreenState extends ConsumerState<OmniFeedScreen>
   /// 左の列を出しているときのヘッダーの高さ。横向きは縦が狭いので低くする
   static const _railHeaderHeight = 44.0;
 
+  /// ヘッダーの高さ（ステータスバーの分を含む）。描くたびに入れ直す
+  double _headerExtent = kToolbarHeight;
+
+  /// ヘッダーがいま画面に出ている高さ。ヘッダーは下へ送ると隠れ、
+  /// 上へ戻すと出てくるので、スクロールの量から同じ動きを追う
+  double _headerShown = kToolbarHeight;
+  double _lastScrollOffset = 0;
+
+  /// 新着の知らせの下にヘッダーがあるか。投稿の上に重なるときは透かす
+  final _bannerOnHeader = ValueNotifier(true);
+
   /// スクロールトップボタン表示
   bool _showScrollToTop = false;
 
@@ -127,6 +138,7 @@ class _OmniFeedScreenState extends ConsumerState<OmniFeedScreen>
     WidgetsBinding.instance.removeObserver(this);
     _scrollController.removeListener(_onScroll);
     _scrollController.dispose();
+    _bannerOnHeader.dispose();
     super.dispose();
   }
 
@@ -189,6 +201,8 @@ class _OmniFeedScreenState extends ConsumerState<OmniFeedScreen>
   bool _lastDripAtTop = true;
 
   void _onScroll() {
+    _trackHeader();
+
     if (_scrollController.position.pixels >=
         _scrollController.position.maxScrollExtent - 200) {
       final feed = ref.read(feedProvider);
@@ -216,6 +230,21 @@ class _OmniFeedScreenState extends ConsumerState<OmniFeedScreen>
     if (shouldShow != _showScrollToTop) {
       setState(() => _showScrollToTop = shouldShow);
     }
+  }
+
+  void _trackHeader() {
+    final offset = _scrollController.offset;
+    final delta = offset - _lastScrollOffset;
+    _lastScrollOffset = offset;
+    var shown = (_headerShown - delta).clamp(0.0, _headerExtent);
+    // 先頭付近では、ヘッダーはリストと一緒に動く
+    final attached = _headerExtent - offset;
+    if (shown < attached) shown = attached;
+    _headerShown = shown;
+    // 知らせはヘッダーの帯の中ほどまで重なる。下半分より上にヘッダーの
+    // 下端があれば、知らせの下は投稿になる
+    final top = MediaQuery.paddingOf(context).top;
+    _bannerOnHeader.value = shown > top + (_headerExtent - top) / 2;
   }
 
   Future<void> _handleRefresh() async {
@@ -459,6 +488,8 @@ class _OmniFeedScreenState extends ConsumerState<OmniFeedScreen>
     // ヘッダーにはロゴと取得の進みだけを残す。先頭の投稿が画面の端に
     // 貼り付かないようにするためで、下へ送ると隠れ、上へ戻すと出る
     final railActive = HomeRailScope.isActive(context);
+    _headerExtent = MediaQuery.paddingOf(context).top +
+        (railActive ? _railHeaderHeight : kToolbarHeight);
 
     Widget body = LayoutBuilder(
       builder: (context, constraints) {
@@ -626,14 +657,14 @@ class _OmniFeedScreenState extends ConsumerState<OmniFeedScreen>
     // 状態に応じたアイコン・テキスト・色を決定
     final IconData icon;
     final String label;
-    final Color bgColor;
+    final Color baseColor;
     final VoidCallback onTap;
 
     if (fastDripActive) {
       // 高速ドリップ中 → タップで高速ドリップ解除
       icon = Icons.bolt;
       label = '高速中 $count件';
-      bgColor = Colors.orange.withValues(alpha: 0.88);
+      baseColor = Colors.orange;
       onTap = () {
         ref.read(feedProvider.notifier).deactivateFastDrip();
       };
@@ -641,7 +672,7 @@ class _OmniFeedScreenState extends ConsumerState<OmniFeedScreen>
       // 100件以上 → タップで高速ドリップ開始＆ゆっくりトップへスクロール
       icon = Icons.bolt;
       label = '$count件の新しい投稿';
-      bgColor = Theme.of(context).colorScheme.primary.withValues(alpha: 0.88);
+      baseColor = Theme.of(context).colorScheme.primary;
       onTap = () {
         ref.read(feedProvider.notifier).activateFastDrip();
         // 現在のスクロール位置に応じた速度でトップへ（高速ドリップに合わせた体感速度）
@@ -657,7 +688,7 @@ class _OmniFeedScreenState extends ConsumerState<OmniFeedScreen>
       // 通常 → タップで全件フラッシュ＆トップへ
       icon = Icons.arrow_upward;
       label = '$count件の新しい投稿';
-      bgColor = Theme.of(context).colorScheme.primary.withValues(alpha: 0.88);
+      baseColor = Theme.of(context).colorScheme.primary;
       onTap = () {
         ref.read(feedProvider.notifier).flushPending();
         _scrollController.animateTo(
@@ -678,19 +709,31 @@ class _OmniFeedScreenState extends ConsumerState<OmniFeedScreen>
           child: InkWell(
             onTap: onTap,
             borderRadius: BorderRadius.circular(20),
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-              decoration: BoxDecoration(
-                color: bgColor,
-                borderRadius: BorderRadius.circular(20),
-                boxShadow: const [
-                  BoxShadow(
-                    color: Colors.black26,
-                    blurRadius: 8,
-                    offset: Offset(0, 2),
+            // 横に広い画面では、ヘッダーが隠れて知らせが投稿の上に乗ったら
+            // 透かして、下の投稿を読めるようにする
+            child: ValueListenableBuilder(
+              valueListenable: _bannerOnHeader,
+              builder: (context, onHeader, child) {
+                final solid = onHeader || !HomeRailScope.isActive(context);
+                return AnimatedContainer(
+                  duration: const Duration(milliseconds: 150),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                  decoration: BoxDecoration(
+                    color: baseColor.withValues(alpha: solid ? 0.88 : 0.35),
+                    borderRadius: BorderRadius.circular(20),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black26.withValues(
+                            alpha: solid ? 0.26 : 0),
+                        blurRadius: 8,
+                        offset: const Offset(0, 2),
+                      ),
+                    ],
                   ),
-                ],
-              ),
+                  child: child,
+                );
+              },
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [

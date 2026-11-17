@@ -8,6 +8,7 @@ import '../widgets/follow_section_header.dart';
 import '../widgets/skeleton.dart';
 import 'follow_snapshot_screen.dart';
 import '../widgets/target_title.dart';
+import '../widgets/hiding_header_scaffold.dart';
 
 /// 一覧の中のアカウント作成日の分布。
 ///
@@ -42,7 +43,7 @@ class _AccountAgeScreenState extends State<AccountAgeScreen> {
   Widget build(BuildContext context) {
     final s = widget.snapshot;
     final kindLabel = s.kind == 'followers' ? 'フォロワー' : 'フォロー';
-    return Scaffold(
+    return HidingHeaderScaffold(
       appBar: AppBar(title: TargetTitle('$kindLabelの作成日', handle: s.targetHandle)),
       body: _stats == null ? _skeleton() : _body(_stats!),
     );
@@ -303,7 +304,7 @@ class _MembersScreen extends StatelessWidget {
   }
 
   @override
-  Widget build(BuildContext context) => Scaffold(
+  Widget build(BuildContext context) => HidingHeaderScaffold(
         appBar: AppBar(
           title: Text(title),
           bottom: PreferredSize(

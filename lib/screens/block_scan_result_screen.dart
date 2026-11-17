@@ -16,6 +16,7 @@ import '../utils/confirm_dialog.dart';
 import '../widgets/follow_list_controls.dart';
 import 'follow_snapshot_screen.dart';
 import '../widgets/target_title.dart';
+import '../widgets/hiding_header_scaffold.dart';
 
 /// つながり調査の結果。
 ///
@@ -162,7 +163,7 @@ class _BlockScanResultScreenState extends State<BlockScanResultScreen> {
 
     return DefaultTabController(
       length: _visibleTabs.length,
-      child: Scaffold(
+      child: HidingHeaderScaffold(
         appBar: AppBar(
           title: TargetTitle('つながり調査', handle: run.targetHandle),
           actions: [
@@ -391,7 +392,7 @@ class _SourcesFollowingScreen extends StatelessWidget {
   final FollowUser user;
 
   @override
-  Widget build(BuildContext context) => Scaffold(
+  Widget build(BuildContext context) => HidingHeaderScaffold(
         appBar: AppBar(title: TargetTitle('フォローしているつながり', handle: user.screenName)),
         body: ReadableWidth(child: PagedFollowList<FollowUser>(
           fetch: (offset, limit) => FollowDb.instance.sourcesFollowing(

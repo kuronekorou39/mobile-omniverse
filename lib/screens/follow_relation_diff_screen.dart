@@ -7,6 +7,7 @@ import '../services/follow_db.dart';
 import '../widgets/follow_list_controls.dart';
 import 'follow_snapshot_screen.dart';
 import '../widgets/target_title.dart';
+import '../widgets/hiding_header_scaffold.dart';
 
 /// 相互 / 片思われ / 片思い を世代どうしで比べる画面。
 ///
@@ -85,7 +86,7 @@ class _FollowRelationDiffScreenState extends State<FollowRelationDiffScreen> {
 
     return DefaultTabController(
       length: 2,
-      child: Scaffold(
+      child: HidingHeaderScaffold(
         appBar: AppBar(
           title: TargetTitle('${widget.label}の差分', handle: widget.handle),
           bottom: TabBar(tabs: [

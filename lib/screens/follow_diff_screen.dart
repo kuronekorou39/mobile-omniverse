@@ -7,6 +7,7 @@ import '../services/follow_db.dart';
 import '../widgets/follow_list_controls.dart';
 import 'follow_snapshot_screen.dart';
 import '../widgets/target_title.dart';
+import '../widgets/hiding_header_scaffold.dart';
 
 /// 2 回分の取得結果の差分。
 /// フォロワーなら「増えた = 新規フォロワー」「減った = フォロー解除」になる。
@@ -72,7 +73,7 @@ class _FollowDiffScreenState extends State<FollowDiffScreen>
     final o = widget.older, n = widget.newer;
     final incomplete = !o.isCompleted || !n.isCompleted;
 
-    return Scaffold(
+    return HidingHeaderScaffold(
       appBar: AppBar(
         title: TargetTitle('差分', handle: n.targetHandle),
         bottom: TabBar(controller: _tab, tabs: [

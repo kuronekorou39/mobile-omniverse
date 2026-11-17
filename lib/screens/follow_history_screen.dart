@@ -11,6 +11,7 @@ import '../utils/number_format.dart';
 import '../widgets/skeleton.dart';
 import 'follow_snapshot_screen.dart';
 import '../widgets/target_title.dart';
+import '../widgets/hiding_header_scaffold.dart';
 
 /// 取得履歴の全件。
 ///
@@ -75,7 +76,7 @@ class _FollowHistoryScreenState extends State<FollowHistoryScreen> {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    return Scaffold(
+    return HidingHeaderScaffold(
       appBar: AppBar(
         title: TargetTitle('履歴', handle: widget.handle),
         actions: [

@@ -200,7 +200,12 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                 // 左の切り欠き（カメラの穴）は列のほうで避けている。中身にも
                 // 余白として残っていると、ヘッダーや区切り線がもう一度その分
                 // 右へずれる
-                child: MediaQuery.removePadding(
+                //
+                // Builder で Scaffold の内側の値を読む。外側の context だと、
+                // Scaffold が本文から外したキーボードの高さが中身に戻り、
+                // 投稿画面などがキーボードの分を二重に避けて潰れる
+                child: Builder(
+                  builder: (context) => MediaQuery.removePadding(
                   context: context,
                   removeLeft: wide,
                   child: SafeArea(
@@ -229,6 +234,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                       child: ComposeQueueBanner(),
                     ),
                   ],
+                ),
                 ),
                 ),
                 ),

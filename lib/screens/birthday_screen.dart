@@ -6,6 +6,7 @@ import '../utils/number_format.dart';
 import '../widgets/skeleton.dart';
 import 'follow_snapshot_screen.dart';
 import '../widgets/target_title.dart';
+import '../widgets/hiding_header_scaffold.dart';
 
 /// 誕生日が分かっている人を、月ごとに並べる。
 ///
@@ -83,7 +84,7 @@ class _BirthdayScreenState extends State<BirthdayScreen> {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final c = _coverage;
-    return Scaffold(
+    return HidingHeaderScaffold(
       appBar: AppBar(
         title: TargetTitle('誕生日', handle: widget.handle),
         bottom: PreferredSize(

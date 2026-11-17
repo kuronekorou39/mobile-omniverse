@@ -11,6 +11,7 @@ import '../widgets/skeleton.dart';
 import 'follow_relation_diff_screen.dart';
 import 'follow_snapshot_screen.dart';
 import '../widgets/target_title.dart';
+import '../widgets/hiding_header_scaffold.dart';
 
 /// 相互 / 片思われ / 片思い を見る画面。
 ///
@@ -168,14 +169,14 @@ class _FollowRelationScreenState extends State<FollowRelationScreen>
     final c = _counts;
 
     if (_loading) {
-      return Scaffold(
+      return HidingHeaderScaffold(
         appBar: AppBar(title: TargetTitle('関係', handle: widget.handle)),
         body: ReadableWidth(child: SkeletonList(itemBuilder: (i) => UserTileSkeleton(variant: i))),
       );
     }
 
     if (f == null || g == null) {
-      return Scaffold(
+      return HidingHeaderScaffold(
         appBar: AppBar(title: TargetTitle('関係', handle: widget.handle)),
         body: ReadableWidth(child: Center(
           child: Padding(
@@ -194,7 +195,7 @@ class _FollowRelationScreenState extends State<FollowRelationScreen>
 
     final counts = [c?.mutual, c?.onlyFollowers, c?.onlyFollowing];
 
-    return Scaffold(
+    return HidingHeaderScaffold(
       appBar: AppBar(
         title: TargetTitle('関係', handle: widget.handle),
         actions: [

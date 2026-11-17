@@ -485,8 +485,14 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
           const SizedBox(width: 8),
         ],
       ),
-      body: Column(
-        children: [
+      // 横向きのスマホは縦が狭く、キーボードを出すと入力欄が残らない。
+      // 宛先やリプライ先は左に寄せ、右を入力欄にあてる。
+      // キーボードの出入りで並びを変えると入力欄が作り直されて
+      // キーボードが閉じるので、画面の向きだけで決める
+      body: Builder(builder: (context) {
+        final size = MediaQuery.sizeOf(context);
+        final compact = size.width > size.height && size.height < 500;
+        final head = <Widget>[
           // アカウント選択（チップ横並び、複数選択。タップで toggle）
           if (_accounts.isNotEmpty)
             Padding(
@@ -515,7 +521,6 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
                 ),
               ),
             ),
-
           // リプライ先プレビュー
           if (widget.inReplyToPost != null)
             Container(
@@ -561,26 +566,8 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
                 ],
               ),
             ),
-
-          // テキスト入力
-          Expanded(
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: TextField(
-                controller: _textController,
-                maxLines: null,
-                expands: true,
-                textAlignVertical: TextAlignVertical.top,
-                decoration: const InputDecoration(
-                  hintText: 'いまどうしてる？',
-                  border: InputBorder.none,
-                ),
-                autofocus: true,
-                onChanged: (_) => setState(() {}),
-              ),
-            ),
-          ),
-
+        ];
+        final tail = <Widget>[
           // 引用元プレビュー
           if (widget.quotedPost != null)
             Padding(
@@ -650,7 +637,6 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
                 ),
               ),
             ),
-
           // 添付画像のサムネ列（長押しで並び替え可能）
           if (_images.isNotEmpty)
             Padding(
@@ -726,7 +712,6 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
                 ),
               ),
             ),
-
           // 警告ボックス（選択中の SNS で投稿失敗となる条件をリストアップ）
           if (_violations.isNotEmpty)
             Padding(
@@ -774,73 +759,116 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
                 ),
               ),
             ),
-
-          // 機能ボタン列（画像のみ実機能、それ以外はプレースホルダー）
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: Row(
-              children: [
+        ];
+        final input = Expanded(
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: TextField(
+              controller: _textController,
+              maxLines: null,
+              expands: true,
+              textAlignVertical: TextAlignVertical.top,
+              decoration: const InputDecoration(
+                hintText: 'いまどうしてる？',
+                border: InputBorder.none,
+              ),
+              autofocus: true,
+              onChanged: (_) => setState(() {}),
+            ),
+          ),
+        );
+        final tools = Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          child: Row(
+            children: [
+              IconButton(
+                icon: Icon(
+                  Icons.image_outlined,
+                  color: _images.length >= _maxImages
+                      ? Colors.grey[400]
+                      : Theme.of(context).colorScheme.primary,
+                  size: 20,
+                ),
+                iconSize: 20,
+                padding: const EdgeInsets.all(6),
+                constraints: const BoxConstraints(),
+                tooltip: '画像を追加',
+                onPressed: _images.length >= _maxImages ? null : _pickImages,
+              ),
+              for (final entry in <MapEntry<IconData, String>>[
+                const MapEntry(Icons.videocam_outlined, '動画'),
+                const MapEntry(Icons.schedule_outlined, '予約投稿'),
+                const MapEntry(Icons.poll_outlined, 'アンケート'),
+                const MapEntry(Icons.reply_outlined, 'リプライ'),
+              ])
                 IconButton(
-                  icon: Icon(
-                    Icons.image_outlined,
-                    color: _images.length >= _maxImages
-                        ? Colors.grey[400]
-                        : Theme.of(context).colorScheme.primary,
-                    size: 20,
-                  ),
+                  icon: Icon(entry.key, color: Colors.grey[400], size: 20),
                   iconSize: 20,
                   padding: const EdgeInsets.all(6),
                   constraints: const BoxConstraints(),
-                  tooltip: '画像を追加',
-                  onPressed: _images.length >= _maxImages ? null : _pickImages,
+                  tooltip: entry.value,
+                  onPressed: () {
+                    showAppSnackBar(
+                      context,
+                      '${entry.value}は対応予定なし（公式アプリをご利用ください）',
+                      type: SnackType.warning,
+                      duration: const Duration(seconds: 2),
+                    );
+                  },
                 ),
-                for (final entry in <MapEntry<IconData, String>>[
-                  const MapEntry(Icons.videocam_outlined, '動画'),
-                  const MapEntry(Icons.schedule_outlined, '予約投稿'),
-                  const MapEntry(Icons.poll_outlined, 'アンケート'),
-                  const MapEntry(Icons.reply_outlined, 'リプライ'),
-                ])
-                  IconButton(
-                    icon: Icon(entry.key, color: Colors.grey[400], size: 20),
-                    iconSize: 20,
-                    padding: const EdgeInsets.all(6),
-                    constraints: const BoxConstraints(),
-                    tooltip: entry.value,
-                    onPressed: () {
-                      showAppSnackBar(
-                        context,
-                        '${entry.value}は対応予定なし（公式アプリをご利用ください）',
-                        type: SnackType.warning,
-                        duration: const Duration(seconds: 2),
-                      );
-                    },
-                  ),
-              ],
-            ),
+            ],
           ),
-
-          // 文字数カウンター
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.end,
-              children: [
-                Text(
-                  '$_remaining',
-                  style: TextStyle(
-                    color: _remaining < 0
-                        ? Colors.red
-                        : _remaining < 20
-                            ? Colors.orange
-                            : Colors.grey,
-                    fontWeight: FontWeight.bold,
-                  ),
+        );
+        final counter = Padding(
+          padding: EdgeInsets.fromLTRB(16, 0, 16, compact ? 4 : 16),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.end,
+            children: [
+              Text(
+                '$_remaining',
+                style: TextStyle(
+                  color: _remaining < 0
+                      ? Colors.red
+                      : _remaining < 20
+                          ? Colors.orange
+                          : Colors.grey,
+                  fontWeight: FontWeight.bold,
                 ),
-              ],
-            ),
+              ),
+            ],
           ),
-        ],
-      ),
+        );
+        if (!compact) {
+          return Column(
+            children: [...head, input, ...tail, tools, counter],
+          );
+        }
+        return Row(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            SizedBox(
+              width: 300,
+              child: ListView(
+                padding: const EdgeInsets.only(bottom: 8),
+                children: [...head, ...tail],
+              ),
+            ),
+            Expanded(
+              child: Column(
+                children: [
+                  input,
+                  Row(
+                    children: [
+                      Expanded(child: tools),
+                      counter,
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ],
+        );
+      }),
       ),
     );
   }

@@ -6,6 +6,7 @@ import '../utils/number_format.dart';
 import '../utils/relative_time.dart';
 import 'follow_snapshot_screen.dart';
 import '../widgets/target_title.dart';
+import '../widgets/hiding_header_scaffold.dart';
 
 /// 最近の投稿日を調べた人を、古い順に並べる。
 ///
@@ -79,7 +80,7 @@ class _LastPostScreenState extends State<LastPostScreen> {
         : DateTime.now()
             .subtract(Duration(days: _olderThanDays!))
             .millisecondsSinceEpoch;
-    return Scaffold(
+    return HidingHeaderScaffold(
       appBar: AppBar(
         title: TargetTitle('最近の投稿日', handle: widget.handle),
         bottom: PreferredSize(

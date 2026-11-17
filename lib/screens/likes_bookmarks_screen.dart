@@ -12,7 +12,8 @@ import '../services/x_api_service.dart';
 import '../widgets/empty_state.dart';
 import '../widgets/post_card.dart';
 import '../widgets/skeleton.dart';
-import 'post_detail_screen.dart';
+import 'post_detail_screen.dart';
+import '../widgets/hiding_header_scaffold.dart';
 
 enum _ListKind { likes, bookmarks }
 
@@ -65,7 +66,7 @@ class _LikesBookmarksScreenState extends ConsumerState<LikesBookmarksScreen>
       SensitiveMode.hide => (Icons.blur_on, 'モザイク: センシティブのみ（自動）'),
       SensitiveMode.hideAll => (Icons.blur_circular, 'モザイク: 全て隠す（完全オン）'),
     };
-    return Scaffold(
+    return HidingHeaderScaffold(
       appBar: AppBar(
         title: Text(
           widget.account.displayName,

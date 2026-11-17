@@ -19,6 +19,7 @@ import 'account_age_screen.dart';
 import 'follow_diff_screen.dart';
 import 'user_profile_screen.dart';
 import '../widgets/target_title.dart';
+import '../widgets/hiding_header_scaffold.dart';
 
 /// 1 回の走査結果を一覧表示する。
 /// 数千件になるのでページングで読み込む。
@@ -114,7 +115,7 @@ class _FollowSnapshotScreenState extends State<FollowSnapshotScreen> {
     final s = widget.snapshot;
     final kindLabel = s.kind == 'followers' ? 'フォロワー' : 'フォロー';
 
-    return Scaffold(
+    return HidingHeaderScaffold(
       appBar: AppBar(
         title: TargetTitle(kindLabel, handle: s.targetHandle),
         actions: [

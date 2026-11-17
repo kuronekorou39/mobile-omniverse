@@ -186,6 +186,8 @@ class FeedQuickButtons extends ConsumerWidget {
     showDialog(
       context: buttonContext,
       barrierColor: Colors.black26,
+      // 位置は画面の座標で渡している。安全領域で中身をずらされると合わない
+      useSafeArea: false,
       builder: (_) => _QuickSettingsPanel(anchor: anchor),
     );
   }
@@ -282,42 +284,95 @@ class _QuickSettingsPanel extends ConsumerWidget {
     final notifier = ref.read(settingsProvider.notifier);
     final items = buildHeaderButtonItems(settings, notifier);
 
-    return Align(
-      alignment: Alignment.topLeft,
-      child: Padding(
-        padding: EdgeInsets.only(top: anchor.dy, left: anchor.dx),
+    final pad = MediaQuery.paddingOf(context);
+    return LayoutBuilder(builder: (context, constraints) {
+      // 横向きは縦が狭く、1 列だと画面の下にはみ出す。入りきらないときは
+      // 列を増やして、スクロールせずに全部押せるようにする
+      final room = constraints.maxHeight - pad.top - pad.bottom - _margin * 2;
+      final perColumn = (room / _itemHeight).floor().clamp(1, items.length);
+      final columns = (items.length / perColumn).ceil();
+      final rows = (items.length / columns).ceil();
+
+      Widget tile(HeaderButtonItem item) => InkWell(
+            onTap: item.onPressed,
+            child: SizedBox(
+              height: _itemHeight,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                child: Row(
+                  children: [
+                    Icon(item.icon, size: 20),
+                    const SizedBox(width: 12),
+                    Text(item.tooltip, style: const TextStyle(fontSize: 13)),
+                  ],
+                ),
+              ),
+            ),
+          );
+
+      return CustomSingleChildLayout(
+        delegate: _PanelLayout(anchor: anchor, padding: pad),
         child: Material(
           elevation: 8,
           borderRadius: BorderRadius.circular(12),
           clipBehavior: Clip.antiAlias,
-          child: IntrinsicWidth(
-            child: SingleChildScrollView(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: items
-                    .map((item) => InkWell(
-                          onTap: item.onPressed,
-                          child: Padding(
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 16, vertical: 12),
-                            child: Row(
-                              children: [
-                                Icon(item.icon, size: 20),
-                                const SizedBox(width: 12),
-                                Text(item.tooltip,
-                                    style: const TextStyle(fontSize: 13)),
-                              ],
-                            ),
-                          ),
-                        ))
-                    .toList(),
-              ),
+          child: SingleChildScrollView(
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                for (var c = 0; c < columns; c++)
+                  IntrinsicWidth(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        for (final item in items.skip(c * rows).take(rows))
+                          tile(item),
+                      ],
+                    ),
+                  ),
+              ],
             ),
           ),
         ),
-      ),
-    );
+      );
+    });
   }
+
+  static const _itemHeight = 44.0;
+  static const _margin = 8.0;
+}
+
+/// パネルをボタンの横に置く。画面の下に入りきらなければ上へずらす
+class _PanelLayout extends SingleChildLayoutDelegate {
+  _PanelLayout({required this.anchor, required this.padding});
+
+  final Offset anchor;
+  final EdgeInsets padding;
+
+  static const _margin = _QuickSettingsPanel._margin;
+
+  @override
+  BoxConstraints getConstraintsForChild(BoxConstraints constraints) {
+    return BoxConstraints.loose(Size(
+      constraints.maxWidth - anchor.dx - padding.right - _margin,
+      constraints.maxHeight - padding.top - padding.bottom - _margin * 2,
+    ));
+  }
+
+  @override
+  Offset getPositionForChild(Size size, Size childSize) {
+    final maxY = size.height - padding.bottom - _margin - childSize.height;
+    var y = anchor.dy;
+    if (y > maxY) y = maxY;
+    if (y < padding.top + _margin) y = padding.top + _margin;
+    return Offset(anchor.dx, y);
+  }
+
+  @override
+  bool shouldRelayout(_PanelLayout old) =>
+      anchor != old.anchor || padding != old.padding;
 }
 
 /// タイムラインを小窓で出すボタン（Android のみ）

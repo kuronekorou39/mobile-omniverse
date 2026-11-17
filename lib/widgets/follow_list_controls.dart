@@ -55,52 +55,58 @@ class _FollowListControlsState extends State<FollowListControls> {
   Widget build(BuildContext context) {
     final active = widget.filter.activeCount;
 
+    // 検索・絞り込み・並びを 1 行にまとめ、一覧に高さを残す。
+    // 検索欄は文字を打つので広めに取る
+    const buttonStyle = ButtonStyle(
+      padding: WidgetStatePropertyAll(EdgeInsets.symmetric(horizontal: 8)),
+      minimumSize: WidgetStatePropertyAll(Size(0, 40)),
+    );
     return Padding(
       padding: const EdgeInsets.fromLTRB(12, 8, 12, 4),
-      child: Column(
+      child: Row(
         children: [
-          TextField(
-            decoration: const InputDecoration(
-              isDense: true,
-              prefixIcon: Icon(Icons.search, size: 20),
-              hintText: '@ID・名前で絞り込み',
-              border: OutlineInputBorder(),
-            ),
-            onChanged: _onSearchChanged,
-          ),
-          const SizedBox(height: 6),
-          Row(
-            children: [
-              if (widget.showSort)
-                Expanded(
-                  child: OutlinedButton.icon(
-                    icon: Icon(
-                        widget.sort.descending
-                            ? Icons.arrow_downward
-                            : Icons.arrow_upward,
-                        size: 16),
-                    label: Text(widget.sort.label,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(fontSize: 12)),
-                    onPressed: _openSortSheet,
-                  ),
-                ),
-              if (widget.showSort) const SizedBox(width: 8),
-              Expanded(
-                child: OutlinedButton.icon(
-                  icon: Icon(
-                      active == 0
-                          ? Icons.filter_list
-                          : Icons.filter_list_alt,
-                      size: 16),
-                  label: Text(active == 0 ? '絞り込み' : '絞り込み ($active)',
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(fontSize: 12)),
-                  onPressed: _openFilterSheet,
-                ),
+          Expanded(
+            flex: 2,
+            child: TextField(
+              decoration: const InputDecoration(
+                isDense: true,
+                prefixIcon: Icon(Icons.search, size: 20),
+                hintText: '@ID・名前',
+                border: OutlineInputBorder(),
               ),
-            ],
+              onChanged: _onSearchChanged,
+            ),
           ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: OutlinedButton.icon(
+              style: buttonStyle,
+              icon: Icon(
+                  active == 0 ? Icons.filter_list : Icons.filter_list_alt,
+                  size: 16),
+              label: Text(active == 0 ? '絞り込み' : '絞り込み ($active)',
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(fontSize: 12)),
+              onPressed: _openFilterSheet,
+            ),
+          ),
+          if (widget.showSort) ...[
+            const SizedBox(width: 8),
+            Expanded(
+              child: OutlinedButton.icon(
+                style: buttonStyle,
+                icon: Icon(
+                    widget.sort.descending
+                        ? Icons.arrow_downward
+                        : Icons.arrow_upward,
+                    size: 16),
+                label: Text(widget.sort.label,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(fontSize: 12)),
+                onPressed: _openSortSheet,
+              ),
+            ),
+          ],
         ],
       ),
     );

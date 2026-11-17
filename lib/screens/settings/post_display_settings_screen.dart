@@ -23,9 +23,12 @@ class PostDisplaySettingsScreen extends ConsumerWidget {
 
     return settingsScaffold(
       title: '投稿の表示',
-      body: Column(
-        children: [
-          Container(
+      body: LayoutBuilder(builder: (context, constraints) {
+        // 横向きは縦が狭く、上に固定したプレビューだけで高さが尽きて
+        // 設定に届かない。プレビューを左、設定を右に並べる
+        final side = constraints.maxWidth > constraints.maxHeight &&
+            constraints.maxWidth >= 600;
+        final preview = Container(
             width: double.infinity,
             color: Theme.of(context).colorScheme.surfaceContainerLow,
             padding: const EdgeInsets.only(bottom: 8),
@@ -58,10 +61,8 @@ class PostDisplaySettingsScreen extends ConsumerWidget {
                 ),
               ],
             ),
-          ),
-          const Divider(height: 1),
-          Expanded(
-            child: ListView(
+          );
+        final options = ListView(
               children: [
                 ListTile(
                   leading: const Icon(Icons.view_agenda_outlined),
@@ -159,10 +160,33 @@ class PostDisplaySettingsScreen extends ConsumerWidget {
                   ),
                 ),
               ],
-            ),
-          ),
-        ],
-      ),
+            );
+        if (side) {
+          return Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: ColoredBox(
+                  color: Theme.of(context).colorScheme.surfaceContainerLow,
+                  child: SizedBox(
+                    height: constraints.maxHeight,
+                    child: SingleChildScrollView(child: preview),
+                  ),
+                ),
+              ),
+              const VerticalDivider(width: 1),
+              Expanded(child: options),
+            ],
+          );
+        }
+        return Column(
+          children: [
+            preview,
+            const Divider(height: 1),
+            Expanded(child: options),
+          ],
+        );
+      }),
     );
   }
 }

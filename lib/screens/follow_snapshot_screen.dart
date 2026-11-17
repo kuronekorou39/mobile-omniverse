@@ -271,7 +271,6 @@ class PagedFollowList<T> extends StatefulWidget {
 
 class _PagedFollowListState<T> extends State<PagedFollowList<T>>
     with AutomaticKeepAliveClientMixin {
-  final _scroll = ScrollController();
   final _items = <T>[];
   bool _loading = true;
   bool _loadingMore = false;
@@ -283,7 +282,6 @@ class _PagedFollowListState<T> extends State<PagedFollowList<T>>
   @override
   void initState() {
     super.initState();
-    _scroll.addListener(_onScroll);
     _loadFirst();
   }
 
@@ -297,17 +295,15 @@ class _PagedFollowListState<T> extends State<PagedFollowList<T>>
     }
   }
 
-  @override
-  void dispose() {
-    _scroll.dispose();
-    super.dispose();
-  }
-
-  void _onScroll() {
-    if (_loadingMore || _reachedEnd) return;
-    if (_scroll.position.pixels > _scroll.position.maxScrollExtent - 600) {
+  // 一覧はヘッダーと 1 本のスクロールでつなぐことがあるので、自前の
+  // ScrollController は持たず、動いた知らせで続きを読む
+  bool _onScroll(ScrollUpdateNotification n) {
+    if (_loadingMore || _reachedEnd) return false;
+    if (n.metrics.axis == Axis.vertical &&
+        n.metrics.pixels > n.metrics.maxScrollExtent - 600) {
       _loadMore();
     }
+    return false;
   }
 
   Future<void> _loadFirst() async {
@@ -363,8 +359,9 @@ class _PagedFollowListState<T> extends State<PagedFollowList<T>>
               style: TextStyle(
                   color: Theme.of(context).colorScheme.onSurfaceVariant)));
     }
-    return ListView.builder(
-      controller: _scroll,
+    return NotificationListener<ScrollUpdateNotification>(
+      onNotification: _onScroll,
+      child: ListView.builder(
       itemCount: _items.length + (_reachedEnd ? 0 : 1),
       itemBuilder: (_, i) => i >= _items.length
           ? const Padding(
@@ -376,6 +373,7 @@ class _PagedFollowListState<T> extends State<PagedFollowList<T>>
                       child: CircularProgressIndicator(strokeWidth: 2))),
             )
           : widget.itemBuilder(_items[i]),
+      ),
     );
   }
 }

@@ -121,7 +121,6 @@ class _PostListTab extends ConsumerStatefulWidget {
 class _PostListTabState extends ConsumerState<_PostListTab>
     with AutomaticKeepAliveClientMixin {
   final List<Post> _posts = [];
-  final ScrollController _scrollController = ScrollController();
   bool _isLoading = true;
   bool _isLoadingMore = false;
   bool _hasMore = true;
@@ -137,22 +136,22 @@ class _PostListTabState extends ConsumerState<_PostListTab>
   @override
   void initState() {
     super.initState();
-    _scrollController.addListener(_onScroll);
     _load();
   }
 
   @override
   void dispose() {
-    _scrollController.removeListener(_onScroll);
-    _scrollController.dispose();
     super.dispose();
   }
 
-  void _onScroll() {
-    if (_scrollController.position.pixels >=
-        _scrollController.position.maxScrollExtent - 400) {
+  // 一覧はヘッダーと 1 本のスクロールでつないでいるので、自前の
+  // ScrollController は持たず、動いた知らせで続きを読む
+  bool _onScroll(ScrollUpdateNotification n) {
+    if (n.metrics.axis == Axis.vertical &&
+        n.metrics.pixels >= n.metrics.maxScrollExtent - 400) {
       _loadMore();
     }
+    return false;
   }
 
   /// 最新の認証情報を反映するため provider から取り直す
@@ -292,8 +291,9 @@ class _PostListTabState extends ConsumerState<_PostListTab>
 
     return RefreshIndicator(
       onRefresh: _load,
-      child: ListView.builder(
-        controller: _scrollController,
+      child: NotificationListener<ScrollUpdateNotification>(
+        onNotification: _onScroll,
+        child: ListView.builder(
         itemCount: _posts.length + (_hasMore ? 1 : 0),
         itemBuilder: (context, index) {
           if (index >= _posts.length) {
@@ -319,6 +319,7 @@ class _PostListTabState extends ConsumerState<_PostListTab>
             },
           );
         },
+      ),
       ),
     );
   }

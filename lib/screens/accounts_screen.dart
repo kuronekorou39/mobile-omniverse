@@ -177,24 +177,32 @@ class _AccountsScreenState extends ConsumerState<AccountsScreen> {
                           ),
                         ),
                       ),
-                      TextButton(
-                        onPressed: () => ref.read(accountProvider.notifier).enableAll(),
-                        style: TextButton.styleFrom(
-                          minimumSize: Size.zero,
-                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                      // 一括の切り替えは「オンかオフか」ではなく、全部を
+                      // どちらかに揃える操作。2 択の並びにして、揃っている
+                      // ほうを塗る（混ざっているときはどちらも塗らない）
+                      SegmentedButton<bool>(
+                        showSelectedIcon: false,
+                        emptySelectionAllowed: true,
+                        segments: const [
+                          ButtonSegment(value: true, label: Text('すべてON')),
+                          ButtonSegment(value: false, label: Text('すべてOFF')),
+                        ],
+                        selected: {
+                          if (accounts.every((a) => a.isEnabled)) true,
+                          if (accounts.every((a) => !a.isEnabled)) false,
+                        },
+                        onSelectionChanged: (value) {
+                          // 揃っているほうをもう一度押すと空になる。何もしない
+                          if (value.isEmpty) return;
+                          final notifier = ref.read(accountProvider.notifier);
+                          value.first
+                              ? notifier.enableAll()
+                              : notifier.disableAll();
+                        },
+                        style: const ButtonStyle(
+                          visualDensity: VisualDensity.compact,
                           tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                         ),
-                        child: const Text('全ON'),
-                      ),
-                      TextButton(
-                        onPressed: () => ref.read(accountProvider.notifier).disableAll(),
-                        style: TextButton.styleFrom(
-                          minimumSize: Size.zero,
-                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                          foregroundColor: Colors.grey,
-                        ),
-                        child: const Text('全OFF'),
                       ),
                     ],
                   ),

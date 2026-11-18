@@ -427,6 +427,14 @@ class SettingsNotifier extends StateNotifier<SettingsState> {
     }
     _scheduler.setInterval(Duration(seconds: state.fetchIntervalSeconds));
     _saveToPrefs();
+    _resetOverlayLayout();
+  }
+
+  /// オーバーレイの位置と大きさを初期に戻す（オーバーレイ側が自分で保存している）
+  Future<void> _resetOverlayLayout() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove('overlay_wIndex');
+    await prefs.remove('overlay_hIndex');
   }
 
   void setBetaUpdatesEnabled(bool value) {
@@ -544,7 +552,7 @@ final settingsProvider =
 );
 
 /// デバッグメニューの解錠状態。
-/// アプリ情報画面でバージョンを5回タップすると true になり、設定トップに
+/// 設定トップのバージョンを5回続けてタップすると true になり、設定トップに
 /// デバッグ行が現れる。解錠する画面と表示先の画面が別なので、画面ローカルの
 /// state ではなくここで保持する。永続化しないためアプリ再起動で施錠に戻る。
 final debugUnlockedProvider = StateProvider<bool>((ref) => false);

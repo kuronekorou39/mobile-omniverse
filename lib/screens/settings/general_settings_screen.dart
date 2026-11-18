@@ -8,12 +8,13 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:open_filex/open_filex.dart';
 import 'package:path_provider/path_provider.dart';
-import 'package:shared_preferences/shared_preferences.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../../providers/settings_provider.dart';
+import '../../services/onboarding_service.dart';
 import '../../utils/app_snackbar.dart';
 
-/// 一般設定（スリープ防止 / 画像の保存先 / 各種リセット）
+/// 一般設定（スリープ防止 / 画像の保存先 / 使い方 / ポリシー / リセット）
 class GeneralSettingsScreen extends ConsumerWidget {
   const GeneralSettingsScreen({super.key});
 
@@ -87,21 +88,25 @@ class GeneralSettingsScreen extends ConsumerWidget {
               ],
             ),
           ),
-          if (Platform.isAndroid)
-            ListTile(
-              leading: const Icon(Icons.picture_in_picture_alt),
-              title: const Text('オーバーレイの位置・サイズをリセット'),
-              subtitle: const Text('操作不能になった場合に使用'),
-              onTap: () async {
-                final prefs = await SharedPreferences.getInstance();
-                await prefs.remove('overlay_wIndex');
-                await prefs.remove('overlay_hIndex');
-                if (context.mounted) {
-                  showAppSnackBar(context, 'オーバーレイの設定をリセットしました（次回起動時に反映）',
-                      type: SnackType.success);
-                }
-              },
+          ListTile(
+            leading: const Icon(Icons.school_outlined),
+            title: const Text('使い方の説明をもう一度見る'),
+            subtitle: const Text('最初に出た説明を、各画面を次に開いたときにもう一度出します'),
+            onTap: () async {
+              await OnboardingService.instance.resetAll();
+              if (!context.mounted) return;
+              showAppSnackBar(context, '次に各画面を開いたときに説明を出します');
+            },
+          ),
+          ListTile(
+            leading: const Icon(Icons.policy_outlined),
+            title: const Text('プライバシーポリシー・免責事項'),
+            trailing: const Icon(Icons.open_in_new, size: 16),
+            onTap: () => launchUrl(
+              Uri.parse('https://rou39.com/omniverse/privacy-policy.html'),
+              mode: LaunchMode.externalApplication,
             ),
+          ),
           ListTile(
             leading: const Icon(Icons.settings_backup_restore),
             title: const Text('設定をデフォルトに戻す'),

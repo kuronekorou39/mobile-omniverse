@@ -4,7 +4,7 @@ import 'package:package_info_plus/package_info_plus.dart';
 
 import '../../providers/settings_provider.dart';
 
-/// アプリのバージョン。設定トップの要約とアプリ情報画面で共用する。
+/// アプリのバージョン。設定トップの下端に出す。
 final packageVersionProvider = FutureProvider<String>((ref) async {
   final info = await PackageInfo.fromPlatform();
   return info.version;

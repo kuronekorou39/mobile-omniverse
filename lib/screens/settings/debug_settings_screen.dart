@@ -21,7 +21,7 @@ import '../features_screen.dart';
 import '../query_id_screen.dart';
 import 'settings_common.dart';
 
-/// デバッグ設定。アプリ情報画面でバージョンを5回タップすると
+/// デバッグ設定。設定トップのバージョンを5回続けてタップすると
 /// 設定トップに入口が現れる。
 class DebugSettingsScreen extends ConsumerStatefulWidget {
   const DebugSettingsScreen({super.key});

@@ -60,7 +60,6 @@ void main() {
         'タイムライン',
         'ボタン配置',
         '一般',
-        'アプリ情報',
       ]) {
         expect(find.text(title), findsOneWidget, reason: '「$title」の行が無い');
       }
@@ -93,7 +92,13 @@ void main() {
       await pumpScreen(tester, const SettingsScreen());
 
       expect(find.textContaining('60秒'), findsNothing);
-      expect(find.text('v1.0.0'), findsNothing);
+    });
+
+    testWidgets('下端にバージョンと更新の確認を出す', (tester) async {
+      await pumpScreen(tester, const SettingsScreen());
+
+      expect(find.text('v1.0.0'), findsOneWidget);
+      expect(find.text('更新を確認'), findsOneWidget);
     });
 
     testWidgets('デバッグ行は解錠前には出ない', (tester) async {
@@ -125,43 +130,38 @@ void main() {
   });
 
   group('デバッグの解錠', () {
-    /// バージョン5回タップはアプリ情報画面で行い、デバッグ行は設定トップに出る。
-    /// 解錠状態が画面をまたいで共有されていることを検証する。
-    testWidgets('アプリ情報でバージョンを5回タップすると設定トップにデバッグ行が出る',
+    testWidgets('バージョンを5回続けてタップするとデバッグのタイルが出る',
         (tester) async {
       await pumpScreen(tester, const SettingsScreen());
 
-      await tester.tap(find.text('アプリ情報'));
-      await tester.pumpAndSettle();
-      expect(find.text('バージョン'), findsOneWidget);
-
       for (var i = 0; i < 5; i++) {
-        await tester.tap(find.text('バージョン'));
-        await tester.pump();
+        await tester.tap(find.text('v1.0.0'));
+        await tester.pump(const Duration(milliseconds: 100));
       }
-      // 解錠を知らせる SnackBar のタイマーを消化してから戻る
-      await tester.pump(const Duration(seconds: 4));
-      await tester.pumpAndSettle();
-
-      await tester.pageBack();
       await tester.pumpAndSettle();
 
       expect(find.text('デバッグ'), findsOneWidget);
     });
 
-    testWidgets('4回のタップでは解錠されない', (tester) async {
+    testWidgets('4回のタップでは出ない', (tester) async {
       await pumpScreen(tester, const SettingsScreen());
 
-      await tester.tap(find.text('アプリ情報'));
-      await tester.pumpAndSettle();
-
       for (var i = 0; i < 4; i++) {
-        await tester.tap(find.text('バージョン'));
-        await tester.pump();
+        await tester.tap(find.text('v1.0.0'));
+        await tester.pump(const Duration(milliseconds: 100));
       }
       await tester.pumpAndSettle();
 
-      await tester.pageBack();
+      expect(find.text('デバッグ'), findsNothing);
+    });
+
+    testWidgets('間が空いたタップは数え直す', (tester) async {
+      await pumpScreen(tester, const SettingsScreen());
+
+      for (var i = 0; i < 5; i++) {
+        await tester.tap(find.text('v1.0.0'));
+        await tester.pump(const Duration(seconds: 1));
+      }
       await tester.pumpAndSettle();
 
       expect(find.text('デバッグ'), findsNothing);
@@ -216,15 +216,16 @@ void main() {
     testWidgets('プレビューと各項目を表示する', (tester) async {
       await pumpScreen(tester, const PostDisplaySettingsScreen());
 
-      expect(find.text('プレビュー'), findsOneWidget);
+      // 見本の見出しと、画像の大きさの項目の 2 つ
+      expect(find.text('プレビュー'), findsNWidgets(2));
       expect(find.text('投稿スタイル'), findsOneWidget);
-      expect(find.text('プレビューサイズ'), findsOneWidget);
       expect(find.text('名前・時刻の濃さ'), findsOneWidget);
       // 項目が増えてテストの画面サイズでは下が切れるので、スクロールして確かめる
-      await tester.scrollUntilVisible(find.text('センシティブ'), 100,
+      await tester.scrollUntilVisible(find.text('匿名モード'), 100,
           scrollable: find.byType(Scrollable).last);
-      expect(find.text('匿名モード'), findsOneWidget);
       expect(find.text('センシティブ'), findsOneWidget);
+      // 匿名モードはオンオフなのでスイッチ
+      expect(find.widgetWithText(SwitchListTile, '匿名モード'), findsOneWidget);
     });
 
     testWidgets('ボタン位置はこの画面に含まれない', (tester) async {
@@ -259,8 +260,26 @@ void main() {
       expect(find.text('スリープ防止'), findsOneWidget);
       expect(find.text('センシティブ切替'), findsOneWidget);
       expect(find.text('RT非表示切替'), findsOneWidget);
-      // 投稿の表示から移設した項目
-      expect(find.text('ボタン位置'), findsOneWidget);
+      // 投稿の表示から移設した項目（横長の画面では「投稿ボタンの位置」と出る）
+      expect(find.byType(SegmentedButton<FabPosition>), findsOneWidget);
+    });
+
+    testWidgets('スマホの横向きではスクロール無しで全部収まる', (tester) async {
+      const landscape = Size(844, 390);
+      tester.view.physicalSize = landscape;
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      await pumpScreen(tester, const ButtonLayoutSettingsScreen());
+
+      for (final title in ['アクション非表示切替', 'RT非表示切替', '投稿ボタンの位置']) {
+        final rect = tester.getRect(find.text(title));
+        expect(rect.bottom, lessThanOrEqualTo(landscape.height),
+            reason: '「$title」がはみ出している');
+      }
+      final tile = find.widgetWithText(SwitchListTile, 'フェッチタイマー');
+      final sw = find.descendant(of: tile, matching: find.byType(Switch));
+      // 項目名とスイッチが画面の端から端まで離れない
+      expect(tester.getRect(sw).right, lessThan(landscape.width / 2));
     });
   });
 
@@ -270,7 +289,10 @@ void main() {
 
       expect(find.text('画面スリープ防止'), findsOneWidget);
       expect(find.text('画像の保存先'), findsOneWidget);
+      expect(find.text('使い方の説明をもう一度見る'), findsOneWidget);
+      expect(find.text('プライバシーポリシー・免責事項'), findsOneWidget);
       expect(find.text('設定をデフォルトに戻す'), findsOneWidget);
+      expect(find.text('オーバーレイの位置・サイズをリセット'), findsNothing);
     });
   });
 

@@ -16,10 +16,8 @@ class ButtonLayoutSettingsScreen extends ConsumerWidget {
 
     return settingsScaffold(
       title: 'ボタン配置',
-      body: ListView(
-        children: [
-          const SettingsSectionHeader(
-              title: 'ヘッダーバー', subtitle: 'ヘッダーに表示するボタン'),
+      body: LayoutBuilder(builder: (context, constraints) {
+        final switches = <Widget>[
           SwitchListTile(
             secondary: const Icon(Icons.timer_outlined),
             title: const Text('フェッチタイマー'),
@@ -75,13 +73,10 @@ class ButtonLayoutSettingsScreen extends ConsumerWidget {
               notifier.toggleAppBarButton('engagement');
             },
           ),
-
-          const SettingsSectionGap(),
-
-          const SettingsSectionHeader(title: '投稿ボタン'),
-          ListTile(
+        ];
+        Widget fabTile(String title) => ListTile(
             leading: const Icon(Icons.swap_horiz),
-            title: const Text('ボタン位置'),
+            title: Text(title),
             trailing: SegmentedButton<FabPosition>(
               showSelectedIcon: false,
               segments: [
@@ -99,9 +94,45 @@ class ButtonLayoutSettingsScreen extends ConsumerWidget {
                 visualDensity: VisualDensity.compact,
               ),
             ),
+          );
+        const headerSection = SettingsSectionHeader(
+            title: 'ヘッダーバー', subtitle: 'ヘッダーに表示するボタン');
+
+        // 横向きは縦が足りず、横に長い行では項目名とスイッチが離れすぎる。
+        // スイッチを 2 列に組み、投稿ボタンは見出しを省いて 1 行で下に置く
+        final side = constraints.maxWidth > constraints.maxHeight &&
+            constraints.maxWidth >= 600;
+        if (!side) {
+          return ListView(
+            children: [
+              headerSection,
+              ...switches,
+              const SettingsSectionGap(),
+              const SettingsSectionHeader(title: '投稿ボタン'),
+              fabTile('ボタン位置'),
+            ],
+          );
+        }
+        Widget pair(Widget left, Widget? right) => Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(child: left),
+                Expanded(child: right ?? const SizedBox.shrink()),
+              ],
+            );
+        return SingleChildScrollView(
+          child: Column(
+            children: [
+              headerSection,
+              for (var i = 0; i < switches.length; i += 2)
+                pair(switches[i],
+                    i + 1 < switches.length ? switches[i + 1] : null),
+              const SettingsSectionGap(),
+              pair(fabTile('投稿ボタンの位置'), null),
+            ],
           ),
-        ],
-      ),
+        );
+      }),
     );
   }
 }

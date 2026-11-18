@@ -103,7 +103,7 @@ class PostDisplaySettingsScreen extends ConsumerWidget {
                 ),
                 ListTile(
                   leading: const Icon(Icons.photo_size_select_large_outlined),
-                  title: const Text('プレビューサイズ'),
+                  title: const Text('プレビュー'),
                   trailing: SegmentedButton<ImagePreviewSize>(
                     showSelectedIcon: false,
                     segments: [
@@ -113,23 +113,6 @@ class PostDisplaySettingsScreen extends ConsumerWidget {
                     selected: {settings.imagePreviewSize},
                     onSelectionChanged: (value) =>
                         notifier.setImagePreviewSize(value.first),
-                    style: const ButtonStyle(
-                      visualDensity: VisualDensity.compact,
-                    ),
-                  ),
-                ),
-                ListTile(
-                  leading: const Icon(Icons.visibility_off_outlined),
-                  title: const Text('匿名モード'),
-                  trailing: SegmentedButton<bool>(
-                    showSelectedIcon: false,
-                    segments: const [
-                      ButtonSegment(value: false, label: Text('通常表示')),
-                      ButtonSegment(value: true, label: Text('匿名表示')),
-                    ],
-                    selected: {settings.hideUserInfo},
-                    onSelectionChanged: (value) =>
-                        notifier.setHideUserInfo(value.first),
                     style: const ButtonStyle(
                       visualDensity: VisualDensity.compact,
                     ),
@@ -154,6 +137,12 @@ class PostDisplaySettingsScreen extends ConsumerWidget {
                       visualDensity: VisualDensity.compact,
                     ),
                   ),
+                ),
+                SwitchListTile(
+                  secondary: const Icon(Icons.visibility_off_outlined),
+                  title: const Text('匿名モード'),
+                  value: settings.hideUserInfo,
+                  onChanged: notifier.setHideUserInfo,
                 ),
               ],
             );

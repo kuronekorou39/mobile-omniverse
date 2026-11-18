@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:http/http.dart' as http;
+import 'package:http/testing.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:mobile_omniverse/providers/settings_provider.dart';
@@ -97,7 +100,33 @@ void main() {
     testWidgets('下端にバージョンと更新の確認を出す', (tester) async {
       await pumpScreen(tester, const SettingsScreen());
 
-      expect(find.text('v1.0.0'), findsOneWidget);
+      expect(find.text('OmniVerse v1.0.0'), findsOneWidget);
+      expect(find.text('更新を確認'), findsOneWidget);
+    });
+
+    testWidgets('更新が無ければ「最新です」をその行に出し、しばらくで戻す', (tester) async {
+      PackageInfo.setMockInitialValues(appName: 'OmniVerse',
+          packageName: 'x', version: '1.0.0', buildNumber: '1',
+          buildSignature: '');
+      final service = AppUpdateService.instance;
+      service.isIOSOverride = false;
+      service.httpClientOverride = MockClient((_) async =>
+          http.Response('{"version":"1.0.0","release_notes":"","apk_url":""}', 200));
+      addTearDown(() {
+        service.isIOSOverride = null;
+        service.httpClientOverride = null;
+      });
+      await pumpScreen(tester, const SettingsScreen());
+      final before = tester.getRect(find.text('OmniVerse v1.0.0'));
+
+      await tester.tap(find.text('更新を確認'));
+      await tester.pumpAndSettle();
+      expect(find.text('最新です'), findsOneWidget);
+      expect(find.byType(SnackBar), findsNothing);
+      // 右の文言が変わってもバージョンの位置は動かない
+      expect(tester.getRect(find.text('OmniVerse v1.0.0')), before);
+
+      await tester.pump(const Duration(seconds: 4));
       expect(find.text('更新を確認'), findsOneWidget);
     });
 
@@ -135,19 +164,22 @@ void main() {
       await pumpScreen(tester, const SettingsScreen());
 
       for (var i = 0; i < 5; i++) {
-        await tester.tap(find.text('v1.0.0'));
+        await tester.tap(find.text('OmniVerse v1.0.0'));
         await tester.pump(const Duration(milliseconds: 100));
       }
       await tester.pumpAndSettle();
 
       expect(find.text('デバッグ'), findsOneWidget);
+      // 解錠の知らせが消えるのを待つ
+      await tester.pump(const Duration(seconds: 4));
+      await tester.pumpAndSettle();
     });
 
     testWidgets('4回のタップでは出ない', (tester) async {
       await pumpScreen(tester, const SettingsScreen());
 
       for (var i = 0; i < 4; i++) {
-        await tester.tap(find.text('v1.0.0'));
+        await tester.tap(find.text('OmniVerse v1.0.0'));
         await tester.pump(const Duration(milliseconds: 100));
       }
       await tester.pumpAndSettle();
@@ -159,7 +191,7 @@ void main() {
       await pumpScreen(tester, const SettingsScreen());
 
       for (var i = 0; i < 5; i++) {
-        await tester.tap(find.text('v1.0.0'));
+        await tester.tap(find.text('OmniVerse v1.0.0'));
         await tester.pump(const Duration(seconds: 1));
       }
       await tester.pumpAndSettle();
@@ -252,7 +284,7 @@ void main() {
   });
 
   group('ボタン配置設定画面', () {
-    testWidgets('ヘッダーバーの各スイッチとボタン位置を表示する', (tester) async {
+    testWidgets('タイムラインの各スイッチとボタン位置を表示する', (tester) async {
       await pumpScreen(tester, const ButtonLayoutSettingsScreen());
 
       expect(find.text('フェッチタイマー'), findsOneWidget);
@@ -326,11 +358,11 @@ void main() {
       await pumpScreen(tester, const DebugSettingsScreen());
 
       final scrollable = find.byType(Scrollable).first;
-      await tester.scrollUntilVisible(find.text('デバッグメニューを隠す'), 200.0,
+      await tester.scrollUntilVisible(find.text('デバッグを隠す'), 200.0,
           scrollable: scrollable);
 
       expect(find.text('キャッシュをクリア'), findsOneWidget);
-      expect(find.text('デバッグメニューを隠す'), findsOneWidget);
+      expect(find.text('デバッグを隠す'), findsOneWidget);
     });
   });
 }

@@ -5,7 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../providers/settings_provider.dart';
 import 'settings_common.dart';
 
-/// ボタン配置設定（ヘッダーバーに出すボタン / 投稿ボタンの左右）
+/// ボタン配置設定（タイムラインに出す切り替えボタン / 投稿ボタンの左右）
 class ButtonLayoutSettingsScreen extends ConsumerWidget {
   const ButtonLayoutSettingsScreen({super.key});
 
@@ -96,7 +96,8 @@ class ButtonLayoutSettingsScreen extends ConsumerWidget {
             ),
           );
         const headerSection = SettingsSectionHeader(
-            title: 'ヘッダーバー', subtitle: 'ヘッダーに表示するボタン');
+            title: 'タイムラインのボタン',
+            subtitle: 'タイムラインの画面に出す切り替え');
 
         // 横向きは縦が足りず、横に長い行では項目名とスイッチが離れすぎる。
         // スイッチを 2 列に組み、投稿ボタンは見出しを省いて 1 行で下に置く

@@ -74,6 +74,8 @@ class SettingsScreen extends ConsumerWidget {
 
 /// 設定トップの下端に出すバージョンと「更新を確認」。
 /// バージョンの数字を続けて 5 回たたくとデバッグのタイルが出る（押した見た目は出さない）
+///
+/// 確認の結果はこの行の中に出す。下からの知らせだと、この行に被って読めない
 class _VersionFooter extends ConsumerStatefulWidget {
   const _VersionFooter();
 
@@ -88,13 +90,19 @@ class _VersionFooterState extends ConsumerState<_VersionFooter> {
   /// これより間が空いたら数え直す
   static const _tapWindow = Duration(milliseconds: 600);
 
+  /// 「最新です」を出しておく長さ
+  static const _resultShown = Duration(seconds: 3);
+
   int _taps = 0;
   Timer? _tapReset;
+  Timer? _resultReset;
   bool _checking = false;
+  bool _upToDate = false;
 
   @override
   void dispose() {
     _tapReset?.cancel();
+    _resultReset?.cancel();
     super.dispose();
   }
 
@@ -105,6 +113,8 @@ class _VersionFooterState extends ConsumerState<_VersionFooter> {
     if (++_taps >= _unlockTaps) {
       _taps = 0;
       ref.read(debugUnlockedProvider.notifier).state = true;
+      showAppSnackBar(context, '設定にデバッグを出しました',
+          type: SnackType.success);
     }
   }
 
@@ -112,42 +122,70 @@ class _VersionFooterState extends ConsumerState<_VersionFooter> {
     setState(() => _checking = true);
     final info = await AppUpdateService.instance.checkForUpdate();
     if (!mounted) return;
-    setState(() => _checking = false);
+    setState(() {
+      _checking = false;
+      _upToDate = info == null;
+    });
     if (info != null) {
       showUpdateDialog(context, info);
-    } else {
-      showAppSnackBar(context, '最新バージョンです');
+      return;
     }
+    _resultReset?.cancel();
+    _resultReset = Timer(_resultShown, () {
+      if (mounted) setState(() => _upToDate = false);
+    });
   }
 
   @override
   Widget build(BuildContext context) {
     final version = ref.watch(packageVersionProvider).asData?.value ?? '...';
-    final faint = Theme.of(context).colorScheme.onSurfaceVariant;
+    final scheme = Theme.of(context).colorScheme;
+    final faint = TextStyle(fontSize: 12, color: scheme.onSurfaceVariant);
 
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 4),
+    // 中央から左右に振り分ける。右側の文言が変わってもバージョンは動かない
+    return SizedBox(
+      height: 44,
       child: Row(
-        mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Text('OmniVerse ', style: TextStyle(fontSize: 12, color: faint)),
-          GestureDetector(
-            behavior: HitTestBehavior.opaque,
-            onTap: _onVersionTap,
-            child: Padding(
-              padding: const EdgeInsets.symmetric(vertical: 8),
-              child: Text('v$version',
-                  style: TextStyle(fontSize: 12, color: faint)),
+          Expanded(
+            child: Align(
+              alignment: Alignment.centerRight,
+              child: GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap: _onVersionTap,
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                  child: Text('OmniVerse v$version', style: faint),
+                ),
+              ),
             ),
           ),
           const SizedBox(width: 4),
-          TextButton(
-            style: TextButton.styleFrom(
-              textStyle: const TextStyle(fontSize: 12),
-              visualDensity: VisualDensity.compact,
+          Expanded(
+            child: Align(
+              alignment: Alignment.centerLeft,
+              child: _upToDate
+                  ? Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 8),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(Icons.check, size: 14, color: scheme.primary),
+                          const SizedBox(width: 4),
+                          Text('最新です', style: faint),
+                        ],
+                      ),
+                    )
+                  : TextButton(
+                      style: TextButton.styleFrom(
+                        textStyle: const TextStyle(fontSize: 12),
+                        visualDensity: VisualDensity.compact,
+                      ),
+                      // 確認中も文言は変えない。幅が変わって並びがぶれる
+                      onPressed: _checking ? null : _checkForUpdate,
+                      child: const Text('更新を確認'),
+                    ),
             ),
-            onPressed: _checking ? null : _checkForUpdate,
-            child: Text(_checking ? '確認中…' : '更新を確認'),
           ),
         ],
       ),

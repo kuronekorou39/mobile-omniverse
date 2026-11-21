@@ -87,7 +87,8 @@ List<HeaderButtonItem> buildHeaderButtonItems(
 
 /// 取得タイマーを出す状態か
 bool _showFetchTimer(WidgetRef ref) {
-  final hasAccounts = ref.watch(accountProvider.select((a) => a.isNotEmpty));
+  // 全部のアカウントで取得をオフにしていると次の取得が来ず、輪が回り続ける
+  final hasAccounts = ref.watch(hasEnabledAccountProvider);
   return hasAccounts &&
       ref.watch(settingsProvider
           .select((s) => s.isFetchingActive && s.showFetchTimer));
@@ -388,6 +389,8 @@ class _OverlayLaunchButtonState extends ConsumerState<OverlayLaunchButton> {
   @override
   Widget build(BuildContext context) {
     if (!Platform.isAndroid) return const SizedBox.shrink();
+    // 取得をオンにしたアカウントが無ければ、オーバーレイに出すものが無い
+    if (!ref.watch(hasEnabledAccountProvider)) return const SizedBox.shrink();
     return IconButton(
       icon: const Icon(Icons.picture_in_picture_alt, size: 20),
       tooltip: 'オーバーレイ',
@@ -488,7 +491,12 @@ class _OverlayLaunchButtonState extends ConsumerState<OverlayLaunchButton> {
         );
       }
 
-      final posts = feed.posts.take(100).map((p) => p.toJson()).toList();
+      // ホームと同じく、取得をオフにしたアカウントの投稿は出さない
+      final posts =
+          postsOfEnabledAccounts(feed.posts, ref.read(accountProvider))
+              .take(100)
+              .map((p) => p.toJson())
+              .toList();
       final settings = ref.read(settingsProvider);
       if (Platform.isAndroid) {
         await FlutterOverlayWindow.shareData(jsonEncode({

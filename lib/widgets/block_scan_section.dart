@@ -1,7 +1,6 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/account.dart';
 import '../models/sns_service.dart';
@@ -52,9 +51,8 @@ class _BlockScanSectionState extends State<BlockScanSection> {
   final Map<int, BlockRunProgress> _stats = {};
   bool _loading = true;
 
-  /// 開閉を自分で選んだか。null のあいだは、調査中や未完了があるときだけ開く
-  bool? _expanded;
-  static const _prefExpanded = 'block_scan_section_expanded';
+  /// 画面を開いたときは必ず畳んでおく。勝手に開くと画面の並びが毎回変わる
+  bool _expanded = false;
 
   @override
   void initState() {
@@ -99,11 +97,8 @@ class _BlockScanSectionState extends State<BlockScanSection> {
       for (final r in runs) {
         stats[r.id] = await db.blockRunProgress(r.id);
       }
-      final prefs = await SharedPreferences.getInstance();
-      final expanded = prefs.getBool(_prefExpanded);
       if (!mounted) return;
       setState(() {
-        _expanded = expanded;
         _runs = runs;
         _stats
           ..clear()
@@ -134,8 +129,8 @@ class _BlockScanSectionState extends State<BlockScanSection> {
     // 走っている間はここから始められない
     final blockedBy = isMine ? null : FetchJobs.instance.current.value;
     final hasUnfinished = _runs.any((r) => !r.isCompleted);
-    // 決めていなければ、気にしておくべきものがあるときだけ開いておく
-    final open = _expanded ?? (isMine || hasUnfinished);
+    // 画面を開いたときは必ず畳む。調査中・未完了は見出しの要約で分かる
+    final open = _expanded;
 
     return Padding(
       // 下に続くまとまりとの間隔。Bluesky では丸ごと出さないので内側に持つ
@@ -168,11 +163,7 @@ class _BlockScanSectionState extends State<BlockScanSection> {
     );
   }
 
-  Future<void> _setExpanded(bool value) async {
-    setState(() => _expanded = value);
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setBool(_prefExpanded, value);
-  }
+  void _setExpanded(bool value) => setState(() => _expanded = value);
 
   List<Widget> _body(BlockScanProgress? running, bool isMine,
           RunningFetch? blockedBy, bool hasUnfinished) =>

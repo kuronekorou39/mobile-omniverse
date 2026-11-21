@@ -615,4 +615,33 @@ void main() {
       expect(receivedHandle, '@expired');
     });
   });
+
+  group('postsOfEnabledAccounts', () {
+    final a = makeXAccount(id: 'a');
+    final b = makeXAccount(id: 'b');
+    final posts = [
+      makePost(id: 'p1', fetchedByAccountIds: {'a'}),
+      makePost(id: 'p2', fetchedByAccountIds: {'b'}),
+      makePost(id: 'p3'),
+    ];
+
+    test('全部オンならそのまま', () {
+      expect(postsOfEnabledAccounts(posts, [a, b]), same(posts));
+    });
+
+    test('オフにしたアカウントだけが取った投稿は外す', () {
+      final off = b.copyWith(isEnabled: false);
+      expect(postsOfEnabledAccounts(posts, [a, off]).map((p) => p.id),
+          ['p1', 'p3']);
+    });
+
+    test('全部オフなら前に取った投稿が残っていても何も出さない', () {
+      expect(
+          postsOfEnabledAccounts(posts, [
+            a.copyWith(isEnabled: false),
+            b.copyWith(isEnabled: false),
+          ]),
+          isEmpty);
+    });
+  });
 }

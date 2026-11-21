@@ -599,7 +599,8 @@ class _OmniFeedScreenState extends ConsumerState<OmniFeedScreen>
       },
     );
 
-    final hasAccounts = accounts.isNotEmpty;
+    // 取得をオンにしたアカウントが無ければ投稿もできないので、ボタンごと出さない
+    final hasAccounts = enabledAccountIds.isNotEmpty;
 
     return Scaffold(
       // ヘッダーが無いぶん、ステータスバーの下から始める
@@ -784,6 +785,20 @@ class _OmniFeedScreenState extends ConsumerState<OmniFeedScreen>
                 ),
               ],
             ),
+          ),
+        ),
+      ];
+    }
+
+    // 全部オフなら前に取った投稿が残っていても出さず、待っても届かないことを伝える
+    if (enabledAccountIds.isEmpty) {
+      return [
+        const SliverFillRemaining(
+          hasScrollBody: false,
+          child: EmptyState(
+            icon: Icons.toggle_off_outlined,
+            title: 'タイムライン取得がオフです',
+            subtitle: 'アカウントの画面で「タイムライン取得」をオンにすると投稿が届きます',
           ),
         ),
       ];

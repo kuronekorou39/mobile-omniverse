@@ -124,6 +124,21 @@ void main() {
       expect(find.byIcon(Icons.edit), findsOneWidget);
     });
 
+    testWidgets('全部のアカウントで取得をオフにすると、投稿ボタンを消して理由を出す',
+        (tester) async {
+      AccountStorageService.instance.setAccountsForTest([
+        makeXAccount(id: 'x1', isEnabled: false),
+        makeBlueskyAccount(id: 'b1', isEnabled: false),
+      ]);
+
+      await pumpOmniFeedScreen(tester);
+
+      expect(find.byType(FloatingActionButton), findsNothing);
+      expect(find.text('タイムライン取得がオフです'), findsOneWidget);
+      // 次の取得が来ないので、取得の輪も出さない
+      expect(find.byType(CircularProgressIndicator), findsNothing);
+    });
+
     testWidgets('no FAB when no accounts', (tester) async {
       await pumpOmniFeedScreen(tester);
 

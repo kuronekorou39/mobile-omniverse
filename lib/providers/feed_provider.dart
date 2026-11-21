@@ -10,12 +10,14 @@ import 'package:flutter_cache_manager/flutter_cache_manager.dart';
 import 'package:flutter_overlay_window/flutter_overlay_window.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../models/account.dart';
 import '../models/activity_log.dart';
 import '../models/post.dart';
 import '../models/sns_service.dart';
 import '../providers/activity_log_provider.dart';
 import '../providers/fetch_status_provider.dart';
 import '../providers/settings_provider.dart';
+import '../services/account_storage_service.dart';
 import '../services/memory_guard_service.dart';
 import '../services/timeline_cache_service.dart';
 import '../services/timeline_fetch_scheduler.dart';
@@ -286,9 +288,12 @@ class FeedNotifier extends StateNotifier<FeedState> {
       if (_overlayPostsDirty && _overlayAtTop) {
         _overlayPostsDirty = false;
         final hideRtIds = settings.hideRetweetsAccountIds;
+        // ホームと同じく、取得をオフにしたアカウントの投稿は出さない
+        final posts = postsOfEnabledAccounts(
+            state.posts, AccountStorageService.instance.accounts);
         var visiblePosts = settings.hideAllRetweets
-            ? state.posts.where((p) => !p.isRetweet)
-            : state.posts.where((p) =>
+            ? posts.where((p) => !p.isRetweet)
+            : posts.where((p) =>
                 !p.isRetweet ||
                 p.fetchedByAccountIds.isEmpty ||
                 p.fetchedByAccountIds.any((id) => !hideRtIds.contains(id)));
@@ -854,6 +859,22 @@ class FeedNotifier extends StateNotifier<FeedState> {
     }
     super.dispose();
   }
+}
+
+/// タイムライン取得をオンにしているアカウントの投稿だけを残す。
+/// 全部オフなら、前に取った投稿が残っていても何も出さない
+List<Post> postsOfEnabledAccounts(List<Post> posts, List<Account> accounts) {
+  final enabled = {
+    for (final a in accounts)
+      if (a.isEnabled) a.id,
+  };
+  if (enabled.isEmpty) return const [];
+  if (enabled.length == accounts.length) return posts;
+  return posts
+      .where((p) =>
+          p.fetchedByAccountIds.isEmpty ||
+          p.fetchedByAccountIds.any(enabled.contains))
+      .toList();
 }
 
 final feedProvider = StateNotifierProvider<FeedNotifier, FeedState>(

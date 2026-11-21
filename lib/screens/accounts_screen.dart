@@ -711,58 +711,57 @@ class _AccountDetailScreenState extends ConsumerState<_AccountDetailScreen> {
         ),
       ),
     ];
+    void openLikes(int index) => Navigator.of(context).push(
+          MaterialPageRoute(
+            builder: (_) =>
+                LikesBookmarksScreen(account: account, initialIndex: index),
+          ),
+        );
     final viewCard = <Widget>[
-      // 「見るもの」はひとつの面にまとめる。同じ重さの行が並ぶので
-      // カード 1 枚に収め、区切り線だけで分ける
+      // 「見るもの」は大きめのボタンを横に並べる。ふぁぼとブックマークは
+      // 同じ画面のタブ違いなので、面は 1 枚にして押した側のタブで開く
       Padding(
         key: _viewKey,
         padding: const EdgeInsets.symmetric(horizontal: 16),
-        child: Container(
-          decoration: BoxDecoration(
-            color: scheme.surfaceContainer,
-            borderRadius: BorderRadius.circular(16),
-          ),
-          padding: const EdgeInsets.symmetric(vertical: 2, horizontal: 8),
-          child: Column(
+        child: IntrinsicHeight(
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              _NavRow(
-                icon: Icons.person_outline,
-                label: 'プロフィール',
-                onTap: () => Navigator.of(context).push(
-                  MaterialPageRoute(
-                    builder: (_) => UserProfileScreen(
-                      username: account.displayName,
-                      handle: account.handle,
-                      service: account.service,
-                      avatarUrl: account.avatarUrl,
-                      accountId: account.id,
+              Expanded(
+                child: _NavPanel(children: [
+                  _NavButton(
+                    icon: Icons.person_outline,
+                    label: 'プロフィール',
+                    onTap: () => Navigator.of(context).push(
+                      MaterialPageRoute(
+                        builder: (_) => UserProfileScreen(
+                          username: account.displayName,
+                          handle: account.handle,
+                          service: account.service,
+                          avatarUrl: account.avatarUrl,
+                          accountId: account.id,
+                        ),
+                      ),
                     ),
                   ),
-                ),
+                ]),
               ),
-              const _NavDivider(),
-              _NavRow(
-                icon: Icons.favorite_border,
-                label: 'ふぁぼ',
-                onTap: () => Navigator.of(context).push(
-                  MaterialPageRoute(
-                    builder: (_) => LikesBookmarksScreen(
-                        account: account, initialIndex: 0),
+              const SizedBox(width: 8),
+              Expanded(
+                flex: 2,
+                child: _NavPanel(children: [
+                  _NavButton(
+                    icon: Icons.favorite_border,
+                    label: 'ふぁぼ',
+                    onTap: () => openLikes(0),
                   ),
-                ),
-              ),
-              const _NavDivider(),
-              _NavRow(
-                icon: Icons.bookmark_border,
-                label: 'ブックマーク',
-                onTap: () => Navigator.of(context).push(
-                  MaterialPageRoute(
-                    builder: (_) => LikesBookmarksScreen(
-                        account: account, initialIndex: 1),
+                  _NavButton(
+                    icon: Icons.bookmark_border,
+                    label: 'ブックマーク',
+                    onTap: () => openLikes(1),
                   ),
-                ),
+                ]),
               ),
-              const _NavDivider(),
             ],
           ),
         ),
@@ -989,9 +988,42 @@ class _AccountDetailScreenState extends ConsumerState<_AccountDetailScreen> {
   }
 }
 
-/// 入口リストの 1 行。すべて同じ重さで並ぶので、面はまとめて親が持つ
-class _NavRow extends StatelessWidget {
-  const _NavRow({
+/// 入口ボタンを載せる面。複数載せたときは縦線で区切り、押せる所を分ける
+class _NavPanel extends StatelessWidget {
+  const _NavPanel({required this.children});
+
+  final List<Widget> children;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Material(
+      color: scheme.surfaceContainer,
+      borderRadius: BorderRadius.circular(16),
+      clipBehavior: Clip.antiAlias,
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          for (var i = 0; i < children.length; i++) ...[
+            if (i > 0)
+              VerticalDivider(
+                width: 1,
+                thickness: 1,
+                indent: 14,
+                endIndent: 14,
+                color: scheme.outlineVariant,
+              ),
+            Expanded(child: children[i]),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+/// 入口ボタン 1 つ。アイコンの下に名前を置く
+class _NavButton extends StatelessWidget {
+  const _NavButton({
     required this.icon,
     required this.label,
     required this.onTap,
@@ -1007,35 +1039,25 @@ class _NavRow extends StatelessWidget {
     return InkWell(
       onTap: onTap,
       child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 13, horizontal: 8),
-        child: Row(
+        padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 4),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(icon, size: 22, color: scheme.primary),
-            const SizedBox(width: 14),
-            Expanded(
+            Icon(icon, size: 26, color: scheme.primary),
+            const SizedBox(height: 6),
+            // 狭い画面でも折り返さず、入りきらなければ文字を縮める
+            FittedBox(
+              fit: BoxFit.scaleDown,
               child: Text(label,
+                  maxLines: 1,
                   style: const TextStyle(
-                      fontSize: 16, fontWeight: FontWeight.w500)),
+                      fontSize: 14, fontWeight: FontWeight.w500)),
             ),
-            Icon(Icons.chevron_right,
-                size: 20, color: scheme.onSurfaceVariant),
           ],
         ),
       ),
     );
   }
-}
-
-/// 行間の区切り。アイコンぶんだけ左を空けて、テキストの頭に揃える
-class _NavDivider extends StatelessWidget {
-  const _NavDivider();
-
-  @override
-  Widget build(BuildContext context) => Container(
-        height: 1,
-        margin: const EdgeInsets.only(left: 44),
-        color: Theme.of(context).colorScheme.outlineVariant,
-      );
 }
 
 /// 設定の 1 行。面を持たせず、入口リストより軽く見せる

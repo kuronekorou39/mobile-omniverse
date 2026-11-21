@@ -92,3 +92,8 @@ final accountProvider =
     StateNotifierProvider<AccountNotifier, List<Account>>(
   (ref) => AccountNotifier(),
 );
+
+/// タイムライン取得をオンにしているアカウントがあるか。
+/// 無ければ取得は走らないので、投稿ボタンや取得の進みは出さない
+final hasEnabledAccountProvider = Provider<bool>(
+    (ref) => ref.watch(accountProvider).any((a) => a.isEnabled));

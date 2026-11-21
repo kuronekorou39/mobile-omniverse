@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/account.dart';
 import '../models/sns_service.dart';
@@ -46,8 +45,8 @@ class _UserDetailSectionState extends State<UserDetailSection> {
   DetailCoverage? _coverage;
   bool _loading = true;
 
-  bool? _expanded;
-  static const _prefExpanded = 'user_detail_section_expanded';
+  /// 画面を開いたときは必ず畳んでおく。勝手に開くと画面の並びが毎回変わる
+  bool _expanded = false;
 
   @override
   void initState() {
@@ -87,13 +86,11 @@ class _UserDetailSectionState extends State<UserDetailSection> {
     final all = FollowDb.memberSetFor('all',
         followers: followers, following: following);
     final coverage = all == null ? null : await db.detailCoverage(all);
-    final prefs = await SharedPreferences.getInstance();
     if (!mounted) return;
     setState(() {
       _followers = followers;
       _following = following;
       _coverage = coverage;
-      _expanded = prefs.getBool(_prefExpanded);
       _loading = false;
     });
   }
@@ -112,7 +109,7 @@ class _UserDetailSectionState extends State<UserDetailSection> {
     final blockedBy = isMine ? null : FetchJobs.instance.current.value;
     final c = _coverage;
     final hasData = c != null && (c.profileFetched > 0 || c.postsFetched > 0);
-    final open = _expanded ?? (isMine || hasData);
+    final open = _expanded;
 
     return Padding(
       padding: const EdgeInsets.only(bottom: FollowSectionHeader.sectionGap),
@@ -143,11 +140,7 @@ class _UserDetailSectionState extends State<UserDetailSection> {
     );
   }
 
-  Future<void> _setExpanded(bool value) async {
-    setState(() => _expanded = value);
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setBool(_prefExpanded, value);
-  }
+  void _setExpanded(bool value) => setState(() => _expanded = value);
 
   List<Widget> _body(
       UserDetailProgress? running, bool isMine, RunningFetch? blockedBy) {

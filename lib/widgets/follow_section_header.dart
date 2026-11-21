@@ -126,7 +126,7 @@ class FetchStartButton extends StatelessWidget {
   const FetchStartButton({
     super.key,
     required this.onPressed,
-    this.label = '取得開始',
+    this.label = '取得する',
   });
 
   /// null なら押せない

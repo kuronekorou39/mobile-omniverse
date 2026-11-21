@@ -199,7 +199,7 @@ class _UserDetailSectionState extends State<UserDetailSection> {
             onPressed: widget.account != null && blockedBy == null && c != null
                 ? _pickAndStart
                 : null,
-            label: blockedBy?.waitLabel ?? '取得開始',
+            label: blockedBy?.waitLabel ?? '取得する',
           ),
         ),
     ];
@@ -393,7 +393,12 @@ class _StartDialogState extends State<_StartDialog> {
   bool _birthday = true;
   bool _lastPost = true;
   bool _refresh = false;
-  Future<int>? _pending;
+
+  /// 起点ごとの「実際に調べる人数」。数え終わるまで null
+  final Map<String, int?> _todo = {};
+
+  /// 数え直しが重なったときに、古い結果で上書きしないための番号
+  int _generation = 0;
 
   @override
   void initState() {
@@ -401,45 +406,64 @@ class _StartDialogState extends State<_StartDialog> {
     _recount();
   }
 
-  /// 選び直すたびに「実際に調べる人数」を数え直す
+  /// 選び直すたびに、全部の起点の「実際に調べる人数」を数え直す。
+  /// 数と時間を起点ごとに並べて見比べられるようにする
   void _recount() {
-    final m = FollowDb.memberSetFor(_origin,
-        followers: widget.followers, following: widget.following);
-    if (m == null || (!_birthday && !_lastPost)) {
-      _pending = Future.value(0);
-      return;
-    }
+    final gen = ++_generation;
     final now = DateTime.now();
     final freshAfter = _refresh
         ? now.millisecondsSinceEpoch + 1
         : now.subtract(UserDetailService.freshFor).millisecondsSinceEpoch;
-    _pending = FollowDb.instance
-        .detailCandidates(m,
-            wantBirthday: _birthday,
-            wantLastPost: _lastPost,
-            freshAfterMs: freshAfter)
-        .then((c) => c.length);
+    for (final o in widget.origins) {
+      final m = FollowDb.memberSetFor(o.key,
+          followers: widget.followers, following: widget.following);
+      if (m == null || (!_birthday && !_lastPost)) {
+        _todo[o.key] = m == null ? null : 0;
+        continue;
+      }
+      _todo[o.key] = null;
+      FollowDb.instance
+          .detailCandidates(m,
+              wantBirthday: _birthday,
+              wantLastPost: _lastPost,
+              freshAfterMs: freshAfter)
+          .then((c) {
+        if (!mounted || gen != _generation) return;
+        setState(() => _todo[o.key] = c.length);
+      });
+    }
   }
 
   int get _requestsPerPerson => (_birthday ? 1 : 0) + (_lastPost ? 1 : 0);
 
+  String? _estimate(int? n) {
+    if (n == null || n == 0) return null;
+    return ScanEstimate.roughLabel(
+        UserDetailService.defaultInterval * (n * _requestsPerPerson));
+  }
+
   @override
   Widget build(BuildContext context) {
-    final canStart = (widget.counts[_origin] ?? 0) > 0 && _requestsPerPerson > 0;
+    final todo = _todo[_origin];
+    final canStart = (widget.counts[_origin] ?? 0) > 0 &&
+        _requestsPerPerson > 0 &&
+        (todo ?? 0) > 0;
     void toggle(void Function() f) => setState(() {
           f();
           _recount();
         });
     return FetchStartDialog(
       title: '詳しい情報を取得',
+      targetsNote: '調べる人数と目安',
       targets: [
         for (final o in widget.origins)
           FetchTargetChoice(o.key, o.label,
-              count: widget.counts[o.key],
+              count: _todo[o.key],
+              detail: _estimate(_todo[o.key]),
               enabled: (widget.counts[o.key] ?? 0) > 0),
       ],
       selected: _origin,
-      onSelected: (v) => toggle(() => _origin = v),
+      onSelected: (v) => setState(() => _origin = v),
       optionsLabel: '調べる内容',
       options: [
         FetchOption('誕生日',
@@ -449,17 +473,7 @@ class _StartDialogState extends State<_StartDialog> {
         FetchOption('取得済みも調べ直す',
             value: _refresh, onChanged: (v) => toggle(() => _refresh = v)),
       ],
-      summary: FutureBuilder<int>(
-        future: _pending,
-        builder: (ctx, snap) {
-          final n = snap.data;
-          if (n == null) return const SkeletonBox(height: 16, radius: 6);
-          if (n == 0) return const Text('調べる人が居ません');
-          final d =
-              UserDetailService.defaultInterval * (n * _requestsPerPerson);
-          return Text('${formatNumber(n)}人・目安 ${ScanEstimate.roughLabel(d)}');
-        },
-      ),
+      summary: todo == 0 ? const Text('調べる人が居ません') : null,
       onStart: canStart
           ? () => Navigator.pop(
                 context,

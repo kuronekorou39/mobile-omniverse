@@ -14,8 +14,8 @@ void main() {
         body: FetchStartDialog(
           title: 'つながり調査',
           targets: const [
-            FetchTargetChoice('following', 'フォロー', count: 356),
-            FetchTargetChoice('followers', 'フォロワー', count: 1284),
+            FetchTargetChoice('following', 'フォロー', count: 356, detail: '約3時間'),
+            FetchTargetChoice('followers', 'フォロワー', count: 1284, detail: '約9時間'),
             FetchTargetChoice('both', '両方', count: 1284),
             FetchTargetChoice('mutual', '相互', enabled: false),
           ],
@@ -26,18 +26,20 @@ void main() {
             FetchOption('人気', value: true, onChanged: (_) {}),
             FetchOption('つながり', value: false, onChanged: (_) {}),
           ],
-          summary: const Text('356人・目安 約3時間'),
+          summary: const Text('保存 約26 MB'),
           onStart: onStart,
         ),
       ),
     ));
   }
 
-  testWidgets('対象に人数を添え、要約と開始を出す', (tester) async {
+  testWidgets('対象ごとに人数と時間を並べ、要約と開始を出す', (tester) async {
     await pump(tester, onStart: () {});
-    expect(find.text('フォロー 356'), findsOneWidget);
-    expect(find.text('フォロワー 1,284'), findsOneWidget);
-    expect(find.text('356人・目安 約3時間'), findsOneWidget);
+    expect(find.text('356人'), findsOneWidget);
+    expect(find.text('1,284人'), findsNWidgets(2));
+    expect(find.text('約9時間'), findsOneWidget);
+    expect(find.byType(Radio<String>), findsNWidgets(4));
+    expect(find.text('保存 約26 MB'), findsOneWidget);
     expect(find.text('開始'), findsOneWidget);
   });
 
@@ -51,7 +53,7 @@ void main() {
   testWidgets('横向きの低い画面でも要約と開始ボタンが画面に収まる', (tester) async {
     const size = Size(915, 300);
     await pump(tester, onStart: () {}, size: size);
-    expect(tester.getRect(find.text('356人・目安 約3時間')).bottom,
+    expect(tester.getRect(find.text('保存 約26 MB')).bottom,
         lessThanOrEqualTo(size.height));
     expect(tester.getRect(find.text('開始')).bottom,
         lessThanOrEqualTo(size.height));

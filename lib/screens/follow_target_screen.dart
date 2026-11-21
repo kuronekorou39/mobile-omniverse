@@ -28,7 +28,7 @@ import 'follow_snapshot_screen.dart';
 
 /// 走査対象 1 件の詳細。
 ///
-/// この画面は「今の状態」と「取得開始」に絞る。定期取得の設定と履歴の
+/// この画面は「今の状態」と「取得する」に絞る。定期取得の設定と履歴の
 /// 一覧はそれぞれ別画面に置き、ここには次回予定日と入口だけを出す。
 class FollowTargetScreen extends StatefulWidget {
   const FollowTargetScreen({
@@ -641,7 +641,7 @@ class _FollowTargetScreenState extends State<FollowTargetScreen> {
                 onPressed: !canStart || _loading || _cleaning
                     ? null
                     : _startWithConfirm,
-                label: blockedBy?.waitLabel ?? '取得開始',
+                label: blockedBy?.waitLabel ?? '取得する',
               ),
             ],
           ),
@@ -1044,28 +1044,28 @@ class _FollowTargetScreenState extends State<FollowTargetScreen> {
     }
 
     var choice = 'both';
-    String last(FollowSnapshot? s, String label) => s == null
-        ? '$labelは未取得'
-        : '$label ${formatNumber(s.collectedCount)}件'
-            '${durationLabel(s) == null ? '' : '（${durationLabel(s)}）'}';
+    final f = _latestFollowers;
+    final g = _latestFollowing;
     final decided = await showDialog<String>(
       context: context,
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setLocal) => FetchStartDialog(
           title: 'フォロー・フォロワーを取得',
-          targets: const [
-            FetchTargetChoice('followers', 'フォロワー'),
-            FetchTargetChoice('following', 'フォロー'),
-            FetchTargetChoice('both', '両方'),
+          targetsNote: '前回の件数と所要時間',
+          targets: [
+            FetchTargetChoice('followers', 'フォロワー',
+                count: f?.collectedCount,
+                unit: '件',
+                detail: f == null ? null : durationLabel(f)),
+            FetchTargetChoice('following', 'フォロー',
+                count: g?.collectedCount,
+                unit: '件',
+                detail: g == null ? null : durationLabel(g)),
+            // 相互は両方がそろって初めて出せる
+            const FetchTargetChoice('both', '両方', detail: '相互も出ます'),
           ],
           selected: choice,
           onSelected: (v) => setLocal(() => choice = v),
-          summary: Text(switch (choice) {
-            'followers' => '前回 ${last(_latestFollowers, 'フォロワー')}',
-            'following' => '前回 ${last(_latestFollowing, 'フォロー')}',
-            // 相互は両方がそろって初めて出せる
-            _ => '続けて取得し、相互も出します',
-          }),
           onStart: () => Navigator.pop(ctx, choice),
         ),
       ),

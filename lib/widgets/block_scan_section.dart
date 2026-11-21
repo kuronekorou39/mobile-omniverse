@@ -207,7 +207,7 @@ class _BlockScanSectionState extends State<BlockScanSection> {
   Widget _startButton({RunningFetch? blockedBy}) => FetchStartButton(
         onPressed:
             widget.account != null && blockedBy == null ? _pickOrigin : null,
-        label: blockedBy?.waitLabel ?? '取得開始',
+        label: blockedBy?.waitLabel ?? '取得する',
       );
 
   /// 残りの延べ件数と実測の速さから、あとどれくらいかを出す
@@ -424,7 +424,7 @@ class _BlockScanSectionState extends State<BlockScanSection> {
                 ],
               ),
             ),
-            // 下に「取得開始」のボタンがあるので、テキストのままだと
+            // 下に「取得する」のボタンがあるので、テキストのままだと
             // 見劣りして、続きがあるのに新しく始めてしまう
             if (resumable)
               FilledButton.tonalIcon(
@@ -620,7 +620,9 @@ class _ScanStartDialogState extends State<_ScanStartDialog> {
       targets: [
         for (final c in widget.choices)
           FetchTargetChoice(c.origin, c.label,
-              count: c.count, enabled: (c.count ?? 0) > 0),
+              count: c.count,
+              detail: c.items > 0 ? ScanEstimate(items: c.items).label : null,
+              enabled: (c.count ?? 0) > 0),
       ],
       selected: _chosen.origin,
       onSelected: (v) => setState(
@@ -640,13 +642,10 @@ class _ScanStartDialogState extends State<_ScanStartDialog> {
                   if (v) _keepPopular = true;
                 })),
       ],
-      summary: Text([
-        '${formatNumber(count)}人',
-        if (e.items > 0) ...[
-          '目安 ${e.label}',
-          '保存 ${ScanEstimate.roughBytesLabel(e.totalBytes(popular: _keepPopular, edges: _keepEdges))}',
-        ],
-      ].join('・')),
+      // 時間は対象の表にある。容量は記録する内容で変わるのでここに出す
+      summary: e.items > 0
+          ? Text('保存 ${ScanEstimate.roughBytesLabel(e.totalBytes(popular: _keepPopular, edges: _keepEdges))}')
+          : null,
       onStart: count <= 0
           ? null
           : () => Navigator.pop(context, (

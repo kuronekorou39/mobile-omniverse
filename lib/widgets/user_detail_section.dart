@@ -205,7 +205,7 @@ class _UserDetailSectionState extends State<UserDetailSection> {
               textStyle:
                   const TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
             ),
-            child: Text(blockedBy?.waitLabel ?? '取得する'),
+            child: Text(blockedBy?.waitLabel ?? '取得開始'),
           ),
         ),
     ];

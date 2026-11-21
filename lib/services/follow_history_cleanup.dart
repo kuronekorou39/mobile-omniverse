@@ -7,7 +7,7 @@ import 'follow_db.dart';
 ///
 /// 件数が多いと数十秒かかる。画面を止めて待たせると何もできなくなるので、
 /// 裏で走らせ、そのあいだはその対象の履歴に触る操作（履歴を開く・
-/// 今すぐ取得・対象の削除・もう一度の削除）だけを止める。
+/// 取得開始・対象の削除・もう一度の削除）だけを止める。
 class FollowHistoryCleanup {
   FollowHistoryCleanup._();
   static final instance = FollowHistoryCleanup._();

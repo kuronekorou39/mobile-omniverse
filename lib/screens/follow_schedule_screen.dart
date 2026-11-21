@@ -9,7 +9,7 @@ import '../widgets/target_title.dart';
 /// 定期取得の設定。
 ///
 /// 対象の画面には次回予定日だけを出し、間隔の変更はこちらに寄せる。
-/// 取得ボタンのまわりに設定を並べると、普段使う「今すぐ取得」が
+/// 取得ボタンのまわりに設定を並べると、普段使う「取得開始」が
 /// 設定に埋もれるため。
 class FollowScheduleScreen extends StatefulWidget {
   const FollowScheduleScreen({super.key, required this.target});

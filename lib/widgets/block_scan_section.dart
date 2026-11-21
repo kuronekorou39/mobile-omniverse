@@ -182,51 +182,55 @@ class _BlockScanSectionState extends State<BlockScanSection> {
             const SizedBox(height: 12),
           ] else if (_runs.isNotEmpty) ...[
             _runList(),
-            const SizedBox(height: 12),
+            const SizedBox(height: 8),
           ],
-          if (!isMine)
-            _startButton(
-              blockedBy: blockedBy,
-              // 続きがあるうちは、そちらが主。新規は控えめに出す
-              hasResumable: hasUnfinished,
+          // 「以前の調査」の切り替えと開始ボタンは 1 行に左右で並べる
+          if (!isMine || _olderRuns.isNotEmpty)
+            Row(
+              children: [
+                Expanded(
+                  child: Align(
+                    alignment: Alignment.centerLeft,
+                    child: _olderToggle(),
+                  ),
+                ),
+                if (!isMine)
+                  _startButton(
+                    blockedBy: blockedBy,
+                    // 続きがあるうちは、そちらが主。新規は控えめに出す
+                    hasResumable: hasUnfinished,
+                  ),
+              ],
             ),
       ];
 
   Widget _startButton({RunningFetch? blockedBy, bool hasResumable = false}) {
     final scheme = Theme.of(context).colorScheme;
     final enabled = widget.account != null && blockedBy == null;
-    final label = blockedBy != null
-        ? blockedBy.waitLabel
-        : hasResumable
-            ? '新しく調査を始める'
-            : '調査を開始';
-    // 続きがあるときは、上の「再開」を主にして、ここは枠を薄くする。
-    // 幅いっぱいにすると強すぎるので、文言の幅で右に寄せる
-    return Align(
-      alignment: Alignment.centerRight,
-      child: OutlinedButton(
-        onPressed: enabled ? _pickOrigin : null,
-        style: OutlinedButton.styleFrom(
-          padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 20),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(22),
-          ),
-          side: BorderSide(
-            color: !enabled
-                ? scheme.outlineVariant
-                : hasResumable
-                    ? scheme.outlineVariant
-                    : scheme.primary,
-            width: hasResumable ? 1 : 1.5,
-          ),
-          foregroundColor: hasResumable ? scheme.onSurfaceVariant : null,
-          textStyle: TextStyle(
-            fontSize: hasResumable ? 13 : 14,
-            fontWeight: hasResumable ? FontWeight.w500 : FontWeight.bold,
-          ),
+    final label = blockedBy?.waitLabel ?? '取得開始';
+    // 続きがあるときは、上の「再開」を主にして、ここは枠を薄くする
+    return OutlinedButton(
+      onPressed: enabled ? _pickOrigin : null,
+      style: OutlinedButton.styleFrom(
+        padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 20),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(22),
         ),
-        child: Text(label),
+        side: BorderSide(
+          color: !enabled
+              ? scheme.outlineVariant
+              : hasResumable
+                  ? scheme.outlineVariant
+                  : scheme.primary,
+          width: hasResumable ? 1 : 1.5,
+        ),
+        foregroundColor: hasResumable ? scheme.onSurfaceVariant : null,
+        textStyle: TextStyle(
+          fontSize: hasResumable ? 13 : 14,
+          fontWeight: hasResumable ? FontWeight.w500 : FontWeight.bold,
+        ),
       ),
+      child: Text(label),
     );
   }
 
@@ -343,50 +347,48 @@ class _BlockScanSectionState extends State<BlockScanSection> {
     return shown;
   }
 
+  /// 新しいほうから出している調査以外（以前の調査）
+  List<BlockRun> get _olderRuns {
+    final shown = _shownRuns;
+    return _runs.where((r) => !shown.contains(r)).toList();
+  }
+
   Widget _runList() {
     final scheme = Theme.of(context).colorScheme;
-    final shown = _shownRuns;
-    final older = _runs.where((r) => !shown.contains(r)).toList();
-    final rows = _showOlder ? [...shown, ...older] : shown;
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Material(
-          color: scheme.surfaceContainer,
-          borderRadius: BorderRadius.circular(16),
-          clipBehavior: Clip.antiAlias,
-          child: Column(
-            children: [
-              for (final (i, r) in rows.indexed) ...[
-                if (i > 0)
-                  Divider(
-                      height: 1,
-                      indent: 14,
-                      endIndent: 14,
-                      color: scheme.outlineVariant),
-                _runRow(r),
-              ],
-            ],
-          ),
-        ),
-        // 隠した調査も消せるように、入口だけ控えめに残す
-        if (older.isNotEmpty)
-          Align(
-            alignment: Alignment.centerRight,
-            child: TextButton(
-              onPressed: () => setState(() => _showOlder = !_showOlder),
-              style: TextButton.styleFrom(
-                foregroundColor: scheme.onSurfaceVariant,
-                textStyle: const TextStyle(fontSize: 12),
-                padding: const EdgeInsets.symmetric(horizontal: 8),
-                minimumSize: const Size(0, 32),
-              ),
-              child: Text(_showOlder
-                  ? '以前の調査を隠す'
-                  : '以前の調査 ${older.length}件'),
-            ),
-          ),
-      ],
+    final rows = _showOlder ? [..._shownRuns, ..._olderRuns] : _shownRuns;
+    return Material(
+      color: scheme.surfaceContainer,
+      borderRadius: BorderRadius.circular(16),
+      clipBehavior: Clip.antiAlias,
+      child: Column(
+        children: [
+          for (final (i, r) in rows.indexed) ...[
+            if (i > 0)
+              Divider(
+                  height: 1,
+                  indent: 14,
+                  endIndent: 14,
+                  color: scheme.outlineVariant),
+            _runRow(r),
+          ],
+        ],
+      ),
+    );
+  }
+
+  /// 隠した調査も消せるように、入口だけ控えめに残す。無ければ何も出さない
+  Widget _olderToggle() {
+    final older = _olderRuns;
+    if (older.isEmpty) return const SizedBox.shrink();
+    return TextButton(
+      onPressed: () => setState(() => _showOlder = !_showOlder),
+      style: TextButton.styleFrom(
+        foregroundColor: Theme.of(context).colorScheme.onSurfaceVariant,
+        textStyle: const TextStyle(fontSize: 12),
+        padding: const EdgeInsets.symmetric(horizontal: 8),
+        minimumSize: const Size(0, 32),
+      ),
+      child: Text(_showOlder ? '以前の調査を隠す' : '以前の調査 ${older.length}件'),
     );
   }
 
@@ -446,7 +448,7 @@ class _BlockScanSectionState extends State<BlockScanSection> {
                 ],
               ),
             ),
-            // 下に「調査を開始」のボタンがあるので、テキストのままだと
+            // 下に「取得開始」のボタンがあるので、テキストのままだと
             // 見劣りして、続きがあるのに新しく始めてしまう
             if (resumable)
               FilledButton.tonalIcon(

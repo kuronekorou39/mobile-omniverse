@@ -27,7 +27,7 @@ import 'follow_snapshot_screen.dart';
 
 /// 走査対象 1 件の詳細。
 ///
-/// この画面は「今の状態」と「今すぐ取得」に絞る。定期取得の設定と履歴の
+/// この画面は「今の状態」と「取得開始」に絞る。定期取得の設定と履歴の
 /// 一覧はそれぞれ別画面に置き、ここには次回予定日と入口だけを出す。
 class FollowTargetScreen extends StatefulWidget {
   const FollowTargetScreen({
@@ -314,9 +314,7 @@ class _FollowTargetScreenState extends State<FollowTargetScreen> {
                 const SizedBox(height: FollowSectionHeader.sectionGap),
                 _dashboard(),
                 const SizedBox(height: 12),
-                _captureActions(),
-                const SizedBox(height: 12),
-                _links(t),
+                _captureActions(t),
               ];
               final investigate = <Widget>[
                 BlockScanSection(
@@ -422,9 +420,7 @@ class _FollowTargetScreenState extends State<FollowTargetScreen> {
             const SizedBox(height: FollowSectionHeader.sectionGap),
             _dashboard(),
             const SizedBox(height: 12),
-            _captureActions(),
-            const SizedBox(height: 12),
-            _links(null),
+            _captureActions(null),
           ],
         )),
       );
@@ -615,7 +611,8 @@ class _FollowTargetScreenState extends State<FollowTargetScreen> {
 
   // ─── 取得 ───
 
-  Widget _captureActions() {
+  /// [t] が null なら読み込み中
+  Widget _captureActions(FollowTarget? t) {
     final resumable = _history.where((s) => s.isResumable).toList();
     final scheme = Theme.of(context).colorScheme;
     // 取得は 1 本ずつ。この対象の取得が走っているときは上に重ねた
@@ -633,25 +630,29 @@ class _FollowTargetScreenState extends State<FollowTargetScreen> {
     return Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          // 画面の主役は上の数字。ボタンは面の色を抑え、文言の幅で右に寄せる
-          Align(
-            alignment: Alignment.centerRight,
-            child: FilledButton.tonalIcon(
-              style: FilledButton.styleFrom(
-                padding:
-                    const EdgeInsets.symmetric(vertical: 10, horizontal: 20),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(22),
+          // 画面の主役は上の数字。ボタンは面の色を抑えて右に置き、
+          // 空いた左に定期取得と履歴を縦に並べる
+          Row(
+            children: [
+              Expanded(child: _links(t)),
+              const SizedBox(width: 12),
+              FilledButton.tonalIcon(
+                style: FilledButton.styleFrom(
+                  padding:
+                      const EdgeInsets.symmetric(vertical: 10, horizontal: 20),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(22),
+                  ),
+                  textStyle: const TextStyle(
+                      fontSize: 14, fontWeight: FontWeight.bold),
                 ),
-                textStyle: const TextStyle(
-                    fontSize: 14, fontWeight: FontWeight.bold),
+                onPressed: !canStart || _loading || _cleaning
+                    ? null
+                    : _startWithConfirm,
+                icon: const Icon(Icons.download, size: 18),
+                label: Text(blockedBy?.waitLabel ?? '取得開始'),
               ),
-              onPressed: !canStart || _loading || _cleaning
-                  ? null
-                  : _startWithConfirm,
-              icon: const Icon(Icons.download, size: 18),
-              label: Text(blockedBy?.waitLabel ?? '今すぐ取得'),
-            ),
+            ],
           ),
           // 中断した続きは、埋もれると気づかれないので面を持たせる
           for (final s in resumable)
@@ -704,48 +705,37 @@ class _FollowTargetScreenState extends State<FollowTargetScreen> {
 
   // ─── 定期取得 ───
 
-  /// 定期取得と履歴。面は付けず、1 行に左右で並べる。
-  /// 見出しより控えめにして、間に仕切りを入れる。仕切りが無いと
-  /// 左の日付と右の「履歴」が隣り合って、どちらの値か分からない。
+  /// 定期取得と履歴。面は付けず、取得ボタンの左に縦に並べる。
   /// 間隔そのものは設定画面で見られるので、ここには次回だけ出す。
   /// [t] が null なら読み込み中
-  Widget _links(FollowTarget? t) => Row(
+  Widget _links(FollowTarget? t) => Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Expanded(
-            child: _linkRow(
-              icon: Icons.autorenew,
-              label: '定期取得',
-              value: t == null ? null : _scheduleValue(t),
-              onTap: t == null
-                  ? null
-                  : () async {
-                      await Navigator.of(context).push(
-                        MaterialPageRoute(
-                            builder: (_) =>
-                                FollowScheduleScreen(target: t)),
-                      );
-                      await _load();
-                    },
-            ),
+          _linkRow(
+            icon: Icons.autorenew,
+            label: '定期取得',
+            value: t == null ? null : _scheduleValue(t),
+            onTap: t == null
+                ? null
+                : () async {
+                    await Navigator.of(context).push(
+                      MaterialPageRoute(
+                          builder: (_) =>
+                              FollowScheduleScreen(target: t)),
+                    );
+                    await _load();
+                  },
           ),
-          Container(
-            width: 1,
-            height: 16,
-            margin: const EdgeInsets.symmetric(horizontal: 8),
-            color: Theme.of(context).colorScheme.outlineVariant,
-          ),
-          Expanded(
-            child: _linkRow(
-              icon: Icons.history,
-              label: '履歴',
-              value: t == null
-                  ? null
-                  : _cleaning
-                      ? '削除中…'
-                      : (_history.isEmpty ? 'なし' : '${_history.length}件'),
-              // 削除中も開ける。開いた先で進み具合が分かり、中身は開けない
-              onTap: t == null || _history.isEmpty ? null : _openHistory,
-            ),
+          _linkRow(
+            icon: Icons.history,
+            label: '履歴',
+            value: t == null
+                ? null
+                : _cleaning
+                    ? '削除中…'
+                    : (_history.isEmpty ? 'なし' : '${_history.length}件'),
+            // 削除中も開ける。開いた先で進み具合が分かり、中身は開けない
+            onTap: t == null || _history.isEmpty ? null : _openHistory,
           ),
         ],
       );
@@ -779,7 +769,7 @@ class _FollowTargetScreenState extends State<FollowTargetScreen> {
       borderRadius: BorderRadius.circular(12),
       child: Padding(
         // 面が無いので、左端を見出しや下の「保存容量」とそろえる
-        padding: const EdgeInsets.fromLTRB(4, 10, 4, 10),
+        padding: const EdgeInsets.fromLTRB(4, 6, 4, 6),
         child: Row(
           children: [
             Icon(icon, size: 16, color: scheme.onSurfaceVariant),

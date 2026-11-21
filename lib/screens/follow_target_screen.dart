@@ -18,6 +18,7 @@ import '../utils/image_headers.dart';
 import '../utils/number_format.dart';
 import '../widgets/block_scan_section.dart';
 import '../widgets/user_detail_section.dart';
+import '../widgets/fetch_start_dialog.dart';
 import '../widgets/follow_section_header.dart';
 import '../widgets/skeleton.dart';
 import 'follow_history_screen.dart';
@@ -1043,74 +1044,29 @@ class _FollowTargetScreenState extends State<FollowTargetScreen> {
     }
 
     var choice = 'both';
-    final decided = await showModalBottomSheet<String>(
+    String last(FollowSnapshot? s, String label) => s == null
+        ? '$labelは未取得'
+        : '$label ${formatNumber(s.collectedCount)}件'
+            '${durationLabel(s) == null ? '' : '（${durationLabel(s)}）'}';
+    final decided = await showDialog<String>(
       context: context,
       builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setLocal) => SafeArea(
-          child: ListView(
-            shrinkWrap: true,
-            children: [
-              Padding(
-                padding: const EdgeInsets.fromLTRB(16, 16, 16, 2),
-                child: Text(
-                  '@${widget.handle} を取得',
-                  style: const TextStyle(fontWeight: FontWeight.bold),
-                ),
-              ),
-              Padding(
-                padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-                child: Text(
-                  '実行アカウント ${account.handle}',
-                  style: TextStyle(
-                      fontSize: 11,
-                      color: Theme.of(ctx).colorScheme.onSurfaceVariant),
-                ),
-              ),
-              const Divider(height: 1),
-              _kindChoice(
-                choice,
-                'followers',
-                'フォロワー',
-                _latestFollowers,
-                (v) => setLocal(() => choice = v),
-              ),
-              _kindChoice(
-                choice,
-                'following',
-                'フォロー',
-                _latestFollowing,
-                (v) => setLocal(() => choice = v),
-              ),
-              _kindChoice(
-                choice,
-                'both',
-                '両方を続けて取得',
-                null,
-                (v) => setLocal(() => choice = v),
-                note: '相互を出すにはこちら',
-              ),
-              Padding(
-                padding: const EdgeInsets.all(12),
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: OutlinedButton(
-                        onPressed: () => Navigator.pop(ctx),
-                        child: const Text('キャンセル'),
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: FilledButton(
-                        onPressed: () => Navigator.pop(ctx, choice),
-                        child: const Text('取得を開始'),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
+        builder: (ctx, setLocal) => FetchStartDialog(
+          title: 'フォロー・フォロワーを取得',
+          targets: const [
+            FetchTargetChoice('followers', 'フォロワー'),
+            FetchTargetChoice('following', 'フォロー'),
+            FetchTargetChoice('both', '両方'),
+          ],
+          selected: choice,
+          onSelected: (v) => setLocal(() => choice = v),
+          summary: Text(switch (choice) {
+            'followers' => '前回 ${last(_latestFollowers, 'フォロワー')}',
+            'following' => '前回 ${last(_latestFollowing, 'フォロー')}',
+            // 相互は両方がそろって初めて出せる
+            _ => '続けて取得し、相互も出します',
+          }),
+          onStart: () => Navigator.pop(ctx, choice),
         ),
       ),
     );
@@ -1123,33 +1079,6 @@ class _FollowTargetScreenState extends State<FollowTargetScreen> {
           : FollowListKind.following,
     );
   }
-
-  Widget _kindChoice(
-    String current,
-    String value,
-    String label,
-    FollowSnapshot? last,
-    ValueChanged<String> onPick, {
-    String? note,
-  }) => ListTile(
-    dense: true,
-    leading: Icon(
-      current == value
-          ? Icons.radio_button_checked
-          : Icons.radio_button_unchecked,
-      size: 20,
-    ),
-    title: Text(label),
-    subtitle: Text(
-      note ??
-          (last == null
-              ? 'まだ取得していません'
-              : '前回 ${formatNumber(last.collectedCount)}件'
-                    '${durationLabel(last) == null ? '' : ' ・ 所要${durationLabel(last)}'}'),
-      style: const TextStyle(fontSize: 11),
-    ),
-    onTap: () => onPick(value),
-  );
 
   Future<void> _confirmDelete() async {
     final ok = await confirmDialog(

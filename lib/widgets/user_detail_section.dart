@@ -11,6 +11,7 @@ import '../services/scan_estimate.dart';
 import '../services/user_detail_service.dart';
 import '../utils/app_snackbar.dart';
 import '../utils/number_format.dart';
+import 'fetch_start_dialog.dart';
 import 'follow_section_header.dart';
 import 'skeleton.dart';
 
@@ -126,7 +127,8 @@ class _UserDetailSectionState extends State<UserDetailSection> {
                 '誕生日は本人が公開している範囲だけ分かります（年だけ非公開の人も居ます）。'
                 '最近の投稿日は、投稿一覧の 1 ページ目から読みます。\n'
                 '一度調べた人は ${UserDetailService.freshFor.inDays} 日間は飛ばすので、'
-                '途中で止めても次に始めれば続きになります。',
+                '途中で止めても次に始めれば続きになります。\n'
+                'X の制限に当たると、その間は待つので長くなります。',
             expanded: open,
             onToggle: () => _setExpanded(!open),
             summary: isMine
@@ -423,133 +425,52 @@ class _StartDialogState extends State<_StartDialog> {
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    final note = TextStyle(fontSize: 12, color: scheme.onSurfaceVariant);
     final canStart = (widget.counts[_origin] ?? 0) > 0 && _requestsPerPerson > 0;
-    return AlertDialog(
-      title: const Text('詳しい情報を取得'),
-      contentPadding: const EdgeInsets.fromLTRB(24, 16, 24, 0),
-      content: SingleChildScrollView(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text('誰を調べますか',
-                style: TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.bold,
-                    color: scheme.onSurfaceVariant)),
-            RadioGroup<String>(
-              groupValue: _origin,
-              onChanged: (v) => setState(() {
-                _origin = v ?? _origin;
-                _recount();
-              }),
-              child: Column(
-                children: [
-                  for (final o in widget.origins)
-                    RadioListTile<String>(
-                      value: o.key,
-                      contentPadding: EdgeInsets.zero,
-                      dense: true,
-                      enabled: (widget.counts[o.key] ?? 0) > 0,
-                      title: Text(o.label, style: const TextStyle(fontSize: 14)),
-                      subtitle: Text(
-                        widget.counts[o.key] == null
-                            ? 'まだ取得していません'
-                            : '${formatNumber(widget.counts[o.key]!)}人',
-                        style: note,
-                      ),
-                    ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 8),
-            Text('何を調べますか',
-                style: TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.bold,
-                    color: scheme.onSurfaceVariant)),
-            CheckboxListTile(
-              value: _birthday,
-              dense: true,
-              contentPadding: EdgeInsets.zero,
-              controlAffinity: ListTileControlAffinity.leading,
-              title: const Text('誕生日', style: TextStyle(fontSize: 14)),
-              subtitle: Text('プロフィールを 1 回', style: note),
-              onChanged: (v) => setState(() {
-                _birthday = v ?? false;
-                _recount();
-              }),
-            ),
-            CheckboxListTile(
-              value: _lastPost,
-              dense: true,
-              contentPadding: EdgeInsets.zero,
-              controlAffinity: ListTileControlAffinity.leading,
-              title: const Text('最近の投稿日', style: TextStyle(fontSize: 14)),
-              subtitle: Text('投稿一覧を 1 ページ', style: note),
-              onChanged: (v) => setState(() {
-                _lastPost = v ?? false;
-                _recount();
-              }),
-            ),
-            SwitchListTile(
-              value: _refresh,
-              dense: true,
-              contentPadding: EdgeInsets.zero,
-              title: const Text('取得済みの人も調べ直す',
-                  style: TextStyle(fontSize: 14)),
-              subtitle: Text(
-                  'ふだんは ${UserDetailService.freshFor.inDays} 日以内に調べた人を飛ばします',
-                  style: note),
-              onChanged: (v) => setState(() {
-                _refresh = v;
-                _recount();
-              }),
-            ),
-            const SizedBox(height: 8),
-            FutureBuilder<int>(
-              future: _pending,
-              builder: (ctx, snap) {
-                final n = snap.data;
-                if (n == null) return const SkeletonBox(height: 32, radius: 6);
-                if (n == 0) {
-                  return Text('調べる人が居ません', style: note);
-                }
-                final d = UserDetailService.defaultInterval * (n * _requestsPerPerson);
-                return Text(
-                  '${formatNumber(n)}人 × $_requestsPerPerson回の通信。'
-                  '目安 ${ScanEstimate.roughLabel(d)}。'
-                  'X の制限に当たると、その間は待つので長くなります。',
-                  style: note,
-                );
-              },
-            ),
-            const SizedBox(height: 8),
-          ],
-        ),
-      ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.pop(context),
-          child: const Text('キャンセル'),
-        ),
-        FilledButton(
-          onPressed: canStart
-              ? () => Navigator.pop(
-                    context,
-                    _StartChoice(
-                      origin: _origin,
-                      birthday: _birthday,
-                      lastPost: _lastPost,
-                      refresh: _refresh,
-                    ),
-                  )
-              : null,
-          child: const Text('開始'),
-        ),
+    void toggle(void Function() f) => setState(() {
+          f();
+          _recount();
+        });
+    return FetchStartDialog(
+      title: '詳しい情報を取得',
+      targets: [
+        for (final o in widget.origins)
+          FetchTargetChoice(o.key, o.label,
+              count: widget.counts[o.key],
+              enabled: (widget.counts[o.key] ?? 0) > 0),
       ],
+      selected: _origin,
+      onSelected: (v) => toggle(() => _origin = v),
+      optionsLabel: '調べる内容',
+      options: [
+        FetchOption('誕生日',
+            value: _birthday, onChanged: (v) => toggle(() => _birthday = v)),
+        FetchOption('最近の投稿日',
+            value: _lastPost, onChanged: (v) => toggle(() => _lastPost = v)),
+        FetchOption('取得済みも調べ直す',
+            value: _refresh, onChanged: (v) => toggle(() => _refresh = v)),
+      ],
+      summary: FutureBuilder<int>(
+        future: _pending,
+        builder: (ctx, snap) {
+          final n = snap.data;
+          if (n == null) return const SkeletonBox(height: 16, radius: 6);
+          if (n == 0) return const Text('調べる人が居ません');
+          final d =
+              UserDetailService.defaultInterval * (n * _requestsPerPerson);
+          return Text('${formatNumber(n)}人・目安 ${ScanEstimate.roughLabel(d)}');
+        },
+      ),
+      onStart: canStart
+          ? () => Navigator.pop(
+                context,
+                _StartChoice(
+                  origin: _origin,
+                  birthday: _birthday,
+                  lastPost: _lastPost,
+                  refresh: _refresh,
+                ),
+              )
+          : null,
     );
   }
 }

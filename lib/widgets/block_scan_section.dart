@@ -14,6 +14,7 @@ import '../services/follow_db.dart';
 import '../services/scan_estimate.dart';
 import '../utils/app_snackbar.dart';
 import '../utils/number_format.dart';
+import 'fetch_start_dialog.dart';
 import 'follow_section_header.dart';
 import 'skeleton.dart';
 
@@ -149,7 +150,10 @@ class _BlockScanSectionState extends State<BlockScanSection> {
                 'ブロック・ミュートの有無を調べます。\n'
                 '数時間かかりますが、途中で止めても続きから再開できます。\n'
                 'フォローが ${formatNumber(FollowDb.blockScanFriendLimit)} 人を'
-                '超える相手は飛ばします。',
+                '超える相手は飛ばします。\n'
+                'ブロック・ミュートの関係は必ず記録します。'
+                '「人気」はつながりの中でよくフォローされている人、'
+                '「つながり」はその人を誰がフォローしているかです。',
             expanded: open,
             onToggle: () => _setExpanded(!open),
             summary: isMine
@@ -476,7 +480,7 @@ class _BlockScanSectionState extends State<BlockScanSection> {
       ),
       (
         origin: 'both',
-        label: 'フォロー＋フォロワー',
+        label: '両方',
         count: (followers != null && following != null)
             ? await db.unionCount(
                 followersSnapshotId: followers.id,
@@ -506,55 +510,15 @@ class _BlockScanSectionState extends State<BlockScanSection> {
     ];
     if (!mounted) return;
 
-    final picked = await showModalBottomSheet<String>(
+    // 起点と記録する内容を 1 枚で選ぶ。何時間かかるか・どれだけ残るかは
+    // 選び方で変わるので、下の 1 行に出し直す
+    final result = await showDialog<({String origin, BlockScanRecord record})>(
       context: context,
-      builder: (ctx) => SafeArea(
-        child: ListView(
-          shrinkWrap: true,
-          children: [
-            const Padding(
-              padding: EdgeInsets.all(16),
-              child: Text('どこを起点に調べますか',
-                  style: TextStyle(fontWeight: FontWeight.bold)),
-            ),
-            for (final c in choices)
-              ListTile(
-                dense: true,
-                title: Text(c.label),
-                // 1 行に収まらず変な所で折れるので、人数と延べ件数で行を分ける
-                subtitle: Text(
-                  c.count == null
-                      ? 'まだ取得していません'
-                      : '${formatNumber(c.count!)}人のフォロー先をたどります'
-                          '${c.items > 0 ? '\n延べ${formatNumber(c.items)}件 ・ 保存 ${ScanEstimate(items: c.items).storageLabel}' : ''}',
-                  style: const TextStyle(fontSize: 11),
-                ),
-                // かかる時間が選ぶ基準になるので、右端に出す
-                trailing: c.items > 0
-                    ? Text(
-                        ScanEstimate(items: c.items).label,
-                        style: const TextStyle(
-                            fontSize: 12, fontWeight: FontWeight.bold),
-                      )
-                    : null,
-                enabled: c.count != null && c.count! > 0,
-                onTap: () => Navigator.pop(ctx, c.origin),
-              ),
-          ],
-        ),
-      ),
+      builder: (_) => _ScanStartDialog(choices: choices),
     );
-    if (picked == null || !mounted) return;
-
-    final chosen = choices.firstWhere((c) => c.origin == picked);
-    // 十数時間かかることがあるので、規模と目安を見せてから始める。
-    // 何を残すかで容量が桁で変わるので、ここで一緒に選ぶ
-    final record = await _confirmStart(
-      originLabel: chosen.label,
-      count: chosen.count ?? 0,
-      estimate: ScanEstimate(items: chosen.items),
-    );
-    if (record == null || !mounted) return;
+    if (result == null || !mounted) return;
+    final picked = result.origin;
+    final record = result.record;
 
     try {
       final runId = await _scan.start(
@@ -574,132 +538,6 @@ class _BlockScanSectionState extends State<BlockScanSection> {
     }
     await _load();
     widget.onChanged();
-  }
-
-  /// 何を記録するかを選んでから始める。キャンセルなら null。
-  ///
-  /// 容量はここで決まる。項目ごとのチェックにして、選び方に応じた
-  /// 保存容量を下に出す。長い説明はセクションの ⓘ に任せ、ここには置かない
-  Future<BlockScanRecord?> _confirmStart({
-    required String originLabel,
-    required int count,
-    required ScanEstimate estimate,
-  }) {
-    final hasItems = estimate.items > 0;
-    const gb = 1024 * 1024 * 1024;
-    // GB 単位になりそうな項目は外しておく
-    var keepPopular = !hasItems ||
-        estimate.totalBytes(popular: true, edges: false) < gb;
-    var keepEdges =
-        !hasItems || estimate.totalBytes(popular: true, edges: true) < gb;
-    String size(int bytes) => ScanEstimate.roughBytesLabel(bytes);
-    return showDialog<BlockScanRecord>(
-      context: context,
-      builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setState) {
-          final scheme = Theme.of(ctx).colorScheme;
-          final note = TextStyle(fontSize: 12, color: scheme.onSurfaceVariant);
-          final total =
-              estimate.totalBytes(popular: keepPopular, edges: keepEdges);
-
-          Widget check({
-            required String title,
-            required String subtitle,
-            String? sizeLabel,
-            required bool value,
-            bool enabled = true,
-            required ValueChanged<bool> onChanged,
-          }) =>
-              CheckboxListTile(
-                value: value,
-                enabled: enabled,
-                onChanged: (v) => setState(() => onChanged(v ?? false)),
-                dense: true,
-                contentPadding: EdgeInsets.zero,
-                controlAffinity: ListTileControlAffinity.leading,
-                title: Text(title, style: const TextStyle(fontSize: 14)),
-                subtitle: Text(subtitle, style: note),
-                secondary: sizeLabel == null
-                    ? null
-                    : Text(sizeLabel,
-                        style: const TextStyle(
-                            fontSize: 12, fontWeight: FontWeight.bold)),
-              );
-
-          return AlertDialog(
-            title: const Text('つながり調査を開始'),
-            contentPadding: const EdgeInsets.fromLTRB(24, 16, 24, 0),
-            content: SingleChildScrollView(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text('$originLabel ${formatNumber(count)}人のフォロー先をたどります'),
-                  if (hasItems)
-                    Padding(
-                      padding: const EdgeInsets.only(top: 4),
-                      child: Text(
-                        '延べ${formatNumber(estimate.items)}件 ・ 目安 ${estimate.label}',
-                        style: note,
-                      ),
-                    ),
-                  const SizedBox(height: 12),
-                  Text('記録する内容',
-                      style: TextStyle(
-                          fontSize: 12,
-                          fontWeight: FontWeight.bold,
-                          color: scheme.onSurfaceVariant)),
-                  // 関係は 1 行ごとの印なので容量に響かない。選ばせず必ず残す
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(0, 6, 0, 2),
-                    child: Text(
-                      'ブロック・ミュートの関係は必ず記録します'
-                      '${hasItems ? '（${size(estimate.relationBytes)}）' : ''}',
-                      style: note,
-                    ),
-                  ),
-                  check(
-                    title: '人気',
-                    subtitle: 'つながりの中でよくフォローされている人',
-                    sizeLabel: hasItems ? size(estimate.popularBytes) : null,
-                    value: keepPopular,
-                    // つながりを残すなら人気は必ず付いてくる
-                    enabled: !keepEdges,
-                    onChanged: (v) => keepPopular = v,
-                  ),
-                  check(
-                    title: 'つながり',
-                    subtitle: '人気の相手を、つながりの中で誰がフォローしているか',
-                    sizeLabel: hasItems ? '＋${size(estimate.edgesBytes)}' : null,
-                    value: keepEdges,
-                    onChanged: (v) {
-                      keepEdges = v;
-                      if (v) keepPopular = true;
-                    },
-                  ),
-                  const SizedBox(height: 8),
-                  if (hasItems) Text('保存 合計 ${size(total)}', style: note),
-                  const SizedBox(height: 8),
-                ],
-              ),
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(ctx),
-                child: const Text('キャンセル'),
-              ),
-              FilledButton(
-                onPressed: () => Navigator.pop(
-                    ctx,
-                    BlockScanRecord(
-                        keepPopular: keepPopular, keepEdges: keepEdges)),
-                child: const Text('開始'),
-              ),
-            ],
-          );
-        },
-      ),
-    );
   }
 
   Future<void> _resume(BlockRun run) async {
@@ -731,7 +569,7 @@ class _BlockScanSectionState extends State<BlockScanSection> {
 
 }
 
-/// 調査で何を記録するか。[_confirmStart] の戻り値。
+/// 調査で何を記録するか。開始ダイアログで選ぶ。
 /// ブロック・ミュートの関係は常に記録するので、ここには持たない
 class BlockScanRecord {
   const BlockScanRecord({required this.keepPopular, required this.keepEdges});
@@ -741,4 +579,81 @@ class BlockScanRecord {
 
   /// 誰が誰をフォローしているかを全部残すか
   final bool keepEdges;
+}
+
+typedef _ScanOrigin = ({String origin, String label, int? count, int items});
+
+/// つながり調査の開始。起点と記録する内容を選び、規模を見てから始める
+class _ScanStartDialog extends StatefulWidget {
+  const _ScanStartDialog({required this.choices});
+
+  final List<_ScanOrigin> choices;
+
+  @override
+  State<_ScanStartDialog> createState() => _ScanStartDialogState();
+}
+
+class _ScanStartDialogState extends State<_ScanStartDialog> {
+  late _ScanOrigin _chosen = widget.choices.firstWhere(
+      (c) => (c.count ?? 0) > 0,
+      orElse: () => widget.choices.first);
+  late bool _keepPopular;
+  late bool _keepEdges;
+
+  @override
+  void initState() {
+    super.initState();
+    // GB 単位になりそうな項目は外しておく
+    final e = ScanEstimate(items: _chosen.items);
+    const gb = 1024 * 1024 * 1024;
+    final hasItems = e.items > 0;
+    _keepPopular = !hasItems || e.totalBytes(popular: true, edges: false) < gb;
+    _keepEdges = !hasItems || e.totalBytes(popular: true, edges: true) < gb;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final e = ScanEstimate(items: _chosen.items);
+    final count = _chosen.count ?? 0;
+    return FetchStartDialog(
+      title: 'つながり調査',
+      targets: [
+        for (final c in widget.choices)
+          FetchTargetChoice(c.origin, c.label,
+              count: c.count, enabled: (c.count ?? 0) > 0),
+      ],
+      selected: _chosen.origin,
+      onSelected: (v) => setState(
+          () => _chosen = widget.choices.firstWhere((c) => c.origin == v)),
+      optionsLabel: '記録する内容',
+      options: [
+        FetchOption('人気',
+            value: _keepPopular,
+            // つながりを残すなら人気は必ず付いてくる
+            onChanged: _keepEdges
+                ? null
+                : (v) => setState(() => _keepPopular = v)),
+        FetchOption('つながり',
+            value: _keepEdges,
+            onChanged: (v) => setState(() {
+                  _keepEdges = v;
+                  if (v) _keepPopular = true;
+                })),
+      ],
+      summary: Text([
+        '${formatNumber(count)}人',
+        if (e.items > 0) ...[
+          '目安 ${e.label}',
+          '保存 ${ScanEstimate.roughBytesLabel(e.totalBytes(popular: _keepPopular, edges: _keepEdges))}',
+        ],
+      ].join('・')),
+      onStart: count <= 0
+          ? null
+          : () => Navigator.pop(context, (
+                origin: _chosen.origin,
+                record: BlockScanRecord(
+                    keepPopular: _keepPopular, keepEdges: _keepEdges),
+              )),
+    );
+  }
 }

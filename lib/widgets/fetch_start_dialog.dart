@@ -29,10 +29,18 @@ class FetchTargetChoice {
 
 /// 「内容」のオンオフ 1 つ
 class FetchOption {
-  const FetchOption(this.label, {required this.value, this.onChanged});
+  const FetchOption(this.label,
+      {required this.value, this.onChanged, this.detail, this.trailing});
 
   final String label;
   final bool value;
+
+  /// 名前だけでは何ができるか分からないときの一言。
+  /// どれかに付いていれば、内容はチップでなくチェックの行で並べる
+  final String? detail;
+
+  /// 行の右端に出す値（増える容量など）
+  final String? trailing;
 
   /// null なら押せない
   final ValueChanged<bool>? onChanged;
@@ -127,6 +135,13 @@ class FetchStartDialog extends StatelessWidget {
             children: [
               Text(optionsLabel ?? '内容', style: heading),
               const SizedBox(height: 8),
+              if (options.any((o) => o.detail != null))
+                Column(
+                  children: [
+                    for (final o in options) _optionRow(context, o),
+                  ],
+                )
+              else
               Wrap(
                 spacing: 8,
                 runSpacing: 8,
@@ -151,29 +166,32 @@ class FetchStartDialog extends StatelessWidget {
 
     final Widget content;
     if (sideBySide) {
+      // 内容に説明が付くと低い画面では入りきらない。左右の列だけを
+      // スクロールさせ、要約は縦向きと同じく開始ボタンの上に固定する
       content = SizedBox(
         width: _sideBySideWidth,
-        child: SingleChildScrollView(
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Expanded(child: targetsPart),
-              const SizedBox(width: 24),
-              Expanded(
-                child: Column(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Flexible(
+              child: SingleChildScrollView(
+                child: Row(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const SizedBox(height: 4),
-                    optionsPart!,
-                    if (summaryPart != null) ...[
-                      const SizedBox(height: 16),
-                      summaryPart,
-                    ],
+                    Expanded(child: targetsPart),
+                    const SizedBox(width: 24),
+                    Expanded(child: optionsPart!),
                   ],
                 ),
               ),
+            ),
+            if (summaryPart != null) ...[
+              const SizedBox(height: 12),
+              summaryPart,
             ],
-          ),
+            const SizedBox(height: 4),
+          ],
         ),
       );
     } else {
@@ -220,6 +238,54 @@ class FetchStartDialog extends StatelessWidget {
           child: const Text('開始'),
         ),
       ],
+    );
+  }
+
+  Widget _optionRow(BuildContext context, FetchOption o) {
+    final scheme = Theme.of(context).colorScheme;
+    final enabled = o.onChanged != null;
+    final color = enabled ? null : scheme.onSurface.withValues(alpha: 0.38);
+    final sub = TextStyle(fontSize: 12, color: color ?? scheme.onSurfaceVariant);
+    return InkWell(
+      onTap: enabled ? () => o.onChanged!(!o.value) : null,
+      borderRadius: BorderRadius.circular(8),
+      child: Padding(
+        padding: const EdgeInsets.only(bottom: 4),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Checkbox(
+              value: o.value,
+              visualDensity: VisualDensity.compact,
+              onChanged: enabled ? (v) => o.onChanged!(v ?? false) : null,
+            ),
+            Expanded(
+              child: Padding(
+                padding: const EdgeInsets.only(top: 8),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Text(o.label,
+                              style: TextStyle(fontSize: 14, color: color)),
+                        ),
+                        if (o.trailing != null)
+                          Text(o.trailing!, style: sub),
+                      ],
+                    ),
+                    if (o.detail != null) ...[
+                      const SizedBox(height: 2),
+                      Text(o.detail!, style: sub),
+                    ],
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 

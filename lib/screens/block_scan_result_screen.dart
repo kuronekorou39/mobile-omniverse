@@ -42,8 +42,8 @@ const _tabs = <_Tab>[
   ),
   (label: 'ブロック中', relation: 'blocking', empty: 'ブロックしている相手は居ません'),
   (label: 'ミュート中', relation: 'muting', empty: 'ミュートしている相手は居ません'),
-  // relation なしは「人気」。関係ではなく被フォロー数で並べる
-  (label: '人気', relation: null, empty: 'まだ集まっていません'),
+  // relation なしは「フォロー先ランキング」。関係ではなく被フォロー数で並べる
+  (label: 'フォロー先ランキング', relation: null, empty: 'まだ集まっていません'),
 ];
 
 class _BlockScanResultScreenState extends State<BlockScanResultScreen> {

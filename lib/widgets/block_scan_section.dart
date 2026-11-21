@@ -151,9 +151,7 @@ class _BlockScanSectionState extends State<BlockScanSection> {
                 '数時間かかりますが、途中で止めても続きから再開できます。\n'
                 'フォローが ${formatNumber(FollowDb.blockScanFriendLimit)} 人を'
                 '超える相手は飛ばします。\n'
-                'ブロック・ミュートの関係は必ず記録します。'
-                '「人気」はつながりの中でよくフォローされている人、'
-                '「つながり」はその人を誰がフォローしているかです。',
+                'ブロック・ミュートの関係は必ず記録します。',
             expanded: open,
             onToggle: () => _setExpanded(!open),
             summary: isMine
@@ -629,14 +627,22 @@ class _ScanStartDialogState extends State<_ScanStartDialog> {
           () => _chosen = widget.choices.firstWhere((c) => c.origin == v)),
       optionsLabel: '記録する内容',
       options: [
-        FetchOption('人気',
+        FetchOption('フォロー先ランキング',
             value: _keepPopular,
-            // つながりを残すなら人気は必ず付いてくる
+            detail: '調べた人たちがよくフォローしている相手を、人数の多い順に並べる',
+            trailing: e.items > 0
+                ? '+${ScanEstimate.roughBytesLabel(e.popularBytes)}'
+                : null,
+            // 内訳を残すならランキングは必ず付いてくる
             onChanged: _keepEdges
                 ? null
                 : (v) => setState(() => _keepPopular = v)),
-        FetchOption('つながり',
+        FetchOption('フォロー元の内訳',
             value: _keepEdges,
+            detail: 'ランキングで、その相手を誰がフォローしているかまで見られる',
+            trailing: e.items > 0
+                ? '+${ScanEstimate.roughBytesLabel(e.edgesBytes)}'
+                : null,
             onChanged: (v) => setState(() {
                   _keepEdges = v;
                   if (v) _keepPopular = true;

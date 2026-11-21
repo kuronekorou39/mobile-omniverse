@@ -186,7 +186,7 @@ class BlockScanService {
     ScanLogService.instance.log(
         '=== 調査を開始 runId=$runId 対象=@$handle 起点=$origin '
         '${sources.length}人 実行=@${account.handle} '
-        '記録=関係${keepPopular ? '+人気' : ''}${keepEdges ? '+つながり' : ''} ===');
+        '記録=関係${keepPopular ? '+ランキング' : ''}${keepEdges ? '+内訳' : ''} ===');
     await resume(account: account, runId: runId, targetHandle: handle);
     return runId;
   }

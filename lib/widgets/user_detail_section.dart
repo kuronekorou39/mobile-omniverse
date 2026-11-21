@@ -343,7 +343,6 @@ class _UserDetailSectionState extends State<UserDetailSection> {
         origin: picked.origin,
         wantBirthday: picked.birthday,
         wantLastPost: picked.lastPost,
-        refresh: picked.refresh,
       );
       if (!mounted) return;
       if (n == 0) showAppSnackBar(context, '調べる人が居ません（全員が取得済みです）');
@@ -359,12 +358,10 @@ class _StartChoice {
     required this.origin,
     required this.birthday,
     required this.lastPost,
-    required this.refresh,
   });
   final String origin;
   final bool birthday;
   final bool lastPost;
-  final bool refresh;
 }
 
 /// 起点と項目を選び、何人・どれくらいかを見てから始める
@@ -392,7 +389,6 @@ class _StartDialogState extends State<_StartDialog> {
       .key;
   bool _birthday = true;
   bool _lastPost = true;
-  bool _refresh = false;
 
   /// 起点ごとの「実際に調べる人数」。数え終わるまで null
   final Map<String, int?> _todo = {};
@@ -411,9 +407,9 @@ class _StartDialogState extends State<_StartDialog> {
   void _recount() {
     final gen = ++_generation;
     final now = DateTime.now();
-    final freshAfter = _refresh
-        ? now.millisecondsSinceEpoch + 1
-        : now.subtract(UserDetailService.freshFor).millisecondsSinceEpoch;
+    // 調べてから日が経った人は自動で取り直すので、「調べ直す」は選ばせない
+    final freshAfter =
+        now.subtract(UserDetailService.freshFor).millisecondsSinceEpoch;
     for (final o in widget.origins) {
       final m = FollowDb.memberSetFor(o.key,
           followers: widget.followers, following: widget.following);
@@ -470,8 +466,6 @@ class _StartDialogState extends State<_StartDialog> {
             value: _birthday, onChanged: (v) => toggle(() => _birthday = v)),
         FetchOption('最近の投稿日',
             value: _lastPost, onChanged: (v) => toggle(() => _lastPost = v)),
-        FetchOption('取得済みも調べ直す',
-            value: _refresh, onChanged: (v) => toggle(() => _refresh = v)),
       ],
       summary: todo == 0 ? const Text('調べる人が居ません') : null,
       onStart: canStart
@@ -481,7 +475,6 @@ class _StartDialogState extends State<_StartDialog> {
                   origin: _origin,
                   birthday: _birthday,
                   lastPost: _lastPost,
-                  refresh: _refresh,
                 ),
               )
           : null,

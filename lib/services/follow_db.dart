@@ -2427,8 +2427,8 @@ class BlockRun {
     if (!keepPopular && !keepEdges) return rel.isEmpty ? '' : '$relのみ';
     return [
       if (rel.isNotEmpty) rel,
-      if (keepPopular) '人気',
-      if (keepEdges) 'つながり',
+      if (keepPopular) 'フォロー先ランキング',
+      if (keepEdges) 'フォロー元の内訳',
     ].join('・');
   }
 

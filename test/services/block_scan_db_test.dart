@@ -699,7 +699,7 @@ void main() {
       );
       final run = (await db.blockRun(runId))!;
       expect(run.relations, {'muting'});
-      expect(run.recordLabel, 'ミュート中・人気');
+      expect(run.recordLabel, 'ミュート中・フォロー先ランキング');
 
       await db.addBlockFindings(
         runId: runId,
@@ -735,7 +735,7 @@ void main() {
       );
       final run = (await db.blockRun(runId))!;
       expect(run.relations, isEmpty);
-      expect(run.recordLabel, '人気・つながり');
+      expect(run.recordLabel, 'フォロー先ランキング・フォロー元の内訳');
 
       await db.addBlockFindings(
         runId: runId,
@@ -773,7 +773,7 @@ void main() {
       }
 
       expect(await label(keepEdges: false, keepPopular: false), '関係のみ');
-      expect(await label(keepEdges: false, keepPopular: true), '関係・人気');
+      expect(await label(keepEdges: false, keepPopular: true), '関係・フォロー先ランキング');
       expect(await label(keepEdges: true, keepPopular: true), isNull);
     });
   });

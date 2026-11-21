@@ -169,8 +169,12 @@ class _Banner extends ConsumerWidget {
                         foregroundColor: scheme.onError,
                         padding: const EdgeInsets.symmetric(horizontal: 14),
                         visualDensity: VisualDensity.compact,
-                        textStyle: const TextStyle(
-                            fontSize: 12, fontWeight: FontWeight.bold),
+                        // 形だけ渡すと設定のフォントが外れる
+                        textStyle: Theme.of(context)
+                            .textTheme
+                            .labelLarge
+                            ?.copyWith(
+                                fontSize: 12, fontWeight: FontWeight.bold),
                       ),
                       child: const Text('再投稿'),
                     ),

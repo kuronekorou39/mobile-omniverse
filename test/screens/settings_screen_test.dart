@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
@@ -51,6 +52,43 @@ void main() {
     );
     await tester.pumpAndSettle();
   }
+
+  group('設定で選んだフォント', () {
+    // アプリのフォントはテーマの文字（textTheme）にだけ載る。
+    // 部品に文字の形を直接渡すと、そこだけ標準のフォントに戻る
+    Future<void> pumpWithFont(WidgetTester tester, Widget screen) async {
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            packageVersionProvider.overrideWith((ref) async => '1.0.0'),
+          ],
+          child: MaterialApp(
+            theme: ThemeData(
+                textTheme: ThemeData().textTheme.apply(fontFamily: 'Chosen')),
+            home: screen,
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+    }
+
+    String? fontOf(WidgetTester tester, String text) => tester
+        .renderObject<RenderParagraph>(find.text(text))
+        .text
+        .style
+        ?.fontFamily;
+
+    testWidgets('更新を確認のボタンにも載る', (tester) async {
+      await pumpWithFont(tester, const SettingsScreen());
+      expect(fontOf(tester, '更新を確認'), 'Chosen');
+    });
+
+    testWidgets('設定の項目の説明にも載る', (tester) async {
+      await pumpWithFont(tester, const GeneralSettingsScreen());
+      expect(fontOf(tester, '最初に出た説明を、各画面を次に開いたときにもう一度出します'),
+          'Chosen');
+    });
+  });
 
   group('設定トップ（ハブ）', () {
     testWidgets('タイトルと各カテゴリの行を表示する', (tester) async {

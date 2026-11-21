@@ -76,7 +76,7 @@ class _QueryIdScreenState extends State<QueryIdScreen> {
               child: DataTable(
                 columnSpacing: 12,
                 horizontalMargin: 12,
-                headingTextStyle: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
+                headingTextStyle: Theme.of(context).textTheme.bodySmall?.copyWith(fontWeight: FontWeight.bold, fontSize: 12),
                 dataTextStyle: const TextStyle(fontSize: 10, fontFamily: 'monospace'),
                 columns: [
                   const DataColumn(label: Text('操作名')),

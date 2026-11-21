@@ -178,7 +178,11 @@ class _VersionFooterState extends ConsumerState<_VersionFooter> {
                     )
                   : TextButton(
                       style: TextButton.styleFrom(
-                        textStyle: const TextStyle(fontSize: 12),
+                        // 形だけ渡すと設定のフォントが外れる
+                        textStyle: Theme.of(context)
+                            .textTheme
+                            .labelLarge
+                            ?.copyWith(fontSize: 12),
                         visualDensity: VisualDensity.compact,
                       ),
                       // 確認中も文言は変えない。幅が変わって並びがぶれる

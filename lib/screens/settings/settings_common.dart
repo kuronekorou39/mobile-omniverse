@@ -218,10 +218,11 @@ Widget settingsScaffold({
           data: ListTileThemeData(
             contentPadding: settingsItemPadding,
             // 説明文は補助情報なので落とす。主役は項目名
-            subtitleTextStyle: TextStyle(
-              fontSize: 12,
-              color: scheme.onSurfaceVariant.withValues(alpha: 0.6),
-            ),
+            // 形だけ渡すと設定のフォントが外れる。テーマの文字から作る
+            subtitleTextStyle: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                  fontSize: 12,
+                  color: scheme.onSurfaceVariant.withValues(alpha: 0.6),
+                ),
           ),
           child: body,
         );

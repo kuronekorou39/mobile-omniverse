@@ -1215,7 +1215,8 @@ class _PhotoEditorScreenState extends State<PhotoEditorScreen>
           foregroundColor: EditorColors.text,
           iconTheme: const IconThemeData(color: EditorColors.text),
           actionsIconTheme: const IconThemeData(color: EditorColors.text),
-          titleTextStyle: const TextStyle(
+          // 形だけ渡すと設定のフォントが外れる。テーマの文字から作る
+          titleTextStyle: Theme.of(context).textTheme.titleLarge?.copyWith(
             fontSize: 17,
             fontWeight: FontWeight.w700,
             letterSpacing: -0.2,

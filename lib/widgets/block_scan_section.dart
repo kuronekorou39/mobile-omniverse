@@ -349,7 +349,8 @@ class _BlockScanSectionState extends State<BlockScanSection> {
       onPressed: () => setState(() => _showOlder = !_showOlder),
       style: TextButton.styleFrom(
         foregroundColor: Theme.of(context).colorScheme.onSurfaceVariant,
-        textStyle: const TextStyle(fontSize: 12),
+        // 形だけ渡すと設定のフォントが外れる。テーマの文字から作る
+        textStyle: Theme.of(context).textTheme.labelLarge?.copyWith(fontSize: 12),
         padding: const EdgeInsets.symmetric(horizontal: 8),
         minimumSize: const Size(0, 32),
       ),
@@ -423,8 +424,10 @@ class _BlockScanSectionState extends State<BlockScanSection> {
                 style: FilledButton.styleFrom(
                   visualDensity: VisualDensity.compact,
                   padding: const EdgeInsets.symmetric(horizontal: 12),
-                  textStyle: const TextStyle(
-                      fontSize: 12, fontWeight: FontWeight.bold),
+                  textStyle: Theme.of(context)
+                      .textTheme
+                      .labelLarge
+                      ?.copyWith(fontSize: 12, fontWeight: FontWeight.bold),
                 ),
               )
             else

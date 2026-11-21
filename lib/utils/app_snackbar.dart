@@ -1,4 +1,8 @@
+import 'dart:async';
+import 'dart:io';
+
 import 'package:flutter/material.dart';
+import 'package:http/http.dart' as http;
 
 enum SnackType { success, error, warning, info }
 
@@ -76,3 +80,16 @@ String shortError(Object e) {
   final s = '$e'.replaceFirst(RegExp(r'^\w*Exception:\s*'), '');
   return s.length > 80 ? '${s.substring(0, 80)}…' : s;
 }
+
+/// 通信が途切れた・つながらないときの例外か。
+/// 中身の URL や英語の原因は利用者には意味が無いので、まとめて言い換える
+bool isNetworkError(Object e) =>
+    e is SocketException ||
+    e is http.ClientException ||
+    e is TimeoutException ||
+    e is HandshakeException;
+
+/// 画面に出す失敗の説明。通信の問題は言い換え、それ以外は短く切る
+String describeError(Object e) => isNetworkError(e)
+    ? '通信できませんでした。電波の状態を確かめて、もう一度試してください'
+    : shortError(e);

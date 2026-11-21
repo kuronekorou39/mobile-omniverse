@@ -1478,7 +1478,7 @@ class _NotificationTileState extends ConsumerState<_NotificationTile> {
     } catch (e) {
       if (!context.mounted) return;
       Navigator.of(context, rootNavigator: true).pop(); // ローディングを閉じる
-      showAppSnackBar(context, '投稿の読み込みに失敗しました: $e', type: SnackType.error);
+      showAppSnackBar(context, '投稿の読み込みに失敗しました。${describeError(e)}', type: SnackType.error);
     }
   }
 

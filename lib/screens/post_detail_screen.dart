@@ -4,6 +4,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../utils/app_snackbar.dart';
 import '../utils/engagement_errors.dart';
 import '../widgets/home_rail.dart';
 import '../utils/image_headers.dart';
@@ -130,9 +131,17 @@ class _PostDetailScreenState extends ConsumerState<PostDetailScreen> {
         _isLoading = false;
       });
     } catch (e) {
+      if (!mounted) return;
+      // 引っ張って読み直したときの失敗なら、出ているリプライは残して知らせだけ出す
+      if (_parents.isNotEmpty || _replies.isNotEmpty) {
+        setState(() => _isLoading = false);
+        showAppSnackBar(context, 'リプライを読み直せませんでした。${describeError(e)}',
+            type: SnackType.error);
+        return;
+      }
       setState(() {
         _isLoading = false;
-        _error = 'リプライの取得に失敗しました: $e';
+        _error = describeError(e);
       });
     }
   }
@@ -232,11 +241,23 @@ class _PostDetailScreenState extends ConsumerState<PostDetailScreen> {
                 padding: const EdgeInsets.all(16),
                 child: Column(
                   children: [
-                    Text(_error!, style: const TextStyle(color: Colors.red)),
+                    Icon(Icons.cloud_off_outlined,
+                        color: Theme.of(context).colorScheme.onSurfaceVariant),
                     const SizedBox(height: 8),
+                    const Text('リプライを読み込めませんでした'),
+                    const SizedBox(height: 4),
+                    Text(
+                      _error!,
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                    const SizedBox(height: 12),
                     OutlinedButton(
                       onPressed: _loadReplies,
-                      child: const Text('リトライ'),
+                      child: const Text('もう一度読み込む'),
                     ),
                   ],
                 ),

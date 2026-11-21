@@ -138,7 +138,7 @@ void main() {
       await tester.pumpWidget(buildPostDetailScreen(post: post));
       await tester.pumpAndSettle();
 
-      expect(find.text('リトライ'), findsOneWidget);
+      expect(find.text('もう一度読み込む'), findsOneWidget);
     });
 
     testWidgets('displays Divider between main post and replies section',
@@ -214,7 +214,7 @@ void main() {
 
       // _getAccount returns null because no matching account -> error message
       expect(find.text('アカウント情報が見つかりません'), findsOneWidget);
-      expect(find.text('リトライ'), findsOneWidget);
+      expect(find.text('もう一度読み込む'), findsOneWidget);
     });
 
     testWidgets('shows loading indicator initially', (tester) async {

@@ -4,6 +4,7 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../providers/settings_provider.dart' show ImagePreviewSize;
 import '../utils/image_headers.dart';
+import '../utils/open_link.dart';
 import 'image_viewer.dart';
 
 /// 画像 1 枚の高さが画面の高さに占める上限。
@@ -61,7 +62,8 @@ class LinkedText extends StatelessWidget {
       spans.add(
         WidgetSpan(
           child: GestureDetector(
-            onTap: () => _launchUrl(url),
+            // 誤タップでいきなり外へ飛ばないよう、行き先を見せてから開く
+            onTap: () => confirmAndOpenUrl(context, url),
             child: Text(
               url,
               style: baseStyle?.copyWith(
@@ -83,12 +85,6 @@ class LinkedText extends StatelessWidget {
     );
   }
 
-  Future<void> _launchUrl(String url) async {
-    final uri = Uri.tryParse(url);
-    if (uri != null) {
-      await launchUrl(uri, mode: LaunchMode.externalApplication);
-    }
-  }
 }
 
 /// 画像グリッド表示の共有ウィジェット
@@ -202,6 +198,8 @@ class PostImageGrid extends StatelessWidget {
             const SizedBox(width: 2),
             Expanded(child: _buildGridImage(context, imageUrls[3], 3,
                 height: gh,
+                // X は 1 投稿に 20 枚まで載る。並べるのは 4 枚までで、残りは数で示す
+                hiddenCount: imageUrls.length - 4,
                 borderRadius: const BorderRadius.only(
                     bottomRight: Radius.circular(8)))),
           ],
@@ -250,29 +248,53 @@ class PostImageGrid extends StatelessWidget {
     int index, {
     required double height,
     BorderRadius? borderRadius,
+    int hiddenCount = 0,
   }) {
+    final image = CachedNetworkImage(
+      imageUrl: url,
+      httpHeaders: kImageHeaders,
+      fadeInDuration: Duration.zero,
+      memCacheWidth: 360,
+      fit: BoxFit.cover,
+      height: height,
+      width: double.infinity,
+      placeholder: (context, url) => Container(
+        height: height,
+        color: Colors.grey[300],
+      ),
+      errorWidget: (context, error, stackTrace) => Container(
+        height: height,
+        color: Colors.grey[300],
+        child: const Icon(Icons.broken_image, size: 20),
+      ),
+    );
+    final scheme = Theme.of(context).colorScheme;
     return GestureDetector(
       onTap: () => _openViewer(context, index),
       child: ClipRRect(
         borderRadius: borderRadius ?? BorderRadius.zero,
-        child: CachedNetworkImage(
-          imageUrl: url,
-          httpHeaders: kImageHeaders,
-          fadeInDuration: Duration.zero,
-          memCacheWidth: 360,
-          fit: BoxFit.cover,
-          height: height,
-          width: double.infinity,
-          placeholder: (context, url) => Container(
-            height: height,
-            color: Colors.grey[300],
-          ),
-          errorWidget: (context, error, stackTrace) => Container(
-            height: height,
-            color: Colors.grey[300],
-            child: const Icon(Icons.broken_image, size: 20),
-          ),
-        ),
+        child: hiddenCount <= 0
+            ? image
+            : Stack(
+                children: [
+                  image,
+                  Positioned.fill(
+                    child: ColoredBox(
+                      color: scheme.inverseSurface.withValues(alpha: 0.55),
+                      child: Center(
+                        child: Text(
+                          '+$hiddenCount',
+                          style: TextStyle(
+                            color: scheme.onInverseSurface,
+                            fontSize: 22,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
       ),
     );
   }

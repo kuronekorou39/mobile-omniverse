@@ -636,21 +636,11 @@ class _FollowTargetScreenState extends State<FollowTargetScreen> {
             children: [
               Expanded(child: _links(t)),
               const SizedBox(width: 12),
-              FilledButton.tonalIcon(
-                style: FilledButton.styleFrom(
-                  padding:
-                      const EdgeInsets.symmetric(vertical: 10, horizontal: 20),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(22),
-                  ),
-                  textStyle: const TextStyle(
-                      fontSize: 14, fontWeight: FontWeight.bold),
-                ),
+              FetchStartButton(
                 onPressed: !canStart || _loading || _cleaning
                     ? null
                     : _startWithConfirm,
-                icon: const Icon(Icons.download, size: 18),
-                label: Text(blockedBy?.waitLabel ?? '取得開始'),
+                label: blockedBy?.waitLabel ?? '取得開始',
               ),
             ],
           ),

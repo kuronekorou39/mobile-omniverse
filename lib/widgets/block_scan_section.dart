@@ -195,44 +195,16 @@ class _BlockScanSectionState extends State<BlockScanSection> {
                   ),
                 ),
                 if (!isMine)
-                  _startButton(
-                    blockedBy: blockedBy,
-                    // 続きがあるうちは、そちらが主。新規は控えめに出す
-                    hasResumable: hasUnfinished,
-                  ),
+                  _startButton(blockedBy: blockedBy),
               ],
             ),
       ];
 
-  Widget _startButton({RunningFetch? blockedBy, bool hasResumable = false}) {
-    final scheme = Theme.of(context).colorScheme;
-    final enabled = widget.account != null && blockedBy == null;
-    final label = blockedBy?.waitLabel ?? '取得開始';
-    // 続きがあるときは、上の「再開」を主にして、ここは枠を薄くする
-    return OutlinedButton(
-      onPressed: enabled ? _pickOrigin : null,
-      style: OutlinedButton.styleFrom(
-        padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 20),
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(22),
-        ),
-        side: BorderSide(
-          color: !enabled
-              ? scheme.outlineVariant
-              : hasResumable
-                  ? scheme.outlineVariant
-                  : scheme.primary,
-          width: hasResumable ? 1 : 1.5,
-        ),
-        foregroundColor: hasResumable ? scheme.onSurfaceVariant : null,
-        textStyle: TextStyle(
-          fontSize: hasResumable ? 13 : 14,
-          fontWeight: hasResumable ? FontWeight.w500 : FontWeight.bold,
-        ),
-      ),
-      child: Text(label),
-    );
-  }
+  Widget _startButton({RunningFetch? blockedBy}) => FetchStartButton(
+        onPressed:
+            widget.account != null && blockedBy == null ? _pickOrigin : null,
+        label: blockedBy?.waitLabel ?? '取得開始',
+      );
 
   /// 残りの延べ件数と実測の速さから、あとどれくらいかを出す
   String? _remainingLabel(BlockScanProgress p) {

@@ -119,3 +119,39 @@ class FollowSectionBody extends StatelessWidget {
     );
   }
 }
+
+/// 取得を始めるボタン。対象画面の取得・つながり調査・詳しい情報で
+/// 同じ形にそろえる。主役は数字や一覧なので、色を抑えた面にする
+class FetchStartButton extends StatelessWidget {
+  const FetchStartButton({
+    super.key,
+    required this.onPressed,
+    this.label = '取得開始',
+  });
+
+  /// null なら押せない
+  final VoidCallback? onPressed;
+
+  /// 別の取得で塞がれているときは、待ちの文言に差し替える
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return FilledButton.tonalIcon(
+      style: FilledButton.styleFrom(
+        padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 20),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(22),
+        ),
+        // 書体はテーマから引く。TextStyle だけ渡すと設定のフォントが外れる
+        textStyle: Theme.of(context)
+            .textTheme
+            .labelLarge
+            ?.copyWith(fontSize: 14, fontWeight: FontWeight.bold),
+      ),
+      onPressed: onPressed,
+      icon: const Icon(Icons.download, size: 18),
+      label: Text(label),
+    );
+  }
+}

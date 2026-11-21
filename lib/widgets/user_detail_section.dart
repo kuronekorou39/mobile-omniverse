@@ -193,19 +193,11 @@ class _UserDetailSectionState extends State<UserDetailSection> {
         // 幅いっぱいにすると強すぎるので、文言の幅で右に寄せる
         Align(
           alignment: Alignment.centerRight,
-          child: OutlinedButton(
+          child: FetchStartButton(
             onPressed: widget.account != null && blockedBy == null && c != null
                 ? _pickAndStart
                 : null,
-            style: OutlinedButton.styleFrom(
-              padding:
-                  const EdgeInsets.symmetric(vertical: 10, horizontal: 20),
-              shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(22)),
-              textStyle:
-                  const TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
-            ),
-            child: Text(blockedBy?.waitLabel ?? '取得開始'),
+            label: blockedBy?.waitLabel ?? '取得開始',
           ),
         ),
     ];

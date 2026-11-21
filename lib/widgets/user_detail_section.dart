@@ -135,7 +135,7 @@ class _UserDetailSectionState extends State<UserDetailSection> {
                     ? null
                     : '${formatNumber(c.profileFetched > c.postsFetched ? c.profileFetched : c.postsFetched)}人分',
           ),
-          if (open) ..._body(running, isMine, blockedBy),
+          if (open) FollowSectionBody(children: _body(running, isMine, blockedBy)),
         ],
       ),
     );
@@ -190,14 +190,16 @@ class _UserDetailSectionState extends State<UserDetailSection> {
       ],
       const SizedBox(height: 8),
       if (!isMine)
-        SizedBox(
-          width: double.infinity,
+        // 幅いっぱいにすると強すぎるので、文言の幅で右に寄せる
+        Align(
+          alignment: Alignment.centerRight,
           child: OutlinedButton(
             onPressed: widget.account != null && blockedBy == null && c != null
                 ? _pickAndStart
                 : null,
             style: OutlinedButton.styleFrom(
-              padding: const EdgeInsets.symmetric(vertical: 12),
+              padding:
+                  const EdgeInsets.symmetric(vertical: 10, horizontal: 20),
               shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(22)),
               textStyle:

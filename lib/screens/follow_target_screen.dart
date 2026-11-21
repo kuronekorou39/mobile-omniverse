@@ -633,19 +633,25 @@ class _FollowTargetScreenState extends State<FollowTargetScreen> {
     return Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          FilledButton(
-            style: FilledButton.styleFrom(
-              padding: const EdgeInsets.symmetric(vertical: 16),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(24),
+          // 画面の主役は上の数字。ボタンは面の色を抑え、文言の幅で右に寄せる
+          Align(
+            alignment: Alignment.centerRight,
+            child: FilledButton.tonalIcon(
+              style: FilledButton.styleFrom(
+                padding:
+                    const EdgeInsets.symmetric(vertical: 10, horizontal: 20),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(22),
+                ),
+                textStyle: const TextStyle(
+                    fontSize: 14, fontWeight: FontWeight.bold),
               ),
-              textStyle: const TextStyle(
-                  fontSize: 16, fontWeight: FontWeight.bold),
+              onPressed: !canStart || _loading || _cleaning
+                  ? null
+                  : _startWithConfirm,
+              icon: const Icon(Icons.download, size: 18),
+              label: Text(blockedBy?.waitLabel ?? '今すぐ取得'),
             ),
-            onPressed: !canStart || _loading || _cleaning
-                ? null
-                : _startWithConfirm,
-            child: Text(blockedBy?.waitLabel ?? '今すぐ取得'),
           ),
           // 中断した続きは、埋もれると気づかれないので面を持たせる
           for (final s in resumable)

@@ -158,7 +158,9 @@ class _BlockScanSectionState extends State<BlockScanSection> {
                     ? '未完了あり'
                     : null,
           ),
-          if (open) ..._body(running, isMine, blockedBy, hasUnfinished),
+          if (open)
+            FollowSectionBody(
+                children: _body(running, isMine, blockedBy, hasUnfinished)),
         ],
       ),
     );
@@ -198,13 +200,14 @@ class _BlockScanSectionState extends State<BlockScanSection> {
         : hasResumable
             ? '新しく調査を始める'
             : '調査を開始';
-    // 続きがあるときは、上の「再開」を主にして、ここは枠を薄くする
-    return SizedBox(
-      width: double.infinity,
+    // 続きがあるときは、上の「再開」を主にして、ここは枠を薄くする。
+    // 幅いっぱいにすると強すぎるので、文言の幅で右に寄せる
+    return Align(
+      alignment: Alignment.centerRight,
       child: OutlinedButton(
         onPressed: enabled ? _pickOrigin : null,
         style: OutlinedButton.styleFrom(
-          padding: const EdgeInsets.symmetric(vertical: 12),
+          padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 20),
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(22),
           ),
@@ -443,7 +446,7 @@ class _BlockScanSectionState extends State<BlockScanSection> {
                 ],
               ),
             ),
-            // 下に「調査を開始」の大きなボタンがあるので、テキストのままだと
+            // 下に「調査を開始」のボタンがあるので、テキストのままだと
             // 見劣りして、続きがあるのに新しく始めてしまう
             if (resumable)
               FilledButton.tonalIcon(

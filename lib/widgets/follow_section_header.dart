@@ -88,3 +88,34 @@ class FollowSectionHeader extends StatelessWidget {
     );
   }
 }
+
+/// 開閉する見出しの中身。左に縦の線を引いて 1 段下げ、
+/// 開いたまとまりがどこまで続くかをひと目で分かるようにする
+class FollowSectionBody extends StatelessWidget {
+  const FollowSectionBody({super.key, required this.children});
+
+  final List<Widget> children;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Padding(
+      // 線は見出しの文字の左端にそろえる
+      padding: const EdgeInsets.only(left: 6, top: 2),
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          border: Border(
+            left: BorderSide(color: scheme.outlineVariant, width: 2),
+          ),
+        ),
+        child: Padding(
+          padding: const EdgeInsets.only(left: 12, top: 4, bottom: 4),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: children,
+          ),
+        ),
+      ),
+    );
+  }
+}
